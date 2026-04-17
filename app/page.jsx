@@ -5,6 +5,7 @@ import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Pa
 import * as db from '../lib/db';
 import { leerArchivo, parseMateriales, parseSistemas, descargarPlantilla, comprimirImagen } from '../lib/imports';
 import { obtenerUbicacion, distanciaMetros, formatDistancia, abrirEnMapa } from '../lib/geo';
+import { extraerCoordenadasDeGoogleMapsLink } from '../lib/geoutils';
 
 // ============================================================
 // HELPERS
@@ -19,28 +20,23 @@ const puedeVerProyecto = (persona, proy) => tieneRol(persona, 'admin') || proy.s
 const puedeReportar = (persona, proy) => tieneRol(persona, 'admin') || proy.supervisorId === persona.id || proy.maestroId === persona.id;
 
 // ============================================================
-// v8: Estados de proyecto
+// v8.1: Estados simplificados (6)
 // ============================================================
 const ESTADOS = {
-  cubicando:    { label: 'Cubicando',    color: 'bg-purple-600', textColor: 'text-purple-400', order: 1 },
-  cotizado:     { label: 'Cotizado',     color: 'bg-blue-600',   textColor: 'text-blue-400',   order: 2 },
-  aprobado:     { label: 'Aprobado',     color: 'bg-cyan-600',   textColor: 'text-cyan-400',   order: 3 },
-  asignado:     { label: 'Asignado',     color: 'bg-indigo-600', textColor: 'text-indigo-400', order: 4 },
-  en_ejecucion: { label: 'En ejecución', color: 'bg-red-600',    textColor: 'text-red-400',    order: 5 },
-  por_entregar: { label: 'Por entregar', color: 'bg-orange-600', textColor: 'text-orange-400', order: 6 },
-  medido:       { label: 'Medido',       color: 'bg-yellow-600', textColor: 'text-yellow-400', order: 7 },
-  facturado:    { label: 'Facturado',    color: 'bg-green-600',  textColor: 'text-green-400',  order: 8 },
-  cobrado:      { label: 'Cobrado',      color: 'bg-emerald-700', textColor: 'text-emerald-400', order: 9 },
-  cancelado:    { label: 'Cancelado',    color: 'bg-zinc-600',   textColor: 'text-zinc-400',   order: 99 },
+  aprobado:                     { label: 'Aprobado',           color: 'bg-cyan-600',   textColor: 'text-cyan-400',   order: 1 },
+  en_ejecucion:                 { label: 'En ejecución',       color: 'bg-red-600',    textColor: 'text-red-400',    order: 2 },
+  parado:                       { label: 'Parado',             color: 'bg-yellow-600', textColor: 'text-yellow-400', order: 3 },
+  finalizado_no_entregado:      { label: 'Finalizado No Entregado',   color: 'bg-orange-600', textColor: 'text-orange-400', order: 4 },
+  finalizado_recibido_conforme: { label: 'Finalizado Recibido Conforme', color: 'bg-green-600', textColor: 'text-green-400', order: 5 },
+  facturado:                    { label: 'Facturado',          color: 'bg-emerald-700', textColor: 'text-emerald-400', order: 6 },
 };
-const ORDEN_ESTADOS = ['cubicando', 'cotizado', 'aprobado', 'asignado', 'en_ejecucion', 'por_entregar', 'medido', 'facturado', 'cobrado'];
+const ORDEN_ESTADOS = ['aprobado', 'en_ejecucion', 'parado', 'finalizado_no_entregado', 'finalizado_recibido_conforme', 'facturado'];
 const estadoLabel = (e) => ESTADOS[e]?.label || e;
 const estadoColor = (e) => ESTADOS[e]?.color || 'bg-zinc-600';
 const estadoTextColor = (e) => ESTADOS[e]?.textColor || 'text-zinc-400';
-const esEstadoPrivado = (e) => ['cubicando', 'cotizado', 'aprobado'].includes(e); // solo admins ven estos
+// Todos los estados son visibles a supervisor/maestro del proyecto (ya no hay estados "privados")
 const proyectoVisible = (persona, proy) => {
   if (tieneRol(persona, 'admin')) return true;
-  if (esEstadoPrivado(proy.estado)) return false;
   return proy.supervisorId === persona.id || proy.maestroId === persona.id;
 };
 
@@ -315,9 +311,11 @@ export default function App() {
             {esAdmin && (
               <>
                 <IconBtn onClick={() => setVista('nomina')} title="Nómina"><Wallet className="w-3.5 h-3.5" /></IconBtn>
+                <IconBtn onClick={() => setVista('galeria')} title="Galería"><ImageIcon className="w-3.5 h-3.5" /></IconBtn>
+                <IconBtn onClick={() => setVista('equipoGlobal')} title="Equipo en obra"><Users className="w-3.5 h-3.5" /></IconBtn>
                 <IconBtn onClick={() => setVista('tareas')} title="Tareas">{tareas.length > 0 ? <div className="relative"><ClipboardList className="w-3.5 h-3.5" /><div className="absolute -top-1 -right-1 w-1.5 h-1.5 bg-red-500 rounded-full" /></div> : <ClipboardList className="w-3.5 h-3.5" />}</IconBtn>
                 <IconBtn onClick={() => setVista('sistemas')} title="Sistemas"><Settings className="w-3.5 h-3.5" /></IconBtn>
-                <IconBtn onClick={() => setVista('personal')} title="Personal"><Users className="w-3.5 h-3.5" /></IconBtn>
+                <IconBtn onClick={() => setVista('personal')} title="Personal"><UserIcon className="w-3.5 h-3.5" /></IconBtn>
               </>
             )}
             {!esAdmin && tareas.filter(t => t.asignadaAId === usuario.id).length > 0 && (
@@ -332,9 +330,11 @@ export default function App() {
       </header>
 
       <main className="max-w-6xl mx-auto px-4 py-6">
-        {esAdmin && vista === 'dashboard' && <Dashboard data={data} tareas={tareas} jornadasHoy={jornadasHoy} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} onNuevoProyecto={() => setVista('nuevoProyecto')} onCompletarTarea={async (id) => withSync(async () => { await db.completarTarea(id, usuario.id); })} />}
+        {esAdmin && vista === 'dashboard' && <Dashboard data={data} tareas={tareas} jornadasHoy={jornadasHoy} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} onNuevoProyecto={() => setVista('nuevoProyecto')} onCompletarTarea={async (id) => withSync(async () => { await db.completarTarea(id, usuario.id); })} onCambiarEstadoRapido={async (proyId, estadoNuevo) => withSync(async () => { await db.cambiarEstadoProyecto(proyId, estadoNuevo, usuario, 'Cambio rápido desde Kanban'); })} />}
         {vista === 'tareas' && <VistaTareas usuario={usuario} data={data} onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }} onCompletarTarea={async (id) => withSync(async () => { await db.completarTarea(id, usuario.id); })} onCrearTarea={async (t) => withSync(async () => { await db.crearTarea(t); })} onEliminarTarea={async (id) => withSync(async () => { await db.eliminarTarea(id); })} />}
         {esAdmin && vista === 'nomina' && <VistaNomina usuario={usuario} data={data} onVolver={() => setVista('dashboard')} />}
+        {esAdmin && vista === 'galeria' && <GaleriaGlobal usuario={usuario} data={data} onVolver={() => setVista('dashboard')} />}
+        {esAdmin && vista === 'equipoGlobal' && <VistaEquipoGlobal data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'miPerfil' && <MiPerfil usuario={usuario} persona={usuario} soloLectura={false} onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }} onGuardar={(campos) => withSync(() => db.guardarPerfil(usuario.id, campos))} />}
         {esAdmin && vista === 'personal' && <GestionPersonal personal={data.personal} onVolver={() => setVista('dashboard')} onActualizar={(p) => withSync(() => db.reemplazarPersonal(p))} onAbrirPerfil={(p) => { setPerfilViendo(p); setVista('perfilPersona'); }} />}
         {vista === 'perfilPersona' && perfilViendo && <MiPerfil usuario={usuario} persona={perfilViendo} soloLectura={false} onVolver={() => setVista('personal')} onGuardar={(campos) => withSync(async () => { await db.guardarPerfil(perfilViendo.id, campos); const d = await db.loadAllData(); const actualizada = d.personal.find(p => p.id === perfilViendo.id); if (actualizada) setPerfilViendo(actualizada); })} />}
@@ -348,10 +348,14 @@ export default function App() {
             onRegistrarEnviosLote={(es) => withSync(() => db.crearEnviosLote(es.map(e => ({ ...e, id: 'e_' + Date.now() + Math.random() }))))}
             esSupervisor={!esAdmin}
             onIrAReportar={() => setVista('reportar')}
+            onArchivarProyecto={async (id) => withSync(async () => { await db.archivarProyecto(id, usuario.id); if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); })}
+            onEliminarReporte={async (id) => { if (confirm('¿Eliminar este reporte? Los m² asociados volverán al pendiente.')) withSync(() => db.eliminarReporte(id)); }}
+            onEliminarEnvio={async (id) => { if (confirm('¿Eliminar este envío de material?')) withSync(() => db.eliminarEnvio(id)); }}
+            onEliminarJornada={async (id) => { if (confirm('¿Eliminar esta jornada?')) withSync(() => db.eliminarJornada(id)); }}
             onCambiarEstado={(proyId, estadoNuevo, nota, extra) => withSync(async () => {
               await db.cambiarEstadoProyecto(proyId, estadoNuevo, usuario, nota, extra);
-              // Cuando pasa a 'por_entregar' creamos tarea automática al supervisor
-              if (estadoNuevo === 'por_entregar') {
+              // Cuando pasa a 'finalizado_no_entregado' creamos tarea al supervisor
+              if (estadoNuevo === 'finalizado_no_entregado') {
                 const proy = data.proyectos.find(p => p.id === proyId);
                 const sup = getPersona(data.personal, proy?.supervisorId);
                 if (sup) {
@@ -363,19 +367,18 @@ export default function App() {
                   });
                 }
               }
-              // Cuando pasa a 'medido' creamos tarea a admin de facturar + email
-              if (estadoNuevo === 'medido') {
+              // 'finalizado_recibido_conforme' → tarea a admin de facturar + email
+              if (estadoNuevo === 'finalizado_recibido_conforme') {
                 const admins = data.personal.filter(p => tieneRol(p, 'admin'));
                 const admin0 = admins[0];
                 if (admin0) {
                   await db.crearTarea({
                     id: 't_' + Date.now() + Math.random(), proyectoId: proyId, tipo: 'emitir_factura',
                     titulo: 'Emitir factura',
-                    descripcion: 'Proyecto medido. Emitir factura al cliente.',
+                    descripcion: 'Proyecto recibido conforme. Emitir factura al cliente.',
                     asignadaAId: admin0.id, asignadaANombre: admin0.nombre,
                   });
                 }
-                // Email
                 try {
                   const proy = data.proyectos.find(p => p.id === proyId);
                   const destinos = admins.map(a => a.email).filter(Boolean);
@@ -385,7 +388,7 @@ export default function App() {
                   }
                 } catch (e) { console.warn(e); }
               }
-              // Cuando pasa a 'facturado' creamos tarea de cobro
+              // 'facturado' → tarea de cobro
               if (estadoNuevo === 'facturado') {
                 const admins = data.personal.filter(p => tieneRol(p, 'admin'));
                 const admin0 = admins[0];
@@ -412,6 +415,7 @@ export default function App() {
               data: dataUrl,
               subidaPor: usuario.nombre, subidaPorId: usuario.id,
               reporteId,
+              sistemaId: proyectoActivo.sistema,
             }));
             await db.subirFotosLote(fotosData);
           }
@@ -957,7 +961,7 @@ function MisProyectos({ usuario, data, onIrAReportar, onVerDetalle }) {
 // ============================================================
 // DASHBOARD (admin)
 // ============================================================
-function Dashboard({ data, onVerProyecto, onNuevoProyecto, tareas, onCompletarTarea, jornadasHoy }) {
+function Dashboard({ data, onVerProyecto, onNuevoProyecto, tareas, onCompletarTarea, jornadasHoy, onCambiarEstadoRapido }) {
   const hoy = new Date().toISOString().split('T')[0];
   const ayer = (() => { const d = new Date(); d.setDate(d.getDate() - 1); return d.toISOString().split('T')[0]; })();
   const porDia = produccionPorDia(data.reportes, data.proyectos, data.sistemas);
@@ -965,7 +969,7 @@ function Dashboard({ data, onVerProyecto, onNuevoProyecto, tareas, onCompletarTa
   const prodHoy = porDia[hoy] || 0;
   
   // Proyectos activos hoy
-  const proyectosEjecutando = data.proyectos.filter(p => ['en_ejecucion', 'por_entregar'].includes(p.estado));
+  const proyectosEjecutando = data.proyectos.filter(p => ['en_ejecucion', 'finalizado_no_entregado'].includes(p.estado));
   
   // Personal en obra hoy (suma de personas en jornadas abiertas)
   const personasHoy = new Set();
@@ -994,13 +998,14 @@ function Dashboard({ data, onVerProyecto, onNuevoProyecto, tareas, onCompletarTa
   const margenHoy = prodHoy - costoMatHoy;
   
   // Cubicaciones pendientes
-  const cubicacionesPend = data.proyectos.filter(p => p.estado === 'cubicando' && p.fechaCubicacion).sort((a, b) => a.fechaCubicacion.localeCompare(b.fechaCubicacion));
+  // (v8.1: estado "cubicando" ya no existe, dejamos placeholder vacío)
+  const cubicacionesPend = [];
   
   // Pipeline: agrupar proyectos por estado (excluyendo cobrado/cancelado para no saturar)
   const pipeline = {};
   ORDEN_ESTADOS.forEach(e => { pipeline[e] = []; });
   data.proyectos.forEach(p => {
-    if (p.estado === 'cobrado' || p.estado === 'cancelado') return;
+    if (p.estado === 'facturado') return; // los facturados no saturan el pipeline
     (pipeline[p.estado] = pipeline[p.estado] || []).push(p);
   });
   
@@ -1066,50 +1071,223 @@ function Dashboard({ data, onVerProyecto, onNuevoProyecto, tareas, onCompletarTa
         </div>
       )}
 
-      {/* PIPELINE */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-xs tracking-widest uppercase text-zinc-400 font-bold">Pipeline</h2>
+      {/* LISTA DE PROYECTOS - 3 vistas (Kanban / Lista / Mapa) con filtros */}
+      <ListaProyectosMultivista data={data} onVerProyecto={onVerProyecto} onNuevoProyecto={onNuevoProyecto} onCambiarEstadoRapido={onCambiarEstadoRapido} />
+    </div>
+  );
+}
+
+// ============================================================
+// LISTA PROYECTOS MULTIVISTA (v8.1) — Kanban / Lista / Mapa
+// ============================================================
+function ListaProyectosMultivista({ data, onVerProyecto, onNuevoProyecto, onCambiarEstadoRapido }) {
+  const [vista, setVista] = useState('kanban'); // kanban | lista | mapa
+  const [filtroEstado, setFiltroEstado] = useState('');
+  const [filtroMaestro, setFiltroMaestro] = useState('');
+  const [filtroSupervisor, setFiltroSupervisor] = useState('');
+  const [filtroCliente, setFiltroCliente] = useState('');
+  const [filtroSistema, setFiltroSistema] = useState('');
+  const [busqueda, setBusqueda] = useState('');
+  const [filtrosAbiertos, setFiltrosAbiertos] = useState(false);
+
+  const proyectosFiltrados = data.proyectos.filter(p => {
+    if (p.estado === 'facturado' && vista === 'kanban') return false;
+    if (filtroEstado && p.estado !== filtroEstado) return false;
+    if (filtroMaestro && p.maestroId !== filtroMaestro) return false;
+    if (filtroSupervisor && p.supervisorId !== filtroSupervisor) return false;
+    if (filtroCliente && !(p.cliente || '').toLowerCase().includes(filtroCliente.toLowerCase())) return false;
+    if (filtroSistema && p.sistema !== filtroSistema) return false;
+    if (busqueda) {
+      const q = busqueda.toLowerCase();
+      const hay = (p.cliente || '').toLowerCase().includes(q) || (p.referenciaOdoo || '').toLowerCase().includes(q) || (p.referenciaProyecto || '').toLowerCase().includes(q) || (p.nombre || '').toLowerCase().includes(q);
+      if (!hay) return false;
+    }
+    return true;
+  });
+
+  const hayFiltros = filtroEstado || filtroMaestro || filtroSupervisor || filtroCliente || filtroSistema || busqueda;
+  const limpiarFiltros = () => { setFiltroEstado(''); setFiltroMaestro(''); setFiltroSupervisor(''); setFiltroCliente(''); setFiltroSistema(''); setBusqueda(''); };
+  const maestros = getMaestros(data.personal);
+  const supervisores = getSupervisores(data.personal);
+  const clientesUnicos = [...new Set(data.proyectos.map(p => p.cliente).filter(Boolean))].sort();
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+        <h2 className="text-xs tracking-widest uppercase text-zinc-400 font-bold">Proyectos ({proyectosFiltrados.length})</h2>
+        <div className="flex items-center gap-2">
+          <div className="flex bg-zinc-900 border border-zinc-800">
+            <button onClick={() => setVista('kanban')} className={`px-2 py-1 text-xs font-bold uppercase ${vista === 'kanban' ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>Kanban</button>
+            <button onClick={() => setVista('lista')} className={`px-2 py-1 text-xs font-bold uppercase ${vista === 'lista' ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>Lista</button>
+            <button onClick={() => setVista('mapa')} className={`px-2 py-1 text-xs font-bold uppercase ${vista === 'mapa' ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>Mapa</button>
+          </div>
+          <button onClick={() => setFiltrosAbiertos(!filtrosAbiertos)} className={`text-xs flex items-center gap-1 px-2 py-1 border ${hayFiltros ? 'border-red-600 text-red-500' : 'border-zinc-800 text-zinc-400'}`}>Filtros{hayFiltros && ' •'}</button>
           <button onClick={onNuevoProyecto} className="text-xs text-red-500 flex items-center gap-1 font-bold uppercase tracking-wider"><Plus className="w-3 h-3" /> Nuevo</button>
         </div>
-        <div className="overflow-x-auto">
-          <div className="flex gap-3 pb-2" style={{ minWidth: 'max-content' }}>
-            {ORDEN_ESTADOS.map(estado => {
-              const proys = pipeline[estado] || [];
-              if (proys.length === 0) return null;
-              return (
-                <div key={estado} className="w-72 flex-shrink-0 bg-zinc-950 border border-zinc-800 p-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className={`text-[10px] tracking-widest uppercase font-bold ${estadoTextColor(estado)}`}>{estadoLabel(estado)}</div>
-                    <div className="text-[10px] text-zinc-500">{proys.length}</div>
-                  </div>
-                  <div className="space-y-2">
-                    {proys.map(p => {
-                      const sistema = data.sistemas[p.sistema];
-                      const m2Total = (p.areas || []).reduce((a, ar) => a + ar.m2, 0);
-                      const valorContrato = m2Total * (sistema?.precio_m2 || 0);
-                      const supervisor = getPersona(data.personal, p.supervisorId);
-                      const { porcentaje } = sistema ? calcAvanceProyecto(p, data.reportes, sistema) : { porcentaje: 0 };
-                      return (
-                        <button key={p.id} onClick={() => onVerProyecto(p)} className="w-full bg-zinc-900 border border-zinc-800 hover:border-red-600 p-3 text-left">
-                          <div className="text-[10px] font-mono text-zinc-500">{p.referenciaOdoo}</div>
-                          <div className="font-bold text-sm truncate">{p.cliente}</div>
-                          <div className="text-[10px] text-zinc-500 truncate">{p.referenciaProyecto || p.nombre}</div>
-                          <div className="mt-2 flex items-center justify-between text-[10px]">
-                            <span className="text-green-400 font-bold">{formatRD(valorContrato)}</span>
-                            {['en_ejecucion', 'por_entregar'].includes(estado) && <span className="text-zinc-400">{porcentaje.toFixed(0)}%</span>}
-                          </div>
-                          {supervisor && <div className="text-[9px] text-zinc-600 mt-1">👔 {supervisor.nombre.split(' ')[0]}</div>}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
+      </div>
+
+      {filtrosAbiertos && (
+        <div className="bg-zinc-900 border border-zinc-800 p-3 space-y-2 mb-3">
+          <input type="text" value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar cliente, referencia..." className="w-full bg-zinc-950 border border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm" />
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+            <select value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-2 text-xs text-white"><option value="">Todos los estados</option>{ORDEN_ESTADOS.map(e => <option key={e} value={e}>{estadoLabel(e)}</option>)}</select>
+            <select value={filtroMaestro} onChange={e => setFiltroMaestro(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-2 text-xs text-white"><option value="">Todos los maestros</option>{maestros.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select>
+            <select value={filtroSupervisor} onChange={e => setFiltroSupervisor(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-2 text-xs text-white"><option value="">Todos los supervisores</option>{supervisores.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select>
+            <select value={filtroCliente} onChange={e => setFiltroCliente(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-2 text-xs text-white"><option value="">Todos los clientes</option>{clientesUnicos.map(c => <option key={c} value={c}>{c}</option>)}</select>
+            <select value={filtroSistema} onChange={e => setFiltroSistema(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-2 text-xs text-white"><option value="">Todos los sistemas</option>{Object.values(data.sistemas).map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select>
+            {hayFiltros && <button onClick={limpiarFiltros} className="bg-zinc-800 text-zinc-400 text-xs font-bold uppercase">Limpiar</button>}
           </div>
         </div>
+      )}
+
+      {vista === 'kanban' && <VistaKanban proyectos={proyectosFiltrados} data={data} onVerProyecto={onVerProyecto} onCambiarEstadoRapido={onCambiarEstadoRapido} />}
+      {vista === 'lista' && <VistaLista proyectos={proyectosFiltrados} data={data} onVerProyecto={onVerProyecto} />}
+      {vista === 'mapa' && <VistaMapa proyectos={proyectosFiltrados} data={data} onVerProyecto={onVerProyecto} />}
+    </div>
+  );
+}
+
+// KANBAN con drag & drop nativo HTML5
+function VistaKanban({ proyectos, data, onVerProyecto, onCambiarEstadoRapido }) {
+  const [draggingId, setDraggingId] = useState(null);
+  const porEstado = {};
+  ORDEN_ESTADOS.forEach(e => { porEstado[e] = []; });
+  proyectos.forEach(p => { (porEstado[p.estado] = porEstado[p.estado] || []).push(p); });
+
+  const onDrop = (estadoNuevo) => {
+    if (!draggingId) return;
+    const proy = proyectos.find(p => p.id === draggingId);
+    if (proy && proy.estado !== estadoNuevo) {
+      if (confirm(`¿Cambiar "${proy.cliente}" de "${estadoLabel(proy.estado)}" a "${estadoLabel(estadoNuevo)}"?`)) {
+        onCambiarEstadoRapido(proy.id, estadoNuevo);
+      }
+    }
+    setDraggingId(null);
+  };
+
+  return (
+    <div className="overflow-x-auto">
+      <div className="flex gap-3 pb-2" style={{ minWidth: 'max-content' }}>
+        {ORDEN_ESTADOS.map(estado => (
+          <div key={estado}
+            onDragOver={e => e.preventDefault()}
+            onDrop={() => onDrop(estado)}
+            className="w-72 flex-shrink-0 bg-zinc-950 border border-zinc-800 p-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className={`text-[10px] tracking-widest uppercase font-bold ${estadoTextColor(estado)}`}>{estadoLabel(estado)}</div>
+              <div className="text-[10px] text-zinc-500">{(porEstado[estado] || []).length}</div>
+            </div>
+            <div className="space-y-2 min-h-[50px]">
+              {(porEstado[estado] || []).map(p => {
+                const sistema = data.sistemas[p.sistema];
+                const m2Total = (p.areas || []).reduce((a, ar) => a + ar.m2, 0);
+                const valor = m2Total * (sistema?.precio_m2 || 0);
+                const supervisor = getPersona(data.personal, p.supervisorId);
+                const { porcentaje } = sistema ? calcAvanceProyecto(p, data.reportes, sistema) : { porcentaje: 0 };
+                return (
+                  <div key={p.id}
+                    draggable
+                    onDragStart={() => setDraggingId(p.id)}
+                    onDragEnd={() => setDraggingId(null)}
+                    onClick={() => onVerProyecto(p)}
+                    className={`bg-zinc-900 border border-zinc-800 hover:border-red-600 p-3 text-left cursor-pointer ${draggingId === p.id ? 'opacity-50' : ''}`}>
+                    <div className="text-[10px] font-mono text-zinc-500">{p.referenciaOdoo}</div>
+                    <div className="font-bold text-sm truncate">{p.cliente}</div>
+                    <div className="text-[10px] text-zinc-500 truncate">{p.referenciaProyecto || p.nombre}</div>
+                    <div className="mt-2 flex items-center justify-between text-[10px]">
+                      <span className="text-green-400 font-bold">{formatRD(valor)}</span>
+                      {['en_ejecucion', 'finalizado_no_entregado'].includes(estado) && <span className="text-zinc-400">{porcentaje.toFixed(0)}%</span>}
+                    </div>
+                    {supervisor && <div className="text-[9px] text-zinc-600 mt-1">👔 {supervisor.nombre.split(' ')[0]}</div>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </div>
+      <div className="text-[10px] text-zinc-600 mt-2">💡 Arrastra las tarjetas entre columnas para cambiar el estado.</div>
+    </div>
+  );
+}
+
+function VistaLista({ proyectos, data, onVerProyecto }) {
+  if (proyectos.length === 0) return <div className="text-center py-10 text-zinc-500 text-sm">No hay proyectos con estos filtros.</div>;
+  return (
+    <div className="space-y-2">{proyectos.map(p => {
+      const sistema = data.sistemas[p.sistema];
+      const m2Total = (p.areas || []).reduce((a, ar) => a + ar.m2, 0);
+      const valor = m2Total * (sistema?.precio_m2 || 0);
+      const { porcentaje } = sistema ? calcAvanceProyecto(p, data.reportes, sistema) : { porcentaje: 0 };
+      const supervisor = getPersona(data.personal, p.supervisorId);
+      const maestro = getPersona(data.personal, p.maestroId);
+      return (
+        <button key={p.id} onClick={() => onVerProyecto(p)} className="w-full bg-zinc-900 border border-zinc-800 hover:border-red-600 p-3 text-left flex items-center gap-3">
+          <div className={`w-1 self-stretch ${estadoColor(p.estado)}`} />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="text-[10px] font-mono text-zinc-500">{p.referenciaOdoo}</div>
+              <div className={`text-[9px] px-1.5 py-0.5 font-black uppercase text-white ${estadoColor(p.estado)}`}>{estadoLabel(p.estado)}</div>
+            </div>
+            <div className="font-bold text-sm truncate">{p.cliente}</div>
+            <div className="text-[10px] text-zinc-500 truncate">{p.referenciaProyecto || p.nombre} · {sistema?.nombre} · {formatNum(m2Total)} m²</div>
+            <div className="text-[9px] text-zinc-600 mt-0.5 flex flex-wrap gap-x-2">
+              {supervisor && <span>👔 {supervisor.nombre.split(' ')[0]}</span>}
+              {maestro && <span>🔨 {maestro.nombre.split(' ')[0]}</span>}
+            </div>
+          </div>
+          <div className="text-right flex-shrink-0">
+            <div className="text-sm font-black text-green-400">{formatRD(valor)}</div>
+            <div className="text-[10px] text-zinc-500">{porcentaje.toFixed(0)}%</div>
+          </div>
+        </button>
+      );
+    })}</div>
+  );
+}
+
+function VistaMapa({ proyectos, data, onVerProyecto }) {
+  const conUbicacion = proyectos.filter(p => p.ubicacionLat != null && p.ubicacionLng != null);
+  const sinUbicacion = proyectos.filter(p => p.ubicacionLat == null || p.ubicacionLng == null);
+
+  // Calculamos bounding box para centrar el mapa
+  const lats = conUbicacion.map(p => p.ubicacionLat);
+  const lngs = conUbicacion.map(p => p.ubicacionLng);
+  const centerLat = lats.length ? (Math.min(...lats) + Math.max(...lats)) / 2 : 18.4861;
+  const centerLng = lngs.length ? (Math.min(...lngs) + Math.max(...lngs)) / 2 : -69.9312;
+
+  // Iframe de Google Maps con un marker por proyecto usando servicio público (sin API key, limitado)
+  // Para realmente mostrar múltiples markers usamos una URL search con el centro + los proyectos
+  const mapSrc = `https://www.google.com/maps?q=${centerLat},${centerLng}&z=11&output=embed`;
+
+  return (
+    <div className="space-y-3">
+      <div className="bg-zinc-900 border border-zinc-800 overflow-hidden" style={{ height: 400 }}>
+        <iframe src={mapSrc} width="100%" height="100%" style={{ border: 0 }} loading="lazy" title="Mapa" />
+      </div>
+      <div className="text-[11px] text-zinc-500">📍 {conUbicacion.length} proyectos con ubicación {sinUbicacion.length > 0 && `· ${sinUbicacion.length} sin ubicación`}</div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {conUbicacion.map(p => {
+          const sistema = data.sistemas[p.sistema];
+          return (
+            <button key={p.id} onClick={() => onVerProyecto(p)} className="bg-zinc-900 border border-zinc-800 hover:border-red-600 p-3 text-left flex items-center gap-2">
+              <div className={`w-2 h-2 rounded-full ${estadoColor(p.estado)}`} />
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-bold truncate">{p.cliente}</div>
+                <div className="text-[10px] text-zinc-500 truncate">{sistema?.nombre} · {estadoLabel(p.estado)}</div>
+                {p.ubicacionDireccionTexto && <div className="text-[10px] text-zinc-600 truncate">{p.ubicacionDireccionTexto}</div>}
+              </div>
+              <button onClick={e => { e.stopPropagation(); abrirEnMapa(p.ubicacionLat, p.ubicacionLng); }} className="text-red-500" title="Abrir en Google Maps"><ExternalLink className="w-3 h-3" /></button>
+            </button>
+          );
+        })}
+      </div>
+      {sinUbicacion.length > 0 && (
+        <div className="bg-yellow-900/20 border border-yellow-700 p-3 text-xs text-yellow-300">
+          <div className="font-bold mb-1">⚠ {sinUbicacion.length} sin ubicación</div>
+          <div className="text-[10px]">Abre cada proyecto → tab Jornada → captura GPS, o edita el proyecto y pega un link de Google Maps.</div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1117,7 +1295,171 @@ function Dashboard({ data, onVerProyecto, onNuevoProyecto, tareas, onCompletarTa
 // ============================================================
 // DETALLE PROYECTO (ahora con tab Fotos)
 // ============================================================
-function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onActualizarProyecto, onRegistrarEnvio, onRegistrarEnviosLote, esSupervisor, onIrAReportar, onCambiarEstado }) {
+// ============================================================
+// MODAL EDITAR PROYECTO (v8.1) — admin cambia equipo, ubicación, modo pago, etc.
+// ============================================================
+function ModalEditarProyecto({ proyecto, data, usuario, onCerrar, onGuardar, onArchivar }) {
+  const [form, setForm] = useState({
+    supervisorId: proyecto.supervisorId || '',
+    maestroId: proyecto.maestroId || '',
+    ayudantesIds: proyecto.ayudantesIds || [],
+    cliente: proyecto.cliente || '',
+    referenciaProyecto: proyecto.referenciaProyecto || '',
+    referenciaOdoo: proyecto.referenciaOdoo || '',
+    contactoClienteNombre: proyecto.contactoClienteNombre || '',
+    contactoClienteTelefono: proyecto.contactoClienteTelefono || '',
+    contactoClienteEmail: proyecto.contactoClienteEmail || '',
+    googleMapsLink: proyecto.googleMapsLink || '',
+    ubicacionLat: proyecto.ubicacionLat,
+    ubicacionLng: proyecto.ubicacionLng,
+    ubicacionDireccionTexto: proyecto.ubicacionDireccionTexto || '',
+    fecha_inicio: proyecto.fecha_inicio,
+    fecha_entrega: proyecto.fecha_entrega,
+    modoPagoManoObra: proyecto.modoPagoManoObra || 'dia',
+    preciosTareasM2: proyecto.preciosTareasM2 || {},
+  });
+  const [guardando, setGuardando] = useState(false);
+  const [costosDia, setCostosDia] = useState([]);
+  const [loadingCostos, setLoadingCostos] = useState(true);
+  const sistema = data.sistemas[proyecto.sistema];
+
+  useEffect(() => {
+    (async () => {
+      try { setCostosDia(await db.listarCostosDia(proyecto.id)); } catch {}
+      setLoadingCostos(false);
+    })();
+  }, []);
+
+  const supervisores = getSupervisores(data.personal);
+  const maestros = getMaestros(data.personal);
+  const ayudantesDisp = form.maestroId ? getAyudantesDeMaestro(data.personal, form.maestroId) : [];
+
+  const extraerLinkMaps = () => {
+    const coords = extraerCoordenadasDeGoogleMapsLink(form.googleMapsLink);
+    if (coords) {
+      setForm({ ...form, ubicacionLat: coords.lat, ubicacionLng: coords.lng });
+      alert(`Coordenadas extraídas: ${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`);
+    } else {
+      alert('No se pudieron extraer coordenadas de ese link. Formato soportado: https://maps.google.com/...@lat,lng... o con ?q=lat,lng');
+    }
+  };
+
+  const setCostoPersona = async (personaId, costo) => {
+    if (costo > 0) await db.guardarCostoDia(proyecto.id, personaId, costo);
+    else await db.eliminarCostoDia(proyecto.id, personaId);
+    setCostosDia(await db.listarCostosDia(proyecto.id));
+  };
+
+  const getCostoPersona = (pid) => costosDia.find(c => c.personaId === pid)?.costoDia || '';
+
+  const guardar = async () => {
+    setGuardando(true);
+    await onGuardar({ ...proyecto, ...form });
+    setGuardando(false);
+    onCerrar();
+  };
+
+  const archivar = async () => {
+    if (!confirm(`¿Archivar el proyecto "${proyecto.cliente}"? Ya no aparecerá en las listas, pero podemos restaurarlo después si es necesario.`)) return;
+    setGuardando(true);
+    await onArchivar(proyecto.id);
+    setGuardando(false);
+    onCerrar();
+  };
+
+  const setPrecio = (tareaId, precio) => {
+    setForm({ ...form, preciosTareasM2: { ...form.preciosTareasM2, [tareaId]: parseFloat(precio) || 0 } });
+  };
+
+  const personasProyecto = [form.supervisorId, form.maestroId, ...form.ayudantesIds].filter(Boolean).map(id => getPersona(data.personal, id)).filter(Boolean);
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto">
+      <div className="bg-zinc-900 border-2 border-red-600 max-w-2xl w-full p-5 space-y-4 max-h-[90vh] overflow-auto my-8">
+        <div className="flex justify-between items-start sticky top-0 bg-zinc-900 pb-2 border-b border-zinc-800"><div className="text-xs tracking-widest uppercase text-red-500 font-bold">Editar proyecto</div><button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button></div>
+
+        <div className="space-y-3">
+          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Información</div>
+          <Campo label="Cliente"><Input value={form.cliente} onChange={v => setForm({ ...form, cliente: v })} /></Campo>
+          <div className="grid grid-cols-2 gap-3"><Campo label="Ref. Odoo"><Input value={form.referenciaOdoo} onChange={v => setForm({ ...form, referenciaOdoo: v })} /></Campo><Campo label="Ref. Proyecto"><Input value={form.referenciaProyecto} onChange={v => setForm({ ...form, referenciaProyecto: v })} /></Campo></div>
+          <div className="grid grid-cols-2 gap-3"><Campo label="Fecha inicio"><Input type="date" value={form.fecha_inicio} onChange={v => setForm({ ...form, fecha_inicio: v })} /></Campo><Campo label="Fecha entrega"><Input type="date" value={form.fecha_entrega} onChange={v => setForm({ ...form, fecha_entrega: v })} /></Campo></div>
+        </div>
+
+        <div className="space-y-3 border-t border-zinc-800 pt-3">
+          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Equipo</div>
+          <Campo label="Supervisor"><select value={form.supervisorId} onChange={e => setForm({ ...form, supervisorId: e.target.value })} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="">Sin asignar</option>{supervisores.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select></Campo>
+          <Campo label="Maestro"><select value={form.maestroId} onChange={e => setForm({ ...form, maestroId: e.target.value, ayudantesIds: [] })} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="">Sin asignar</option>{maestros.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select></Campo>
+          {ayudantesDisp.length > 0 && <Campo label="Ayudantes"><div className="space-y-1">{ayudantesDisp.map(a => <label key={a.id} className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 p-2 cursor-pointer hover:border-red-600"><input type="checkbox" checked={form.ayudantesIds.includes(a.id)} onChange={e => setForm({ ...form, ayudantesIds: e.target.checked ? [...form.ayudantesIds, a.id] : form.ayudantesIds.filter(x => x !== a.id) })} className="w-4 h-4 accent-red-600" /><span className="text-sm">{a.nombre}</span></label>)}</div></Campo>}
+        </div>
+
+        <div className="space-y-3 border-t border-zinc-800 pt-3">
+          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Ubicación</div>
+          <Campo label="Link de Google Maps">
+            <div className="flex gap-2">
+              <input type="text" value={form.googleMapsLink} onChange={e => setForm({ ...form, googleMapsLink: e.target.value })} placeholder="https://maps.google.com/..." className="flex-1 bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white text-sm" />
+              <button onClick={extraerLinkMaps} disabled={!form.googleMapsLink} className="bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase px-3">Extraer</button>
+            </div>
+            <div className="text-[10px] text-zinc-500 mt-1">Pega un link de Google Maps y clic "Extraer" para obtener las coordenadas.</div>
+          </Campo>
+          <Campo label="Dirección (texto)"><Input value={form.ubicacionDireccionTexto} onChange={v => setForm({ ...form, ubicacionDireccionTexto: v })} placeholder="Ej: C/ Duarte 45, Santo Domingo" /></Campo>
+          {form.ubicacionLat != null && form.ubicacionLng != null && (
+            <div className="bg-green-900/20 border border-green-700 p-2 text-[11px] text-green-300">✓ Coordenadas: <span className="font-mono">{form.ubicacionLat.toFixed(5)}, {form.ubicacionLng.toFixed(5)}</span> <button onClick={() => abrirEnMapa(form.ubicacionLat, form.ubicacionLng)} className="underline ml-2">Ver</button></div>
+          )}
+        </div>
+
+        <div className="space-y-3 border-t border-zinc-800 pt-3">
+          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Contacto del cliente</div>
+          <Campo label="Nombre contacto"><Input value={form.contactoClienteNombre} onChange={v => setForm({ ...form, contactoClienteNombre: v })} /></Campo>
+          <div className="grid grid-cols-2 gap-3"><Campo label="Teléfono"><Input value={form.contactoClienteTelefono} onChange={v => setForm({ ...form, contactoClienteTelefono: v })} /></Campo><Campo label="Email"><Input type="email" value={form.contactoClienteEmail} onChange={v => setForm({ ...form, contactoClienteEmail: v })} /></Campo></div>
+        </div>
+
+        <div className="space-y-3 border-t border-zinc-800 pt-3">
+          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Pago de mano de obra</div>
+          <div className="grid grid-cols-2 gap-1">
+            <button onClick={() => setForm({ ...form, modoPagoManoObra: 'dia' })} className={`p-2 text-xs font-bold uppercase border-2 ${form.modoPagoManoObra === 'dia' ? 'bg-red-600 text-white border-transparent' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>Por día</button>
+            <button onClick={() => setForm({ ...form, modoPagoManoObra: 'm2' })} className={`p-2 text-xs font-bold uppercase border-2 ${form.modoPagoManoObra === 'm2' ? 'bg-red-600 text-white border-transparent' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>Por m² ejecutado</button>
+          </div>
+          {form.modoPagoManoObra === 'm2' && sistema && (
+            <div className="bg-zinc-950 border border-zinc-800 p-3 space-y-2">
+              <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">Precio por tarea (RD$/m²)</div>
+              {(sistema.tareas || []).map(t => (
+                <div key={t.id} className="flex items-center gap-2">
+                  <div className="flex-1 text-xs">{t.nombre} <span className="text-zinc-600">({t.peso}%)</span></div>
+                  <input type="number" value={form.preciosTareasM2[t.id] || ''} onChange={e => setPrecio(t.id, e.target.value)} placeholder="0" className="w-24 bg-zinc-900 border border-zinc-800 px-2 py-1 text-white text-xs text-right" />
+                </div>
+              ))}
+            </div>
+          )}
+          {form.modoPagoManoObra === 'dia' && personasProyecto.length > 0 && (
+            <div className="bg-zinc-950 border border-zinc-800 p-3 space-y-2">
+              <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">Costo por día (RD$)</div>
+              {loadingCostos ? <Loader2 className="w-4 h-4 animate-spin" /> : personasProyecto.map(p => (
+                <div key={p.id} className="flex items-center gap-2">
+                  <div className="flex-1 text-xs">{p.nombre} <span className="text-zinc-600 text-[10px]">{p.id === form.supervisorId ? '(supervisor)' : p.id === form.maestroId ? '(maestro)' : '(ayudante)'}</span></div>
+                  <input type="number" defaultValue={getCostoPersona(p.id)} onBlur={e => setCostoPersona(p.id, parseFloat(e.target.value) || 0)} placeholder="0" className="w-24 bg-zinc-900 border border-zinc-800 px-2 py-1 text-white text-xs text-right" />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="sticky bottom-0 bg-zinc-900 pt-3 border-t border-zinc-800 space-y-2">
+          <div className="flex gap-2">
+            <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button>
+            <button onClick={guardar} disabled={guardando} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-3 flex items-center justify-center gap-1">{guardando ? <Loader2 className="w-3 h-3 animate-spin" /> : <><Save className="w-3 h-3" /> Guardar</>}</button>
+          </div>
+          <button onClick={archivar} className="w-full bg-zinc-950 border border-zinc-700 text-red-400 hover:border-red-500 text-[10px] font-bold uppercase py-2 flex items-center justify-center gap-1"><Trash2 className="w-3 h-3" /> Archivar proyecto</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ============================================================
+// DETALLE DE PROYECTO
+// ============================================================
+function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onActualizarProyecto, onRegistrarEnvio, onRegistrarEnviosLote, esSupervisor, onIrAReportar, onCambiarEstado, onArchivarProyecto, onEliminarReporte, onEliminarEnvio, onEliminarJornada }) {
   const sistema = data.sistemas[proyecto.sistema];
   if (!sistema) return <div className="text-zinc-500">Sistema no encontrado.</div>;
   const { porcentaje, produccionRD, valorContrato } = calcAvanceProyecto(proyecto, data.reportes, sistema);
@@ -1128,6 +1470,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
   const esSupervisorDelProyecto = !esAdmin && proyecto.supervisorId === usuario.id;
   const puedeCambiarEstado = esAdmin || esSupervisorDelProyecto;
   const [modalEstado, setModalEstado] = useState(false);
+  const [modalEditar, setModalEditar] = useState(false);
 
   return (
     <div className="space-y-6">
@@ -1136,6 +1479,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
         <div className="flex items-center gap-2 mb-2">
           <button onClick={() => puedeCambiarEstado && setModalEstado(true)} disabled={!puedeCambiarEstado} className={`px-2 py-1 text-[10px] tracking-widest uppercase font-black text-white ${estadoColor(proyecto.estado)} ${puedeCambiarEstado ? 'cursor-pointer hover:opacity-80' : 'cursor-default'}`}>{estadoLabel(proyecto.estado)}</button>
           {puedeCambiarEstado && <button onClick={() => setModalEstado(true)} className="text-[10px] text-zinc-400 hover:text-red-500 underline">cambiar</button>}
+          {esAdmin && <button onClick={() => setModalEditar(true)} className="ml-auto text-xs text-zinc-400 hover:text-red-500 flex items-center gap-1"><Edit2 className="w-3 h-3" /> Editar</button>}
         </div>
         <div className="text-xs tracking-widest uppercase text-red-500 font-bold mb-1">{sistema.nombre}</div>
         <div className="text-xs font-mono text-zinc-500 mb-1">{proyecto.referenciaOdoo}</div>
@@ -1145,6 +1489,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
       </div>
 
       {modalEstado && <ModalCambiarEstado proyecto={proyecto} usuario={usuario} personal={data.personal} onCerrar={() => setModalEstado(false)} onConfirmar={async (estadoNuevo, nota, datosExtra) => { await onCambiarEstado(proyecto.id, estadoNuevo, nota, datosExtra); setModalEstado(false); }} />}
+      {modalEditar && <ModalEditarProyecto proyecto={proyecto} data={data} usuario={usuario} onCerrar={() => setModalEditar(false)} onGuardar={onActualizarProyecto} onArchivar={onArchivarProyecto} />}
 
       {!esSupervisor && <div className="grid grid-cols-3 gap-2"><div className="bg-zinc-900 border border-zinc-800 p-3"><div className="text-[10px] text-zinc-500 uppercase tracking-wider">Avance</div><div className="text-2xl font-black">{porcentaje.toFixed(1)}%</div></div><div className="bg-zinc-900 border border-zinc-800 p-3"><div className="text-[10px] text-zinc-500 uppercase tracking-wider">Producido</div><div className="text-2xl font-black text-green-400">{formatRD(produccionRD)}</div></div><div className="bg-zinc-900 border border-zinc-800 p-3"><div className="text-[10px] text-zinc-500 uppercase tracking-wider">Contrato</div><div className="text-2xl font-black">{formatRD(valorContrato)}</div></div></div>}
 
@@ -1161,11 +1506,11 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
         {!esSupervisor && proyecto.dieta?.habilitada && <TabBtn active={tab === 'dieta'} onClick={() => setTab('dieta')}><Utensils className="w-3 h-3 inline mr-1" />Dieta</TabBtn>}
       </div>
 
-      {tab === 'avance' && <TabAvance proyecto={proyecto} reportes={data.reportes} sistema={sistema} esSupervisor={esSupervisor} />}
+      {tab === 'avance' && <TabAvance proyecto={proyecto} reportes={data.reportes} sistema={sistema} esSupervisor={esSupervisor} onEliminarReporte={onEliminarReporte} />}
       {tab === 'jornada' && <TabJornada usuario={usuario} proyecto={proyecto} personal={data.personal} onActualizarUbicacion={(lat, lng, dir) => onActualizarProyecto({ ...proyecto, ubicacionLat: lat, ubicacionLng: lng, ubicacionDireccion: dir })} />}
       {tab === 'fotos' && <TabFotos usuario={usuario} proyecto={proyecto} />}
       {tab === 'cronograma' && <TabCronograma proyecto={proyecto} porcentajeActual={porcentaje} onActualizarProyecto={onActualizarProyecto} esSupervisor={esSupervisor} />}
-      {tab === 'materiales' && <TabMateriales proyecto={proyecto} sistema={sistema} materiales={materiales} envios={data.envios.filter(e => e.proyectoId === proyecto.id)} sistemas={data.sistemas} onRegistrarEnvio={onRegistrarEnvio} onRegistrarEnviosLote={onRegistrarEnviosLote} esSupervisor={esSupervisor} />}
+      {tab === 'materiales' && <TabMateriales proyecto={proyecto} sistema={sistema} materiales={materiales} envios={data.envios.filter(e => e.proyectoId === proyecto.id)} sistemas={data.sistemas} onRegistrarEnvio={onRegistrarEnvio} onRegistrarEnviosLote={onRegistrarEnviosLote} esSupervisor={esSupervisor} onEliminarEnvio={onEliminarEnvio} />}
       {tab === 'costo' && !esSupervisor && <TabCosto proyecto={proyecto} sistema={sistema} reportes={data.reportes} envios={data.envios} config={data.config} />}
       {tab === 'dieta' && !esSupervisor && <TabDieta proyecto={proyecto} reportes={data.reportes} personal={data.personal} onActualizarProyecto={onActualizarProyecto} />}
     </div>
@@ -1205,6 +1550,7 @@ function TabFotos({ usuario, proyecto }) {
           id: 'f_' + Date.now() + Math.random(),
           proyectoId: proyecto.id, fecha: fechaSubida,
           data: dataUrl, subidaPor: usuario.nombre, subidaPorId: usuario.id,
+          sistemaId: proyecto.sistema,
         });
       }
       await db.subirFotosLote(lote);
@@ -1370,7 +1716,7 @@ function TabCronograma({ proyecto, porcentajeActual, onActualizarProyecto, esSup
   );
 }
 
-function TabAvance({ proyecto, reportes, sistema, esSupervisor }) {
+function TabAvance({ proyecto, reportes, sistema, esSupervisor, onEliminarReporte }) {
   const reportesProy = reportes.filter(r => r.proyectoId === proyecto.id).sort((a, b) => b.fecha.localeCompare(a.fecha));
   return (
     <div className="space-y-6">
@@ -1387,18 +1733,18 @@ function TabAvance({ proyecto, reportes, sistema, esSupervisor }) {
           );
         })}</div>
       </div>
-      {reportesProy.length > 0 && <div><h2 className="text-xs tracking-widest uppercase text-zinc-400 font-bold mb-3">Historial</h2><div className="space-y-1">{reportesProy.map(r => { const area = proyecto.areas.find(a => a.id === r.areaId); const tarea = sistema.tareas.find(t => t.id === r.tareaId); const m2 = getM2Reporte(r, sistema); const prod = m2 * sistema.precio_m2 * (tarea.peso / 100); let det = `${m2.toFixed(0)} m²`; if (r.rollos) det = `${r.rollos} rollos (${m2.toFixed(0)} m²)`; if (r.cubetas) det += ` · ${r.cubetas} cubetas`; return <div key={r.id} className="bg-zinc-900 border-l-2 border-red-600 p-3 flex justify-between items-center text-sm"><div><div className="font-bold">{area?.nombre} · {tarea?.nombre}</div><div className="text-xs text-zinc-500">{formatFecha(r.fecha)} · {r.supervisor} · {det}</div></div>{!esSupervisor && <div className="text-green-400 font-bold">{formatRD(prod)}</div>}</div>; })}</div></div>}
+      {reportesProy.length > 0 && <div><h2 className="text-xs tracking-widest uppercase text-zinc-400 font-bold mb-3">Historial</h2><div className="space-y-1">{reportesProy.map(r => { const area = proyecto.areas.find(a => a.id === r.areaId); const tarea = sistema.tareas.find(t => t.id === r.tareaId); const m2 = getM2Reporte(r, sistema); const prod = m2 * sistema.precio_m2 * (tarea.peso / 100); let det = `${m2.toFixed(0)} m²`; if (r.rollos) det = `${r.rollos} rollos (${m2.toFixed(0)} m²)`; if (r.cubetas) det += ` · ${r.cubetas} cubetas`; return <div key={r.id} className="bg-zinc-900 border-l-2 border-red-600 p-3 flex justify-between items-center text-sm gap-2"><div className="flex-1 min-w-0"><div className="font-bold">{area?.nombre} · {tarea?.nombre}</div><div className="text-xs text-zinc-500">{formatFecha(r.fecha)} · {r.supervisor} · {det}</div></div>{!esSupervisor && <div className="text-green-400 font-bold text-xs">{formatRD(prod)}</div>}{!esSupervisor && onEliminarReporte && <button onClick={() => onEliminarReporte(r.id)} className="text-zinc-500 hover:text-red-400 p-1" title="Eliminar"><Trash2 className="w-3 h-3" /></button>}</div>; })}</div></div>}
     </div>
   );
 }
 
-function TabMateriales({ proyecto, sistema, materiales, envios, sistemas, onRegistrarEnvio, onRegistrarEnviosLote, esSupervisor }) {
+function TabMateriales({ proyecto, sistema, materiales, envios, sistemas, onRegistrarEnvio, onRegistrarEnviosLote, esSupervisor, onEliminarEnvio }) {
   const [modo, setModo] = useState(null);
   const [cargando, setCargando] = useState(false);
   const [errorPDF, setErrorPDF] = useState('');
   const [pdfExtraido, setPdfExtraido] = useState(null);
   const [lineasConfirmar, setLineasConfirmar] = useState([]);
-  const [matForm, setMatForm] = useState({ materialId: '', cantidad: '', fecha: new Date().toISOString().split('T')[0] });
+  const [matForm, setMatForm] = useState({ materialId: '', cantidad: '', costoUnidad: '', fecha: new Date().toISOString().split('T')[0] });
 
   const procesarPDFSalida = async (file) => {
     setCargando(true); setErrorPDF('');
@@ -1433,19 +1779,24 @@ function TabMateriales({ proyecto, sistema, materiales, envios, sistemas, onRegi
           <div className="flex justify-between items-start"><div><div className="text-xs tracking-widest uppercase text-green-400 font-bold flex items-center gap-1"><Sparkles className="w-3 h-3" /> {pdfExtraido.numeroSalida}</div><div className="text-[11px] text-zinc-500 mt-1">Orden: <span className="font-mono">{pdfExtraido.ordenReferencia}</span></div></div><button onClick={() => { setPdfExtraido(null); setLineasConfirmar([]); }} className="text-zinc-500"><X className="w-4 h-4" /></button></div>
           {errorPDF && <div className="text-xs text-yellow-400 bg-yellow-900/20 border border-yellow-700 p-2">{errorPDF}</div>}
           <div className="space-y-2">{lineasConfirmar.map((l, i) => <div key={l.key} className={`border p-3 ${l.incluir ? 'border-green-700 bg-green-900/10' : 'border-zinc-800 bg-zinc-950'}`}><div className="flex items-start gap-2"><input type="checkbox" checked={l.incluir} onChange={e => { const n = [...lineasConfirmar]; n[i] = { ...l, incluir: e.target.checked }; setLineasConfirmar(n); }} className="mt-1 w-4 h-4 accent-red-600" /><div className="flex-1 min-w-0"><div className="text-xs font-bold truncate">{l.descripcion}</div><div className="text-[10px] text-zinc-500">{l.cantidad} {l.unidad}</div><select value={l.materialId} onChange={e => { const n = [...lineasConfirmar]; n[i] = { ...l, materialId: e.target.value, incluir: !!e.target.value }; setLineasConfirmar(n); }} className="mt-2 w-full bg-zinc-950 border border-zinc-700 text-xs px-2 py-1.5"><option value="">— No incluir —</option>{sistema.materiales.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select></div></div></div>)}</div>
-          <div className="flex gap-2 pt-2"><button onClick={() => { setPdfExtraido(null); setLineasConfirmar([]); }} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button><button onClick={async () => { const envs = lineasConfirmar.filter(l => l.incluir && l.materialId).map(l => ({ proyectoId: proyecto.id, materialId: l.materialId, cantidad: parseFloat(l.cantidad), fecha: pdfExtraido.fecha, pdfRef: pdfExtraido.numeroSalida })); if (envs.length > 0) onRegistrarEnviosLote(envs); setPdfExtraido(null); setLineasConfirmar([]); setModo(null); }} disabled={!lineasConfirmar.some(l => l.incluir && l.materialId)} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-3">Confirmar</button></div>
+          <div className="flex gap-2 pt-2"><button onClick={() => { setPdfExtraido(null); setLineasConfirmar([]); }} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button><button onClick={async () => { const envs = lineasConfirmar.filter(l => l.incluir && l.materialId).map(l => { const mat = sistema.materiales.find(m => m.id === l.materialId); const cantidad = parseFloat(l.cantidad); const costo = mat?.costo_unidad || 0; return { proyectoId: proyecto.id, materialId: l.materialId, cantidad, fecha: pdfExtraido.fecha, pdfRef: pdfExtraido.numeroSalida, costoUnidad: costo, costoTotal: cantidad * costo }; }); if (envs.length > 0) onRegistrarEnviosLote(envs); setPdfExtraido(null); setLineasConfirmar([]); setModo(null); }} disabled={!lineasConfirmar.some(l => l.incluir && l.materialId)} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-3">Confirmar</button></div>
         </div>
       )}
       {modo === 'manual' && (
         <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
           <div className="flex justify-between items-center"><div className="text-xs tracking-widest uppercase text-zinc-400 font-bold">Manual</div><button onClick={() => setModo(null)} className="text-zinc-500"><X className="w-4 h-4" /></button></div>
-          <Campo label="Material"><select value={matForm.materialId} onChange={e => setMatForm({ ...matForm, materialId: e.target.value })} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="">Seleccionar...</option>{materiales.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select></Campo>
-          <Campo label="Cantidad"><Input type="number" value={matForm.cantidad} onChange={v => setMatForm({ ...matForm, cantidad: v })} /></Campo>
+          <Campo label="Material"><select value={matForm.materialId} onChange={e => { const mat = materiales.find(m => m.id === e.target.value); setMatForm({ ...matForm, materialId: e.target.value, costoUnidad: mat?.costo_unidad || '' }); }} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="">Seleccionar...</option>{materiales.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select></Campo>
+          <div className="grid grid-cols-2 gap-2"><Campo label="Cantidad"><Input type="number" value={matForm.cantidad} onChange={v => setMatForm({ ...matForm, cantidad: v })} /></Campo><Campo label="Costo por unidad (RD$)"><Input type="number" value={matForm.costoUnidad} onChange={v => setMatForm({ ...matForm, costoUnidad: v })} /></Campo></div>
+          {matForm.cantidad && matForm.costoUnidad && <div className="text-xs text-green-400 bg-green-900/20 border border-green-700 p-2">Costo total: {formatRD(parseFloat(matForm.cantidad) * parseFloat(matForm.costoUnidad))}</div>}
           <Campo label="Fecha"><Input type="date" value={matForm.fecha} onChange={v => setMatForm({ ...matForm, fecha: v })} /></Campo>
-          <button onClick={() => { if (matForm.materialId && matForm.cantidad) { onRegistrarEnvio({ proyectoId: proyecto.id, materialId: matForm.materialId, cantidad: parseFloat(matForm.cantidad), fecha: matForm.fecha }); setMatForm({ materialId: '', cantidad: '', fecha: new Date().toISOString().split('T')[0] }); setModo(null); } }} className="w-full bg-red-600 text-white font-black uppercase py-3">Registrar</button>
+          <button onClick={() => { if (matForm.materialId && matForm.cantidad) { const cantidad = parseFloat(matForm.cantidad); const costo = parseFloat(matForm.costoUnidad) || 0; onRegistrarEnvio({ proyectoId: proyecto.id, materialId: matForm.materialId, cantidad, fecha: matForm.fecha, costoUnidad: costo, costoTotal: cantidad * costo }); setMatForm({ materialId: '', cantidad: '', costoUnidad: '', fecha: new Date().toISOString().split('T')[0] }); setModo(null); } }} className="w-full bg-red-600 text-white font-black uppercase py-3">Registrar</button>
         </div>
       )}
       <div className="space-y-3">{materiales.map(m => { const pctU = m.requerido > 0 ? (m.usado / m.requerido) * 100 : 0; const pctE = m.requerido > 0 ? (m.enviado / m.requerido) * 100 : 0; const prob = m.enObra < 0 || m.desviacion > 15; return <div key={m.id} className={`bg-zinc-900 border p-4 ${prob ? 'border-yellow-600' : 'border-zinc-800'}`}><div className="flex justify-between items-start mb-3"><div><div className="font-bold">{m.nombre}</div><div className="text-[10px] text-zinc-500 uppercase">1 {m.unidad} = {m.rinde_m2} m²</div></div>{prob && <AlertTriangle className="w-5 h-5 text-yellow-500" />}</div><div className="grid grid-cols-3 gap-2 mb-3"><div className="text-center"><div className="text-[9px] text-zinc-500 uppercase">Req</div><div className="text-lg font-black">{formatNum(m.requerido)}</div></div><div className="text-center border-x border-zinc-800"><div className="text-[9px] text-blue-400 uppercase">Env</div><div className="text-lg font-black text-blue-400">{formatNum(m.enviado)}</div></div><div className="text-center"><div className="text-[9px] text-green-400 uppercase">Usa</div><div className="text-lg font-black text-green-400">{formatNum(m.usado)}</div></div></div><div className="relative h-3 bg-zinc-800 overflow-hidden mb-2"><div className="absolute inset-y-0 left-0 bg-blue-600/40" style={{ width: `${Math.min(pctE, 100)}%` }} /><div className="absolute inset-y-0 left-0 bg-green-500" style={{ width: `${Math.min(pctU, 100)}%` }} /></div></div>; })}</div>
+      {!esSupervisor && envios.length > 0 && (
+        <div className="mt-4"><div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2">Envíos registrados ({envios.length})</div>
+          <div className="space-y-1">{envios.sort((a, b) => b.fecha.localeCompare(a.fecha)).map(e => { const mat = sistema.materiales.find(m => m.id === e.materialId); return (<div key={e.id} className="bg-zinc-900 border-l-2 border-blue-600 p-2 flex items-center gap-2 text-xs"><div className="flex-1 min-w-0"><div className="font-bold">{mat?.nombre || e.materialId} · {e.cantidad} {mat?.unidad_plural || ''}</div><div className="text-[10px] text-zinc-500">{formatFecha(e.fecha)}{e.pdfRef && ` · ${e.pdfRef}`}{e.costoTotal && ` · ${formatRD(e.costoTotal)}`}</div></div>{onEliminarEnvio && <button onClick={() => onEliminarEnvio(e.id)} className="text-zinc-500 hover:text-red-400"><Trash2 className="w-3 h-3" /></button>}</div>); })}</div></div>
+      )}
     </div>
   );
 }
@@ -1579,6 +1930,178 @@ function BotonSecundario({ children, onClick }) { return <button onClick={onClic
 // ============================================================
 // PRODUCCIÓN PROPIA (v8.3) - vista del maestro/supervisor de su $
 // ============================================================
+// ============================================================
+// GALERÍA GLOBAL DE FOTOS (v8.1)
+// ============================================================
+function GaleriaGlobal({ usuario, data, onVolver }) {
+  const [fotos, setFotos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filtros, setFiltros] = useState({ sistemaId: '', proyectoId: '', favoritasSolo: false });
+  const [viendo, setViendo] = useState(null);
+  const [fotoData, setFotoData] = useState(null);
+  const esAdmin = tieneRol(usuario, 'admin');
+
+  const cargar = async () => {
+    setLoading(true);
+    try {
+      const lista = await db.listarTodasLasFotos(filtros);
+      setFotos(lista);
+    } catch (e) { console.error(e); }
+    setLoading(false);
+  };
+  useEffect(() => { cargar(); }, [filtros.sistemaId, filtros.proyectoId, filtros.favoritasSolo]);
+
+  const verFoto = async (f) => {
+    setViendo(f);
+    setFotoData(null);
+    try { setFotoData(await db.obtenerFoto(f.id)); } catch (e) { console.error(e); }
+  };
+
+  const toggleFav = async (fotoId, nuevoEstado) => {
+    try {
+      await db.marcarFotoFavorita(fotoId, nuevoEstado);
+      setFotos(fotos.map(f => f.id === fotoId ? { ...f, favorita: nuevoEstado } : f));
+      if (viendo?.id === fotoId) setViendo({ ...viendo, favorita: nuevoEstado });
+    } catch (e) { alert('Error: ' + e.message); }
+  };
+
+  const eliminar = async (fotoId) => {
+    if (!confirm('¿Eliminar foto?')) return;
+    try { await db.eliminarFoto(fotoId); setFotos(fotos.filter(f => f.id !== fotoId)); setViendo(null); }
+    catch (e) { alert('Error: ' + e.message); }
+  };
+
+  // Agrupar por fecha
+  const porFecha = {};
+  fotos.forEach(f => { if (!porFecha[f.fecha]) porFecha[f.fecha] = []; porFecha[f.fecha].push(f); });
+  const fechas = Object.keys(porFecha).sort((a, b) => b.localeCompare(a));
+
+  return (
+    <div className="space-y-5">
+      <button onClick={onVolver} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button>
+      <h1 className="text-3xl font-black tracking-tight">Galería</h1>
+
+      <div className="bg-zinc-900 border border-zinc-800 p-3 space-y-2">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+          <select value={filtros.sistemaId} onChange={e => setFiltros({ ...filtros, sistemaId: e.target.value })} className="bg-zinc-950 border border-zinc-800 px-2 py-2 text-xs text-white"><option value="">Todos los sistemas</option>{Object.values(data.sistemas).map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select>
+          <select value={filtros.proyectoId} onChange={e => setFiltros({ ...filtros, proyectoId: e.target.value })} className="bg-zinc-950 border border-zinc-800 px-2 py-2 text-xs text-white"><option value="">Todos los proyectos</option>{data.proyectos.map(p => <option key={p.id} value={p.id}>{p.cliente}</option>)}</select>
+          <label className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 px-3 py-2 cursor-pointer text-xs text-white"><input type="checkbox" checked={filtros.favoritasSolo} onChange={e => setFiltros({ ...filtros, favoritasSolo: e.target.checked })} className="w-4 h-4 accent-red-600" />⭐ Solo favoritas</label>
+        </div>
+      </div>
+
+      {loading && <div className="text-center py-8"><Loader2 className="w-6 h-6 text-red-500 animate-spin mx-auto" /></div>}
+      {!loading && fotos.length === 0 && <div className="text-center py-10 text-zinc-500 text-sm">No hay fotos con estos filtros.</div>}
+
+      {fechas.map(fecha => (
+        <div key={fecha}>
+          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2">{formatFechaLarga(fecha)} · {porFecha[fecha].length}</div>
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+            {porFecha[fecha].map(f => {
+              const proy = data.proyectos.find(p => p.id === f.proyectoId);
+              return (
+                <div key={f.id} className="relative group">
+                  <FotoThumbGlobal foto={f} onClick={() => verFoto(f)} />
+                  <div className="absolute top-1 left-1 text-[9px] bg-black/70 text-white px-1 py-0.5 truncate max-w-[80%]">{proy?.cliente || ''}</div>
+                  <button onClick={() => toggleFav(f.id, !f.favorita)} className={`absolute top-1 right-1 bg-black/70 p-1 ${f.favorita ? 'text-yellow-400' : 'text-white/60'}`} title={f.favorita ? 'Quitar favorita' : 'Marcar favorita'}>★</button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+
+      {viendo && (
+        <div className="fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-4" onClick={() => setViendo(null)}>
+          <div className="relative max-w-3xl w-full" onClick={e => e.stopPropagation()}>
+            <button onClick={() => setViendo(null)} className="absolute top-2 right-2 z-10 bg-black/60 text-white p-2"><X className="w-5 h-5" /></button>
+            {fotoData ? <img src={fotoData} className="w-full h-auto" alt="" /> : <div className="aspect-video bg-zinc-900 flex items-center justify-center"><Loader2 className="w-8 h-8 text-red-500 animate-spin" /></div>}
+            <div className="bg-zinc-900 p-3 text-xs flex justify-between items-center gap-2">
+              <div className="flex-1 min-w-0">
+                <div className="text-white font-bold">{data.proyectos.find(p => p.id === viendo.proyectoId)?.cliente}</div>
+                <div className="text-zinc-500">{formatFechaLarga(viendo.fecha)} · {viendo.subidaPor}</div>
+              </div>
+              <button onClick={() => toggleFav(viendo.id, !viendo.favorita)} className={`${viendo.favorita ? 'text-yellow-400' : 'text-zinc-400'} text-2xl`}>★</button>
+              {(viendo.subidaPorId === usuario.id || esAdmin) && <button onClick={() => eliminar(viendo.id)} className="text-red-400 hover:text-red-300 p-2"><Trash2 className="w-4 h-4" /></button>}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FotoThumbGlobal({ foto, onClick }) {
+  const [src, setSrc] = useState(null);
+  useEffect(() => {
+    let cancelado = false;
+    db.obtenerFoto(foto.id).then(d => { if (!cancelado) setSrc(d); }).catch(() => {});
+    return () => { cancelado = true; };
+  }, [foto.id]);
+  return (
+    <button onClick={onClick} className="aspect-square bg-zinc-900 border border-zinc-800 hover:border-red-600 overflow-hidden block w-full">
+      {src ? <img src={src} className="w-full h-full object-cover" alt="" /> : <div className="w-full h-full flex items-center justify-center"><Loader2 className="w-4 h-4 text-zinc-600 animate-spin" /></div>}
+    </button>
+  );
+}
+
+// ============================================================
+// VISTA EQUIPO GLOBAL (v8.1) - personal en obra hoy
+// ============================================================
+function VistaEquipoGlobal({ data, onVolver, onVerProyecto }) {
+  const [jornadas, setJornadas] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const hoy = new Date().toISOString().split('T')[0];
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const proms = data.proyectos.map(p => db.obtenerJornadaHoy(p.id, hoy));
+        const res = (await Promise.all(proms)).filter(Boolean);
+        setJornadas(res);
+      } catch (e) { console.error(e); }
+      setLoading(false);
+    })();
+  }, []);
+
+  const personalEnObra = {}; // { personaId: [proyectoId, ...] }
+  jornadas.forEach(j => {
+    (j.personasPresentesIds || []).forEach(pid => {
+      if (!personalEnObra[pid]) personalEnObra[pid] = [];
+      personalEnObra[pid].push(j.proyectoId);
+    });
+  });
+
+  const ordenados = Object.keys(personalEnObra).map(pid => ({
+    persona: data.personal.find(p => p.id === pid),
+    proyectos: personalEnObra[pid].map(proyId => data.proyectos.find(p => p.id === proyId)).filter(Boolean),
+  })).filter(x => x.persona).sort((a, b) => a.persona.nombre.localeCompare(b.persona.nombre));
+
+  return (
+    <div className="space-y-5">
+      <button onClick={onVolver} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button>
+      <div>
+        <h1 className="text-3xl font-black tracking-tight">Equipo en obra hoy</h1>
+        <div className="text-xs text-zinc-500 mt-1">{formatFechaLarga(hoy)} · {ordenados.length} personas · {jornadas.filter(j => !j.horaFin).length} jornadas abiertas</div>
+      </div>
+      {loading && <div className="text-center py-8"><Loader2 className="w-6 h-6 text-red-500 animate-spin mx-auto" /></div>}
+      {!loading && ordenados.length === 0 && <div className="text-center py-10 text-zinc-500 text-sm">Nadie en obra todavía. Las jornadas se registran desde el tab Jornada de cada proyecto.</div>}
+      <div className="space-y-2">{ordenados.map(({ persona, proyectos }) => (
+        <div key={persona.id} className="bg-zinc-900 border border-zinc-800 p-3 flex items-center gap-3">
+          {persona.foto2x2 ? <img src={persona.foto2x2} alt="" className="w-10 h-10 object-cover border border-zinc-700" /> : <UserCircle className="w-10 h-10 text-zinc-500" />}
+          <div className="flex-1 min-w-0">
+            <div className="font-bold text-sm">{persona.nombre}</div>
+            <div className="text-[10px] text-zinc-500">{(persona.roles || []).join(' · ')}</div>
+          </div>
+          <div className="flex flex-wrap gap-1 justify-end">
+            {proyectos.map(p => <button key={p.id} onClick={() => onVerProyecto(p)} className="text-[10px] bg-red-600/20 border border-red-600/50 text-red-300 px-2 py-1 font-bold uppercase hover:bg-red-600/30">{p.cliente}</button>)}
+          </div>
+        </div>
+      ))}</div>
+    </div>
+  );
+}
+
 function ProduccionPropia({ persona }) {
   const [datos, setDatos] = useState(null);
   useEffect(() => {
@@ -1897,28 +2420,17 @@ function ModalCambiarEstado({ proyecto, usuario, personal, onCerrar, onConfirmar
   const [estadoNuevo, setEstadoNuevo] = useState(proyecto.estado);
   const [nota, setNota] = useState('');
   const [guardando, setGuardando] = useState(false);
-  const [montoFinal, setMontoFinal] = useState(proyecto.montoFinalCubicado || '');
   const [numeroFactura, setNumeroFactura] = useState(proyecto.numeroFactura || '');
-  const [supervisorAsignado, setSupervisorAsignado] = useState(proyecto.supervisorId || '');
-  const [maestroAsignado, setMaestroAsignado] = useState(proyecto.maestroId || '');
-  const [fechaCubicacion, setFechaCubicacion] = useState(proyecto.fechaCubicacion || new Date().toISOString().split('T')[0]);
+  const [montoFinal, setMontoFinal] = useState(proyecto.montoFinalCubicado || '');
 
   const confirmar = async () => {
     setGuardando(true);
     const extra = {};
-    if (estadoNuevo === 'medido' && montoFinal) extra.monto_final_cubicado = parseFloat(montoFinal);
+    if (estadoNuevo === 'finalizado_recibido_conforme' && montoFinal) extra.monto_final_cubicado = parseFloat(montoFinal);
     if (estadoNuevo === 'facturado' && numeroFactura) extra.numero_factura = numeroFactura;
-    if (estadoNuevo === 'asignado') { 
-      extra.supervisor_id = supervisorAsignado || null;
-      extra.maestro_id = maestroAsignado || null;
-    }
-    if (estadoNuevo === 'cubicando' && fechaCubicacion) extra.fecha_cubicacion = fechaCubicacion;
     await onConfirmar(estadoNuevo, nota, extra);
     setGuardando(false);
   };
-
-  const supervisores = getSupervisores(personal);
-  const maestros = getMaestros(personal);
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
@@ -1926,16 +2438,13 @@ function ModalCambiarEstado({ proyecto, usuario, personal, onCerrar, onConfirmar
         <div className="flex justify-between items-start"><div className="text-xs tracking-widest uppercase text-red-500 font-bold">Cambiar estado</div><button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button></div>
         <div className="text-sm text-zinc-400">Estado actual: <span className={`font-bold ${estadoTextColor(proyecto.estado)}`}>{estadoLabel(proyecto.estado)}</span></div>
         <Campo label="Nuevo estado">
-          <div className="grid grid-cols-2 gap-1">
+          <div className="grid grid-cols-1 gap-1">
             {ORDEN_ESTADOS.map(e => (
-              <button key={e} onClick={() => setEstadoNuevo(e)} className={`p-2 text-xs font-bold uppercase border-2 ${estadoNuevo === e ? `${estadoColor(e)} text-white border-transparent` : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>{estadoLabel(e)}</button>
+              <button key={e} onClick={() => setEstadoNuevo(e)} className={`p-2 text-xs font-bold uppercase border-2 text-left ${estadoNuevo === e ? `${estadoColor(e)} text-white border-transparent` : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>{estadoLabel(e)}</button>
             ))}
-            <button onClick={() => setEstadoNuevo('cancelado')} className={`p-2 text-xs font-bold uppercase border-2 col-span-2 ${estadoNuevo === 'cancelado' ? 'bg-zinc-600 text-white border-transparent' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>Cancelado</button>
           </div>
         </Campo>
-        {estadoNuevo === 'cubicando' && <Campo label="Fecha de cubicación"><Input type="date" value={fechaCubicacion} onChange={setFechaCubicacion} /></Campo>}
-        {estadoNuevo === 'asignado' && (<><Campo label="Supervisor"><select value={supervisorAsignado} onChange={e => setSupervisorAsignado(e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="">Sin asignar</option>{supervisores.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select></Campo><Campo label="Maestro"><select value={maestroAsignado} onChange={e => setMaestroAsignado(e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="">Sin asignar</option>{maestros.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select></Campo></>)}
-        {estadoNuevo === 'medido' && <Campo label="Monto final cubicado (RD$)"><Input type="number" value={montoFinal} onChange={setMontoFinal} placeholder="Monto real medido con el cliente" /></Campo>}
+        {estadoNuevo === 'finalizado_recibido_conforme' && <Campo label="Monto final (RD$)"><Input type="number" value={montoFinal} onChange={setMontoFinal} placeholder="Monto medido/acordado" /></Campo>}
         {estadoNuevo === 'facturado' && <Campo label="Número de factura"><Input value={numeroFactura} onChange={setNumeroFactura} placeholder="B01-..." /></Campo>}
         <Campo label="Nota (opcional)"><textarea value={nota} onChange={e => setNota(e.target.value)} rows={2} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm" /></Campo>
         <div className="flex gap-2"><button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button><button onClick={confirmar} disabled={guardando || estadoNuevo === proyecto.estado} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-3 flex items-center justify-center gap-1">{guardando ? <Loader2 className="w-3 h-3 animate-spin" /> : <><Save className="w-3 h-3" /> Confirmar</>}</button></div>

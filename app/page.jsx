@@ -267,6 +267,17 @@ export default function App() {
       try {
         const d = await db.loadAllData();
         setData(d);
+        // Recuperar sesión guardada
+        try {
+          const usuarioId = typeof window !== 'undefined' ? localStorage.getItem('supertechos_usuario_id') : null;
+          if (usuarioId) {
+            const u = d.personal.find(p => p.id === usuarioId);
+            if (u) {
+              setUsuario(u);
+              setVista(tieneRol(u, 'admin') ? 'dashboard' : 'misProyectos');
+            }
+          }
+        } catch {}
       } catch (e) {
         console.error(e);
         setError(e.message || 'Error cargando datos');
@@ -293,7 +304,7 @@ export default function App() {
   if (loading) return <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center gap-3"><Loader2 className="w-8 h-8 text-red-600 animate-spin" /><div className="text-xs text-zinc-500 uppercase tracking-widest">Conectando a base de datos...</div></div>;
   if (error) return <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center px-4"><AlertTriangle className="w-10 h-10 text-red-500 mb-3" /><div className="text-lg font-bold text-white mb-1">Error de conexión</div><div className="text-xs text-zinc-400 text-center max-w-md mb-4">{error}</div><button onClick={() => window.location.reload()} className="bg-red-600 text-white font-bold uppercase px-6 py-3">Reintentar</button></div>;
   if (!data) return null;
-  if (!usuario) return <Login personal={getPersonasConLogin(data.personal)} onLogin={(u) => { setUsuario(u); setVista(tieneRol(u, 'admin') ? 'dashboard' : 'misProyectos'); }} />;
+  if (!usuario) return <Login personal={getPersonasConLogin(data.personal)} onLogin={(u) => { setUsuario(u); setVista(tieneRol(u, 'admin') ? 'dashboard' : 'misProyectos'); try { localStorage.setItem('supertechos_usuario_id', u.id); } catch {} }} />;
 
   const esAdmin = tieneRol(usuario, 'admin');
 
@@ -419,7 +430,7 @@ export default function App() {
               <div className="text-[9px] text-zinc-500 uppercase truncate">{esAdmin ? 'Admin' : 'Campo'}</div>
             </div>
           </button>
-          <button onClick={() => { setUsuario(null); setProyectoActivo(null); setVista('dashboard'); }} className="w-full flex items-center gap-2 text-left text-xs p-2 text-zinc-400 hover:text-red-400 hover:bg-zinc-900">
+          <button onClick={() => { try { localStorage.removeItem('supertechos_usuario_id'); } catch {}; setUsuario(null); setProyectoActivo(null); setVista('dashboard'); }} className="w-full flex items-center gap-2 text-left text-xs p-2 text-zinc-400 hover:text-red-400 hover:bg-zinc-900">
             <LogOut className="w-4 h-4" /> Salir
           </button>
         </div>

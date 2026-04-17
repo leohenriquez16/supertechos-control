@@ -232,6 +232,7 @@ export default function App() {
   const [perfilViendo, setPerfilViendo] = useState(null);
   const [tareas, setTareas] = useState([]);
   const [jornadasHoy, setJornadasHoy] = useState([]);
+  const [sidebarAbierta, setSidebarAbierta] = useState(false);
 
   const recargar = async () => {
     try {
@@ -294,8 +295,6 @@ export default function App() {
   if (!usuario) return <Login personal={getPersonasConLogin(data.personal)} onLogin={(u) => { setUsuario(u); setVista(tieneRol(u, 'admin') ? 'dashboard' : 'misProyectos'); }} />;
 
   const esAdmin = tieneRol(usuario, 'admin');
-
-  const [sidebarAbierta, setSidebarAbierta] = useState(false);
 
   const itemsMenu = esAdmin ? [
     { seccion: 'OPERACIÓN', items: [

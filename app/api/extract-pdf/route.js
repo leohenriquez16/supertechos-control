@@ -1,8 +1,17 @@
 export const runtime = 'edge';
+export const maxDuration = 60;
 
 export async function POST(request) {
   try {
     const { base64Data, prompt } = await request.json();
+
+    if (!base64Data) {
+      return new Response(JSON.stringify({ error: 'PDF no recibido' }), { status: 400 });
+    }
+
+    if (!process.env.ANTHROPIC_API_KEY) {
+      return new Response(JSON.stringify({ error: 'API Key de Anthropic no configurada en Vercel' }), { status: 500 });
+    }
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -12,8 +21,8 @@ export async function POST(request) {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 2000,
+        model: 'claude-sonnet-4-5-20250929',
+        max_tokens: 8000,
         messages: [{
           role: 'user',
           content: [
@@ -25,16 +34,22 @@ export async function POST(request) {
     });
 
     if (!response.ok) {
-      const error = await response.text();
-      console.error('Anthropic API error:', error);
-      return new Response(JSON.stringify({ error: 'API error' }), { status: 500 });
+      const errorText = await response.text();
+      console.error('Anthropic API error:', response.status, errorText);
+      return new Response(JSON.stringify({
+        error: `API error ${response.status}`,
+        details: errorText.substring(0, 500)
+      }), { status: 500 });
     }
 
     const data = await response.json();
-    const text = data.content.filter(c => c.type === 'text').map(c => c.text).join('');
+    const text = (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('');
+    if (!text) {
+      return new Response(JSON.stringify({ error: 'Respuesta vacía del modelo' }), { status: 500 });
+    }
     return new Response(JSON.stringify({ text }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   } catch (error) {
     console.error('Error:', error);
-    return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+    return new Response(JSON.stringify({ error: error.message || String(error) }), { status: 500 });
   }
 }

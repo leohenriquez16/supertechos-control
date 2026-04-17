@@ -1734,6 +1734,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
   const puedeCambiarEstado = esAdmin || esSupervisorDelProyecto;
   const [modalEstado, setModalEstado] = useState(false);
   const [modalEditar, setModalEditar] = useState(false);
+  const [modalReporte, setModalReporte] = useState(false);
 
   return (
     <div className="space-y-6">
@@ -1742,7 +1743,8 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
         <div className="flex items-center gap-2 mb-2">
           <button onClick={() => puedeCambiarEstado && setModalEstado(true)} disabled={!puedeCambiarEstado} className={`px-2 py-1 text-[10px] tracking-widest uppercase font-black text-white ${estadoColor(proyecto.estado)} ${puedeCambiarEstado ? 'cursor-pointer hover:opacity-80' : 'cursor-default'}`}>{estadoLabel(proyecto.estado)}</button>
           {puedeCambiarEstado && <button onClick={() => setModalEstado(true)} className="text-[10px] text-zinc-400 hover:text-red-500 underline">cambiar</button>}
-          {esAdmin && <button onClick={() => setModalEditar(true)} className="ml-auto text-xs text-zinc-400 hover:text-red-500 flex items-center gap-1"><Edit2 className="w-3 h-3" /> Editar</button>}
+          {esAdmin && <button onClick={() => setModalReporte(true)} className="ml-auto text-xs text-zinc-400 hover:text-red-500 flex items-center gap-1"><FileText className="w-3 h-3" /> Reporte PDF</button>}
+          {esAdmin && <button onClick={() => setModalEditar(true)} className="text-xs text-zinc-400 hover:text-red-500 flex items-center gap-1"><Edit2 className="w-3 h-3" /> Editar</button>}
         </div>
         <div className="text-xs tracking-widest uppercase text-red-500 font-bold mb-1">{sistema.nombre}</div>
         <div className="text-xs font-mono text-zinc-500 mb-1">{proyecto.referenciaOdoo}</div>
@@ -1753,6 +1755,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
 
       {modalEstado && <ModalCambiarEstado proyecto={proyecto} usuario={usuario} personal={data.personal} onCerrar={() => setModalEstado(false)} onConfirmar={async (estadoNuevo, nota, datosExtra) => { await onCambiarEstado(proyecto.id, estadoNuevo, nota, datosExtra); setModalEstado(false); }} />}
       {modalEditar && <ModalEditarProyecto proyecto={proyecto} data={data} usuario={usuario} onCerrar={() => setModalEditar(false)} onGuardar={onActualizarProyecto} onArchivar={onArchivarProyecto} />}
+      {modalReporte && <ModalReporteAvancePDF proyecto={proyecto} sistema={sistema} data={data} usuario={usuario} onCerrar={() => setModalReporte(false)} />}
 
       {!esSupervisor && <div className="grid grid-cols-3 gap-2"><div className="bg-zinc-900 border border-zinc-800 p-3"><div className="text-[10px] text-zinc-500 uppercase tracking-wider">Avance</div><div className="text-2xl font-black">{porcentaje.toFixed(1)}%</div></div><div className="bg-zinc-900 border border-zinc-800 p-3"><div className="text-[10px] text-zinc-500 uppercase tracking-wider">Producido</div><div className="text-2xl font-black text-green-400">{formatRD(produccionRD)}</div></div><div className="bg-zinc-900 border border-zinc-800 p-3"><div className="text-[10px] text-zinc-500 uppercase tracking-wider">Contrato</div><div className="text-2xl font-black">{formatRD(valorContrato)}</div></div></div>}
 
@@ -2675,6 +2678,7 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
   const [loading, setLoading] = useState(true);
   const [procesando, setProcesando] = useState(null);
   const [personasSel, setPersonasSel] = useState([]);
+  const [finalizarModal, setFinalizarModal] = useState(false);
   const [verHistorial, setVerHistorial] = useState(false);
 
   const recargar = async () => {
@@ -2730,7 +2734,7 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
     setProcesando(null);
   };
 
-  const finalizarJornada = async () => {
+  const finalizarJornada = async (condicionDia = 'normal', condicionNota = '') => {
     if (!jornadaHoy) return;
     setProcesando('fin');
     const ubi = await obtenerUbicacion();
@@ -2745,7 +2749,10 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
         finLat: ubi?.lat ?? null, finLng: ubi?.lng ?? null,
         finPrecisionM: ubi?.precision ?? null,
         finDistanciaObraM: distancia,
+        condicionDia,
+        condicionNota,
       });
+      setFinalizarModal(false);
       await recargar();
     } catch (e) { alert('Error: ' + e.message); }
     setProcesando(null);
@@ -2866,7 +2873,7 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
               </button>
             )}
             {jornadaHoy && !jornadaHoy.horaFin && (
-              <button onClick={finalizarJornada} disabled={procesando === 'fin'} className="w-full bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white font-black uppercase py-4 flex items-center justify-center gap-2">
+              <button onClick={() => setFinalizarModal(true)} disabled={procesando === 'fin'} className="w-full bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white font-black uppercase py-4 flex items-center justify-center gap-2">
                 {procesando === 'fin' ? <><Loader2 className="w-4 h-4 animate-spin" /> Capturando GPS...</> : <><Square className="w-4 h-4" /> Finalizar Jornada</>}
               </button>
             )}
@@ -2911,16 +2918,23 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
             {historial.map(j => {
               const horas = horasEntre(j.horaInicio, j.horaFin);
               const esAdmin = tieneRol(usuario, 'admin');
+              const condIcon = j.condicionDia === 'lluvia' ? '☔' : j.condicionDia === 'no_laborable' ? '🚫' : j.condicionDia === 'otro' ? '⚠️' : '';
+              const borderColor = j.condicionDia === 'lluvia' ? 'border-blue-500' : j.diaDoble ? 'border-yellow-500' : 'border-red-600';
               return (
-                <div key={j.id} className={`bg-zinc-900 border-l-2 p-3 text-xs ${j.diaDoble ? 'border-yellow-500' : 'border-red-600'}`}>
+                <div key={j.id} className={`bg-zinc-900 border-l-2 p-3 text-xs ${borderColor}`}>
                   <div className="flex justify-between items-start">
-                    <div className="font-bold flex items-center gap-2">{formatFechaLarga(j.fecha)}{j.diaDoble && <span className="text-[9px] bg-yellow-600 text-black px-1 font-black">×2</span>}</div>
+                    <div className="font-bold flex items-center gap-2">
+                      {condIcon && <span title={j.condicionNota || ''}>{condIcon}</span>}
+                      {formatFechaLarga(j.fecha)}
+                      {j.diaDoble && <span className="text-[9px] bg-yellow-600 text-black px-1 font-black">×2</span>}
+                    </div>
                     <div className="text-zinc-400">{j.personasPresentesIds?.length || 0} 👷</div>
                   </div>
                   <div className="text-zinc-500 mt-1">
                     {formatHora(j.horaInicio)} → {formatHora(j.horaFin)}
                     {horas != null && <span className="text-green-400 font-bold ml-2">{horas.toFixed(1)}h</span>}
                   </div>
+                  {j.condicionNota && <div className="text-[10px] text-blue-400 mt-1 italic">"{j.condicionNota}"</div>}
                   {(j.inicioDistanciaObraM != null || j.finDistanciaObraM != null) && (
                     <div className="text-[10px] text-zinc-600 mt-1">
                       {j.inicioDistanciaObraM != null && <>entrada {formatDistancia(j.inicioDistanciaObraM)}</>}
@@ -2941,6 +2955,500 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
             })}
           </div>
         )}
+      </div>
+
+      {/* Modal finalizar jornada con condición del día (v8.3) */}
+      {finalizarModal && (
+        <ModalFinalizarJornada
+          onCerrar={() => setFinalizarModal(false)}
+          onConfirmar={finalizarJornada}
+          procesando={procesando === 'fin'}
+        />
+      )}
+    </div>
+  );
+}
+
+function ModalFinalizarJornada({ onCerrar, onConfirmar, procesando }) {
+  const [condicion, setCondicion] = useState('normal');
+  const [nota, setNota] = useState('');
+  return (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+      <div className="bg-zinc-900 border-2 border-red-600 max-w-md w-full p-5 space-y-4">
+        <div className="flex justify-between items-start">
+          <div className="text-xs tracking-widest uppercase text-red-500 font-bold">Finalizar Jornada</div>
+          <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
+        </div>
+
+        <div>
+          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2">Condición del día</div>
+          <div className="space-y-1.5">
+            <label className={`flex items-center gap-2 p-2.5 border cursor-pointer ${condicion === 'normal' ? 'bg-green-600/10 border-green-600' : 'bg-zinc-950 border-zinc-800'}`}>
+              <input type="radio" checked={condicion === 'normal'} onChange={() => setCondicion('normal')} className="w-4 h-4 accent-green-600" />
+              <div>
+                <div className="text-sm font-bold">☀️ Día normal</div>
+                <div className="text-[10px] text-zinc-500">Jornada completa trabajada</div>
+              </div>
+            </label>
+            <label className={`flex items-center gap-2 p-2.5 border cursor-pointer ${condicion === 'lluvia' ? 'bg-blue-600/10 border-blue-600' : 'bg-zinc-950 border-zinc-800'}`}>
+              <input type="radio" checked={condicion === 'lluvia'} onChange={() => setCondicion('lluvia')} className="w-4 h-4 accent-blue-600" />
+              <div>
+                <div className="text-sm font-bold">☔ Día de lluvia</div>
+                <div className="text-[10px] text-zinc-500">Jornada acortada o suspendida por lluvia</div>
+              </div>
+            </label>
+            <label className={`flex items-center gap-2 p-2.5 border cursor-pointer ${condicion === 'no_laborable' ? 'bg-zinc-600/10 border-zinc-600' : 'bg-zinc-950 border-zinc-800'}`}>
+              <input type="radio" checked={condicion === 'no_laborable'} onChange={() => setCondicion('no_laborable')} className="w-4 h-4 accent-zinc-500" />
+              <div>
+                <div className="text-sm font-bold">🚫 Día no laborable</div>
+                <div className="text-[10px] text-zinc-500">Feriado, domingo, cierre de obra</div>
+              </div>
+            </label>
+            <label className={`flex items-center gap-2 p-2.5 border cursor-pointer ${condicion === 'otro' ? 'bg-yellow-600/10 border-yellow-600' : 'bg-zinc-950 border-zinc-800'}`}>
+              <input type="radio" checked={condicion === 'otro'} onChange={() => setCondicion('otro')} className="w-4 h-4 accent-yellow-600" />
+              <div>
+                <div className="text-sm font-bold">⚠️ Otro</div>
+                <div className="text-[10px] text-zinc-500">Describe abajo</div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        {(condicion === 'lluvia' || condicion === 'otro' || condicion === 'no_laborable') && (
+          <div>
+            <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-1">Nota {condicion === 'otro' ? '(requerida)' : '(opcional)'}</div>
+            <textarea
+              value={nota}
+              onChange={e => setNota(e.target.value)}
+              placeholder={
+                condicion === 'lluvia' ? 'Ej: Lluvia desde las 2pm, cubrimos área trabajada con lona'
+                : condicion === 'no_laborable' ? 'Ej: Feriado, domingo'
+                : 'Describe el motivo'
+              }
+              rows={3}
+              className="w-full bg-zinc-950 border border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-xs"
+            />
+          </div>
+        )}
+
+        <div className="flex gap-2 pt-1">
+          <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button>
+          <button
+            onClick={() => onConfirmar(condicion, nota)}
+            disabled={procesando || (condicion === 'otro' && !nota.trim())}
+            className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-3 flex items-center justify-center gap-2"
+          >
+            {procesando ? <><Loader2 className="w-3 h-3 animate-spin" /> Capturando GPS...</> : <><Square className="w-3 h-3" /> Finalizar Jornada</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ============================================================
+// MODAL REPORTE AVANCE PDF (v8.3) - 8.5" x 11"
+// ============================================================
+function ModalReporteAvancePDF({ proyecto, sistema, data, usuario, onCerrar }) {
+  const hoy = new Date().toISOString().split('T')[0];
+  const haceSieteDias = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
+  const [tipo, setTipo] = useState('semanal');
+  const [fechaInicio, setFechaInicio] = useState(haceSieteDias);
+  const [fechaFin, setFechaFin] = useState(hoy);
+  const [proximosPasos, setProximosPasos] = useState('');
+  const [incluirFotos, setIncluirFotos] = useState(true);
+  const [incluirBitacora, setIncluirBitacora] = useState(true);
+  const [incluirFinanciero, setIncluirFinanciero] = useState(true);
+  const [preview, setPreview] = useState(false);
+
+  // Calcular automáticamente según tipo
+  useEffect(() => {
+    const h = new Date();
+    let inicio;
+    if (tipo === 'diario') {
+      inicio = new Date(h); inicio.setHours(0,0,0,0);
+    } else if (tipo === 'semanal') {
+      inicio = new Date(h); inicio.setDate(h.getDate() - 7);
+    } else if (tipo === 'quincenal') {
+      inicio = new Date(h); inicio.setDate(h.getDate() - 15);
+    }
+    if (inicio && tipo !== 'custom') {
+      setFechaInicio(inicio.toISOString().split('T')[0]);
+      setFechaFin(h.toISOString().split('T')[0]);
+    }
+  }, [tipo]);
+
+  const reportesPeriodo = (data.reportes || [])
+    .filter(r => r.proyectoId === proyecto.id && r.fecha >= fechaInicio && r.fecha <= fechaFin)
+    .sort((a, b) => a.fecha.localeCompare(b.fecha));
+
+  const { porcentaje, produccionRD, valorContrato } = calcAvanceProyecto(proyecto, data.reportes, sistema);
+
+  // m² ejecutados en el periodo (por tarea)
+  const porTarea = {};
+  reportesPeriodo.forEach(r => {
+    const m2 = getM2Reporte(r, sistema);
+    const tarea = sistema.tareas?.find(t => t.id === r.tareaId);
+    const key = tarea?.nombre || r.tareaId || 'Sin tarea';
+    porTarea[key] = (porTarea[key] || 0) + m2;
+  });
+  const totalM2Periodo = Object.values(porTarea).reduce((s, v) => s + v, 0);
+
+  // Bitácora por día con días de lluvia si aplica
+  const bitacoraPorDia = {};
+  reportesPeriodo.forEach(r => {
+    if (!bitacoraPorDia[r.fecha]) bitacoraPorDia[r.fecha] = { m2: 0, notas: [] };
+    const m2 = getM2Reporte(r, sistema);
+    bitacoraPorDia[r.fecha].m2 += m2;
+    if (r.nota) bitacoraPorDia[r.fecha].notas.push(r.nota);
+  });
+  const bitacora = Object.entries(bitacoraPorDia).sort((a,b) => a[0].localeCompare(b[0]));
+
+  const diasTrabajados = bitacora.length;
+
+  // Avance por área
+  const areasConAvance = (proyecto.areas || []).map(area => {
+    const m2Ejecutado = reportesPeriodo
+      .filter(r => r.areaId === area.id)
+      .reduce((s, r) => s + getM2Reporte(r, sistema), 0);
+    const m2Historico = (data.reportes || [])
+      .filter(r => r.proyectoId === proyecto.id && r.areaId === area.id)
+      .reduce((s, r) => s + getM2Reporte(r, sistema), 0);
+    const pct = area.m2 > 0 ? (m2Historico / area.m2) * 100 : 0;
+    return { ...area, m2Ejecutado, m2Historico, pct: Math.min(100, pct) };
+  });
+
+  const imprimir = () => window.print();
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-0 md:p-4 print:bg-white print:static print:p-0">
+      <div className="bg-zinc-900 border-2 border-red-600 max-w-5xl w-full h-full md:h-auto md:max-h-[95vh] overflow-auto print:bg-white print:border-0 print:max-h-none print:overflow-visible">
+        {/* Header del modal (oculto en impresión) */}
+        <div className="sticky top-0 bg-zinc-900 border-b border-zinc-800 p-4 flex items-center justify-between print:hidden">
+          <div>
+            <div className="text-xs tracking-widest uppercase text-red-500 font-bold">Reporte de avance</div>
+            <div className="text-sm text-zinc-400 mt-0.5">{proyecto.nombre}</div>
+          </div>
+          <div className="flex gap-2">
+            {preview ? (
+              <>
+                <button onClick={() => setPreview(false)} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2">Editar</button>
+                <button onClick={imprimir} className="bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase px-4 py-2 flex items-center gap-1"><Download className="w-3 h-3" /> Descargar / Imprimir PDF</button>
+              </>
+            ) : (
+              <>
+                <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2">Cancelar</button>
+                <button onClick={() => setPreview(true)} className="bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase px-4 py-2 flex items-center gap-1"><Eye className="w-3 h-3" /> Ver preview</button>
+              </>
+            )}
+            <button onClick={onCerrar} className="text-zinc-500 ml-2"><X className="w-4 h-4" /></button>
+          </div>
+        </div>
+
+        {/* Formulario de configuración (oculto en preview e impresión) */}
+        {!preview && (
+          <div className="p-5 space-y-4 print:hidden">
+            <div>
+              <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2">Tipo de reporte</div>
+              <div className="grid grid-cols-4 gap-1">
+                {['diario', 'semanal', 'quincenal', 'custom'].map(t => (
+                  <button key={t} onClick={() => setTipo(t)} className={`p-2 text-xs font-bold uppercase border-2 ${tipo === t ? 'bg-red-600 text-white border-transparent' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>{t}</button>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Campo label="Desde"><Input type="date" value={fechaInicio} onChange={setFechaInicio} /></Campo>
+              <Campo label="Hasta"><Input type="date" value={fechaFin} onChange={setFechaFin} /></Campo>
+            </div>
+
+            <div>
+              <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2">Próximos pasos (texto libre)</div>
+              <textarea
+                value={proximosPasos}
+                onChange={e => setProximosPasos(e.target.value)}
+                placeholder="Qué se hará la próxima semana, qué necesita del cliente, etc."
+                rows={4}
+                className="w-full bg-zinc-950 border border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-xs"
+              />
+            </div>
+
+            <div>
+              <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2">Secciones a incluir</div>
+              <div className="space-y-1.5">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={incluirBitacora} onChange={e => setIncluirBitacora(e.target.checked)} className="w-4 h-4 accent-red-600" />
+                  <span className="text-xs">Bitácora día por día</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={incluirFotos} onChange={e => setIncluirFotos(e.target.checked)} className="w-4 h-4 accent-red-600" />
+                  <span className="text-xs">Espacio para 4 fotos principales</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={incluirFinanciero} onChange={e => setIncluirFinanciero(e.target.checked)} className="w-4 h-4 accent-red-600" />
+                  <span className="text-xs">Resumen financiero</span>
+                </label>
+              </div>
+            </div>
+
+            <div className="bg-zinc-950 border border-zinc-800 p-3 text-[11px] text-zinc-500">
+              <div className="font-bold text-zinc-400 mb-1">📋 Vista previa del reporte:</div>
+              <div>• {diasTrabajados} {diasTrabajados === 1 ? 'día' : 'días'} trabajados · {totalM2Periodo.toFixed(2)} m² ejecutados</div>
+              <div>• {areasConAvance.length} áreas del proyecto</div>
+              <div>• {reportesPeriodo.length} reportes en el periodo</div>
+            </div>
+          </div>
+        )}
+
+        {/* Preview del reporte (también la versión imprimible) */}
+        {preview && (
+          <ReportePDFContenido
+            proyecto={proyecto}
+            sistema={sistema}
+            data={data}
+            tipo={tipo}
+            fechaInicio={fechaInicio}
+            fechaFin={fechaFin}
+            proximosPasos={proximosPasos}
+            incluirFotos={incluirFotos}
+            incluirBitacora={incluirBitacora}
+            incluirFinanciero={incluirFinanciero}
+            porcentaje={porcentaje}
+            produccionRD={produccionRD}
+            valorContrato={valorContrato}
+            porTarea={porTarea}
+            totalM2Periodo={totalM2Periodo}
+            bitacora={bitacora}
+            areasConAvance={areasConAvance}
+            diasTrabajados={diasTrabajados}
+            reportesPeriodo={reportesPeriodo}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ReportePDFContenido({ proyecto, sistema, data, tipo, fechaInicio, fechaFin, proximosPasos, incluirFotos, incluirBitacora, incluirFinanciero, porcentaje, produccionRD, valorContrato, porTarea, totalM2Periodo, bitacora, areasConAvance, diasTrabajados, reportesPeriodo }) {
+  const supervisor = getPersona(data.personal, proyecto.supervisorId);
+  const maestro = getPersona(data.personal, proyecto.maestroId);
+  const tipoLabel = { diario: 'Diario', semanal: 'Semanal', quincenal: 'Quincenal', custom: 'Personalizado' }[tipo] || 'Avance';
+
+  return (
+    <div id="reporte-pdf" className="bg-white text-zinc-800 print:p-0" style={{ padding: '0' }}>
+      <style>{`
+        @media print {
+          @page { size: letter; margin: 0.5in; }
+          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          #reporte-pdf { box-shadow: none !important; }
+          .print-page-break { page-break-after: always; }
+        }
+      `}</style>
+      <div style={{ maxWidth: '720px', margin: '0 auto', fontFamily: "'Inter', system-ui, sans-serif", fontSize: '12px', color: '#27272a' }}>
+
+        {/* Header */}
+        <div style={{ padding: '28px 36px 24px', borderBottom: '3px solid #CC0000', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <div style={{ width: '52px', height: '52px', background: '#CC0000', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: '20px', transform: 'skewX(-12deg)' }}>
+              <span style={{ transform: 'skewX(12deg)', display: 'block' }}>ST</span>
+            </div>
+            <div>
+              <div style={{ color: '#18181b', fontWeight: 700, fontSize: '18px', lineHeight: 1 }}>SUPER TECHOS</div>
+              <div style={{ color: '#71717a', fontSize: '10px', letterSpacing: '1.5px', marginTop: '3px' }}>IMPERMEABILIZACIÓN PROFESIONAL</div>
+            </div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ color: '#71717a', fontSize: '9px', letterSpacing: '1.5px' }}>REPORTE {tipoLabel.toUpperCase()}</div>
+            <div style={{ color: '#27272a', fontSize: '13px', fontWeight: 500, marginTop: '3px' }}>
+              {formatFechaCorta(fechaInicio)} — {formatFechaCorta(fechaFin)}
+            </div>
+          </div>
+        </div>
+
+        {/* Datos del proyecto */}
+        <div style={{ padding: '22px 36px', background: '#fafafa', borderBottom: '1px solid #e4e4e7' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '20px' }}>
+            <div>
+              <div style={{ color: '#71717a', fontSize: '9px', letterSpacing: '1.5px', marginBottom: '4px' }}>PROYECTO</div>
+              <div style={{ color: '#18181b', fontSize: '22px', fontWeight: 600, lineHeight: 1.2 }}>{proyecto.nombre}</div>
+              <div style={{ color: '#71717a', fontSize: '11px', marginTop: '4px' }}>
+                {proyecto.referenciaOdoo && `ORDEN ${proyecto.referenciaOdoo}`}
+                {proyecto.fecha_inicio && ` · Inicio ${formatFechaCorta(proyecto.fecha_inicio)}`}
+              </div>
+            </div>
+            {valorContrato > 0 && (
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ color: '#71717a', fontSize: '9px', letterSpacing: '1.5px' }}>MONTO APROBADO</div>
+                <div style={{ color: '#27272a', fontSize: '18px', fontWeight: 600, marginTop: '3px' }}>{formatRD(valorContrato)}</div>
+              </div>
+            )}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginTop: '16px', fontSize: '11px', paddingTop: '14px', borderTop: '1px solid #e4e4e7' }}>
+            <div>
+              <div style={{ color: '#71717a', fontSize: '9px', letterSpacing: '1.5px', marginBottom: '2px' }}>CLIENTE</div>
+              <div style={{ color: '#27272a' }}>{proyecto.cliente || '—'}</div>
+              {proyecto.contactoClienteNombre && <div style={{ color: '#71717a', fontSize: '10px', marginTop: '2px' }}>Contacto: {proyecto.contactoClienteNombre}</div>}
+            </div>
+            <div>
+              <div style={{ color: '#71717a', fontSize: '9px', letterSpacing: '1.5px', marginBottom: '2px' }}>SISTEMA</div>
+              <div style={{ color: '#27272a' }}>{sistema.nombre}</div>
+            </div>
+            <div>
+              <div style={{ color: '#71717a', fontSize: '9px', letterSpacing: '1.5px', marginBottom: '2px' }}>EQUIPO</div>
+              <div style={{ color: '#27272a' }}>{maestro ? `🔨 ${maestro.nombre}` : '—'}</div>
+              {supervisor && <div style={{ color: '#71717a', fontSize: '10px' }}>👔 {supervisor.nombre}</div>}
+            </div>
+          </div>
+        </div>
+
+        {/* Resumen de la semana */}
+        <div style={{ padding: '22px 36px' }}>
+          <div style={{ color: '#71717a', fontSize: '10px', letterSpacing: '1.5px', marginBottom: '12px' }}>RESUMEN DEL PERIODO</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '10px' }}>
+            <div style={{ border: '1px solid #e4e4e7', padding: '14px' }}>
+              <div style={{ color: '#71717a', fontSize: '9px', letterSpacing: '1.5px' }}>AVANCE TOTAL</div>
+              <div style={{ color: '#18181b', fontSize: '24px', fontWeight: 600, marginTop: '4px', lineHeight: 1 }}>{porcentaje.toFixed(1)}%</div>
+            </div>
+            <div style={{ border: '1px solid #e4e4e7', padding: '14px' }}>
+              <div style={{ color: '#71717a', fontSize: '9px', letterSpacing: '1.5px' }}>M² EJECUTADOS</div>
+              <div style={{ color: '#18181b', fontSize: '24px', fontWeight: 600, marginTop: '4px', lineHeight: 1 }}>{totalM2Periodo.toFixed(1)}</div>
+              <div style={{ color: '#71717a', fontSize: '10px', marginTop: '4px' }}>en el periodo</div>
+            </div>
+            <div style={{ border: '1px solid #e4e4e7', padding: '14px' }}>
+              <div style={{ color: '#71717a', fontSize: '9px', letterSpacing: '1.5px' }}>DÍAS TRABAJADOS</div>
+              <div style={{ color: '#18181b', fontSize: '24px', fontWeight: 600, marginTop: '4px', lineHeight: 1 }}>{diasTrabajados}</div>
+            </div>
+            <div style={{ border: '1px solid #e4e4e7', padding: '14px' }}>
+              <div style={{ color: '#71717a', fontSize: '9px', letterSpacing: '1.5px' }}>REPORTES</div>
+              <div style={{ color: '#18181b', fontSize: '24px', fontWeight: 600, marginTop: '4px', lineHeight: 1 }}>{reportesPeriodo.length}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Avance por tarea */}
+        {Object.keys(porTarea).length > 0 && (
+          <div style={{ padding: '0 36px 22px' }}>
+            <div style={{ color: '#71717a', fontSize: '10px', letterSpacing: '1.5px', marginBottom: '12px' }}>M² EJECUTADOS EN EL PERIODO POR TAREA</div>
+            <div style={{ border: '1px solid #e4e4e7' }}>
+              <table style={{ width: '100%', fontSize: '11px', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: '#fafafa', color: '#71717a', fontSize: '9px', letterSpacing: '1.5px' }}>
+                    <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, borderBottom: '1px solid #e4e4e7' }}>TAREA</th>
+                    <th style={{ textAlign: 'right', padding: '10px 14px', fontWeight: 500, borderBottom: '1px solid #e4e4e7' }}>M² EJECUTADOS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(porTarea).map(([tarea, m2]) => (
+                    <tr key={tarea} style={{ borderTop: '1px solid #f4f4f5' }}>
+                      <td style={{ padding: '10px 14px', color: '#27272a', fontWeight: 500 }}>{tarea}</td>
+                      <td style={{ textAlign: 'right', padding: '10px 14px', color: '#16a34a', fontWeight: 600 }}>{m2.toFixed(2)} m²</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Avance por área */}
+        {areasConAvance.length > 0 && (
+          <div style={{ padding: '0 36px 22px' }}>
+            <div style={{ color: '#71717a', fontSize: '10px', letterSpacing: '1.5px', marginBottom: '12px' }}>AVANCE GENERAL POR ÁREA</div>
+            <div style={{ border: '1px solid #e4e4e7' }}>
+              <table style={{ width: '100%', fontSize: '11px', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: '#fafafa', color: '#71717a', fontSize: '9px', letterSpacing: '1.5px' }}>
+                    <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, borderBottom: '1px solid #e4e4e7' }}>ÁREA</th>
+                    <th style={{ textAlign: 'center', padding: '10px 14px', fontWeight: 500, borderBottom: '1px solid #e4e4e7' }}>TOTAL</th>
+                    <th style={{ textAlign: 'center', padding: '10px 14px', fontWeight: 500, borderBottom: '1px solid #e4e4e7' }}>EJECUTADO</th>
+                    <th style={{ textAlign: 'right', padding: '10px 14px', fontWeight: 500, borderBottom: '1px solid #e4e4e7', width: '80px' }}>AVANCE</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {areasConAvance.map(a => (
+                    <tr key={a.id} style={{ borderTop: '1px solid #f4f4f5' }}>
+                      <td style={{ padding: '10px 14px', color: '#27272a', fontWeight: 500 }}>{a.nombre}</td>
+                      <td style={{ textAlign: 'center', padding: '10px 14px', color: '#52525b' }}>{a.m2} m²</td>
+                      <td style={{ textAlign: 'center', padding: '10px 14px', color: a.pct >= 100 ? '#16a34a' : a.pct > 0 ? '#d97706' : '#71717a' }}>{a.m2Historico.toFixed(1)} m²</td>
+                      <td style={{ textAlign: 'right', padding: '10px 14px', color: a.pct >= 100 ? '#16a34a' : a.pct > 0 ? '#d97706' : '#71717a', fontWeight: 600 }}>{a.pct.toFixed(0)}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Bitácora */}
+        {incluirBitacora && bitacora.length > 0 && (
+          <div style={{ padding: '0 36px 22px' }}>
+            <div style={{ color: '#71717a', fontSize: '10px', letterSpacing: '1.5px', marginBottom: '12px' }}>BITÁCORA DEL PERIODO</div>
+            <div style={{ fontSize: '11px', color: '#27272a', lineHeight: 1.7 }}>
+              {bitacora.map(([fecha, info]) => (
+                <div key={fecha} style={{ display: 'grid', gridTemplateColumns: '100px 80px 1fr', gap: '12px', padding: '8px 0', borderBottom: '1px solid #f4f4f5' }}>
+                  <div style={{ color: '#71717a', fontWeight: 500 }}>{formatFechaCorta(fecha)}</div>
+                  <div style={{ color: '#16a34a', fontWeight: 600, textAlign: 'right' }}>{info.m2.toFixed(1)} m²</div>
+                  <div>{info.notas.length > 0 ? info.notas.join('. ') : 'Avance reportado'}</div>
+                </div>
+              ))}
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderTop: '2px solid #e4e4e7', marginTop: '8px', fontSize: '11px', fontWeight: 600 }}>
+                <div style={{ color: '#27272a' }}>TOTAL PERIODO</div>
+                <div style={{ color: '#16a34a' }}>{totalM2Periodo.toFixed(2)} m² ejecutados</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Fotos placeholder */}
+        {incluirFotos && (
+          <div style={{ padding: '0 36px 22px' }}>
+            <div style={{ color: '#71717a', fontSize: '10px', letterSpacing: '1.5px', marginBottom: '12px' }}>FOTOS DE LA OBRA</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
+              {[1,2,3,4].map(i => (
+                <div key={i} style={{ aspectRatio: '1', background: '#f4f4f5', border: '1px solid #e4e4e7', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#a1a1aa', fontSize: '10px' }}>
+                  Foto {i}
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: '10px', color: '#a1a1aa', marginTop: '6px', fontStyle: 'italic' }}>
+              Nota: las fotos desde la app no se imprimen automáticamente en esta versión. Adjuntar manualmente según sea necesario.
+            </div>
+          </div>
+        )}
+
+        {/* Próximos pasos */}
+        {proximosPasos && (
+          <div style={{ padding: '0 36px 22px' }}>
+            <div style={{ color: '#71717a', fontSize: '10px', letterSpacing: '1.5px', marginBottom: '12px' }}>PRÓXIMOS PASOS</div>
+            <div style={{ borderLeft: '3px solid #CC0000', padding: '12px 18px', background: '#fef2f2', fontSize: '12px', color: '#27272a', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+              {proximosPasos}
+            </div>
+          </div>
+        )}
+
+        {/* Resumen financiero */}
+        {incluirFinanciero && valorContrato > 0 && (
+          <div style={{ padding: '0 36px 24px' }}>
+            <div style={{ color: '#71717a', fontSize: '10px', letterSpacing: '1.5px', marginBottom: '10px' }}>RESUMEN FINANCIERO</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <div style={{ background: '#fafafa', padding: '14px', border: '1px solid #e4e4e7' }}>
+                <div style={{ color: '#71717a', fontSize: '10px' }}>Avance monetario ejecutado</div>
+                <div style={{ color: '#16a34a', fontSize: '18px', fontWeight: 600, marginTop: '4px' }}>{formatRD(produccionRD)}</div>
+              </div>
+              <div style={{ background: '#fafafa', padding: '14px', border: '1px solid #e4e4e7' }}>
+                <div style={{ color: '#71717a', fontSize: '10px' }}>Pendiente por ejecutar</div>
+                <div style={{ color: '#27272a', fontSize: '18px', fontWeight: 600, marginTop: '4px' }}>{formatRD(valorContrato - produccionRD)}</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Footer */}
+        <div style={{ padding: '14px 36px', background: '#18181b', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#a1a1aa', fontSize: '9px', letterSpacing: '1px' }}>
+          <div>SUPER TECHOS SRL · RNC 130-77433-1 · C/ ARENA #1 MAR AZUL · SANTO DOMINGO · 809-535-9293</div>
+          <div>{formatFechaCorta(new Date().toISOString().split('T')[0])}</div>
+        </div>
       </div>
     </div>
   );
@@ -3088,6 +3596,9 @@ function VistaNomina({ usuario, data, onVolver }) {
   const [loading, setLoading] = useState(true);
   const [corteVisto, setCorteVisto] = useState(null);
   const [crearModal, setCrearModal] = useState(false);
+  const [filtroAnio, setFiltroAnio] = useState('');
+  const [filtroBusqueda, setFiltroBusqueda] = useState('');
+  const [borrandoCorteId, setBorrandoCorteId] = useState(null);
 
   const recargar = async () => {
     setLoading(true);
@@ -3099,6 +3610,36 @@ function VistaNomina({ usuario, data, onVolver }) {
 
   if (corteVisto) return <DetalleCorte corte={corteVisto} data={data} usuario={usuario} onVolver={() => { setCorteVisto(null); recargar(); }} />;
 
+  const eliminarCorte = async (corteId) => {
+    if (!confirm('¿Eliminar este corte de nómina? Se borrarán también todos los recibos asociados. Esta acción es irreversible.')) return;
+    setBorrandoCorteId(corteId);
+    try {
+      await db.eliminarCorteNomina(corteId);
+      await recargar();
+    } catch (e) {
+      alert('Error eliminando: ' + (e.message || e));
+    } finally {
+      setBorrandoCorteId(null);
+    }
+  };
+
+  // Filtrar cortes
+  const aniosDisponibles = [...new Set(cortes.map(c => new Date(c.fechaInicio).getFullYear()))].sort((a, b) => b - a);
+  const cortesFiltrados = cortes.filter(c => {
+    if (filtroAnio && new Date(c.fechaInicio).getFullYear() !== parseInt(filtroAnio)) return false;
+    if (filtroBusqueda) {
+      const q = filtroBusqueda.toLowerCase();
+      const matchFecha = formatFechaCorta(c.fechaInicio).toLowerCase().includes(q) || formatFechaCorta(c.fechaFin).toLowerCase().includes(q);
+      const matchNotas = (c.notas || '').toLowerCase().includes(q);
+      if (!matchFecha && !matchNotas) return false;
+    }
+    return true;
+  });
+
+  // Totales
+  const totalHistorico = cortes.reduce((s, c) => s + (c.totalMonto || 0), 0);
+  const totalFiltrado = cortesFiltrados.reduce((s, c) => s + (c.totalMonto || 0), 0);
+
   return (
     <div className="space-y-5">
       <button onClick={onVolver} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button>
@@ -3106,15 +3647,65 @@ function VistaNomina({ usuario, data, onVolver }) {
         <h1 className="text-3xl font-black tracking-tight">Nómina</h1>
         <button onClick={() => setCrearModal(true)} className="bg-red-600 text-white font-black uppercase px-4 py-2 text-xs flex items-center gap-1"><Plus className="w-3 h-3" /> Nuevo corte</button>
       </div>
-      {loading && <div className="text-center py-6"><Loader2 className="w-5 h-5 text-red-500 animate-spin mx-auto" /></div>}
-      {!loading && cortes.length === 0 && <div className="text-center py-10 text-zinc-500 text-sm">Sin cortes aún.</div>}
-      <div className="space-y-2">{cortes.map(c => (
-        <button key={c.id} onClick={() => setCorteVisto(c)} className="w-full bg-zinc-900 border border-zinc-800 hover:border-red-600 p-4 text-left">
-          <div className="flex justify-between items-start">
-            <div><div className="font-bold text-sm">{formatFechaCorta(c.fechaInicio)} → {formatFechaCorta(c.fechaFin)}</div><div className="text-[10px] text-zinc-500 uppercase">{c.estado}</div></div>
-            <div className="text-right"><div className="text-lg font-black text-green-400">{formatRD(c.totalMonto)}</div></div>
+
+      {/* Resumen histórico */}
+      {cortes.length > 0 && (
+        <div className="grid grid-cols-3 gap-3">
+          <div className="bg-zinc-900 border border-zinc-800 p-3">
+            <div className="text-[10px] text-zinc-500 uppercase tracking-widest">Cortes totales</div>
+            <div className="text-xl font-black text-white mt-1">{cortes.length}</div>
           </div>
-        </button>
+          <div className="bg-zinc-900 border border-zinc-800 p-3">
+            <div className="text-[10px] text-zinc-500 uppercase tracking-widest">Total histórico</div>
+            <div className="text-xl font-black text-green-400 mt-1">{formatRD(totalHistorico)}</div>
+          </div>
+          <div className="bg-zinc-900 border border-zinc-800 p-3">
+            <div className="text-[10px] text-zinc-500 uppercase tracking-widest">Años</div>
+            <div className="text-xl font-black text-white mt-1">{aniosDisponibles.length}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Filtros */}
+      {cortes.length > 0 && (
+        <div className="bg-zinc-900 border border-zinc-800 p-3 flex gap-2 items-center flex-wrap">
+          <div className="text-[10px] text-zinc-500 uppercase tracking-widest">Filtrar:</div>
+          <select value={filtroAnio} onChange={e => setFiltroAnio(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-1 text-xs text-white">
+            <option value="">Todos los años</option>
+            {aniosDisponibles.map(a => <option key={a} value={a}>{a}</option>)}
+          </select>
+          <input type="text" placeholder="Buscar fecha o nota..." value={filtroBusqueda} onChange={e => setFiltroBusqueda(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-1 text-xs text-white flex-1 min-w-[150px]" />
+          {(filtroAnio || filtroBusqueda) && <button onClick={() => { setFiltroAnio(''); setFiltroBusqueda(''); }} className="text-xs text-red-500">Limpiar</button>}
+          {cortesFiltrados.length !== cortes.length && <div className="text-[10px] text-zinc-500 ml-auto">{cortesFiltrados.length} de {cortes.length} · {formatRD(totalFiltrado)}</div>}
+        </div>
+      )}
+
+      {loading && <div className="text-center py-6"><Loader2 className="w-5 h-5 text-red-500 animate-spin mx-auto" /></div>}
+      {!loading && cortesFiltrados.length === 0 && cortes.length > 0 && <div className="text-center py-10 text-zinc-500 text-sm">Sin resultados con los filtros actuales.</div>}
+      {!loading && cortes.length === 0 && <div className="text-center py-10 text-zinc-500 text-sm">Sin cortes aún.</div>}
+
+      <div className="space-y-2">{cortesFiltrados.map(c => (
+        <div key={c.id} className="bg-zinc-900 border border-zinc-800 hover:border-red-600 flex">
+          <button onClick={() => setCorteVisto(c)} className="flex-1 p-4 text-left">
+            <div className="flex justify-between items-start">
+              <div>
+                <div className="font-bold text-sm">{formatFechaCorta(c.fechaInicio)} → {formatFechaCorta(c.fechaFin)}</div>
+                <div className="text-[10px] text-zinc-500 uppercase">{c.estado}{c.notas && ` · ${c.notas.substring(0, 40)}${c.notas.length > 40 ? '...' : ''}`}</div>
+              </div>
+              <div className="text-right"><div className="text-lg font-black text-green-400">{formatRD(c.totalMonto)}</div></div>
+            </div>
+          </button>
+          {tieneRol(usuario, 'admin') && (
+            <button
+              onClick={() => eliminarCorte(c.id)}
+              disabled={borrandoCorteId === c.id}
+              className="px-3 text-zinc-500 hover:text-red-400 border-l border-zinc-800"
+              title="Eliminar corte"
+            >
+              {borrandoCorteId === c.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+            </button>
+          )}
+        </div>
       ))}</div>
       {crearModal && <ModalCrearCorte onCerrar={() => setCrearModal(false)} onCrear={async (c) => { await db.crearCorte(c); setCrearModal(false); recargar(); }} />}
     </div>
@@ -3399,7 +3990,26 @@ function DetalleCorte({ corte, data, usuario, onVolver }) {
                 <div className="text-[10px] text-red-400 uppercase">{d.proyectoNombre}</div>
                 <div className="text-[10px] text-zinc-500 uppercase">{d.modoPago === 'dia' ? `${d.diasTrabajados} días${d.diasDobles ? ` (${d.diasDobles} doble)` : ''}` : d.modoPago === 'm2' ? `${formatNum(d.m2Producidos)} m²` : 'Ajuste'}</div>
               </div>
-              <div className="text-right"><div className="text-lg font-black text-green-400">{formatRD(d.montoTotal)}</div></div>
+              <div className="flex items-start gap-2">
+                <div className="text-right"><div className="text-lg font-black text-green-400">{formatRD(d.montoTotal)}</div></div>
+                {corte.estado === 'abierto' && tieneRol(usuario, 'admin') && (
+                  <button
+                    onClick={async () => {
+                      if (!confirm(`¿Eliminar el recibo de ${d.personaNombre} en ${d.proyectoNombre}?`)) return;
+                      try {
+                        await db.eliminarReciboNomina(d.id);
+                        await recargar();
+                      } catch (e) {
+                        alert('Error: ' + (e.message || e));
+                      }
+                    }}
+                    className="text-zinc-500 hover:text-red-400 p-1"
+                    title="Eliminar este recibo"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
             <div className="grid grid-cols-4 gap-1 text-[10px] mt-2">
               <div><div className="text-zinc-500 uppercase">Base</div><div className="font-bold">{formatRD(d.montoBase)}</div></div>

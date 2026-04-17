@@ -1,4 +1,4 @@
-'use client';
+\'use client';
 
 import React, { useState, useEffect } from 'react';
 import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed } from 'lucide-react';
@@ -300,7 +300,7 @@ export default function App() {
   const itemsMenu = esAdmin ? [
     { seccion: 'OPERACIÓN', items: [
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, vista: 'dashboard' },
-      { id: 'proyectos', label: 'Proyectos', icon: Briefcase, vista: 'dashboard', esProyectos: true },
+      { id: 'proyectos', label: 'Proyectos', icon: Briefcase, vista: 'proyectos', esProyectos: true },
       { id: 'tareas', label: 'Tareas', icon: ClipboardList, vista: 'tareas', badge: tareas.length },
       { id: 'galeria', label: 'Galería', icon: ImageIcon, vista: 'galeria' },
       { id: 'equipoGlobal', label: 'Equipo en obra', icon: Users, vista: 'equipoGlobal' },
@@ -363,8 +363,8 @@ export default function App() {
                   return (
                     <div key={it.id}>
                       <button
-                        onClick={() => setProyectosExpandidos(!proyectosExpandidos)}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-zinc-400 hover:bg-zinc-900 border-l-2 border-transparent"
+                        onClick={() => { setVista('proyectos'); setProyectosExpandidos(!proyectosExpandidos); setSidebarAbierta(false); }}
+                        className={`w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm border-l-2 ${vista === 'proyectos' ? 'bg-red-600/20 text-red-400 border-red-600' : 'text-zinc-400 hover:bg-zinc-900 border-transparent'}`}
                       >
                         <Icon className="w-4 h-4" />
                         <span className="flex-1">{it.label}</span>
@@ -442,6 +442,20 @@ export default function App() {
       <main className="md:ml-60 max-w-6xl md:mx-auto px-4 py-6">
         {syncing && <div className="hidden md:block fixed top-2 right-4 z-30"><Loader2 className="w-4 h-4 text-red-500 animate-spin" /></div>}
         {esAdmin && vista === 'dashboard' && <Dashboard data={data} tareas={tareas} jornadasHoy={jornadasHoy} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} onNuevoProyecto={() => setVista('nuevoProyecto')} onCompletarTarea={async (id) => withSync(async () => { await db.completarTarea(id, usuario.id); })} onCambiarEstadoRapido={async (proyId, estadoNuevo) => withSync(async () => { await db.cambiarEstadoProyecto(proyId, estadoNuevo, usuario, 'Cambio rápido desde Kanban'); })} />}
+        {esAdmin && vista === 'proyectos' && (
+          <div className="space-y-4">
+            <div>
+              <div className="text-[10px] tracking-widest text-zinc-500 font-bold uppercase mb-1">Proyectos</div>
+              <div className="text-xl font-black">Todos los proyectos</div>
+            </div>
+            <ListaProyectosMultivista
+              data={data}
+              onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }}
+              onNuevoProyecto={() => setVista('nuevoProyecto')}
+              onCambiarEstadoRapido={async (proyId, estadoNuevo) => withSync(async () => { await db.cambiarEstadoProyecto(proyId, estadoNuevo, usuario, 'Cambio rápido desde Kanban'); })}
+            />
+          </div>
+        )}
         {vista === 'tareas' && <VistaTareas usuario={usuario} data={data} onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }} onCompletarTarea={async (id) => withSync(async () => { await db.completarTarea(id, usuario.id); })} onCrearTarea={async (t) => withSync(async () => { await db.crearTarea(t); })} onEliminarTarea={async (id) => withSync(async () => { await db.eliminarTarea(id); })} />}
         {esAdmin && vista === 'nomina' && <VistaNomina usuario={usuario} data={data} onVolver={() => setVista('dashboard')} />}
         {esAdmin && vista === 'galeria' && <GaleriaGlobal usuario={usuario} data={data} onVolver={() => setVista('dashboard')} />}
@@ -1270,9 +1284,6 @@ function Dashboard({ data, onVerProyecto, onNuevoProyecto, tareas, onCompletarTa
           })}</div>
         </div>
       )}
-
-      {/* LISTA DE PROYECTOS - 3 vistas (Kanban / Lista / Mapa) con filtros */}
-      <ListaProyectosMultivista data={data} onVerProyecto={onVerProyecto} onNuevoProyecto={onNuevoProyecto} onCambiarEstadoRapido={onCambiarEstadoRapido} />
     </div>
   );
 }

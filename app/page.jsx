@@ -233,6 +233,7 @@ export default function App() {
   const [tareas, setTareas] = useState([]);
   const [jornadasHoy, setJornadasHoy] = useState([]);
   const [sidebarAbierta, setSidebarAbierta] = useState(false);
+  const [proyectosExpandidos, setProyectosExpandidos] = useState(true);
 
   const recargar = async () => {
     try {
@@ -299,6 +300,7 @@ export default function App() {
   const itemsMenu = esAdmin ? [
     { seccion: 'OPERACIÓN', items: [
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, vista: 'dashboard' },
+      { id: 'proyectos', label: 'Proyectos', icon: Briefcase, vista: 'dashboard', esProyectos: true },
       { id: 'tareas', label: 'Tareas', icon: ClipboardList, vista: 'tareas', badge: tareas.length },
       { id: 'galeria', label: 'Galería', icon: ImageIcon, vista: 'galeria' },
       { id: 'equipoGlobal', label: 'Equipo en obra', icon: Users, vista: 'equipoGlobal' },
@@ -316,6 +318,26 @@ export default function App() {
       ...(tareas.filter(t => t.asignadaAId === usuario.id).length > 0 ? [{ id: 'tareas', label: 'Tareas', icon: ClipboardList, vista: 'tareas', badge: tareas.filter(t => t.asignadaAId === usuario.id).length }] : []),
     ]},
   ];
+
+  // Proyectos visibles en el menú (sin archivados, ordenados)
+  const proyectosMenu = esAdmin ? (data.proyectos || []).filter(p => !p.archivado).sort((a, b) => {
+    const orden = ['en_ejecucion', 'parado', 'aprobado', 'finalizado_no_entregado', 'finalizado_recibido_conforme', 'facturado'];
+    const oa = orden.indexOf(a.estado); const ob = orden.indexOf(b.estado);
+    if (oa !== ob) return oa - ob;
+    return (a.nombre || '').localeCompare(b.nombre || '');
+  }) : [];
+
+  const colorEstado = (estado) => {
+    switch (estado) {
+      case 'aprobado': return '#60a5fa';
+      case 'en_ejecucion': return '#22c55e';
+      case 'parado': return '#f59e0b';
+      case 'finalizado_no_entregado': return '#f43f5e';
+      case 'finalizado_recibido_conforme': return '#a855f7';
+      case 'facturado': return '#71717a';
+      default: return '#71717a';
+    }
+  };
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
@@ -335,8 +357,49 @@ export default function App() {
             <div key={grupo.seccion} className="mb-4">
               <div className="px-4 text-[9px] tracking-widest text-zinc-600 font-bold mb-1">{grupo.seccion}</div>
               {grupo.items.map(it => {
-                const activo = vista === it.vista;
                 const Icon = it.icon;
+                // Caso especial: Proyectos expandible
+                if (it.esProyectos) {
+                  return (
+                    <div key={it.id}>
+                      <button
+                        onClick={() => setProyectosExpandidos(!proyectosExpandidos)}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-zinc-400 hover:bg-zinc-900 border-l-2 border-transparent"
+                      >
+                        <Icon className="w-4 h-4" />
+                        <span className="flex-1">{it.label}</span>
+                        <span className="text-zinc-600 text-[10px]">{proyectosMenu.length}</span>
+                        <ChevronRight className={`w-3 h-3 transition-transform ${proyectosExpandidos ? 'rotate-90' : ''}`} />
+                      </button>
+                      {proyectosExpandidos && (
+                        <div className="py-1">
+                          {proyectosMenu.length === 0 && <div className="pl-11 py-1.5 text-[11px] text-zinc-600 italic">Sin proyectos</div>}
+                          {proyectosMenu.map(p => {
+                            const activoP = vista === 'proyecto' && proyectoActivo?.id === p.id;
+                            return (
+                              <button
+                                key={p.id}
+                                onClick={() => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); setSidebarAbierta(false); }}
+                                className={`w-full flex items-center gap-2 pl-11 pr-4 py-1.5 text-left text-[11px] ${activoP ? 'bg-red-600/10 text-red-400' : 'text-zinc-300 hover:bg-zinc-900'}`}
+                              >
+                                <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: colorEstado(p.estado) }}></span>
+                                <span className="flex-1 truncate">{p.nombre}</span>
+                              </button>
+                            );
+                          })}
+                          <button
+                            onClick={() => { setVista('nuevoProyecto'); setSidebarAbierta(false); }}
+                            className="w-full flex items-center gap-2 pl-11 pr-4 py-1.5 text-left text-[11px] text-red-500 hover:bg-zinc-900 font-bold"
+                          >
+                            <Plus className="w-3 h-3" /> Nuevo proyecto
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+                // Ítem normal
+                const activo = vista === it.vista;
                 return (
                   <button key={it.id} onClick={() => { setVista(it.vista); setSidebarAbierta(false); }} className={`w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors ${activo ? 'bg-red-600/20 text-red-400 border-l-2 border-red-600' : 'text-zinc-400 hover:bg-zinc-900 border-l-2 border-transparent'}`}>
                     <Icon className="w-4 h-4" />

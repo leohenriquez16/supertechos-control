@@ -1,11 +1,11 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed } from 'lucide-react';
+import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed } from 'lucide-react';
 import * as db from '../lib/db';
 import { leerArchivo, parseMateriales, parseSistemas, descargarPlantilla, comprimirImagen } from '../lib/imports';
 import { obtenerUbicacion, distanciaMetros, formatDistancia, abrirEnMapa } from '../lib/geo';
-import { extraerCoordenadasDeGoogleMapsLink } from '../lib/geoutils';
+import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps } from '../lib/geoutils';
 
 // ============================================================
 // HELPERS
@@ -295,41 +295,90 @@ export default function App() {
 
   const esAdmin = tieneRol(usuario, 'admin');
 
+  const [sidebarAbierta, setSidebarAbierta] = useState(false);
+
+  const itemsMenu = esAdmin ? [
+    { seccion: 'OPERACIÓN', items: [
+      { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, vista: 'dashboard' },
+      { id: 'tareas', label: 'Tareas', icon: ClipboardList, vista: 'tareas', badge: tareas.length },
+      { id: 'galeria', label: 'Galería', icon: ImageIcon, vista: 'galeria' },
+      { id: 'equipoGlobal', label: 'Equipo en obra', icon: Users, vista: 'equipoGlobal' },
+    ]},
+    { seccion: 'FINANZAS', items: [
+      { id: 'nomina', label: 'Nómina', icon: Wallet, vista: 'nomina' },
+    ]},
+    { seccion: 'CONFIGURACIÓN', items: [
+      { id: 'sistemas', label: 'Sistemas', icon: Settings, vista: 'sistemas' },
+      { id: 'personal', label: 'Personal', icon: UserIcon, vista: 'personal' },
+    ]},
+  ] : [
+    { seccion: 'MIS PROYECTOS', items: [
+      { id: 'misProyectos', label: 'Proyectos', icon: Briefcase, vista: 'misProyectos' },
+      ...(tareas.filter(t => t.asignadaAId === usuario.id).length > 0 ? [{ id: 'tareas', label: 'Tareas', icon: ClipboardList, vista: 'tareas', badge: tareas.filter(t => t.asignadaAId === usuario.id).length }] : []),
+    ]},
+  ];
+
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
-      <header className="border-b-2 border-red-600 bg-black sticky top-0 z-40">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-2">
-          <button onClick={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }} className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 bg-red-600 flex items-center justify-center font-black text-white text-xl flex-shrink-0" style={{ transform: 'skewX(-12deg)' }}><span style={{ transform: 'skewX(12deg)' }}>ST</span></div>
-            <div className="min-w-0">
-              <div className="font-black tracking-tight text-lg leading-none">SUPER TECHOS</div>
-              <div className="text-[10px] text-zinc-500 tracking-widest uppercase truncate">{esAdmin ? 'Panel Admin' : 'Campo · ' + usuario.nombre.split(' ')[0]}</div>
+      {/* Sidebar */}
+      <aside className={`fixed top-0 left-0 h-full w-60 bg-black border-r-2 border-red-600 z-50 transform transition-transform md:translate-x-0 ${sidebarAbierta ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="p-4 border-b-2 border-red-600/30">
+          <button onClick={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); setSidebarAbierta(false); }} className="flex items-center gap-2">
+            <div className="w-9 h-9 bg-red-600 flex items-center justify-center font-black text-white text-lg" style={{ transform: 'skewX(-12deg)' }}><span style={{ transform: 'skewX(12deg)' }}>ST</span></div>
+            <div className="text-left">
+              <div className="font-black tracking-tight text-sm leading-none">SUPER TECHOS</div>
+              <div className="text-[9px] text-zinc-500 tracking-widest uppercase">Control de Obras</div>
             </div>
           </button>
-          <div className="flex items-center gap-1 flex-shrink-0">
-            {syncing && <Loader2 className="w-3.5 h-3.5 text-red-500 animate-spin" />}
-            {esAdmin && (
-              <>
-                <IconBtn onClick={() => setVista('nomina')} title="Nómina"><Wallet className="w-3.5 h-3.5" /></IconBtn>
-                <IconBtn onClick={() => setVista('galeria')} title="Galería"><ImageIcon className="w-3.5 h-3.5" /></IconBtn>
-                <IconBtn onClick={() => setVista('equipoGlobal')} title="Equipo en obra"><Users className="w-3.5 h-3.5" /></IconBtn>
-                <IconBtn onClick={() => setVista('tareas')} title="Tareas">{tareas.length > 0 ? <div className="relative"><ClipboardList className="w-3.5 h-3.5" /><div className="absolute -top-1 -right-1 w-1.5 h-1.5 bg-red-500 rounded-full" /></div> : <ClipboardList className="w-3.5 h-3.5" />}</IconBtn>
-                <IconBtn onClick={() => setVista('sistemas')} title="Sistemas"><Settings className="w-3.5 h-3.5" /></IconBtn>
-                <IconBtn onClick={() => setVista('personal')} title="Personal"><UserIcon className="w-3.5 h-3.5" /></IconBtn>
-              </>
-            )}
-            {!esAdmin && tareas.filter(t => t.asignadaAId === usuario.id).length > 0 && (
-              <IconBtn onClick={() => setVista('tareas')} title="Mis tareas"><div className="relative"><ClipboardList className="w-3.5 h-3.5" /><div className="absolute -top-1 -right-1 w-1.5 h-1.5 bg-red-500 rounded-full" /></div></IconBtn>
-            )}
-            <IconBtn onClick={() => setVista('miPerfil')} title="Mi perfil"><UserIcon className="w-3.5 h-3.5" /></IconBtn>
-            <button onClick={() => { setUsuario(null); setProyectoActivo(null); setVista('dashboard'); }} className="flex items-center gap-1 text-xs text-zinc-400 hover:text-white px-2 py-1.5">
-              <LogOut className="w-4 h-4" />
-            </button>
+        </div>
+        <nav className="flex-1 overflow-y-auto py-4" style={{ height: 'calc(100vh - 140px)' }}>
+          {itemsMenu.map(grupo => (
+            <div key={grupo.seccion} className="mb-4">
+              <div className="px-4 text-[9px] tracking-widest text-zinc-600 font-bold mb-1">{grupo.seccion}</div>
+              {grupo.items.map(it => {
+                const activo = vista === it.vista;
+                const Icon = it.icon;
+                return (
+                  <button key={it.id} onClick={() => { setVista(it.vista); setSidebarAbierta(false); }} className={`w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors ${activo ? 'bg-red-600/20 text-red-400 border-l-2 border-red-600' : 'text-zinc-400 hover:bg-zinc-900 border-l-2 border-transparent'}`}>
+                    <Icon className="w-4 h-4" />
+                    <span className="flex-1">{it.label}</span>
+                    {it.badge > 0 && <span className="bg-red-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">{it.badge}</span>}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </nav>
+        <div className="border-t border-zinc-800 p-3 absolute bottom-0 left-0 right-0 bg-black">
+          <button onClick={() => { setVista('miPerfil'); setSidebarAbierta(false); }} className="w-full flex items-center gap-2 text-left text-xs p-2 hover:bg-zinc-900">
+            {usuario.foto2x2 ? <img src={usuario.foto2x2} alt="" className="w-7 h-7 object-cover" /> : <UserCircle className="w-7 h-7 text-zinc-500" />}
+            <div className="flex-1 min-w-0">
+              <div className="font-bold truncate">{usuario.nombre.split(' ')[0]}</div>
+              <div className="text-[9px] text-zinc-500 uppercase truncate">{esAdmin ? 'Admin' : 'Campo'}</div>
+            </div>
+          </button>
+          <button onClick={() => { setUsuario(null); setProyectoActivo(null); setVista('dashboard'); }} className="w-full flex items-center gap-2 text-left text-xs p-2 text-zinc-400 hover:text-red-400 hover:bg-zinc-900">
+            <LogOut className="w-4 h-4" /> Salir
+          </button>
+        </div>
+      </aside>
+      {/* Overlay móvil */}
+      {sidebarAbierta && <div onClick={() => setSidebarAbierta(false)} className="fixed inset-0 bg-black/60 z-40 md:hidden" />}
+
+      {/* Header móvil con hamburguesa */}
+      <header className="md:hidden border-b-2 border-red-600 bg-black sticky top-0 z-30">
+        <div className="px-4 py-3 flex items-center justify-between gap-2">
+          <button onClick={() => setSidebarAbierta(true)} className="text-zinc-400 hover:text-white p-2"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-8 h-8 bg-red-600 flex items-center justify-center font-black text-white text-sm" style={{ transform: 'skewX(-12deg)' }}><span style={{ transform: 'skewX(12deg)' }}>ST</span></div>
+            <div className="font-black tracking-tight text-sm">SUPER TECHOS</div>
           </div>
+          <div className="w-10">{syncing && <Loader2 className="w-4 h-4 text-red-500 animate-spin" />}</div>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 py-6">
+      <main className="md:ml-60 max-w-6xl md:mx-auto px-4 py-6">
+        {syncing && <div className="hidden md:block fixed top-2 right-4 z-30"><Loader2 className="w-4 h-4 text-red-500 animate-spin" /></div>}
         {esAdmin && vista === 'dashboard' && <Dashboard data={data} tareas={tareas} jornadasHoy={jornadasHoy} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} onNuevoProyecto={() => setVista('nuevoProyecto')} onCompletarTarea={async (id) => withSync(async () => { await db.completarTarea(id, usuario.id); })} onCambiarEstadoRapido={async (proyId, estadoNuevo) => withSync(async () => { await db.cambiarEstadoProyecto(proyId, estadoNuevo, usuario, 'Cambio rápido desde Kanban'); })} />}
         {vista === 'tareas' && <VistaTareas usuario={usuario} data={data} onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }} onCompletarTarea={async (id) => withSync(async () => { await db.completarTarea(id, usuario.id); })} onCrearTarea={async (t) => withSync(async () => { await db.crearTarea(t); })} onEliminarTarea={async (id) => withSync(async () => { await db.eliminarTarea(id); })} />}
         {esAdmin && vista === 'nomina' && <VistaNomina usuario={usuario} data={data} onVolver={() => setVista('dashboard')} />}
@@ -924,7 +973,24 @@ function NuevoProyecto({ personal, sistemas, onCancelar, onCrear }) {
             <Campo label="Personas"><div className="space-y-1">{[form.maestroId, ...form.ayudantesIds].filter(Boolean).map(pid => { const pe = getPersona(personal, pid); if (!pe) return null; return <label key={pid} className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 p-2 cursor-pointer"><input type="checkbox" checked={form.dieta.personasIds.includes(pid)} onChange={e => { const n = e.target.checked ? [...form.dieta.personasIds, pid] : form.dieta.personasIds.filter(x => x !== pid); setForm({ ...form, dieta: { ...form.dieta, personasIds: n } }); }} className="w-4 h-4 accent-red-600" /><span className="text-sm">{pe.nombre}</span></label>; })}</div></Campo>
           </div>}
         </div>
-        <div className="flex gap-2 pt-4"><button onClick={onCancelar} className="px-6 bg-zinc-900 border-2 border-zinc-800 text-zinc-400 font-bold uppercase py-4">Cancelar</button><button onClick={crear} disabled={!form.nombre || !form.supervisorId || !form.maestroId || !form.fecha_entrega || form.areas.some(a => !a.nombre || !a.m2)} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-600 text-white font-black uppercase py-4">Crear</button></div>
+        <div className="flex gap-2 pt-4"><button onClick={onCancelar} className="px-6 bg-zinc-900 border-2 border-zinc-800 text-zinc-400 font-bold uppercase py-4">Cancelar</button>
+          {(() => {
+            const faltantes = [];
+            if (!form.nombre) faltantes.push('nombre');
+            if (!form.cliente) faltantes.push('cliente');
+            if (!form.sistema) faltantes.push('sistema');
+            if (form.areas.length === 0) faltantes.push('al menos un área');
+            if (form.areas.some(a => !a.nombre || !a.m2)) faltantes.push('m² de todas las áreas');
+            const puedeCrear = faltantes.length === 0;
+            return (
+              <div className="flex-1 flex flex-col gap-1">
+                <button onClick={crear} disabled={!puedeCrear} className="w-full bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-600 text-white font-black uppercase py-4">Crear</button>
+                {!puedeCrear && <div className="text-[10px] text-yellow-400 text-center">Falta: {faltantes.join(', ')}</div>}
+                {puedeCrear && (!form.supervisorId || !form.maestroId) && <div className="text-[10px] text-zinc-500 text-center">💡 Puedes asignar supervisor/maestro después</div>}
+              </div>
+            );
+          })()}
+        </div>
       </div>
     </div>
   );
@@ -963,57 +1029,143 @@ function MisProyectos({ usuario, data, onIrAReportar, onVerDetalle }) {
 // ============================================================
 function Dashboard({ data, onVerProyecto, onNuevoProyecto, tareas, onCompletarTarea, jornadasHoy, onCambiarEstadoRapido }) {
   const hoy = new Date().toISOString().split('T')[0];
-  const ayer = (() => { const d = new Date(); d.setDate(d.getDate() - 1); return d.toISOString().split('T')[0]; })();
-  const porDia = produccionPorDia(data.reportes, data.proyectos, data.sistemas);
-  const prodAyer = porDia[ayer] || 0;
-  const prodHoy = porDia[hoy] || 0;
-  
-  // Proyectos activos hoy
+  const [periodo, setPeriodo] = useState('dia');
+  const [fechaRef, setFechaRef] = useState(hoy);
+
+  // Calcular rango [desde, hasta] según periodo y fecha de referencia
+  const calcRango = (p, fref) => {
+    const d = new Date(fref + 'T12:00:00');
+    if (p === 'dia') return { desde: fref, hasta: fref };
+    if (p === 'semana') {
+      const dow = d.getDay() || 7;
+      const lun = new Date(d); lun.setDate(d.getDate() - dow + 1);
+      const dom = new Date(lun); dom.setDate(lun.getDate() + 6);
+      return { desde: lun.toISOString().split('T')[0], hasta: dom.toISOString().split('T')[0] };
+    }
+    if (p === 'quincena') {
+      const day = d.getDate();
+      if (day <= 15) return { desde: `${fref.slice(0, 8)}01`, hasta: `${fref.slice(0, 8)}15` };
+      const ult = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+      return { desde: `${fref.slice(0, 8)}16`, hasta: `${fref.slice(0, 7)}-${String(ult).padStart(2, '0')}` };
+    }
+    if (p === 'mes') {
+      const ini = `${fref.slice(0, 7)}-01`;
+      const ult = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+      return { desde: ini, hasta: `${fref.slice(0, 7)}-${String(ult).padStart(2, '0')}` };
+    }
+    if (p === 'trimestre') {
+      const mes = d.getMonth(); const qIni = Math.floor(mes / 3) * 3;
+      const desde = new Date(d.getFullYear(), qIni, 1);
+      const hasta = new Date(d.getFullYear(), qIni + 3, 0);
+      return { desde: desde.toISOString().split('T')[0], hasta: hasta.toISOString().split('T')[0] };
+    }
+    if (p === 'anio') return { desde: `${fref.slice(0, 4)}-01-01`, hasta: `${fref.slice(0, 4)}-12-31` };
+    return { desde: fref, hasta: fref };
+  };
+
+  const rango = calcRango(periodo, fechaRef);
+  // Rango del periodo anterior (misma duración, antes)
+  const rangoAnt = (() => {
+    const dIni = new Date(rango.desde + 'T12:00:00');
+    const dFin = new Date(rango.hasta + 'T12:00:00');
+    const diasMs = (dFin - dIni) + 86400000;
+    const ini = new Date(dIni.getTime() - diasMs);
+    const fin = new Date(dIni.getTime() - 86400000);
+    return { desde: ini.toISOString().split('T')[0], hasta: fin.toISOString().split('T')[0] };
+  })();
+
+  // Producción en un rango
+  const prodEnRango = (desde, hasta) => {
+    let total = 0;
+    data.reportes.forEach(r => {
+      if (r.fecha < desde || r.fecha > hasta) return;
+      const proy = data.proyectos.find(p => p.id === r.proyectoId);
+      if (!proy) return;
+      const sistema = data.sistemas[proy.sistema];
+      if (!sistema) return;
+      const m2 = getM2Reporte(r, sistema);
+      const tarea = sistema.tareas.find(t => t.id === r.tareaId);
+      if (tarea) total += m2 * sistema.precio_m2 * (tarea.peso / 100);
+    });
+    return total;
+  };
+
+  // Costo de materiales en un rango
+  const costoMatEnRango = (desde, hasta) => {
+    let total = 0;
+    data.envios.forEach(e => {
+      if (e.fecha < desde || e.fecha > hasta) return;
+      if (e.costoTotal) { total += e.costoTotal; return; }
+      const proy = data.proyectos.find(p => p.id === e.proyectoId);
+      if (!proy) return;
+      const sistema = data.sistemas[proy.sistema];
+      if (!sistema) return;
+      const mat = sistema.materiales?.find(m => m.id === e.materialId);
+      if (mat) total += e.cantidad * (mat.costo_unidad || 0);
+    });
+    return total;
+  };
+
+  const prodPeriodo = prodEnRango(rango.desde, rango.hasta);
+  const prodAnt = prodEnRango(rangoAnt.desde, rangoAnt.hasta);
+  const deltaProd = prodAnt > 0 ? ((prodPeriodo - prodAnt) / prodAnt) * 100 : null;
+  const costoMatPeriodo = costoMatEnRango(rango.desde, rango.hasta);
+  const margenPeriodo = prodPeriodo - costoMatPeriodo;
+
+  // Aprobados en el rango (fecha de aprobación o fecha_inicio si no)
+  const aprobadosPeriodo = data.proyectos.filter(p => {
+    const f = p.fechaAprobacion || p.fecha_inicio;
+    return f >= rango.desde && f <= rango.hasta;
+  });
+  const montoAprobadosPeriodo = aprobadosPeriodo.reduce((s, p) => {
+    const sistema = data.sistemas[p.sistema];
+    if (!sistema) return s;
+    const m2 = (p.areas || []).reduce((t, a) => t + a.m2, 0);
+    return s + m2 * (sistema.precio_m2 || 0);
+  }, 0);
+
+  // Proyectos activos y personas en obra HOY (siempre)
   const proyectosEjecutando = data.proyectos.filter(p => ['en_ejecucion', 'finalizado_no_entregado'].includes(p.estado));
-  
-  // Personal en obra hoy (suma de personas en jornadas abiertas)
   const personasHoy = new Set();
   (jornadasHoy || []).forEach(j => { (j.personasPresentesIds || []).forEach(id => personasHoy.add(id)); });
-  
-  // Volumen aprobado hoy
-  const aprobadosHoy = data.proyectos.filter(p => p.fechaAprobacion === hoy);
-  const montoAprobadoHoy = aprobadosHoy.reduce((a, p) => {
-    const sistema = data.sistemas[p.sistema];
-    if (!sistema) return a;
-    const m2 = (p.areas || []).reduce((t, ar) => t + ar.m2, 0);
-    return a + m2 * (sistema.precio_m2 || 0);
-  }, 0);
-  
-  // Margen del día: producido hoy - materiales gastados hoy
-  const enviosHoy = data.envios.filter(e => e.fecha === hoy);
-  let costoMatHoy = 0;
-  enviosHoy.forEach(e => {
-    const proy = data.proyectos.find(p => p.id === e.proyectoId);
-    if (!proy) return;
-    const sistema = data.sistemas[proy.sistema];
-    if (!sistema) return;
-    const mat = sistema.materiales?.find(m => m.id === e.materialId);
-    if (mat) costoMatHoy += e.cantidad * (mat.costo_unidad || 0);
-  });
-  const margenHoy = prodHoy - costoMatHoy;
-  
-  // Cubicaciones pendientes
-  // (v8.1: estado "cubicando" ya no existe, dejamos placeholder vacío)
-  const cubicacionesPend = [];
-  
-  // Pipeline: agrupar proyectos por estado (excluyendo cobrado/cancelado para no saturar)
-  const pipeline = {};
-  ORDEN_ESTADOS.forEach(e => { pipeline[e] = []; });
-  data.proyectos.forEach(p => {
-    if (p.estado === 'facturado') return; // los facturados no saturan el pipeline
-    (pipeline[p.estado] = pipeline[p.estado] || []).push(p);
-  });
-  
+
+  const labelRango = () => {
+    if (periodo === 'dia') return formatFechaCorta(rango.desde);
+    if (periodo === 'anio') return rango.desde.slice(0, 4);
+    return `${formatFechaCorta(rango.desde)} → ${formatFechaCorta(rango.hasta)}`;
+  };
+
+  const moverPeriodo = (direccion) => {
+    const d = new Date(fechaRef + 'T12:00:00');
+    if (periodo === 'dia') d.setDate(d.getDate() + direccion);
+    else if (periodo === 'semana') d.setDate(d.getDate() + 7 * direccion);
+    else if (periodo === 'quincena') d.setDate(d.getDate() + 15 * direccion);
+    else if (periodo === 'mes') d.setMonth(d.getMonth() + direccion);
+    else if (periodo === 'trimestre') d.setMonth(d.getMonth() + 3 * direccion);
+    else if (periodo === 'anio') d.setFullYear(d.getFullYear() + direccion);
+    setFechaRef(d.toISOString().split('T')[0]);
+  };
+
   const tareasPendientes = (tareas || []).filter(t => !t.completada).slice(0, 5);
-  
+
   return (
     <div className="space-y-6">
-      {/* HERO: Métricas ejecutivas */}
+      {/* SELECTOR DE PERIODO */}
+      <div className="bg-zinc-900 border border-zinc-800 p-3 space-y-2">
+        <div className="flex flex-wrap gap-1">
+          {[['dia','Día'],['semana','Semana'],['quincena','Quincena'],['mes','Mes'],['trimestre','Trim'],['anio','Año']].map(([v,t]) => (
+            <button key={v} onClick={() => { setPeriodo(v); setFechaRef(hoy); }} className={`px-3 py-1.5 text-[10px] font-bold uppercase ${periodo === v ? 'bg-red-600 text-white' : 'bg-zinc-950 text-zinc-400 border border-zinc-800'}`}>{t}</button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => moverPeriodo(-1)} className="bg-zinc-950 border border-zinc-800 p-2 text-zinc-400 hover:text-white"><ChevronLeft className="w-4 h-4" /></button>
+          <div className="flex-1 text-center text-sm font-bold">{labelRango()}</div>
+          <button onClick={() => moverPeriodo(1)} className="bg-zinc-950 border border-zinc-800 p-2 text-zinc-400 hover:text-white"><ChevronRight className="w-4 h-4" /></button>
+          <button onClick={() => setFechaRef(hoy)} className="bg-zinc-950 border border-zinc-800 px-3 py-2 text-[10px] font-bold uppercase text-zinc-400 hover:text-white">Hoy</button>
+        </div>
+      </div>
+
+      {/* HERO: Métricas ejecutivas del periodo */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         <div className="bg-gradient-to-br from-red-600 to-red-800 p-4">
           <div className="text-[10px] tracking-widest uppercase text-red-200">Hoy en obra</div>
@@ -1021,53 +1173,39 @@ function Dashboard({ data, onVerProyecto, onNuevoProyecto, tareas, onCompletarTa
           <div className="text-[10px] text-red-200">proyectos · {personasHoy.size} personas</div>
         </div>
         <div className="bg-zinc-900 border border-zinc-800 p-4">
-          <div className="text-[10px] tracking-widest uppercase text-zinc-500">Producción ayer</div>
-          <div className="text-2xl font-black text-green-400 mt-1">{formatRD(prodAyer)}</div>
-          <div className="text-[10px] text-zinc-600">Hoy: {formatRD(prodHoy)}</div>
+          <div className="text-[10px] tracking-widest uppercase text-zinc-500">Producción</div>
+          <div className="text-2xl font-black text-green-400 mt-1">{formatRD(prodPeriodo)}</div>
+          {deltaProd !== null && <div className={`text-[10px] ${deltaProd >= 0 ? 'text-green-500' : 'text-red-400'}`}>{deltaProd >= 0 ? '↑' : '↓'} {Math.abs(deltaProd).toFixed(0)}% vs anterior</div>}
+          {deltaProd === null && <div className="text-[10px] text-zinc-600">{formatRD(prodAnt)} anterior</div>}
         </div>
         <div className="bg-zinc-900 border border-zinc-800 p-4">
-          <div className="text-[10px] tracking-widest uppercase text-zinc-500">Aprobados hoy</div>
-          <div className="text-2xl font-black text-cyan-400 mt-1">{formatRD(montoAprobadoHoy)}</div>
-          <div className="text-[10px] text-zinc-600">{aprobadosHoy.length} proyecto{aprobadosHoy.length !== 1 ? 's' : ''}</div>
+          <div className="text-[10px] tracking-widest uppercase text-zinc-500">Aprobados</div>
+          <div className="text-2xl font-black text-cyan-400 mt-1">{formatRD(montoAprobadosPeriodo)}</div>
+          <div className="text-[10px] text-zinc-600">{aprobadosPeriodo.length} proyecto{aprobadosPeriodo.length !== 1 ? 's' : ''}</div>
         </div>
         <div className="bg-zinc-900 border border-zinc-800 p-4">
-          <div className="text-[10px] tracking-widest uppercase text-zinc-500">Margen del día</div>
-          <div className={`text-2xl font-black mt-1 ${margenHoy >= 0 ? 'text-green-400' : 'text-red-400'}`}>{formatRD(margenHoy)}</div>
-          <div className="text-[10px] text-zinc-600">Prod - Mat gastado</div>
+          <div className="text-[10px] tracking-widest uppercase text-zinc-500">Margen</div>
+          <div className={`text-2xl font-black mt-1 ${margenPeriodo >= 0 ? 'text-green-400' : 'text-red-400'}`}>{formatRD(margenPeriodo)}</div>
+          <div className="text-[10px] text-zinc-600">-{formatRD(costoMatPeriodo)} mat.</div>
         </div>
       </div>
-      
-      {/* Tareas pendientes */}
+
+      {/* TAREAS PENDIENTES */}
       {tareasPendientes.length > 0 && (
-        <div className="bg-orange-900/20 border-l-4 border-orange-500 p-4">
-          <div className="flex items-center gap-2 mb-2"><ClipboardList className="w-4 h-4 text-orange-400" /><div className="text-xs tracking-widest uppercase text-orange-400 font-bold">Tareas Pendientes ({tareasPendientes.length})</div></div>
+        <div>
+          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2">Tareas pendientes</div>
           <div className="space-y-1">{tareasPendientes.map(t => {
             const proy = data.proyectos.find(p => p.id === t.proyectoId);
             return (
-              <div key={t.id} className="bg-zinc-950 border border-zinc-800 p-2 flex items-center gap-2">
-                <button onClick={() => onCompletarTarea(t.id)} className="text-zinc-500 hover:text-green-400"><CircleDashed className="w-5 h-5" /></button>
+              <div key={t.id} className="bg-zinc-900 border-l-4 border-orange-500 p-2 flex items-center gap-2">
+                <button onClick={() => onCompletarTarea(t.id)} className="text-zinc-500 hover:text-green-400"><CircleDashed className="w-4 h-4" /></button>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-bold truncate">{t.titulo}</div>
-                  <div className="text-[10px] text-zinc-500">{proy?.cliente || ''} · {t.asignadaANombre || 'Sin asignar'}</div>
+                  <div className="text-xs font-bold truncate">{t.titulo}</div>
+                  <div className="text-[10px] text-zinc-500 truncate">{proy?.cliente} · {t.asignadaANombre}</div>
                 </div>
-                {t.fechaLimite && <div className="text-[10px] text-yellow-400">📅 {formatFechaCorta(t.fechaLimite)}</div>}
               </div>
             );
           })}</div>
-        </div>
-      )}
-      
-      {/* Cubicaciones pendientes */}
-      {cubicacionesPend.length > 0 && (
-        <div className="bg-purple-900/20 border-l-4 border-purple-500 p-4">
-          <div className="flex items-center gap-2 mb-2"><Calendar className="w-4 h-4 text-purple-400" /><div className="text-xs tracking-widest uppercase text-purple-400 font-bold">Cubicaciones próximas ({cubicacionesPend.length})</div></div>
-          <div className="space-y-1">{cubicacionesPend.slice(0, 3).map(p => (
-            <button key={p.id} onClick={() => onVerProyecto(p)} className="w-full bg-zinc-950 border border-zinc-800 p-2 flex items-center gap-2 text-left hover:border-purple-600">
-              <Calendar className="w-4 h-4 text-purple-400" />
-              <div className="flex-1 min-w-0"><div className="text-sm font-bold truncate">{p.cliente}</div><div className="text-[10px] text-zinc-500 truncate">{p.referenciaProyecto || p.nombre}</div></div>
-              <div className="text-[10px] text-purple-300">{formatFechaCorta(p.fechaCubicacion)}</div>
-            </button>
-          ))}</div>
         </div>
       )}
 
@@ -1317,6 +1455,8 @@ function ModalEditarProyecto({ proyecto, data, usuario, onCerrar, onGuardar, onA
     fecha_entrega: proyecto.fecha_entrega,
     modoPagoManoObra: proyecto.modoPagoManoObra || 'dia',
     preciosTareasM2: proyecto.preciosTareasM2 || {},
+    areas: proyecto.areas ? proyecto.areas.map(a => ({ ...a })) : [],
+    cronogramaVisibleMaestro: proyecto.cronogramaVisibleMaestro !== false, // default true
   });
   const [guardando, setGuardando] = useState(false);
   const [costosDia, setCostosDia] = useState([]);
@@ -1334,13 +1474,19 @@ function ModalEditarProyecto({ proyecto, data, usuario, onCerrar, onGuardar, onA
   const maestros = getMaestros(data.personal);
   const ayudantesDisp = form.maestroId ? getAyudantesDeMaestro(data.personal, form.maestroId) : [];
 
-  const extraerLinkMaps = () => {
-    const coords = extraerCoordenadasDeGoogleMapsLink(form.googleMapsLink);
-    if (coords) {
-      setForm({ ...form, ubicacionLat: coords.lat, ubicacionLng: coords.lng });
-      alert(`Coordenadas extraídas: ${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`);
-    } else {
-      alert('No se pudieron extraer coordenadas de ese link. Formato soportado: https://maps.google.com/...@lat,lng... o con ?q=lat,lng');
+  const [extrayendo, setExtrayendo] = useState(false);
+  const extraerLinkMaps = async () => {
+    setExtrayendo(true);
+    try {
+      const coords = await expandirYExtraer(form.googleMapsLink);
+      if (coords) {
+        setForm({ ...form, ubicacionLat: coords.lat, ubicacionLng: coords.lng });
+        alert(`Coordenadas extraídas: ${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`);
+      } else {
+        alert('No se pudieron extraer coordenadas de ese link. Prueba con el link completo de Google Maps (barra de direcciones del navegador).');
+      }
+    } finally {
+      setExtrayendo(false);
     }
   };
 
@@ -1397,7 +1543,7 @@ function ModalEditarProyecto({ proyecto, data, usuario, onCerrar, onGuardar, onA
           <Campo label="Link de Google Maps">
             <div className="flex gap-2">
               <input type="text" value={form.googleMapsLink} onChange={e => setForm({ ...form, googleMapsLink: e.target.value })} placeholder="https://maps.google.com/..." className="flex-1 bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white text-sm" />
-              <button onClick={extraerLinkMaps} disabled={!form.googleMapsLink} className="bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase px-3">Extraer</button>
+              <button onClick={extraerLinkMaps} disabled={!form.googleMapsLink || extrayendo} className="bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase px-3 flex items-center gap-1">{extrayendo ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Extraer'}</button>
             </div>
             <div className="text-[10px] text-zinc-500 mt-1">Pega un link de Google Maps y clic "Extraer" para obtener las coordenadas.</div>
           </Campo>
@@ -1411,6 +1557,39 @@ function ModalEditarProyecto({ proyecto, data, usuario, onCerrar, onGuardar, onA
           <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Contacto del cliente</div>
           <Campo label="Nombre contacto"><Input value={form.contactoClienteNombre} onChange={v => setForm({ ...form, contactoClienteNombre: v })} /></Campo>
           <div className="grid grid-cols-2 gap-3"><Campo label="Teléfono"><Input value={form.contactoClienteTelefono} onChange={v => setForm({ ...form, contactoClienteTelefono: v })} /></Campo><Campo label="Email"><Input type="email" value={form.contactoClienteEmail} onChange={v => setForm({ ...form, contactoClienteEmail: v })} /></Campo></div>
+        </div>
+
+        <div className="space-y-3 border-t border-zinc-800 pt-3">
+          <div className="flex items-center justify-between">
+            <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Áreas ({form.areas.length})</div>
+            <button onClick={() => setForm({ ...form, areas: [...form.areas, { id: 'a_' + Date.now() + Math.random().toString(36).slice(2, 6), nombre: '', m2: 0 }] })} className="text-xs text-red-500 flex items-center gap-1"><Plus className="w-3 h-3" /> Agregar área</button>
+          </div>
+          {form.areas.map((area, i) => (
+            <div key={area.id} className="bg-zinc-950 border border-zinc-800 p-2 space-y-1">
+              <div className="flex items-center gap-2">
+                <input type="text" value={area.nombre} onChange={e => { const n = [...form.areas]; n[i] = { ...area, nombre: e.target.value }; setForm({ ...form, areas: n }); }} placeholder="Nombre (ej: Techo Hombres)" className="flex-1 bg-zinc-900 border border-zinc-800 px-2 py-1.5 text-white text-xs" />
+                <input type="number" value={area.m2 || ''} onChange={e => { const n = [...form.areas]; n[i] = { ...area, m2: parseFloat(e.target.value) || 0 }; setForm({ ...form, areas: n }); }} placeholder="m²" className="w-20 bg-zinc-900 border border-zinc-800 px-2 py-1.5 text-white text-xs text-right" />
+                <button onClick={() => { if (confirm('¿Eliminar esta área? Se perderán los reportes asociados.')) { setForm({ ...form, areas: form.areas.filter(x => x.id !== area.id) }); } }} className="text-zinc-500 hover:text-red-400"><Trash2 className="w-3 h-3" /></button>
+              </div>
+              <select value={area.maestroAreaId || ''} onChange={e => { const n = [...form.areas]; n[i] = { ...area, maestroAreaId: e.target.value || null }; setForm({ ...form, areas: n }); }} className="w-full bg-zinc-900 border border-zinc-800 px-2 py-1.5 text-white text-[10px]">
+                <option value="">Usar maestro principal del proyecto</option>
+                {maestros.map(m => <option key={m.id} value={m.id}>🔨 {m.nombre}</option>)}
+              </select>
+            </div>
+          ))}
+          {form.areas.length === 0 && <div className="text-xs text-zinc-500 text-center py-2">Sin áreas. Click en "Agregar área" para crear.</div>}
+          <div className="text-[10px] text-zinc-600">Total: {formatNum(form.areas.reduce((s, a) => s + (a.m2 || 0), 0))} m²</div>
+        </div>
+
+        <div className="space-y-3 border-t border-zinc-800 pt-3">
+          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Configuración</div>
+          <label className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 p-3 cursor-pointer">
+            <input type="checkbox" checked={form.cronogramaVisibleMaestro} onChange={e => setForm({ ...form, cronogramaVisibleMaestro: e.target.checked })} className="w-4 h-4 accent-red-600" />
+            <div className="flex-1">
+              <div className="text-xs font-bold">Mostrar cronograma al maestro/supervisor</div>
+              <div className="text-[10px] text-zinc-500">Si lo apagas, solo admin ve las fechas y el Gantt</div>
+            </div>
+          </label>
         </div>
 
         <div className="space-y-3 border-t border-zinc-800 pt-3">
@@ -1498,21 +1677,94 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
 
       <div className="flex gap-1 border-b-2 border-zinc-800 overflow-x-auto">
         <TabBtn active={tab === 'avance'} onClick={() => setTab('avance')}><TrendingUp className="w-3 h-3 inline mr-1" />Avance</TabBtn>
+        <TabBtn active={tab === 'info'} onClick={() => setTab('info')}><MapPin className="w-3 h-3 inline mr-1" />Info</TabBtn>
         <TabBtn active={tab === 'jornada'} onClick={() => setTab('jornada')}><Clock className="w-3 h-3 inline mr-1" />Jornada</TabBtn>
+        <TabBtn active={tab === 'equipo'} onClick={() => setTab('equipo')}><Users className="w-3 h-3 inline mr-1" />Equipo</TabBtn>
         <TabBtn active={tab === 'fotos'} onClick={() => setTab('fotos')}><ImageIcon className="w-3 h-3 inline mr-1" />Fotos</TabBtn>
-        <TabBtn active={tab === 'cronograma'} onClick={() => setTab('cronograma')}><Calendar className="w-3 h-3 inline mr-1" />Cronograma</TabBtn>
+        {(esAdmin || proyecto.cronogramaVisibleMaestro !== false) && <TabBtn active={tab === 'cronograma'} onClick={() => setTab('cronograma')}><Calendar className="w-3 h-3 inline mr-1" />Cronograma</TabBtn>}
         <TabBtn active={tab === 'materiales'} onClick={() => setTab('materiales')}><Package className="w-3 h-3 inline mr-1" />Materiales</TabBtn>
         {!esSupervisor && <TabBtn active={tab === 'costo'} onClick={() => setTab('costo')}><DollarSign className="w-3 h-3 inline mr-1" />Costo</TabBtn>}
         {!esSupervisor && proyecto.dieta?.habilitada && <TabBtn active={tab === 'dieta'} onClick={() => setTab('dieta')}><Utensils className="w-3 h-3 inline mr-1" />Dieta</TabBtn>}
       </div>
 
       {tab === 'avance' && <TabAvance proyecto={proyecto} reportes={data.reportes} sistema={sistema} esSupervisor={esSupervisor} onEliminarReporte={onEliminarReporte} />}
-      {tab === 'jornada' && <TabJornada usuario={usuario} proyecto={proyecto} personal={data.personal} onActualizarUbicacion={(lat, lng, dir) => onActualizarProyecto({ ...proyecto, ubicacionLat: lat, ubicacionLng: lng, ubicacionDireccion: dir })} />}
+      {tab === 'info' && <TabInfo proyecto={proyecto} />}
+      {tab === 'jornada' && <TabJornada usuario={usuario} proyecto={proyecto} personal={data.personal} onActualizarUbicacion={(lat, lng, dir) => onActualizarProyecto({ ...proyecto, ubicacionLat: lat, ubicacionLng: lng, ubicacionDireccion: dir })} onEliminarJornada={onEliminarJornada} />}
+      {tab === 'equipo' && <TabEquipoProyecto proyecto={proyecto} data={data} sistema={sistema} />}
       {tab === 'fotos' && <TabFotos usuario={usuario} proyecto={proyecto} />}
-      {tab === 'cronograma' && <TabCronograma proyecto={proyecto} porcentajeActual={porcentaje} onActualizarProyecto={onActualizarProyecto} esSupervisor={esSupervisor} />}
+      {tab === 'cronograma' && (esAdmin || proyecto.cronogramaVisibleMaestro !== false) && <TabCronograma proyecto={proyecto} porcentajeActual={porcentaje} onActualizarProyecto={onActualizarProyecto} esSupervisor={esSupervisor} reportes={data.reportes} sistema={sistema} />}
       {tab === 'materiales' && <TabMateriales proyecto={proyecto} sistema={sistema} materiales={materiales} envios={data.envios.filter(e => e.proyectoId === proyecto.id)} sistemas={data.sistemas} onRegistrarEnvio={onRegistrarEnvio} onRegistrarEnviosLote={onRegistrarEnviosLote} esSupervisor={esSupervisor} onEliminarEnvio={onEliminarEnvio} />}
       {tab === 'costo' && !esSupervisor && <TabCosto proyecto={proyecto} sistema={sistema} reportes={data.reportes} envios={data.envios} config={data.config} />}
       {tab === 'dieta' && !esSupervisor && <TabDieta proyecto={proyecto} reportes={data.reportes} personal={data.personal} onActualizarProyecto={onActualizarProyecto} />}
+    </div>
+  );
+}
+
+// ============================================================
+// TAB INFO (v8.2) - ubicación + contacto cliente
+// ============================================================
+function TabInfo({ proyecto }) {
+  const hayUbicacion = proyecto.ubicacionLat != null && proyecto.ubicacionLng != null;
+  const mapSrc = hayUbicacion ? `https://www.google.com/maps?q=${proyecto.ubicacionLat},${proyecto.ubicacionLng}&z=17&output=embed` : null;
+  return (
+    <div className="space-y-4">
+      {/* Ubicación */}
+      <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold flex items-center gap-1"><MapPin className="w-3 h-3" /> Ubicación</div>
+          {hayUbicacion && <button onClick={() => abrirEnMapa(proyecto.ubicacionLat, proyecto.ubicacionLng)} className="text-xs text-red-500 flex items-center gap-1"><ExternalLink className="w-3 h-3" /> Abrir en Maps</button>}
+        </div>
+        {proyecto.ubicacionDireccionTexto && <div className="text-sm">{proyecto.ubicacionDireccionTexto}</div>}
+        {proyecto.ubicacionDireccion && !proyecto.ubicacionDireccionTexto && <div className="text-sm text-zinc-400">{proyecto.ubicacionDireccion}</div>}
+        {hayUbicacion && <div className="text-[10px] font-mono text-zinc-500">{proyecto.ubicacionLat.toFixed(5)}, {proyecto.ubicacionLng.toFixed(5)}</div>}
+        {hayUbicacion ? (
+          <div className="bg-zinc-950 border border-zinc-800" style={{ height: 280 }}>
+            <iframe src={mapSrc} width="100%" height="100%" style={{ border: 0 }} loading="lazy" title="Mapa" />
+          </div>
+        ) : (
+          <div className="bg-zinc-950 border border-zinc-800 p-6 text-center text-xs text-zinc-500">
+            Sin ubicación registrada. Admin puede agregarla desde Editar → Google Maps.
+          </div>
+        )}
+      </div>
+
+      {/* Contacto cliente */}
+      <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-2">
+        <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold flex items-center gap-1"><UserCircle className="w-3 h-3" /> Contacto del cliente</div>
+        {proyecto.contactoClienteNombre || proyecto.contactoClienteTelefono || proyecto.contactoClienteEmail ? (
+          <div className="space-y-2 pt-1">
+            {proyecto.contactoClienteNombre && <div className="text-sm font-bold">{proyecto.contactoClienteNombre}</div>}
+            {proyecto.contactoClienteTelefono && (
+              <a href={`tel:${proyecto.contactoClienteTelefono}`} className="flex items-center gap-2 text-sm text-green-400 hover:underline">
+                <Phone className="w-4 h-4" /> {proyecto.contactoClienteTelefono}
+              </a>
+            )}
+            {proyecto.contactoClienteTelefono && (
+              <a href={`https://wa.me/${proyecto.contactoClienteTelefono.replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-sm text-green-400 hover:underline">
+                <ExternalLink className="w-4 h-4" /> WhatsApp
+              </a>
+            )}
+            {proyecto.contactoClienteEmail && (
+              <a href={`mailto:${proyecto.contactoClienteEmail}`} className="flex items-center gap-2 text-sm text-blue-400 hover:underline">
+                <Mail className="w-4 h-4" /> {proyecto.contactoClienteEmail}
+              </a>
+            )}
+          </div>
+        ) : (
+          <div className="text-xs text-zinc-500 py-2">Sin contacto registrado. Admin puede agregarlo desde Editar → Contacto del cliente.</div>
+        )}
+      </div>
+
+      {/* Datos adicionales del proyecto */}
+      <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-2">
+        <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Datos del proyecto</div>
+        <div className="grid grid-cols-2 gap-3 text-xs">
+          <div><div className="text-zinc-500">Ref. Odoo</div><div className="font-mono">{proyecto.referenciaOdoo || '—'}</div></div>
+          <div><div className="text-zinc-500">Ref. Proyecto</div><div>{proyecto.referenciaProyecto || '—'}</div></div>
+          <div><div className="text-zinc-500">Inicio</div><div>{proyecto.fecha_inicio ? formatFechaCorta(proyecto.fecha_inicio) : '—'}</div></div>
+          <div><div className="text-zinc-500">Entrega</div><div>{proyecto.fecha_entrega ? formatFechaCorta(proyecto.fecha_entrega) : '—'}</div></div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1692,26 +1944,215 @@ function TabDieta({ proyecto, reportes, personal, onActualizarProyecto }) {
   );
 }
 
-function TabCronograma({ proyecto, porcentajeActual, onActualizarProyecto, esSupervisor }) {
+// ============================================================
+// TAB EQUIPO (v8.2) - vista del equipo asignado con métricas por persona
+// ============================================================
+function TabEquipoProyecto({ proyecto, data, sistema }) {
+  const [jornadas, setJornadas] = useState([]);
+  const [costosDia, setCostosDia] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const [js, cs] = await Promise.all([
+          db.listarJornadasProyecto(proyecto.id),
+          db.listarCostosDia(proyecto.id),
+        ]);
+        setJornadas(js);
+        setCostosDia(cs);
+      } catch (e) { console.error(e); }
+      setLoading(false);
+    })();
+  }, [proyecto.id]);
+
+  const supervisor = getPersona(data.personal, proyecto.supervisorId);
+  const maestro = getPersona(data.personal, proyecto.maestroId);
+  const ayudantes = (proyecto.ayudantesIds || []).map(id => getPersona(data.personal, id)).filter(Boolean);
+  const miembros = [];
+  if (supervisor) miembros.push({ persona: supervisor, rol: 'Supervisor' });
+  if (maestro) miembros.push({ persona: maestro, rol: 'Maestro' });
+  ayudantes.forEach(a => miembros.push({ persona: a, rol: 'Ayudante' }));
+
+  const reportesProy = data.reportes.filter(r => r.proyectoId === proyecto.id);
+  const m2Total = reportesProy.reduce((s, r) => s + getM2Reporte(r, sistema), 0);
+
+  const calcMetricasPersona = (personaId) => {
+    const diasTrabajados = new Set();
+    jornadas.forEach(j => {
+      if ((j.personasPresentesIds || []).includes(personaId)) diasTrabajados.add(j.fecha);
+    });
+    const costoDia = costosDia.find(c => c.personaId === personaId)?.costoDia || 0;
+    const m2Persona = maestro?.id === personaId ? m2Total : 0; // solo maestro "produce" m²
+    return { dias: diasTrabajados.size, costoDia, m2: m2Persona };
+  };
+
+  if (loading) return <div className="text-center py-8"><Loader2 className="w-5 h-5 text-red-500 animate-spin mx-auto" /></div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-zinc-900 border border-zinc-800 p-3">
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <div><div className="text-[10px] text-zinc-500 uppercase">Miembros</div><div className="text-xl font-black">{miembros.length}</div></div>
+          <div><div className="text-[10px] text-zinc-500 uppercase">Jornadas</div><div className="text-xl font-black">{jornadas.length}</div></div>
+          <div><div className="text-[10px] text-zinc-500 uppercase">Modo pago</div><div className="text-xl font-black">{proyecto.modoPagoManoObra === 'm2' ? 'm²' : 'Día'}</div></div>
+        </div>
+      </div>
+      <div className="space-y-2">
+        {miembros.map(({ persona, rol }) => {
+          const m = calcMetricasPersona(persona.id);
+          return (
+            <div key={persona.id} className="bg-zinc-900 border border-zinc-800 p-3 flex items-center gap-3">
+              {persona.foto2x2 ? <img src={persona.foto2x2} className="w-10 h-10 object-cover border border-zinc-700" alt="" /> : <UserCircle className="w-10 h-10 text-zinc-500" />}
+              <div className="flex-1 min-w-0">
+                <div className="font-bold text-sm">{persona.nombre}</div>
+                <div className="text-[10px] text-red-400 font-bold uppercase tracking-wider">{rol}</div>
+                {persona.telefono && <div className="text-[10px] text-zinc-500">📞 {persona.telefono}</div>}
+              </div>
+              <div className="text-right text-[10px]">
+                <div className="text-zinc-500 uppercase">Días</div><div className="font-bold text-sm">{m.dias}</div>
+                {proyecto.modoPagoManoObra === 'dia' && m.costoDia > 0 && <><div className="text-green-400 mt-1">{formatRD(m.costoDia * m.dias)}</div></>}
+                {proyecto.modoPagoManoObra === 'm2' && rol === 'Maestro' && <><div className="text-zinc-500 uppercase mt-1">m²</div><div className="font-bold">{formatNum(m.m2)}</div></>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {jornadas.length > 0 && (
+        <div>
+          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2">Jornadas ({jornadas.length})</div>
+          <div className="space-y-1">{jornadas.sort((a, b) => b.fecha.localeCompare(a.fecha)).slice(0, 10).map(j => (
+            <div key={j.id} className="bg-zinc-900 border-l-2 border-red-600 p-2 text-xs flex justify-between items-center">
+              <div><div className="font-bold">{formatFechaCorta(j.fecha)}</div><div className="text-[10px] text-zinc-500">{(j.personasPresentesIds || []).length} personas · {j.horaInicio}-{j.horaFin || '...'}{j.diaDoble && ' · DOBLE'}</div></div>
+              {j.diaDoble && <div className="text-[9px] text-yellow-400 font-bold">×2</div>}
+            </div>
+          ))}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TabCronograma({ proyecto, porcentajeActual, onActualizarProyecto, esSupervisor, reportes, sistema }) {
   const [edit, setEdit] = useState(false);
   const [fechas, setFechas] = useState({ fecha_inicio: proyecto.fecha_inicio, fecha_entrega: proyecto.fecha_entrega });
+  const [areasExpand, setAreasExpand] = useState(() => new Set(proyecto.areas.map(a => a.id))); // todas expandidas por defecto
   const fi = new Date(proyecto.fecha_inicio + 'T12:00:00');
   const fe = new Date(proyecto.fecha_entrega + 'T12:00:00');
   const hoy = new Date();
-  const totalDias = Math.round((fe - fi) / (1000 * 60 * 60 * 24));
+  const totalDias = Math.max(1, Math.round((fe - fi) / (1000 * 60 * 60 * 24)));
   const transcurridos = Math.max(0, Math.round((hoy - fi) / (1000 * 60 * 60 * 24)));
-  const pctT = totalDias > 0 ? Math.min(100, (transcurridos / totalDias) * 100) : 0;
-  const fechaHito = (pct) => { const d = new Date(fi); d.setDate(d.getDate() + Math.round(totalDias * (pct / 100))); return d.toISOString().split('T')[0]; };
-  const hitos = [{ pct: 0, label: 'Inicio', fecha: proyecto.fecha_inicio }, { pct: 25, label: '25%', fecha: fechaHito(25) }, { pct: 50, label: '50%', fecha: fechaHito(50) }, { pct: 75, label: '75%', fecha: fechaHito(75) }, { pct: 100, label: 'Entrega', fecha: proyecto.fecha_entrega }];
+  const pctT = Math.min(100, (transcurridos / totalDias) * 100);
   const estado = porcentajeActual >= 100 ? { t: 'Completado', c: 'text-green-400' } : pctT > porcentajeActual + 10 ? { t: 'Atrasado', c: 'text-red-400' } : pctT < porcentajeActual - 5 ? { t: 'Adelantado', c: 'text-green-400' } : { t: 'En tiempo', c: 'text-blue-400' };
+
+  const reportesProy = (reportes || []).filter(r => r.proyectoId === proyecto.id);
+  const toggleArea = (aid) => { const n = new Set(areasExpand); if (n.has(aid)) n.delete(aid); else n.add(aid); setAreasExpand(n); };
+
+  // Para cada área calculamos primer y último reporte (fecha real de inicio/fin parciales)
+  // y para cada tarea dentro del área hacemos lo mismo.
+  const calcRango = (filtroFn) => {
+    const rs = reportesProy.filter(filtroFn);
+    if (rs.length === 0) return null;
+    const fechasR = rs.map(r => r.fecha).sort();
+    return { inicio: fechasR[0], fin: fechasR[fechasR.length - 1] };
+  };
+  const fechaAFraccion = (fecha) => {
+    if (!fecha) return null;
+    const d = new Date(fecha + 'T12:00:00');
+    return Math.max(0, Math.min(100, ((d - fi) / (fe - fi)) * 100));
+  };
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-3 gap-2"><div className="bg-zinc-900 border border-zinc-800 p-3"><div className="text-[10px] text-zinc-500 uppercase">Avance</div><div className="text-xl font-black">{porcentajeActual.toFixed(1)}%</div></div><div className="bg-zinc-900 border border-zinc-800 p-3"><div className="text-[10px] text-zinc-500 uppercase">Tiempo</div><div className="text-xl font-black">{pctT.toFixed(0)}%</div></div><div className="bg-zinc-900 border border-zinc-800 p-3"><div className="text-[10px] text-zinc-500 uppercase">Estado</div><div className={`text-xl font-black ${estado.c}`}>{estado.t}</div></div></div>
+
       <div className="bg-zinc-900 border border-zinc-800 p-4">
         <div className="flex justify-between items-center mb-3"><div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Fechas</div>{!esSupervisor && (edit ? <div className="flex gap-1"><button onClick={() => { setEdit(false); setFechas({ fecha_inicio: proyecto.fecha_inicio, fecha_entrega: proyecto.fecha_entrega }); }} className="text-xs text-zinc-500">Cancelar</button><button onClick={() => { onActualizarProyecto({ ...proyecto, ...fechas }); setEdit(false); }} className="text-xs text-red-500 font-bold flex items-center gap-1"><Save className="w-3 h-3" /> Guardar</button></div> : <button onClick={() => setEdit(true)} className="text-xs text-zinc-500 hover:text-red-500 flex items-center gap-1"><Edit2 className="w-3 h-3" /> Editar</button>)}</div>
         {edit ? <div className="grid grid-cols-2 gap-3"><Campo label="Inicio"><Input type="date" value={fechas.fecha_inicio} onChange={v => setFechas({ ...fechas, fecha_inicio: v })} /></Campo><Campo label="Entrega"><Input type="date" value={fechas.fecha_entrega} onChange={v => setFechas({ ...fechas, fecha_entrega: v })} /></Campo></div> : <div className="grid grid-cols-2 gap-3 text-sm"><div><div className="text-[10px] text-zinc-500">Inicio</div><div className="font-bold">{formatFechaCorta(proyecto.fecha_inicio)}</div></div><div><div className="text-[10px] text-zinc-500">Entrega</div><div className="font-bold">{formatFechaCorta(proyecto.fecha_entrega)}</div></div></div>}
       </div>
-      <div><div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-4">Timeline</div><div className="relative py-8"><div className="absolute left-0 right-0 top-1/2 h-0.5 bg-zinc-800" /><div className="absolute left-0 top-1/2 h-0.5 bg-red-600" style={{ width: `${porcentajeActual}%` }} /><div className="absolute top-0 bottom-0 w-px bg-blue-500/50" style={{ left: `${pctT}%` }}><div className="absolute -top-1 left-1/2 -translate-x-1/2 bg-blue-500 text-white text-[9px] px-1.5 py-0.5 font-bold whitespace-nowrap">HOY</div></div>{hitos.map((h, i) => { const alc = porcentajeActual >= h.pct; return <div key={i} className="absolute top-1/2 -translate-y-1/2" style={{ left: `${h.pct}%`, transform: `translateX(-50%) translateY(-50%)` }}><div className={`w-4 h-4 rounded-full border-2 ${alc ? 'bg-red-600 border-red-400' : 'bg-zinc-900 border-zinc-700'}`} /><div className="absolute top-6 left-1/2 -translate-x-1/2 text-center whitespace-nowrap"><div className={`text-[10px] font-bold ${alc ? 'text-white' : 'text-zinc-500'}`}>{h.label}</div><div className="text-[9px] text-zinc-600">{formatFechaCorta(h.fecha)}</div></div></div>; })}</div></div>
+
+      {/* GANTT JERÁRQUICO */}
+      <div className="bg-zinc-950 border border-zinc-800 p-4">
+        <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-4">Gantt</div>
+
+        {/* Escala de tiempo arriba */}
+        <div className="relative mb-2" style={{ paddingLeft: '40%' }}>
+          <div className="relative h-5 text-[9px] text-zinc-500">
+            {[0, 25, 50, 75, 100].map(p => (
+              <div key={p} className="absolute" style={{ left: `${p}%`, transform: 'translateX(-50%)' }}>
+                {p === 0 ? formatFechaCorta(proyecto.fecha_inicio) : p === 100 ? formatFechaCorta(proyecto.fecha_entrega) : `${p}%`}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Filas */}
+        <div className="space-y-1">
+          {proyecto.areas.map(area => {
+            const { porcentaje: pctArea } = calcAvanceArea(proyecto, area.id, reportesProy, sistema);
+            const rango = calcRango(r => r.areaId === area.id);
+            const leftPct = rango ? fechaAFraccion(rango.inicio) : null;
+            const rightPct = rango ? fechaAFraccion(rango.fin) : null;
+            const widthPct = (rango && leftPct !== null && rightPct !== null) ? Math.max(2, rightPct - leftPct) : null;
+            const expandida = areasExpand.has(area.id);
+            return (
+              <div key={area.id}>
+                {/* Fila del área */}
+                <div className="flex items-center gap-2 h-7 hover:bg-zinc-900 transition-colors">
+                  <button onClick={() => toggleArea(area.id)} className="text-zinc-500 hover:text-white" style={{ width: 16 }}>
+                    {expandida ? '▾' : '▸'}
+                  </button>
+                  <div className="text-xs font-bold truncate" style={{ width: 'calc(40% - 24px)' }}>{area.nombre}</div>
+                  <div className="flex-1 relative h-5 bg-zinc-900/50">
+                    {rango && widthPct !== null && (
+                      <div className="absolute inset-y-0 flex items-center px-1 text-[9px] font-bold text-white overflow-hidden" style={{ left: `${leftPct}%`, width: `${widthPct}%`, backgroundColor: pctArea >= 100 ? '#16a34a' : pctArea >= 50 ? '#CC0000' : '#ea580c' }}>
+                        {widthPct > 8 ? `${pctArea.toFixed(0)}%` : ''}
+                      </div>
+                    )}
+                    {/* marcador de hoy */}
+                    <div className="absolute top-0 bottom-0 w-px bg-blue-500" style={{ left: `${pctT}%` }} />
+                  </div>
+                  <div className="text-[10px] text-zinc-500 w-10 text-right">{pctArea.toFixed(0)}%</div>
+                </div>
+
+                {/* Tareas del área cuando está expandida */}
+                {expandida && sistema?.tareas && (
+                  <div className="pl-6">
+                    {sistema.tareas.map(t => {
+                      const rt = calcRango(r => r.areaId === area.id && r.tareaId === t.id);
+                      const lP = rt ? fechaAFraccion(rt.inicio) : null;
+                      const rP = rt ? fechaAFraccion(rt.fin) : null;
+                      const w = (rt && lP !== null && rP !== null) ? Math.max(2, rP - lP) : null;
+                      const m2Tarea = reportesProy.filter(r => r.areaId === area.id && r.tareaId === t.id).reduce((s, r) => s + getM2Reporte(r, sistema), 0);
+                      const pctTarea = area.m2 > 0 ? Math.min(100, (m2Tarea / area.m2) * 100) : 0;
+                      return (
+                        <div key={t.id} className="flex items-center gap-2 h-5 hover:bg-zinc-900/70">
+                          <div className="text-[10px] text-zinc-500 truncate" style={{ width: 'calc(40% - 24px)', marginLeft: 16 }}>{t.nombre} <span className="text-zinc-600">({t.peso}%)</span></div>
+                          <div className="flex-1 relative h-3 bg-zinc-900/30">
+                            {rt && w !== null && (
+                              <div className="absolute inset-y-0" style={{ left: `${lP}%`, width: `${w}%`, backgroundColor: pctTarea >= 100 ? '#16a34a88' : pctTarea >= 50 ? '#CC000088' : '#ea580c88' }} />
+                            )}
+                            <div className="absolute top-0 bottom-0 w-px bg-blue-500/60" style={{ left: `${pctT}%` }} />
+                          </div>
+                          <div className="text-[9px] text-zinc-500 w-10 text-right">{pctTarea.toFixed(0)}%</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <div className="text-[10px] text-zinc-600 mt-3 flex items-center gap-3">
+          <span><span className="inline-block w-3 h-2 bg-blue-500 align-middle" /> Hoy</span>
+          <span><span className="inline-block w-3 h-2 align-middle" style={{ background: '#16a34a' }} /> 100%</span>
+          <span><span className="inline-block w-3 h-2 align-middle" style={{ background: '#CC0000' }} /> ≥50%</span>
+          <span><span className="inline-block w-3 h-2 align-middle" style={{ background: '#ea580c' }} /> &lt;50%</span>
+          <span className="text-zinc-700">· Click en ▸ para expandir tareas</span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1792,7 +2233,7 @@ function TabMateriales({ proyecto, sistema, materiales, envios, sistemas, onRegi
           <button onClick={() => { if (matForm.materialId && matForm.cantidad) { const cantidad = parseFloat(matForm.cantidad); const costo = parseFloat(matForm.costoUnidad) || 0; onRegistrarEnvio({ proyectoId: proyecto.id, materialId: matForm.materialId, cantidad, fecha: matForm.fecha, costoUnidad: costo, costoTotal: cantidad * costo }); setMatForm({ materialId: '', cantidad: '', costoUnidad: '', fecha: new Date().toISOString().split('T')[0] }); setModo(null); } }} className="w-full bg-red-600 text-white font-black uppercase py-3">Registrar</button>
         </div>
       )}
-      <div className="space-y-3">{materiales.map(m => { const pctU = m.requerido > 0 ? (m.usado / m.requerido) * 100 : 0; const pctE = m.requerido > 0 ? (m.enviado / m.requerido) * 100 : 0; const prob = m.enObra < 0 || m.desviacion > 15; return <div key={m.id} className={`bg-zinc-900 border p-4 ${prob ? 'border-yellow-600' : 'border-zinc-800'}`}><div className="flex justify-between items-start mb-3"><div><div className="font-bold">{m.nombre}</div><div className="text-[10px] text-zinc-500 uppercase">1 {m.unidad} = {m.rinde_m2} m²</div></div>{prob && <AlertTriangle className="w-5 h-5 text-yellow-500" />}</div><div className="grid grid-cols-3 gap-2 mb-3"><div className="text-center"><div className="text-[9px] text-zinc-500 uppercase">Req</div><div className="text-lg font-black">{formatNum(m.requerido)}</div></div><div className="text-center border-x border-zinc-800"><div className="text-[9px] text-blue-400 uppercase">Env</div><div className="text-lg font-black text-blue-400">{formatNum(m.enviado)}</div></div><div className="text-center"><div className="text-[9px] text-green-400 uppercase">Usa</div><div className="text-lg font-black text-green-400">{formatNum(m.usado)}</div></div></div><div className="relative h-3 bg-zinc-800 overflow-hidden mb-2"><div className="absolute inset-y-0 left-0 bg-blue-600/40" style={{ width: `${Math.min(pctE, 100)}%` }} /><div className="absolute inset-y-0 left-0 bg-green-500" style={{ width: `${Math.min(pctU, 100)}%` }} /></div></div>; })}</div>
+      <div className="space-y-3">{materiales.map(m => { const pctU = m.requerido > 0 ? (m.usado / m.requerido) * 100 : 0; const pctE = m.requerido > 0 ? (m.enviado / m.requerido) * 100 : 0; const prob = m.enObra < 0 || m.desviacion > 15; const pendiente = Math.max(0, m.requerido - m.enviado); return <div key={m.id} className={`bg-zinc-900 border p-4 ${prob ? 'border-yellow-600' : 'border-zinc-800'}`}><div className="flex justify-between items-start mb-3"><div><div className="font-bold">{m.nombre}</div><div className="text-[10px] text-zinc-500 uppercase">1 {m.unidad} = {m.rinde_m2} m²</div></div>{prob && <AlertTriangle className="w-5 h-5 text-yellow-500" />}</div><div className="grid grid-cols-4 gap-2 mb-3"><div className="text-center"><div className="text-[9px] text-zinc-500 uppercase">Req</div><div className="text-lg font-black">{formatNum(m.requerido)}</div></div><div className="text-center border-x border-zinc-800"><div className="text-[9px] text-blue-400 uppercase">Env</div><div className="text-lg font-black text-blue-400">{formatNum(m.enviado)}</div></div><div className={`text-center ${pendiente > 0 ? '' : 'opacity-50'}`}><div className="text-[9px] text-orange-400 uppercase">Pend.</div><div className={`text-lg font-black ${pendiente > 0 ? 'text-orange-400' : 'text-zinc-600'}`}>{formatNum(pendiente)}</div></div><div className="text-center border-l border-zinc-800"><div className="text-[9px] text-green-400 uppercase">Usa</div><div className="text-lg font-black text-green-400">{formatNum(m.usado)}</div></div></div><div className="relative h-3 bg-zinc-800 overflow-hidden mb-2"><div className="absolute inset-y-0 left-0 bg-blue-600/40" style={{ width: `${Math.min(pctE, 100)}%` }} /><div className="absolute inset-y-0 left-0 bg-green-500" style={{ width: `${Math.min(pctU, 100)}%` }} /></div></div>; })}</div>
       {!esSupervisor && envios.length > 0 && (
         <div className="mt-4"><div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2">Envíos registrados ({envios.length})</div>
           <div className="space-y-1">{envios.sort((a, b) => b.fecha.localeCompare(a.fecha)).map(e => { const mat = sistema.materiales.find(m => m.id === e.materialId); return (<div key={e.id} className="bg-zinc-900 border-l-2 border-blue-600 p-2 flex items-center gap-2 text-xs"><div className="flex-1 min-w-0"><div className="font-bold">{mat?.nombre || e.materialId} · {e.cantidad} {mat?.unidad_plural || ''}</div><div className="text-[10px] text-zinc-500">{formatFecha(e.fecha)}{e.pdfRef && ` · ${e.pdfRef}`}{e.costoTotal && ` · ${formatRD(e.costoTotal)}`}</div></div>{onEliminarEnvio && <button onClick={() => onEliminarEnvio(e.id)} className="text-zinc-500 hover:text-red-400"><Trash2 className="w-3 h-3" /></button>}</div>); })}</div></div>
@@ -2143,7 +2584,7 @@ function ProduccionPropia({ persona }) {
 // TAB JORNADA (v7.2b)
 // Control diario de llegada/salida con GPS no bloqueante
 // ============================================================
-function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion }) {
+function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onEliminarJornada }) {
   const hoy = new Date().toISOString().split('T')[0];
   const [jornadaHoy, setJornadaHoy] = useState(null);
   const [historial, setHistorial] = useState([]);
@@ -2385,10 +2826,11 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion }) {
             {historial.length === 0 && <div className="text-xs text-zinc-600 py-2">Sin jornadas registradas aún.</div>}
             {historial.map(j => {
               const horas = horasEntre(j.horaInicio, j.horaFin);
+              const esAdmin = tieneRol(usuario, 'admin');
               return (
-                <div key={j.id} className="bg-zinc-900 border-l-2 border-red-600 p-3 text-xs">
+                <div key={j.id} className={`bg-zinc-900 border-l-2 p-3 text-xs ${j.diaDoble ? 'border-yellow-500' : 'border-red-600'}`}>
                   <div className="flex justify-between items-start">
-                    <div className="font-bold">{formatFechaLarga(j.fecha)}</div>
+                    <div className="font-bold flex items-center gap-2">{formatFechaLarga(j.fecha)}{j.diaDoble && <span className="text-[9px] bg-yellow-600 text-black px-1 font-black">×2</span>}</div>
                     <div className="text-zinc-400">{j.personasPresentesIds?.length || 0} 👷</div>
                   </div>
                   <div className="text-zinc-500 mt-1">
@@ -2400,6 +2842,14 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion }) {
                       {j.inicioDistanciaObraM != null && <>entrada {formatDistancia(j.inicioDistanciaObraM)}</>}
                       {j.inicioDistanciaObraM != null && j.finDistanciaObraM != null && ' · '}
                       {j.finDistanciaObraM != null && <>salida {formatDistancia(j.finDistanciaObraM)}</>}
+                    </div>
+                  )}
+                  {esAdmin && (
+                    <div className="flex gap-2 mt-2 pt-2 border-t border-zinc-800">
+                      <button onClick={async () => { await db.marcarDiaDoble(j.id, !j.diaDoble); recargar(); }} className={`text-[10px] uppercase font-bold ${j.diaDoble ? 'text-yellow-400' : 'text-zinc-500 hover:text-yellow-400'}`}>
+                        {j.diaDoble ? '✓ Día doble' : 'Marcar día doble'}
+                      </button>
+                      {onEliminarJornada && <button onClick={() => onEliminarJornada(j.id).then(() => recargar())} className="text-[10px] text-zinc-500 hover:text-red-400 flex items-center gap-1 ml-auto"><Trash2 className="w-3 h-3" /> Borrar</button>}
                     </div>
                   )}
                 </div>
@@ -2614,6 +3064,31 @@ function DetalleCorte({ corte, data, usuario, onVolver }) {
   const [jornadasCorte, setJornadasCorte] = useState([]);
   const [ajustes, setAjustes] = useState([]);
   const [ajusteModal, setAjusteModal] = useState(null);
+  const [vistaDetalle, setVistaDetalle] = useState('persona'); // persona | proyecto | recibos
+
+  // Agrupaciones derivadas del detalle (recibos persona×proyecto)
+  const resumenPersonas = React.useMemo(() => {
+    const g = {};
+    detalle.forEach(r => {
+      if (!g[r.personaId]) g[r.personaId] = { personaId: r.personaId, personaNombre: r.personaNombre, proyectos: [], total: 0, totalDias: 0, totalM2: 0 };
+      g[r.personaId].proyectos.push(r);
+      g[r.personaId].total += r.montoTotal;
+      g[r.personaId].totalDias += r.diasTrabajados || 0;
+      g[r.personaId].totalM2 += r.m2Producidos || 0;
+    });
+    return Object.values(g).sort((a, b) => b.total - a.total);
+  }, [detalle]);
+
+  const resumenProyectos = React.useMemo(() => {
+    const g = {};
+    detalle.forEach(r => {
+      const key = r.proyectoId || 'sin';
+      if (!g[key]) g[key] = { proyectoId: r.proyectoId, proyectoNombre: r.proyectoNombre, personas: [], total: 0 };
+      g[key].personas.push(r);
+      g[key].total += r.montoTotal;
+    });
+    return Object.values(g).sort((a, b) => b.total - a.total);
+  }, [detalle]);
 
   const cargar = async () => {
     setLoading(true);
@@ -2633,7 +3108,7 @@ function DetalleCorte({ corte, data, usuario, onVolver }) {
       setJornadasCorte(todasJornadas);
       // Si no hay detalle guardado, calcular preview
       if (det.length === 0 && corte.estado === 'abierto') {
-        setDetalle(calcularDetalle(todasJornadas, data, corte, aj));
+        setDetalle(await calcularDetalle(todasJornadas, data, corte, aj));
       } else {
         setDetalle(det);
       }
@@ -2642,48 +3117,114 @@ function DetalleCorte({ corte, data, usuario, onVolver }) {
   };
   useEffect(() => { cargar(); }, []);
 
-  const calcularDetalle = (jornadas, data, corte, ajustesLista) => {
-    const porPersona = {};
+  const calcularDetalle = async (jornadas, data, corte, ajustesLista) => {
+    // Agrupamos por persona × proyecto
+    const buckets = {}; // key: `${personaId}__${proyectoId}`
+    const getK = (pid, proyId) => `${pid}__${proyId}`;
+    const getBucket = (pid, proyId) => {
+      const k = getK(pid, proyId);
+      if (!buckets[k]) buckets[k] = { personaId: pid, proyectoId: proyId, dias: new Set(), diasDobles: new Set(), m2: 0 };
+      return buckets[k];
+    };
+    // Días trabajados por jornada
     jornadas.forEach(j => {
       (j.personasPresentesIds || []).forEach(pid => {
-        if (!porPersona[pid]) porPersona[pid] = { dias: new Set(), m2: 0, proyectos: new Set() };
-        porPersona[pid].dias.add(j.fecha);
-        porPersona[pid].proyectos.add(j.proyectoId);
+        const b = getBucket(pid, j.proyectoId);
+        b.dias.add(j.fecha);
+        if (j.diaDoble) b.diasDobles.add(j.fecha);
       });
     });
-    // Agregar m² producidos por cada maestro en el periodo
+    // m² del maestro en cada proyecto - respeta maestroAreaId si está asignado
     data.reportes.filter(r => r.fecha >= corte.fechaInicio && r.fecha <= corte.fechaFin).forEach(r => {
-      const sistema = data.sistemas[data.proyectos.find(p => p.id === r.proyectoId)?.sistema];
+      const proy = data.proyectos.find(p => p.id === r.proyectoId);
+      if (!proy) return;
+      const sistema = data.sistemas[proy.sistema];
       if (!sistema) return;
       const m2 = getM2Reporte(r, sistema);
-      const proy = data.proyectos.find(p => p.id === r.proyectoId);
-      if (proy?.maestroId) {
-        if (!porPersona[proy.maestroId]) porPersona[proy.maestroId] = { dias: new Set(), m2: 0, proyectos: new Set() };
-        porPersona[proy.maestroId].m2 += m2;
-      }
+      // Determinar qué maestro cobra este reporte: el de su área o el principal del proyecto
+      const area = (proy.areas || []).find(a => a.id === r.areaId);
+      const maestroId = area?.maestroAreaId || proy.maestroId;
+      if (!maestroId) return;
+      const b = getBucket(maestroId, proy.id);
+      b.m2 += m2;
+      b.tareaReportes = b.tareaReportes || {};
+      b.tareaReportes[r.tareaId] = (b.tareaReportes[r.tareaId] || 0) + m2;
     });
+
+    // Cargar costos de día para los proyectos involucrados
+    const proyectosInvolucrados = [...new Set(Object.values(buckets).map(b => b.proyectoId))];
+    const costosDiaMap = {}; // { [proyId]: { [personaId]: costoDia } }
+    for (const pid of proyectosInvolucrados) {
+      try {
+        const lista = await db.listarCostosDia(pid);
+        costosDiaMap[pid] = {};
+        lista.forEach(c => { costosDiaMap[pid][c.personaId] = c.costoDia; });
+      } catch {}
+    }
+
+    // Generar una fila por bucket (recibo persona × proyecto)
     const filas = [];
-    Object.keys(porPersona).forEach(pid => {
-      const p = data.personal.find(x => x.id === pid);
-      if (!p) return;
-      const pp = porPersona[pid];
-      const diasN = pp.dias.size;
+    Object.values(buckets).forEach(b => {
+      const p = data.personal.find(x => x.id === b.personaId);
+      const proy = data.proyectos.find(x => x.id === b.proyectoId);
+      if (!p || !proy) return;
+      const diasN = b.dias.size;
+      const dobles = b.diasDobles.size;
+      const diasEfectivos = diasN + dobles; // doble cuenta como 2
       let montoBase = 0;
-      if (p.modoPago === 'dia') montoBase = diasN * (p.tarifaDia || 0);
-      else if (p.modoPago === 'm2') montoBase = pp.m2 * (p.tarifaM2 || 0);
-      // ajuste: suma de tarifas_proyecto de este periodo — simplificamos: no lo calculamos en preview
-      const adelantos = ajustesLista.filter(a => a.personaId === pid && a.tipo === 'adelanto').reduce((s, a) => s + a.monto, 0);
-      const bonos = ajustesLista.filter(a => a.personaId === pid && (a.tipo === 'bono' || a.tipo === 'dieta_extra')).reduce((s, a) => s + a.monto, 0);
-      const descuentos = ajustesLista.filter(a => a.personaId === pid && a.tipo === 'descuento').reduce((s, a) => s + a.monto, 0);
+
+      if (proy.modoPagoManoObra === 'dia') {
+        const costoDia = costosDiaMap[proy.id]?.[b.personaId] || 0;
+        montoBase = diasEfectivos * costoDia;
+      } else if (proy.modoPagoManoObra === 'm2') {
+        // Pago por m² según precio por tarea del proyecto (o 0 si no configurado)
+        const precios = proy.preciosTareasM2 || {};
+        if (b.tareaReportes) {
+          Object.entries(b.tareaReportes).forEach(([tid, m2]) => {
+            montoBase += m2 * (precios[tid] || 0);
+          });
+        }
+      }
+
       filas.push({
-        id: 'd_' + corte.id + '_' + pid,
-        corteId: corte.id, personaId: pid, personaNombre: p.nombre,
-        modoPago: p.modoPago, diasTrabajados: diasN, m2Producidos: pp.m2,
-        proyectosAjuste: [],
-        montoBase, montoDieta: 0, montoAdelantos: adelantos, montoOtros: bonos - descuentos,
-        montoTotal: montoBase + bonos - descuentos - adelantos,
+        id: 'd_' + corte.id + '_' + b.personaId + '_' + b.proyectoId,
+        corteId: corte.id, personaId: b.personaId, personaNombre: p.nombre,
+        proyectoId: b.proyectoId, proyectoNombre: proy.cliente,
+        modoPago: proy.modoPagoManoObra || 'dia',
+        diasTrabajados: diasN, diasDobles: dobles, m2Producidos: b.m2,
+        montoBase, montoDieta: 0, montoAdelantos: 0, montoOtros: 0,
+        montoTotal: montoBase,
       });
     });
+
+    // Ajustes a nivel persona — los sumamos al bucket con más días de esa persona
+    const personasConAjuste = [...new Set(ajustesLista.map(a => a.personaId))];
+    personasConAjuste.forEach(pid => {
+      const filasP = filas.filter(f => f.personaId === pid);
+      if (filasP.length === 0) {
+        // La persona tiene ajustes pero no trabajó en ningún proyecto — crear fila sin proyecto
+        const p = data.personal.find(x => x.id === pid);
+        if (!p) return;
+        filas.push({
+          id: 'd_' + corte.id + '_' + pid + '_ajuste',
+          corteId: corte.id, personaId: pid, personaNombre: p.nombre,
+          proyectoId: null, proyectoNombre: '(Ajustes)',
+          modoPago: 'ajuste', diasTrabajados: 0, m2Producidos: 0,
+          montoBase: 0, montoDieta: 0, montoAdelantos: 0, montoOtros: 0, montoTotal: 0,
+        });
+      }
+    });
+    // Distribuir ajustes a la fila con más días de cada persona
+    ajustesLista.forEach(a => {
+      const filasP = filas.filter(f => f.personaId === a.personaId);
+      if (filasP.length === 0) return;
+      const principal = filasP.sort((x, y) => y.diasTrabajados - x.diasTrabajados)[0];
+      if (a.tipo === 'adelanto') principal.montoAdelantos += a.monto;
+      else if (a.tipo === 'descuento') principal.montoOtros -= a.monto;
+      else principal.montoOtros += a.monto; // bono, dieta_extra
+    });
+    // Recalcular montoTotal
+    filas.forEach(f => { f.montoTotal = f.montoBase + f.montoOtros - f.montoAdelantos; });
     return filas;
   };
 
@@ -2724,15 +3265,56 @@ function DetalleCorte({ corte, data, usuario, onVolver }) {
         <div className="text-3xl font-black text-green-400 mt-2">{formatRD(totalCorte)}</div>
       </div>
 
+      <div className="flex gap-1 bg-zinc-900 border border-zinc-800 p-1">
+        <button onClick={() => setVistaDetalle('persona')} className={`flex-1 px-3 py-1.5 text-[10px] font-bold uppercase ${vistaDetalle === 'persona' ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>Por Persona</button>
+        <button onClick={() => setVistaDetalle('proyecto')} className={`flex-1 px-3 py-1.5 text-[10px] font-bold uppercase ${vistaDetalle === 'proyecto' ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>Por Proyecto</button>
+        <button onClick={() => setVistaDetalle('recibos')} className={`flex-1 px-3 py-1.5 text-[10px] font-bold uppercase ${vistaDetalle === 'recibos' ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>Recibos</button>
+      </div>
+
       <div className="space-y-2">
         <div className="flex justify-between items-center">
-          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Personal</div>
+          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">{vistaDetalle === 'persona' ? `Personal (${resumenPersonas.length})` : vistaDetalle === 'proyecto' ? `Proyectos (${resumenProyectos.length})` : `Recibos (${detalle.length})`}</div>
           <button onClick={() => setAjusteModal({})} className="text-xs text-red-500 flex items-center gap-1"><Plus className="w-3 h-3" /> Ajuste</button>
         </div>
-        {detalle.map(d => (
+
+        {vistaDetalle === 'persona' && resumenPersonas.map(rp => (
+          <div key={rp.personaId} className="bg-zinc-900 border border-zinc-800 p-3">
+            <div className="flex justify-between items-start">
+              <div><div className="font-bold text-sm">{rp.personaNombre}</div><div className="text-[10px] text-zinc-500 uppercase">{rp.proyectos.length} proyecto{rp.proyectos.length !== 1 ? 's' : ''} · {rp.totalDias} días{rp.totalM2 > 0 ? ` · ${formatNum(rp.totalM2)} m²` : ''}</div></div>
+              <div className="text-right"><div className="text-lg font-black text-green-400">{formatRD(rp.total)}</div></div>
+            </div>
+            <div className="mt-2 space-y-1">{rp.proyectos.map(r => (
+              <div key={r.id} className="bg-zinc-950 border border-zinc-800 p-2 text-[10px] flex justify-between items-center">
+                <div className="flex-1 min-w-0"><div className="font-bold truncate">{r.proyectoNombre}</div><div className="text-zinc-500 uppercase">{r.modoPago === 'dia' ? `${r.diasTrabajados} días${r.diasDobles ? ` (${r.diasDobles} dobles)` : ''}` : r.modoPago === 'm2' ? `${formatNum(r.m2Producidos)} m²` : 'Ajuste'}</div></div>
+                <div className="text-green-400 font-bold">{formatRD(r.montoTotal)}</div>
+              </div>
+            ))}</div>
+          </div>
+        ))}
+
+        {vistaDetalle === 'proyecto' && resumenProyectos.map(rp => (
+          <div key={rp.proyectoId || 'sin'} className="bg-zinc-900 border border-zinc-800 p-3">
+            <div className="flex justify-between items-start">
+              <div><div className="font-bold text-sm">{rp.proyectoNombre}</div><div className="text-[10px] text-zinc-500 uppercase">{rp.personas.length} persona{rp.personas.length !== 1 ? 's' : ''}</div></div>
+              <div className="text-right"><div className="text-lg font-black text-green-400">{formatRD(rp.total)}</div></div>
+            </div>
+            <div className="mt-2 space-y-1">{rp.personas.map(r => (
+              <div key={r.id} className="bg-zinc-950 border border-zinc-800 p-2 text-[10px] flex justify-between items-center">
+                <div className="flex-1 min-w-0"><div className="font-bold truncate">{r.personaNombre}</div><div className="text-zinc-500 uppercase">{r.modoPago === 'dia' ? `${r.diasTrabajados} días` : r.modoPago === 'm2' ? `${formatNum(r.m2Producidos)} m²` : 'Ajuste'}</div></div>
+                <div className="text-green-400 font-bold">{formatRD(r.montoTotal)}</div>
+              </div>
+            ))}</div>
+          </div>
+        ))}
+
+        {vistaDetalle === 'recibos' && detalle.map(d => (
           <div key={d.id} className="bg-zinc-900 border border-zinc-800 p-3">
             <div className="flex justify-between items-start">
-              <div><div className="font-bold text-sm">{d.personaNombre}</div><div className="text-[10px] text-zinc-500 uppercase">{d.modoPago === 'dia' ? `${d.diasTrabajados} días` : d.modoPago === 'm2' ? `${formatNum(d.m2Producidos)} m²` : 'Ajuste'}</div></div>
+              <div>
+                <div className="font-bold text-sm">{d.personaNombre}</div>
+                <div className="text-[10px] text-red-400 uppercase">{d.proyectoNombre}</div>
+                <div className="text-[10px] text-zinc-500 uppercase">{d.modoPago === 'dia' ? `${d.diasTrabajados} días${d.diasDobles ? ` (${d.diasDobles} doble)` : ''}` : d.modoPago === 'm2' ? `${formatNum(d.m2Producidos)} m²` : 'Ajuste'}</div>
+              </div>
               <div className="text-right"><div className="text-lg font-black text-green-400">{formatRD(d.montoTotal)}</div></div>
             </div>
             <div className="grid grid-cols-4 gap-1 text-[10px] mt-2">

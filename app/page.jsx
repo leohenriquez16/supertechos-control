@@ -10,7 +10,7 @@ import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps }
 // ============================================================
 // HELPERS
 // ============================================================
-const APP_VERSION = '8.9.4';
+const APP_VERSION = '8.9.5';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
@@ -3494,6 +3494,7 @@ function TabAvance({ proyecto, reportes, sistema, sistemas, esSupervisor, onElim
 }
 
 function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], sistemas, onRegistrarEnvio, onRegistrarEnviosLote, esSupervisor, onEliminarEnvio, onIrASistemas }) {
+  const [subTab, setSubTab] = useState('por_sistema'); // v8.9.5: 'por_sistema' | 'resumen'
   const [modo, setModo] = useState(null);
   const [cargando, setCargando] = useState(false);
   const [errorPDF, setErrorPDF] = useState('');
@@ -3510,7 +3511,66 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
   }));
 
   // Lista plana de todos los materiales de todos los sistemas del proyecto (para selector manual + PDF)
-  const todosLosMaterialesDeProyecto = grupos.flatMap(g => (g.sistema?.materiales || []).map(m => ({ ...m, _sistemaNombre: g.sistema.nombre })));
+  const todosLosMaterialesDeProyecto = grupos.flatMap(g => (g.sistema?.materiales || []).map(m => ({ ...m, _sistemaNombre: g.sistema.nombre, _sistemaId: g.sistemaId })));
+
+  // v8.9.5: Resumen TOTAL POR MATERIAL (suma de todos los sistemas)
+  const resumenPorMaterial = React.useMemo(() => {
+    const resumen = [];
+    gruposFinal.forEach(g => {
+      (g.materialesCalculados || []).forEach(mat => {
+        resumen.push({
+          sistemaId: g.sistemaId,
+          sistemaNombre: g.sistema?.nombre || '(sin sistema)',
+          materialId: mat.id,
+          nombre: mat.nombre,
+          unidad: mat.unidad,
+          unidad_plural: mat.unidad_plural,
+          rinde_m2: mat.rinde_m2,
+          requerido: mat.requerido,
+          enviado: mat.enviado,
+          usado: mat.usado,
+          pendiente: Math.max(0, mat.requerido - mat.enviado),
+        });
+      });
+    });
+    return resumen;
+  }, [gruposFinal]);
+
+  // v8.9.5: Resumen TOTAL POR ÁREA (cada área con sus materiales requeridos)
+  const resumenPorArea = React.useMemo(() => {
+    const porArea = [];
+    (proyecto.areas || []).forEach(area => {
+      const sisId = area.sistemaId || proyecto.sistema;
+      const sis = sistemas[sisId];
+      if (!sis) {
+        porArea.push({
+          areaId: area.id,
+          nombre: area.nombre,
+          m2: area.m2,
+          sistemaNombre: '(sin sistema)',
+          materiales: [],
+        });
+        return;
+      }
+      const materialesArea = (sis.materiales || []).map(mat => ({
+        id: mat.id,
+        nombre: mat.nombre,
+        unidad: mat.unidad,
+        unidad_plural: mat.unidad_plural,
+        rinde_m2: mat.rinde_m2,
+        requerido: mat.rinde_m2 > 0 ? area.m2 / mat.rinde_m2 : 0,
+      }));
+      porArea.push({
+        areaId: area.id,
+        nombre: area.nombre,
+        m2: area.m2,
+        sistemaId: sisId,
+        sistemaNombre: sis.nombre,
+        materiales: materialesArea,
+      });
+    });
+    return porArea;
+  }, [proyecto, sistemas]);
 
   const toggleArea = (key) => {
     setExpandidos(prev => ({ ...prev, [key]: !prev[key] }));
@@ -3544,6 +3604,138 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
 
   return (
     <div className="space-y-4">
+      {/* v8.9.5: Pestañas internas */}
+      <div className="flex border-b border-zinc-800">
+        <button
+          onClick={() => setSubTab('por_sistema')}
+          className={`px-4 py-2 text-xs font-bold uppercase tracking-widest ${subTab === 'por_sistema' ? 'text-red-500 border-b-2 border-red-600' : 'text-zinc-500 hover:text-white'}`}
+        >
+          📦 Por Sistema
+        </button>
+        <button
+          onClick={() => setSubTab('resumen')}
+          className={`px-4 py-2 text-xs font-bold uppercase tracking-widest ${subTab === 'resumen' ? 'text-red-500 border-b-2 border-red-600' : 'text-zinc-500 hover:text-white'}`}
+        >
+          📊 Resumen
+        </button>
+      </div>
+
+      {subTab === 'resumen' && (
+        <div className="space-y-5">
+          {/* ===== TOTAL POR MATERIAL ===== */}
+          <div className="bg-zinc-950 border border-zinc-800">
+            <div className="bg-zinc-900 border-b border-zinc-800 px-4 py-3">
+              <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">📦 Total por Material</div>
+              <div className="text-[10px] text-zinc-500 mt-0.5">Suma de todas las áreas del proyecto por cada material</div>
+            </div>
+            {resumenPorMaterial.length === 0 ? (
+              <div className="p-6 text-center text-sm text-zinc-500">
+                <Package className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                Ningún sistema del proyecto tiene materiales configurados todavía.
+              </div>
+            ) : (
+              <div className="divide-y divide-zinc-800">
+                {resumenPorMaterial.map((m, i) => {
+                  const pctE = m.requerido > 0 ? (m.enviado / m.requerido) * 100 : 0;
+                  const pctU = m.requerido > 0 ? (m.usado / m.requerido) * 100 : 0;
+                  return (
+                    <div key={`${m.sistemaId}-${m.materialId}-${i}`} className="p-4">
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <div className="font-bold text-sm">{m.nombre}</div>
+                          <div className="text-[10px] text-zinc-500 uppercase">
+                            <span className="text-red-400">{m.sistemaNombre}</span> · 1 {m.unidad} = {m.rinde_m2} m²
+                          </div>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-4 gap-2">
+                        <div className="text-center">
+                          <div className="text-[9px] text-zinc-500 uppercase">Req</div>
+                          <div className="text-base font-black">{formatNum(m.requerido)}</div>
+                          <div className="text-[9px] text-zinc-500">{m.unidad_plural || m.unidad}</div>
+                        </div>
+                        <div className="text-center border-x border-zinc-800">
+                          <div className="text-[9px] text-blue-400 uppercase">Env</div>
+                          <div className="text-base font-black text-blue-400">{formatNum(m.enviado)}</div>
+                        </div>
+                        <div className={`text-center ${m.pendiente > 0 ? '' : 'opacity-50'}`}>
+                          <div className="text-[9px] text-orange-400 uppercase">Pend.</div>
+                          <div className={`text-base font-black ${m.pendiente > 0 ? 'text-orange-400' : 'text-zinc-600'}`}>{formatNum(m.pendiente)}</div>
+                        </div>
+                        <div className="text-center border-l border-zinc-800">
+                          <div className="text-[9px] text-green-400 uppercase">Usa</div>
+                          <div className="text-base font-black text-green-400">{formatNum(m.usado)}</div>
+                        </div>
+                      </div>
+                      <div className="relative h-2 bg-zinc-800 overflow-hidden mt-2">
+                        <div className="absolute inset-y-0 left-0 bg-blue-600/40" style={{ width: `${Math.min(pctE, 100)}%` }} />
+                        <div className="absolute inset-y-0 left-0 bg-green-500" style={{ width: `${Math.min(pctU, 100)}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* ===== TOTAL POR ÁREA ===== */}
+          <div className="bg-zinc-950 border border-zinc-800">
+            <div className="bg-zinc-900 border-b border-zinc-800 px-4 py-3">
+              <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">🏢 Total por Área</div>
+              <div className="text-[10px] text-zinc-500 mt-0.5">Cada área del proyecto con sus materiales requeridos</div>
+            </div>
+            <div className="divide-y divide-zinc-800">
+              {resumenPorArea.map(area => (
+                <div key={area.areaId} className="p-4">
+                  <div className="flex justify-between items-start mb-3">
+                    <div>
+                      <div className="font-bold text-sm">{area.nombre}</div>
+                      <div className="text-[10px] text-zinc-500 uppercase">
+                        <span className="text-red-400">{area.sistemaNombre}</span> · {formatNum(area.m2)} m²
+                      </div>
+                    </div>
+                  </div>
+                  {area.materiales.length === 0 ? (
+                    <div className="text-xs text-zinc-500 italic bg-zinc-900 border border-zinc-800 p-2">
+                      Sin materiales configurados para {area.sistemaNombre}
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      {area.materiales.map(mat => (
+                        <div key={mat.id} className="bg-zinc-900 border border-zinc-800 p-2 flex justify-between items-center text-xs">
+                          <div>
+                            <div className="font-bold">{mat.nombre}</div>
+                            <div className="text-[10px] text-zinc-500">1 {mat.unidad} = {mat.rinde_m2} m²</div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-base font-black text-white">{formatNum(mat.requerido)}</div>
+                            <div className="text-[9px] text-zinc-500">{mat.unidad_plural || mat.unidad}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {resumenPorArea.length === 0 && (
+                <div className="p-6 text-center text-sm text-zinc-500">
+                  Este proyecto no tiene áreas definidas.
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Aviso si hay sistemas sin configurar */}
+          {grupos.some(g => !g.sistema || !g.sistema.materiales || g.sistema.materiales.length === 0) && !esSupervisor && onIrASistemas && (
+            <div className="bg-yellow-900/20 border border-yellow-700 text-yellow-300 p-3 text-xs flex items-center justify-between gap-2">
+              <div>⚠️ Algunos sistemas del proyecto no tienen materiales configurados. Los resúmenes están incompletos.</div>
+              <button onClick={onIrASistemas} className="text-[10px] bg-yellow-700 text-white px-2 py-1 font-bold uppercase whitespace-nowrap">⚙️ Configurar</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {subTab === 'por_sistema' && <>
       {/* Botones de registro de envío */}
       {!esSupervisor && !modo && !pdfExtraido && todosLosMaterialesDeProyecto.length > 0 && (
         <div className="grid grid-cols-2 gap-2">
@@ -3742,6 +3934,7 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
           })}</div>
         </div>
       )}
+      </>}
     </div>
   );
 }

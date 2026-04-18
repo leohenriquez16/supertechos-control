@@ -10,6 +10,7 @@ import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps }
 // ============================================================
 // HELPERS
 // ============================================================
+const APP_VERSION = '8.3';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
@@ -433,6 +434,7 @@ export default function App() {
           <button onClick={() => { try { localStorage.removeItem('supertechos_usuario_id'); } catch {}; setUsuario(null); setProyectoActivo(null); setVista('dashboard'); }} className="w-full flex items-center gap-2 text-left text-xs p-2 text-zinc-400 hover:text-red-400 hover:bg-zinc-900">
             <LogOut className="w-4 h-4" /> Salir
           </button>
+          <div className="text-center text-[9px] text-zinc-600 tracking-widest uppercase mt-1 pt-1 border-t border-zinc-900">v{APP_VERSION}</div>
         </div>
       </aside>
       {/* Overlay móvil */}

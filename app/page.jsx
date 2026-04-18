@@ -10,7 +10,7 @@ import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps }
 // ============================================================
 // HELPERS
 // ============================================================
-const APP_VERSION = '8.9';
+const APP_VERSION = '8.9.1';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
@@ -94,17 +94,68 @@ const proyectoVisible = (persona, proy) => {
 const extraerPDF = async (base64Data, tipo, sistemas) => {
   const sistemasDescripcion = Object.values(sistemas).map(s => `- ${s.nombre}: keywords [${(s.keywords_cotizacion || []).join(', ')}]`).join('\n');
   const prompts = {
-    cotizacion: `Analiza esta cotización/orden de Super Techos SRL y extrae los datos en JSON.
+    cotizacion: `Analiza esta cotización de Super Techos SRL y extrae los datos estructurados en JSON.
+
+CONTEXTO DEL NEGOCIO:
+Super Techos vende SISTEMAS de impermeabilización (aplicación principal) y PRODUCTOS ADICIONALES (servicios de preparación como lavado, limpieza, desmonte, bote de escombros).
+
+IMPORTANTE - Distinción:
+- SISTEMAS: aplicaciones principales que dan el impermeabilizante. Ejemplos: "Sistema Acrílico", "Planiseal 88", "Sikatopseal 107", "Impac Cemenflex", "Lona Asfáltica", "Poliuretano", "Silicona", etc.
+- PRODUCTOS ADICIONALES: servicios de preparación o complementarios que se cobran aparte. Ejemplos: "Lavado a Presión", "Preparación de Superficie", "Limpieza y Bote de Escombros", "Desmonte", "Apertura y Sellado de Grietas".
+
+Los proyectos se dividen en ÁREAS físicas (Techo Edificio A, Terraza Edificio B, etc.). Cada área tiene UN sistema que se le aplica. Los productos adicionales típicamente se agrupan sumando las m² de varias áreas del mismo tipo (todos los techos, todas las terrazas, etc).
+
+SISTEMAS DISPONIBLES EN EL ERP:
+${sistemasDescripcion || '(no hay sistemas cargados todavía — crea nombres limpios para los que detectes)'}
+
+Si un sistema en la cotización NO aparece en la lista arriba, genera un nombre LIMPIO para él (sin "AP -" al inicio, sin marcas genéricas).
+
 Responde ÚNICAMENTE con un objeto JSON válido, sin texto adicional, sin markdown fences.
-Sistemas disponibles: ${sistemasDescripcion || '(usa keywords de las partidas)'}
+
 {
-  "numeroOrden": "string (ej: ST-C5437)", "fecha": "YYYY-MM-DD",
-  "cliente": "string", "rncCliente": "string o null", "direccionCliente": "string o null",
-  "vendedor": "string", "referencia": "string",
+  "numeroOrden": "string (ej: ST-C5477)",
+  "fecha": "YYYY-MM-DD",
+  "cliente": "string (nombre limpio, sin SRL ni direcciones)",
+  "rncCliente": "string o null",
+  "direccionCliente": "string o null",
+  "vendedor": "string",
+  "referencia": "string (referencia del proyecto según PDF)",
+
+  "areas": [
+    {
+      "nombre": "string (ej: 'Tipo A - Techo', 'Edificio E - Terraza')",
+      "m2": number,
+      "sistemaNombre": "string (nombre limpio del sistema que se aplica en esta área)",
+      "sistemaPrecioM2": number,
+      "tareasInternas": ["string"]
+    }
+  ],
+
+  "productosAdicionales": [
+    {
+      "nombre": "string (ej: 'Lavado a Presión')",
+      "cantidad": number,
+      "unidad": "string (m², ml, unidad, día, lote)",
+      "precioVenta": number
+    }
+  ],
+
+  "subtotal": number,
+  "itbis": number,
+  "total": number,
+
   "partidas": [{ "descripcion": "string", "cantidad": number, "unidad": "string", "precioUnitario": number, "importe": number }],
-  "subtotal": number, "itbis": number, "total": number,
+
   "m2Principal": number
-}`,
+}
+
+REGLAS:
+- "areas": una entrada por cada área física distinta. Si dos áreas tienen el mismo sistema (ej: Techo A y Techo E ambos con Acrílico), van como áreas separadas.
+- "sistemaPrecioM2": solo el precio de la aplicación principal del sistema (NO sumes lavado ni preparación).
+- "tareasInternas": si en el PDF se menciona "2 manos", "dos capas", "primera capa + segunda", separalas en tareas internas. Si no hay pistas, pon ["Aplicación"].
+- "productosAdicionales": agrupa las m² del mismo producto de múltiples áreas si aplican. Ejemplo: si hay "Lavado a Presión 416 m²" en Tipo A y "Lavado a Presión 342 m²" en Tipo E, pon un solo producto con cantidad 758.
+- "partidas": TODAS las líneas de la cotización tal cual (para referencia, no se usa mucho).
+- "m2Principal": suma total de m² de todas las áreas.`,
     salida: `Analiza este albarán/salida de almacén de Odoo y extrae los datos en JSON.
 Responde ÚNICAMENTE con un objeto JSON válido, sin texto adicional, sin markdown fences.
 {
@@ -119,6 +170,31 @@ Responde ÚNICAMENTE con un objeto JSON válido, sin texto adicional, sin markdo
   if (!response.ok) throw new Error('Error en la API');
   const data = await response.json();
   return JSON.parse(data.text.replace(/```json|```/g, '').trim());
+};
+
+// v8.9.1: Fuzzy match de sistema por nombre
+// Ignora "AP ", acentos, mayúsculas/minúsculas, espacios extras
+const normalizarNombreSistema = (s) => (s || '')
+  .toLowerCase()
+  .replace(/^ap\s+/i, '')
+  .replace(/^ap-\s*/i, '')
+  .replace(/^ap\s*-\s*/i, '')
+  .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+const buscarSistemaPorNombre = (sistemas, nombre) => {
+  const buscado = normalizarNombreSistema(nombre);
+  if (!buscado) return null;
+  for (const s of Object.values(sistemas)) {
+    if (normalizarNombreSistema(s.nombre) === buscado) return s;
+  }
+  // Coincidencia parcial (contiene palabra clave fuerte)
+  for (const s of Object.values(sistemas)) {
+    const existente = normalizarNombreSistema(s.nombre);
+    if (existente.includes(buscado) || buscado.includes(existente)) return s;
+  }
+  return null;
 };
 
 const mapearProductoAMaterial = (descripcion, sistema) => {
@@ -541,6 +617,46 @@ export default function App() {
             await db.guardarSistemas({ ...data.sistemas, [nuevoSistema.id]: nuevoSistema });
           }
           delete proy.sistemaAdHoc;
+
+          // v8.9.1: crear sistemas nuevos extraídos del PDF + mapear tempIds → ids reales
+          const mapaTempId = {};
+          if (proy.sistemasNuevosAutoCrear && proy.sistemasNuevosAutoCrear.length > 0) {
+            const sistemasActuales = { ...data.sistemas };
+            for (const sn of proy.sistemasNuevosAutoCrear) {
+              const nuevoId = 's_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+              mapaTempId[sn.tempId] = nuevoId;
+              sistemasActuales[nuevoId] = {
+                id: nuevoId,
+                nombre: sn.nombre,
+                precio_m2: sn.precio_m2 || 0,
+                costo_mo_m2: 0,
+                tareas: (sn.tareas || []).map((t, i) => ({
+                  id: t.id || ('t_' + Date.now() + '_' + i),
+                  nombre: t.nombre,
+                  peso: t.peso,
+                  reporta: t.reporta || 'm2',
+                })),
+                materiales: [],
+                keywords_cotizacion: [],
+              };
+            }
+            await db.guardarSistemas(sistemasActuales);
+          }
+          delete proy.sistemasNuevosAutoCrear;
+
+          // Reemplazar tempIds en áreas con los ids reales
+          if (proy.areas && proy.areas.length > 0) {
+            proy.areas = proy.areas.map(a => ({
+              ...a,
+              sistemaId: mapaTempId[a.sistemaId] || a.sistemaId,
+            }));
+          }
+          // Si el proyecto no tiene sistema global pero las áreas sí, usar el primero como default
+          if (!proy.sistema && proy.areas?.length > 0) {
+            const primerSistema = proy.areas.find(a => a.sistemaId)?.sistemaId;
+            if (primerSistema) proy.sistema = primerSistema;
+          }
+
           await db.crearProyecto({ ...proy, id: 'p_' + Date.now() });
           setVista('dashboard');
         })} />}
@@ -1232,6 +1348,7 @@ function NuevoProyecto({ personal, sistemas, onCancelar, onCrear }) {
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState('');
   const [extraido, setExtraido] = useState(null);
+  const [mostrarRevision, setMostrarRevision] = useState(false);
   const sistemasArray = Object.values(sistemas);
   const [form, setForm] = useState({
     nombre: '', cliente: '', referenciaProyecto: '',
@@ -1258,8 +1375,76 @@ function NuevoProyecto({ personal, sistemas, onCancelar, onCrear }) {
       const base64 = await fileToBase64(file);
       const result = await extraerPDF(base64, 'cotizacion', sistemas);
       setExtraido(result);
-      setForm({ ...form, nombre: result.referencia || result.cliente, referenciaProyecto: result.referencia || '', cliente: result.cliente, referenciaOdoo: result.numeroOrden, fecha_inicio: result.fecha || form.fecha_inicio, areas: [{ nombre: 'Área principal', m2: String(result.m2Principal || '') }] });
-    } catch (e) { setError('No se pudo extraer el PDF.'); console.error(e); }
+
+      // v8.9.1: procesar áreas y detectar sistemas (existentes + nuevos a crear)
+      const sistemasNuevosPorNombre = new Map(); // nombre_norm → { nombre, precio_m2, tareas }
+      const areasDelForm = [];
+
+      if (result.areas && Array.isArray(result.areas) && result.areas.length > 0) {
+        result.areas.forEach((a, i) => {
+          const nombreSistema = (a.sistemaNombre || '').trim();
+          let sistemaId = null;
+          let sistemaExistente = null;
+          if (nombreSistema) {
+            sistemaExistente = buscarSistemaPorNombre(sistemas, nombreSistema);
+            if (sistemaExistente) {
+              sistemaId = sistemaExistente.id;
+            } else {
+              // Marcar para crear
+              const key = normalizarNombreSistema(nombreSistema);
+              if (!sistemasNuevosPorNombre.has(key)) {
+                const tareasInt = (a.tareasInternas && a.tareasInternas.length > 0) ? a.tareasInternas : ['Aplicación'];
+                const peso = Math.floor(100 / tareasInt.length);
+                const restoUltimo = 100 - peso * (tareasInt.length - 1);
+                sistemasNuevosPorNombre.set(key, {
+                  tempId: 's_new_' + Date.now() + '_' + sistemasNuevosPorNombre.size,
+                  nombre: nombreSistema,
+                  precio_m2: Number(a.sistemaPrecioM2) || 0,
+                  tareas: tareasInt.map((nombreTarea, idx) => ({
+                    id: 't_' + Date.now() + '_' + idx,
+                    nombre: nombreTarea,
+                    peso: idx === tareasInt.length - 1 ? restoUltimo : peso,
+                    reporta: 'm2',
+                  })),
+                });
+              }
+              sistemaId = sistemasNuevosPorNombre.get(key).tempId;
+            }
+          }
+          areasDelForm.push({
+            nombre: a.nombre || ('Área ' + (i + 1)),
+            m2: String(a.m2 || ''),
+            sistemaId: sistemaId,
+          });
+        });
+      } else {
+        // Fallback: una sola área
+        areasDelForm.push({ nombre: 'Área principal', m2: String(result.m2Principal || ''), sistemaId: null });
+      }
+
+      // Productos adicionales detectados
+      const productosAdic = (result.productosAdicionales || []).map((p, i) => ({
+        id: 'prod_' + Date.now() + '_' + i,
+        nombre: p.nombre || 'Producto',
+        cantidad: Number(p.cantidad) || 0,
+        unidad: p.unidad || 'm²',
+        precioVenta: Number(p.precioVenta) || 0,
+        precioManoObraMaestro: 0, // admin completa después
+        nota: '',
+      }));
+
+      setForm({
+        ...form,
+        nombre: result.referencia || result.cliente,
+        referenciaProyecto: result.referencia || '',
+        cliente: result.cliente,
+        referenciaOdoo: result.numeroOrden,
+        fecha_inicio: result.fecha || form.fecha_inicio,
+        areas: areasDelForm,
+        sistemasNuevosAutoCrear: [...sistemasNuevosPorNombre.values()],
+        productosAdicionalesAutoCrear: productosAdic,
+      });
+    } catch (e) { setError('No se pudo extraer el PDF. Detalle: ' + (e.message || e)); console.error(e); }
     setCargando(false);
   };
 
@@ -1267,7 +1452,14 @@ function NuevoProyecto({ personal, sistemas, onCancelar, onCrear }) {
     if (!form.referenciaOdoo || !form.referenciaOdoo.trim()) { alert('⚠️ La Referencia Odoo es obligatoria. Ingresa el número de cotización/orden de Odoo.'); return; }
     if (!form.nombre && !form.cliente) { alert('Necesitas al menos un nombre o cliente'); return; }
     if (form.areas.some(a => !a.nombre || !a.m2)) { alert('Completa áreas o deja una sola'); return; }
-    // v8.6 ext: si tiene sistema ad-hoc, pasarlo para crearlo
+
+    // v8.9.1: Si hay sistemas nuevos a crear, mostrar pantalla de revisión
+    const sistemasNuevos = form.sistemasNuevosAutoCrear || [];
+    if (sistemasNuevos.length > 0 && !form.revisionConfirmada) {
+      setMostrarRevision(true);
+      return;
+    }
+
     const payload = {
       nombre: form.nombre || form.cliente, cliente: form.cliente, referenciaProyecto: form.referenciaProyecto,
       sistema: form.sistema || null, supervisorId: form.supervisorId || null, maestroId: form.maestroId || null, ayudantesIds: form.ayudantesIds,
@@ -1276,10 +1468,13 @@ function NuevoProyecto({ personal, sistemas, onCancelar, onCrear }) {
         id: 'a_' + Date.now() + '_' + i,
         nombre: a.nombre,
         m2: parseFloat(a.m2),
-        sistemaId: a.sistemaId || form.sistema || null, // v8.9
+        sistemaId: a.sistemaId || form.sistema || null,
       })),
       dieta: form.dieta.habilitada ? { habilitada: true, tarifa_dia_persona: parseFloat(form.dieta.tarifa_dia_persona) || 0, dias_hombre_presupuestados: parseFloat(form.dieta.dias_hombre_presupuestados) || 0, personasIds: form.dieta.personasIds } : { habilitada: false },
       sistemaAdHoc: form.sistemaAdHoc || null,
+      // v8.9.1: lista de sistemas nuevos a crear + productos adicionales extraídos
+      sistemasNuevosAutoCrear: sistemasNuevos,
+      productosAdicionales: form.productosAdicionalesAutoCrear || [],
     };
     onCrear(payload);
   };
@@ -1288,6 +1483,78 @@ function NuevoProyecto({ personal, sistemas, onCancelar, onCrear }) {
 
   return (
     <div className="space-y-5 max-w-2xl mx-auto">
+      {/* v8.9.1: Modal de revisión de sistemas nuevos */}
+      {mostrarRevision && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto">
+          <div className="bg-zinc-900 border-2 border-yellow-500 max-w-2xl w-full p-5 space-y-4 max-h-[90vh] overflow-auto">
+            <div className="flex justify-between items-start">
+              <div>
+                <div className="text-xs tracking-widest uppercase text-yellow-400 font-bold">⚠️ Sistemas nuevos detectados</div>
+                <div className="text-sm text-zinc-400 mt-1">Estos sistemas no existen en el ERP. Se crearán automáticamente con las tareas detectadas del PDF. Podrás ajustarlos después en el módulo de Sistemas.</div>
+              </div>
+              <button onClick={() => setMostrarRevision(false)} className="text-zinc-500"><X className="w-4 h-4" /></button>
+            </div>
+
+            <div className="space-y-3">
+              {(form.sistemasNuevosAutoCrear || []).map((s, i) => (
+                <div key={s.tempId} className="bg-zinc-950 border border-yellow-800 p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xs bg-yellow-900/40 text-yellow-400 px-2 py-0.5 font-bold uppercase">Nuevo</span>
+                    <div className="font-bold text-sm">{s.nombre}</div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <div className="text-zinc-500 uppercase text-[10px]">Precio venta</div>
+                      <div className="text-green-400 font-bold">RD${s.precio_m2}/m²</div>
+                    </div>
+                    <div>
+                      <div className="text-zinc-500 uppercase text-[10px]">Tareas internas ({s.tareas.length})</div>
+                      <div className="font-bold">{s.tareas.map(t => `${t.nombre} (${t.peso}%)`).join(' · ')}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {(form.productosAdicionalesAutoCrear || []).length > 0 && (
+              <div className="pt-3 border-t border-zinc-800">
+                <div className="text-[11px] tracking-widest uppercase text-green-400 font-bold mb-2">✨ Productos adicionales detectados</div>
+                <div className="space-y-1">
+                  {form.productosAdicionalesAutoCrear.map(p => (
+                    <div key={p.id} className="bg-zinc-950 border border-green-800/50 p-2 text-xs flex items-center justify-between">
+                      <div>
+                        <span className="font-bold">{p.nombre}</span>
+                        <span className="text-zinc-500 ml-2">{p.cantidad} {p.unidad}</span>
+                      </div>
+                      <div className="text-green-400 font-bold">RD${p.precioVenta}/{p.unidad}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="bg-blue-900/20 border border-blue-800 text-blue-300 text-xs p-3">
+              💡 <strong>Después de guardar</strong>, ve al módulo Sistemas para completar detalles de los sistemas nuevos (materiales, rendimientos, keywords, etc.).
+            </div>
+
+            <div className="flex gap-2">
+              <button onClick={() => setMostrarRevision(false)} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button>
+              <button
+                onClick={() => {
+                  setMostrarRevision(false);
+                  setForm(f => ({ ...f, revisionConfirmada: true }));
+                  // Disparar crear de nuevo
+                  setTimeout(() => crear(), 50);
+                }}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase py-3 flex items-center justify-center gap-2"
+              >
+                ✓ Confirmar y crear todo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <button onClick={onCancelar} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button>
       <h1 className="text-3xl font-black tracking-tight">Nuevo Proyecto</h1>
       {!extraido && (
@@ -1354,6 +1621,17 @@ function NuevoProyecto({ personal, sistemas, onCancelar, onCrear }) {
           {sistemasDelProyectoDelForm.length > 1 && (
             <div className="mt-2 text-[10px] bg-blue-900/20 border border-blue-800 text-blue-300 p-2">
               💡 Este proyecto tiene <strong>{sistemasDelProyectoDelForm.length} sistemas distintos</strong> entre sus áreas.
+            </div>
+          )}
+          {/* v8.9.1: avisos de auto-extracción desde PDF */}
+          {(form.sistemasNuevosAutoCrear || []).length > 0 && (
+            <div className="mt-2 text-[10px] bg-yellow-900/20 border border-yellow-800 text-yellow-300 p-2">
+              ⚠️ Se crearán <strong>{form.sistemasNuevosAutoCrear.length} sistema{form.sistemasNuevosAutoCrear.length !== 1 ? 's' : ''} nuevo{form.sistemasNuevosAutoCrear.length !== 1 ? 's' : ''}</strong>: {form.sistemasNuevosAutoCrear.map(s => s.nombre).join(', ')}. Podrás ajustar sus tareas/materiales en el módulo de Sistemas después de guardar.
+            </div>
+          )}
+          {(form.productosAdicionalesAutoCrear || []).length > 0 && (
+            <div className="mt-2 text-[10px] bg-green-900/20 border border-green-800 text-green-300 p-2">
+              ✨ Se agregarán <strong>{form.productosAdicionalesAutoCrear.length} producto{form.productosAdicionalesAutoCrear.length !== 1 ? 's' : ''} adicional{form.productosAdicionalesAutoCrear.length !== 1 ? 'es' : ''}</strong>: {form.productosAdicionalesAutoCrear.map(p => `${p.nombre} (${p.cantidad} ${p.unidad})`).join(' · ')}
             </div>
           )}
         </div>

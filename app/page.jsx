@@ -10,7 +10,7 @@ import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps }
 // ============================================================
 // HELPERS
 // ============================================================
-const APP_VERSION = '8.9.6';
+const APP_VERSION = '8.9.7';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
@@ -471,6 +471,13 @@ export default function App() {
       }
     })();
   }, []);
+
+  // v8.9.7: Listener para recargar desde componentes internos (ej: edición de costos)
+  useEffect(() => {
+    const handler = () => recargar();
+    window.addEventListener('recargarDatos', handler);
+    return () => window.removeEventListener('recargarDatos', handler);
+  }, [usuario]);
 
   const withSync = async (fn) => {
     setSyncing(true);
@@ -3493,6 +3500,207 @@ function TabAvance({ proyecto, reportes, sistema, sistemas, esSupervisor, onElim
   );
 }
 
+// v8.9.7: Vista de Costos Reales de Materiales
+function VistaCostosMateriales({ proyecto, envios, sistemas }) {
+  const [editando, setEditando] = useState(null); // { id, costo }
+  const [guardando, setGuardando] = useState(false);
+
+  // Agrupar envíos por material (cada material puede estar en varios sistemas, pero nos interesa agregarlo)
+  const gruposMaterial = React.useMemo(() => {
+    const map = {};
+    envios.forEach(e => {
+      // Buscar material en todos los sistemas
+      let material = null;
+      let sistemaRef = null;
+      for (const s of Object.values(sistemas)) {
+        const m = (s.materiales || []).find(m => m.id === e.materialId);
+        if (m) {
+          material = m;
+          sistemaRef = s;
+          break;
+        }
+      }
+      const key = e.materialId;
+      if (!map[key]) {
+        map[key] = {
+          materialId: e.materialId,
+          nombre: material?.nombre || e.materialId,
+          unidad: material?.unidad || '',
+          unidad_plural: material?.unidad_plural || '',
+          sistemaNombre: sistemaRef?.nombre || '(sin sistema)',
+          costoBase: Number(material?.costo_unidad || 0),
+          envios: [],
+          totalCantidad: 0,
+          totalInvertido: 0,
+        };
+      }
+      const costoUnit = Number(e.costoUnidad || 0);
+      const costoTot = Number(e.costoTotal || costoUnit * e.cantidad);
+      map[key].envios.push({ ...e, costoUnidad: costoUnit, costoTotal: costoTot });
+      map[key].totalCantidad += Number(e.cantidad) || 0;
+      map[key].totalInvertido += costoTot;
+    });
+    // Calcular promedio ponderado y desviación
+    return Object.values(map).map(g => {
+      const promedio = g.totalCantidad > 0 ? g.totalInvertido / g.totalCantidad : 0;
+      const desviacionPct = g.costoBase > 0 ? ((promedio - g.costoBase) / g.costoBase) * 100 : 0;
+      return { ...g, promedioPonderado: promedio, desviacionPct };
+    }).sort((a, b) => b.totalInvertido - a.totalInvertido);
+  }, [envios, sistemas]);
+
+  const totalInvertidoProyecto = gruposMaterial.reduce((s, g) => s + g.totalInvertido, 0);
+
+  const guardarCosto = async (envioId, nuevoCosto, cantidad) => {
+    setGuardando(true);
+    try {
+      await db.actualizarCostoEnvio(envioId, nuevoCosto, cantidad);
+      // Recargar la data — el componente padre debe refrescar
+      window.dispatchEvent(new CustomEvent('recargarDatos'));
+      setEditando(null);
+    } catch (e) {
+      alert('Error: ' + (e.message || e));
+    }
+    setGuardando(false);
+  };
+
+  if (envios.length === 0) {
+    return (
+      <div className="space-y-4">
+        <div className="bg-zinc-950 border border-zinc-800 p-8 text-center">
+          <Package className="w-12 h-12 text-zinc-600 mx-auto mb-3" />
+          <div className="font-bold text-sm">Sin envíos registrados</div>
+          <div className="text-xs text-zinc-500 mt-1">Ve a la pestaña "Por Sistema" para registrar el primer envío de material.</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Resumen total */}
+      <div className="bg-zinc-900 border border-zinc-800 p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">💰 Total invertido en materiales</div>
+            <div className="text-2xl font-black text-green-400">{formatRD(totalInvertidoProyecto)}</div>
+          </div>
+          <div className="text-right">
+            <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">Envíos registrados</div>
+            <div className="text-xl font-black">{envios.length}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Por material */}
+      <div className="space-y-3">
+        {gruposMaterial.map(grupo => {
+          const { desviacionPct } = grupo;
+          const colorDesv = desviacionPct > 5 ? 'text-red-400' : desviacionPct < -5 ? 'text-blue-400' : 'text-green-400';
+          const iconoDesv = desviacionPct > 5 ? '↑' : desviacionPct < -5 ? '↓' : '→';
+          return (
+            <div key={grupo.materialId} className="bg-zinc-950 border border-zinc-800">
+              <div className="bg-zinc-900 border-b border-zinc-800 px-4 py-3">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="font-black">{grupo.nombre}</div>
+                    <div className="text-[10px] text-zinc-500 uppercase">
+                      <span className="text-red-400">{grupo.sistemaNombre}</span> · {formatNum(grupo.totalCantidad)} {grupo.unidad_plural || grupo.unidad}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[10px] text-zinc-500 uppercase">Total invertido</div>
+                    <div className="text-base font-black text-green-400">{formatRD(grupo.totalInvertido)}</div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-zinc-800">
+                  <div>
+                    <div className="text-[9px] text-zinc-500 uppercase">Costo base (sistema)</div>
+                    <div className="text-sm font-bold">RD${formatNum(grupo.costoBase)}/{grupo.unidad}</div>
+                  </div>
+                  <div className="border-x border-zinc-800 px-2">
+                    <div className="text-[9px] text-zinc-500 uppercase">Promedio real ponderado</div>
+                    <div className="text-sm font-bold">RD${formatNum(grupo.promedioPonderado)}/{grupo.unidad}</div>
+                  </div>
+                  <div>
+                    <div className="text-[9px] text-zinc-500 uppercase">Desviación</div>
+                    <div className={`text-sm font-black ${colorDesv}`}>{iconoDesv} {Math.abs(desviacionPct).toFixed(1)}%</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Lista de envíos editables */}
+              <div className="divide-y divide-zinc-800">
+                {grupo.envios.sort((a, b) => b.fecha.localeCompare(a.fecha)).map(e => {
+                  const enEdicion = editando?.id === e.id;
+                  return (
+                    <div key={e.id} className="p-3 flex items-center gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs">
+                          <span className="font-bold">{formatFecha(e.fecha)}</span>
+                          <span className="text-zinc-500"> · {formatNum(e.cantidad)} {grupo.unidad_plural || grupo.unidad}</span>
+                          {e.pdfRef && <span className="text-zinc-500"> · <span className="font-mono text-[10px]">{e.pdfRef}</span></span>}
+                        </div>
+                        <div className="text-[10px] text-zinc-500 mt-0.5">
+                          Total: <span className="text-green-400 font-bold">{formatRD(e.costoTotal)}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {enEdicion ? (
+                          <>
+                            <input
+                              type="number"
+                              value={editando.costo}
+                              onChange={ev => setEditando({ ...editando, costo: ev.target.value })}
+                              className="w-24 bg-zinc-950 border border-red-600 px-2 py-1 text-right text-xs text-white"
+                              autoFocus
+                              placeholder="Costo"
+                            />
+                            <button
+                              onClick={() => guardarCosto(e.id, editando.costo, e.cantidad)}
+                              disabled={guardando}
+                              className="text-green-400 hover:text-green-300 text-xs font-bold px-2 py-1"
+                            >
+                              {guardando ? '...' : '✓'}
+                            </button>
+                            <button
+                              onClick={() => setEditando(null)}
+                              className="text-zinc-500 hover:text-red-400 text-xs font-bold px-2 py-1"
+                            >✕</button>
+                          </>
+                        ) : (
+                          <>
+                            <div className="text-right">
+                              <div className="text-sm font-bold">RD${formatNum(e.costoUnidad)}</div>
+                              <div className="text-[9px] text-zinc-500">/{grupo.unidad}</div>
+                            </div>
+                            <button
+                              onClick={() => setEditando({ id: e.id, costo: e.costoUnidad })}
+                              className="text-zinc-500 hover:text-red-400 p-1"
+                              title="Editar costo"
+                            >
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="text-[10px] text-zinc-600 bg-zinc-900/50 border border-zinc-800 p-3">
+        💡 <strong>Tip:</strong> Edita el costo unitario de cualquier envío para reflejar el precio real pagado. El promedio ponderado y la desviación se recalculan automáticamente. Útil cuando el mismo material viene de distintos proveedores con precios diferentes.
+      </div>
+    </div>
+  );
+}
+
+
 function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], sistemas, onRegistrarEnvio, onRegistrarEnviosLote, esSupervisor, onEliminarEnvio, onIrASistemas }) {
   const [subTab, setSubTab] = useState('por_sistema'); // v8.9.5: 'por_sistema' | 'resumen'
   const [modo, setModo] = useState(null);
@@ -3652,6 +3860,14 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
         >
           📊 Resumen
         </button>
+        {!esSupervisor && (
+          <button
+            onClick={() => setSubTab('costos')}
+            className={`px-4 py-2 text-xs font-bold uppercase tracking-widest ${subTab === 'costos' ? 'text-red-500 border-b-2 border-red-600' : 'text-zinc-500 hover:text-white'}`}
+          >
+            💰 Costos
+          </button>
+        )}
       </div>
 
       {subTab === 'resumen' && (
@@ -3814,6 +4030,9 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
           )}
         </div>
       )}
+
+      {/* v8.9.7: Vista de Costos */}
+      {subTab === 'costos' && <VistaCostosMateriales proyecto={proyecto} envios={envios} sistemas={sistemas} />}
 
       {subTab === 'por_sistema' && <>
       {/* Botones de registro de envío */}

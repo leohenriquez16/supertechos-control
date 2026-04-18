@@ -10,7 +10,7 @@ import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps }
 // ============================================================
 // HELPERS
 // ============================================================
-const APP_VERSION = '8.6';
+const APP_VERSION = '8.7';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
@@ -3298,20 +3298,25 @@ function FotoThumbGlobal({ foto, onClick }) {
 // VISTA EQUIPO GLOBAL (v8.1) - personal en obra hoy
 // ============================================================
 // ============================================================
-// VISTA PLANIFICACIÓN (v8.6) - Grid semanal Personal × 7 días
-// Vista simple de quién está en qué obra cada día basado en jornadas reales
+// VISTA PLANIFICACIÓN (v8.7) - Grid semanal interactivo
+// Por Personal / Por Proyecto + popup + asignación directa + días sin reporte
 // ============================================================
 function VistaPlanificacion({ data, onVolver, onVerProyecto }) {
   const [semanaRef, setSemanaRef] = useState(new Date());
   const [jornadasSemana, setJornadasSemana] = useState([]);
+  const [reportesSemana, setReportesSemana] = useState([]);
   const [cargando, setCargando] = useState(false);
-  const [filtroRol, setFiltroRol] = useState(''); // '' | 'maestro' | 'supervisor' | 'ayudante'
+  const [vistaModo, setVistaModo] = useState('personal'); // 'personal' | 'proyecto'
+  const [filtroRol, setFiltroRol] = useState('maestro'); // default: solo maestros
   const [filtroProyecto, setFiltroProyecto] = useState('');
+  const [soloConProyecto, setSoloConProyecto] = useState(true); // v8.7 default
+  const [celdaSeleccionada, setCeldaSeleccionada] = useState(null); // { personaId, proyectoId, fecha } o null
+  const [modalAsignar, setModalAsignar] = useState(null); // { personaId, fecha } cuando se asigna desde celda vacía
 
-  // Calcular días de la semana (lunes a domingo)
+  // Días de la semana (lunes a domingo)
   const dias = React.useMemo(() => {
     const dia = new Date(semanaRef);
-    const dow = dia.getDay(); // 0 dom, 1 lun...
+    const dow = dia.getDay();
     const lunes = new Date(dia);
     lunes.setDate(dia.getDate() - (dow === 0 ? 6 : dow - 1));
     return Array.from({ length: 7 }, (_, i) => {
@@ -3327,40 +3332,76 @@ function VistaPlanificacion({ data, onVolver, onVerProyecto }) {
 
   const cargar = async () => {
     setCargando(true);
-    const todas = [];
+    const finInicio = fechaStr(dias[0]);
+    const finFin = fechaStr(dias[6]);
+    const todasJornadas = [];
     for (const p of data.proyectos) {
       if (p.archivado) continue;
       try {
         const lista = await db.listarJornadasProyecto(p.id);
-        const finInicio = fechaStr(dias[0]);
-        const finFin = fechaStr(dias[6]);
         lista.forEach(j => {
-          if (j.fecha >= finInicio && j.fecha <= finFin) todas.push({ ...j, proyecto: p });
+          if (j.fecha >= finInicio && j.fecha <= finFin) todasJornadas.push({ ...j, proyecto: p });
         });
       } catch {}
     }
-    setJornadasSemana(todas);
+    setJornadasSemana(todasJornadas);
+    // Reportes de la semana (para detectar días sin reporte)
+    const reps = (data.reportes || []).filter(r => r.fecha >= finInicio && r.fecha <= finFin);
+    setReportesSemana(reps);
     setCargando(false);
   };
 
   useEffect(() => { cargar(); }, [semanaRef, data.proyectos.length]);
 
-  // Agrupar por persona y día: { personaId: { fecha: [proyectos] } }
-  const grid = React.useMemo(() => {
+  // Grid por persona: { personaId: { fecha: [proyectos] } }
+  const gridPersonas = React.useMemo(() => {
     const g = {};
     jornadasSemana.forEach(j => {
       (j.personasPresentesIds || []).forEach(pid => {
         if (!g[pid]) g[pid] = {};
         if (!g[pid][j.fecha]) g[pid][j.fecha] = [];
-        g[pid][j.fecha].push({ proyectoId: j.proyectoId, proyectoNombre: j.proyecto.cliente, referenciaOdoo: j.proyecto.referenciaOdoo, condicionDia: j.condicionDia });
+        // Ver si hay reporte de m² en esa fecha para ese proyecto
+        const hayReporte = reportesSemana.some(r => r.proyectoId === j.proyectoId && r.fecha === j.fecha);
+        g[pid][j.fecha].push({
+          jornadaId: j.id,
+          proyectoId: j.proyectoId,
+          proyectoNombre: j.proyecto.cliente,
+          referenciaOdoo: j.proyecto.referenciaOdoo,
+          condicionDia: j.condicionDia,
+          horaInicio: j.horaInicio,
+          hayReporte,
+        });
       });
     });
     return g;
-  }, [jornadasSemana]);
+  }, [jornadasSemana, reportesSemana]);
 
-  // Personas a mostrar: aquellas con al menos una jornada en la semana O que estén asignadas a algún proyecto
+  // Grid por proyecto: { proyectoId: { fecha: { personas: [...], m2Reportado: N, condicionDia, jornadaId } } }
+  const gridProyectos = React.useMemo(() => {
+    const g = {};
+    jornadasSemana.forEach(j => {
+      if (!g[j.proyectoId]) g[j.proyectoId] = {};
+      const personasIds = j.personasPresentesIds || [];
+      const m2 = reportesSemana
+        .filter(r => r.proyectoId === j.proyectoId && r.fecha === j.fecha)
+        .reduce((s, r) => s + (Number(r.m2) || 0), 0);
+      g[j.proyectoId][j.fecha] = {
+        jornadaId: j.id,
+        personas: personasIds.map(pid => {
+          const p = data.personal.find(x => x.id === pid);
+          return p ? { id: pid, nombre: p.nombre, rol: p.roles?.includes('supervisor') ? 'Sup' : p.roles?.includes('maestro') ? 'Mae' : 'Ay' } : null;
+        }).filter(Boolean),
+        m2Reportado: m2,
+        hayReporte: m2 > 0,
+        condicionDia: j.condicionDia,
+      };
+    });
+    return g;
+  }, [jornadasSemana, reportesSemana, data.personal]);
+
+  // Personas a mostrar en vista por personal
   const personasActivas = React.useMemo(() => {
-    const ids = new Set(Object.keys(grid));
+    const ids = new Set(Object.keys(gridPersonas));
     data.proyectos.forEach(p => {
       if (p.archivado) return;
       if (filtroProyecto && p.id !== filtroProyecto) return;
@@ -3370,16 +3411,30 @@ function VistaPlanificacion({ data, onVolver, onVerProyecto }) {
     });
     let personas = [...ids].map(id => data.personal.find(p => p.id === id)).filter(Boolean);
     if (filtroRol) personas = personas.filter(p => p.roles?.includes(filtroRol));
+    // v8.7: filtro "solo con proyecto asignado"
+    if (soloConProyecto) {
+      personas = personas.filter(p => data.proyectos.some(pr => !pr.archivado && (pr.maestroId === p.id || pr.supervisorId === p.id || (pr.ayudantesIds || []).includes(p.id))));
+    }
     return personas.sort((a, b) => {
-      // Supervisores primero, luego maestros, luego ayudantes
       const orden = (r) => r?.includes('supervisor') ? 1 : r?.includes('maestro') ? 2 : 3;
       const oa = orden(a.roles); const ob = orden(b.roles);
       if (oa !== ob) return oa - ob;
       return a.nombre.localeCompare(b.nombre);
     });
-  }, [grid, data.personal, data.proyectos, filtroRol, filtroProyecto]);
+  }, [gridPersonas, data.personal, data.proyectos, filtroRol, filtroProyecto, soloConProyecto]);
 
-  // Colores por proyecto (hash → color consistente)
+  // Proyectos a mostrar en vista por proyecto
+  const proyectosActivos = React.useMemo(() => {
+    let ps = data.proyectos.filter(p => !p.archivado);
+    if (filtroProyecto) ps = ps.filter(p => p.id === filtroProyecto);
+    return ps.sort((a, b) => {
+      const ra = a.referenciaOdoo || a.cliente;
+      const rb = b.referenciaOdoo || b.cliente;
+      return ra.localeCompare(rb);
+    });
+  }, [data.proyectos, filtroProyecto]);
+
+  // Colores consistentes por proyecto
   const coloresProyecto = React.useMemo(() => {
     const colores = ['bg-red-900/40 border-red-700 text-red-300', 'bg-blue-900/40 border-blue-700 text-blue-300', 'bg-green-900/40 border-green-700 text-green-300', 'bg-yellow-900/40 border-yellow-700 text-yellow-300', 'bg-purple-900/40 border-purple-700 text-purple-300', 'bg-cyan-900/40 border-cyan-700 text-cyan-300', 'bg-orange-900/40 border-orange-700 text-orange-300', 'bg-pink-900/40 border-pink-700 text-pink-300'];
     const map = {};
@@ -3392,9 +3447,67 @@ function VistaPlanificacion({ data, onVolver, onVerProyecto }) {
     nueva.setDate(nueva.getDate() + (delta * 7));
     setSemanaRef(nueva);
   };
-
   const irAEstaSemana = () => setSemanaRef(new Date());
   const hoy = fechaStr(new Date());
+
+  // Cerrar popup al hacer click en cualquier pastilla nueva
+  const abrirPopup = (personaId, proyectoInfo, fecha) => {
+    setCeldaSeleccionada({ personaId, proyectoInfo, fecha });
+  };
+
+  // Asignar personal desde celda vacía
+  const abrirAsignacion = (personaId, fecha) => {
+    setModalAsignar({ personaId, fecha });
+  };
+
+  const confirmarAsignacion = async ({ proyectoId, personaId, fecha }) => {
+    try {
+      // Buscar jornada existente
+      const existente = jornadasSemana.find(j => j.proyectoId === proyectoId && j.fecha === fecha);
+      if (existente) {
+        // Agregar persona a jornada existente si no está
+        if (!(existente.personasPresentesIds || []).includes(personaId)) {
+          await db.actualizarPersonasJornada(existente.id, [...(existente.personasPresentesIds || []), personaId]);
+        }
+      } else {
+        // Crear jornada nueva
+        await db.iniciarJornada({
+          id: 'j_' + Date.now() + Math.random(),
+          proyectoId, fecha,
+          horaInicio: `${fecha}T08:00:00.000Z`,
+          iniciadaPorId: 'planificacion', iniciadaPorNombre: 'Planificación (admin)',
+          inicioLat: null, inicioLng: null,
+          inicioPrecisionM: null, inicioDistanciaObraM: null,
+          personasPresentesIds: [personaId],
+        });
+      }
+      setModalAsignar(null);
+      await cargar();
+    } catch (e) { alert('Error: ' + (e.message || e)); }
+  };
+
+  const quitarPersona = async (jornadaId, personaId) => {
+    if (!confirm('¿Quitar a esta persona de esta jornada?')) return;
+    const jornada = jornadasSemana.find(j => j.id === jornadaId);
+    if (!jornada) return;
+    const nuevos = (jornada.personasPresentesIds || []).filter(pid => pid !== personaId);
+    try {
+      await db.actualizarPersonasJornada(jornadaId, nuevos);
+      setCeldaSeleccionada(null);
+      await cargar();
+    } catch (e) { alert('Error: ' + (e.message || e)); }
+  };
+
+  // Estadísticas de días sin reporte (solo vista proyecto)
+  const diasSinReporte = React.useMemo(() => {
+    let count = 0;
+    Object.values(gridProyectos).forEach(porFecha => {
+      Object.values(porFecha).forEach(info => {
+        if (!info.hayReporte) count++;
+      });
+    });
+    return count;
+  }, [gridProyectos]);
 
   return (
     <div className="space-y-4">
@@ -3403,7 +3516,7 @@ function VistaPlanificacion({ data, onVolver, onVerProyecto }) {
       <div className="flex items-start justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-3xl font-black tracking-tight">Planificación</h1>
-          <div className="text-xs text-zinc-500">Vista semanal del personal × proyectos</div>
+          <div className="text-xs text-zinc-500">Vista semanal interactiva · asigna personal haciendo click en celdas vacías</div>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => cambiarSemana(-1)} className="bg-zinc-900 border border-zinc-800 px-3 py-2 text-xs hover:border-red-500"><ChevronLeft className="w-3 h-3 inline" /> Anterior</button>
@@ -3412,93 +3525,369 @@ function VistaPlanificacion({ data, onVolver, onVerProyecto }) {
         </div>
       </div>
 
+      {/* Toggle vista */}
+      <div className="flex gap-1 bg-zinc-900 border border-zinc-800 p-1 w-fit">
+        <button onClick={() => setVistaModo('personal')} className={`px-4 py-1.5 text-[11px] font-bold uppercase ${vistaModo === 'personal' ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>Por Personal</button>
+        <button onClick={() => setVistaModo('proyecto')} className={`px-4 py-1.5 text-[11px] font-bold uppercase ${vistaModo === 'proyecto' ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>Por Proyecto</button>
+      </div>
+
       {/* Filtros */}
-      <div className="flex gap-2 flex-wrap">
-        <select value={filtroRol} onChange={e => setFiltroRol(e.target.value)} className="bg-zinc-900 border border-zinc-800 px-3 py-1.5 text-xs text-white">
-          <option value="">Todos los roles</option>
-          <option value="supervisor">Supervisores</option>
-          <option value="maestro">Maestros</option>
-          <option value="ayudante">Ayudantes</option>
-        </select>
+      <div className="flex gap-2 flex-wrap items-center">
+        {vistaModo === 'personal' && (
+          <>
+            <select value={filtroRol} onChange={e => setFiltroRol(e.target.value)} className="bg-zinc-900 border border-zinc-800 px-3 py-1.5 text-xs text-white">
+              <option value="">Todos los roles</option>
+              <option value="supervisor">Supervisores</option>
+              <option value="maestro">Maestros</option>
+              <option value="ayudante">Ayudantes</option>
+            </select>
+            <label className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 px-3 py-1.5 text-xs cursor-pointer">
+              <input type="checkbox" checked={soloConProyecto} onChange={e => setSoloConProyecto(e.target.checked)} className="w-3 h-3 accent-red-600" />
+              <span>Solo con proyecto asignado</span>
+            </label>
+          </>
+        )}
         <select value={filtroProyecto} onChange={e => setFiltroProyecto(e.target.value)} className="bg-zinc-900 border border-zinc-800 px-3 py-1.5 text-xs text-white">
           <option value="">Todos los proyectos</option>
           {data.proyectos.filter(p => !p.archivado).map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo ? p.referenciaOdoo + ' · ' : ''}{p.cliente}</option>)}
         </select>
-        {(filtroRol || filtroProyecto) && <button onClick={() => { setFiltroRol(''); setFiltroProyecto(''); }} className="text-xs text-zinc-500 hover:text-red-500">Limpiar</button>}
+        {(filtroRol || filtroProyecto || !soloConProyecto) && <button onClick={() => { setFiltroRol('maestro'); setFiltroProyecto(''); setSoloConProyecto(true); }} className="text-xs text-zinc-500 hover:text-red-500">Restablecer</button>}
+        {vistaModo === 'proyecto' && diasSinReporte > 0 && (
+          <div className="ml-auto bg-yellow-900/30 border border-yellow-700 text-yellow-400 px-3 py-1.5 text-xs">
+            ⚠️ {diasSinReporte} día{diasSinReporte !== 1 ? 's' : ''} con jornada sin reporte de m²
+          </div>
+        )}
       </div>
 
       {cargando && <div className="text-center text-zinc-500 text-sm py-4">Cargando jornadas de la semana...</div>}
 
-      {/* Grid semanal */}
-      <div className="bg-zinc-900 border border-zinc-800 overflow-x-auto">
-        <table className="w-full text-xs">
-          <thead className="bg-zinc-950">
-            <tr>
-              <th className="p-2 text-left border-r border-zinc-800 sticky left-0 bg-zinc-950 z-10 min-w-[140px]">Personal</th>
-              {dias.map(d => {
-                const s = fechaStr(d);
-                const esHoy = s === hoy;
+      {/* Grid: vista por Personal */}
+      {vistaModo === 'personal' && (
+        <div className="bg-zinc-900 border border-zinc-800 overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="bg-zinc-950">
+              <tr>
+                <th className="p-2 text-left border-r border-zinc-800 sticky left-0 bg-zinc-950 z-10 min-w-[140px]">Personal</th>
+                {dias.map(d => {
+                  const s = fechaStr(d);
+                  const esHoy = s === hoy;
+                  return (
+                    <th key={s} className={`p-2 text-center border-r border-zinc-800 min-w-[120px] ${esHoy ? 'bg-red-900/30 text-red-300' : ''}`}>
+                      <div className="text-[10px] font-bold uppercase">{nombreDia(d)}</div>
+                      <div className="text-[10px] text-zinc-500">{fechaCorta(d)}</div>
+                    </th>
+                  );
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {personasActivas.length === 0 && (
+                <tr><td colSpan={8} className="p-8 text-center text-zinc-500 text-sm">No hay personal que cumpla con estos filtros.</td></tr>
+              )}
+              {personasActivas.map(persona => {
+                const rolPrincipal = persona.roles?.includes('supervisor') ? 'Sup' : persona.roles?.includes('maestro') ? 'Mae' : persona.roles?.includes('ayudante') ? 'Ay' : '—';
+                const rolColor = rolPrincipal === 'Sup' ? 'text-purple-400' : rolPrincipal === 'Mae' ? 'text-red-400' : 'text-zinc-400';
                 return (
-                  <th key={s} className={`p-2 text-center border-r border-zinc-800 min-w-[110px] ${esHoy ? 'bg-red-900/30 text-red-300' : ''}`}>
-                    <div className="text-[10px] font-bold uppercase">{nombreDia(d)}</div>
-                    <div className="text-[10px] text-zinc-500">{fechaCorta(d)}</div>
-                  </th>
+                  <tr key={persona.id} className="border-t border-zinc-800">
+                    <td className="p-2 border-r border-zinc-800 sticky left-0 bg-zinc-900 z-10">
+                      <div className="font-bold truncate">{persona.nombre}</div>
+                      <div className={`text-[10px] uppercase ${rolColor}`}>{rolPrincipal}</div>
+                    </td>
+                    {dias.map(d => {
+                      const fechaStrDia = fechaStr(d);
+                      const proyectos = gridPersonas[persona.id]?.[fechaStrDia] || [];
+                      const esHoy = fechaStrDia === hoy;
+                      return (
+                        <td key={fechaStrDia} className={`p-1 border-r border-zinc-800 align-top ${esHoy ? 'bg-red-950/10' : ''}`}>
+                          <div className="space-y-1">
+                            {proyectos.map((proy, idx) => (
+                              <button
+                                key={idx}
+                                onClick={() => abrirPopup(persona.id, proy, fechaStrDia)}
+                                className={`w-full text-left px-1.5 py-1 text-[10px] border hover:brightness-125 ${!proy.hayReporte ? 'bg-yellow-900/40 border-yellow-700 text-yellow-300' : coloresProyecto[proy.proyectoId] || 'bg-zinc-800 border-zinc-700'}`}
+                                title={`${proy.proyectoNombre}${!proy.hayReporte ? ' · SIN REPORTE DE m²' : ''}`}
+                              >
+                                <div className="font-bold truncate">{proy.referenciaOdoo || proy.proyectoNombre}</div>
+                                <div className="flex items-center gap-1 text-[9px]">
+                                  {!proy.hayReporte && <span>⚠️</span>}
+                                  {proy.condicionDia === 'lluvia' && <span>☔</span>}
+                                  {proy.hayReporte && <span className="text-green-500">✓</span>}
+                                </div>
+                              </button>
+                            ))}
+                            {proyectos.length === 0 && (
+                              <button
+                                onClick={() => abrirAsignacion(persona.id, fechaStrDia)}
+                                className="w-full h-8 border border-dashed border-zinc-800 hover:border-red-500 hover:bg-red-950/20 text-[10px] text-zinc-700 hover:text-red-400"
+                                title="Click para asignar proyecto"
+                              >
+                                +
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
                 );
               })}
-            </tr>
-          </thead>
-          <tbody>
-            {personasActivas.length === 0 && (
-              <tr><td colSpan={8} className="p-8 text-center text-zinc-500 text-sm">No hay personal activo para estos filtros.</td></tr>
-            )}
-            {personasActivas.map(persona => {
-              const rolPrincipal = persona.roles?.includes('supervisor') ? 'Sup' : persona.roles?.includes('maestro') ? 'Mae' : persona.roles?.includes('ayudante') ? 'Ay' : '—';
-              const rolColor = rolPrincipal === 'Sup' ? 'text-purple-400' : rolPrincipal === 'Mae' ? 'text-red-400' : 'text-zinc-400';
-              return (
-                <tr key={persona.id} className="border-t border-zinc-800">
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Grid: vista por Proyecto */}
+      {vistaModo === 'proyecto' && (
+        <div className="bg-zinc-900 border border-zinc-800 overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="bg-zinc-950">
+              <tr>
+                <th className="p-2 text-left border-r border-zinc-800 sticky left-0 bg-zinc-950 z-10 min-w-[160px]">Proyecto</th>
+                {dias.map(d => {
+                  const s = fechaStr(d);
+                  const esHoy = s === hoy;
+                  return (
+                    <th key={s} className={`p-2 text-center border-r border-zinc-800 min-w-[140px] ${esHoy ? 'bg-red-900/30 text-red-300' : ''}`}>
+                      <div className="text-[10px] font-bold uppercase">{nombreDia(d)}</div>
+                      <div className="text-[10px] text-zinc-500">{fechaCorta(d)}</div>
+                    </th>
+                  );
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {proyectosActivos.length === 0 && (
+                <tr><td colSpan={8} className="p-8 text-center text-zinc-500 text-sm">No hay proyectos.</td></tr>
+              )}
+              {proyectosActivos.map(proy => (
+                <tr key={proy.id} className="border-t border-zinc-800">
                   <td className="p-2 border-r border-zinc-800 sticky left-0 bg-zinc-900 z-10">
-                    <div className="font-bold truncate">{persona.nombre}</div>
-                    <div className={`text-[10px] uppercase ${rolColor}`}>{rolPrincipal}</div>
+                    <div className="text-[10px] font-mono text-zinc-500">{proy.referenciaOdoo}</div>
+                    <button onClick={() => onVerProyecto(proy)} className="font-bold truncate text-left hover:text-red-400">{proy.cliente}</button>
                   </td>
                   {dias.map(d => {
                     const fechaStrDia = fechaStr(d);
-                    const proyectos = grid[persona.id]?.[fechaStrDia] || [];
+                    const info = gridProyectos[proy.id]?.[fechaStrDia];
                     const esHoy = fechaStrDia === hoy;
                     return (
                       <td key={fechaStrDia} className={`p-1 border-r border-zinc-800 align-top ${esHoy ? 'bg-red-950/10' : ''}`}>
-                        <div className="space-y-1">
-                          {proyectos.map((proy, idx) => (
-                            <button
-                              key={idx}
-                              onClick={() => {
-                                const p = data.proyectos.find(x => x.id === proy.proyectoId);
-                                if (p) onVerProyecto(p);
-                              }}
-                              className={`w-full text-left px-1.5 py-1 text-[10px] border hover:brightness-125 ${coloresProyecto[proy.proyectoId] || 'bg-zinc-800 border-zinc-700'}`}
-                              title={proy.proyectoNombre}
-                            >
-                              <div className="font-bold truncate">{proy.referenciaOdoo || proy.proyectoNombre}</div>
-                              {proy.condicionDia === 'lluvia' && <div className="text-blue-400">☔</div>}
-                            </button>
-                          ))}
-                          {proyectos.length === 0 && <div className="text-[10px] text-zinc-600 text-center py-1">—</div>}
-                        </div>
+                        {info ? (
+                          <div className={`border p-1.5 text-[10px] space-y-1 ${!info.hayReporte ? 'bg-yellow-900/30 border-yellow-700' : 'bg-zinc-950 border-zinc-800'}`}>
+                            {info.personas.slice(0, 4).map(p => (
+                              <div key={p.id} className="flex items-center gap-1">
+                                <span className={`text-[9px] font-bold ${p.rol === 'Sup' ? 'text-purple-400' : p.rol === 'Mae' ? 'text-red-400' : 'text-zinc-500'}`}>{p.rol}</span>
+                                <span className="truncate">{p.nombre.split(' ')[0]}</span>
+                              </div>
+                            ))}
+                            {info.personas.length > 4 && <div className="text-[9px] text-zinc-500">+{info.personas.length - 4} más</div>}
+                            <div className={`text-[9px] pt-1 border-t ${!info.hayReporte ? 'border-yellow-700/50 text-yellow-400' : 'border-zinc-800 text-green-400'}`}>
+                              {info.hayReporte ? `✓ ${formatNum(info.m2Reportado)} m²` : '⚠ sin reporte'}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="h-12 border border-dashed border-zinc-800 text-[10px] text-zinc-700 flex items-center justify-center">—</div>
+                        )}
                       </td>
                     );
                   })}
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className="text-[10px] text-zinc-600 text-center space-y-1">
+        <div>💡 <span className="text-yellow-400">⚠️ Amarillo</span> = día con jornada pero sin reporte de m². <span className="text-green-400">✓ Verde</span> = día con reporte. <span>☔</span> = día de lluvia.</div>
+        <div>💡 En vista "Por Personal", click en <span className="text-zinc-400">+</span> para asignar. Click en pastilla para ver detalle.</div>
       </div>
 
-      <div className="text-[10px] text-zinc-600 text-center">
-        💡 Las casillas muestran las jornadas registradas (pasadas o programadas con "Programar jornada" v8.5). Click en una casilla para ver el proyecto.
+      {/* Popup detalle de celda */}
+      {celdaSeleccionada && (
+        <PopupDetalleJornada
+          personaId={celdaSeleccionada.personaId}
+          proyectoInfo={celdaSeleccionada.proyectoInfo}
+          fecha={celdaSeleccionada.fecha}
+          data={data}
+          gridProyectos={gridProyectos}
+          reportesSemana={reportesSemana}
+          onCerrar={() => setCeldaSeleccionada(null)}
+          onVerProyecto={(p) => { setCeldaSeleccionada(null); onVerProyecto(p); }}
+          onQuitarPersona={quitarPersona}
+        />
+      )}
+
+      {/* Modal asignar persona a proyecto */}
+      {modalAsignar && (
+        <ModalAsignarDesdeGrid
+          personaId={modalAsignar.personaId}
+          fecha={modalAsignar.fecha}
+          data={data}
+          onCerrar={() => setModalAsignar(null)}
+          onConfirmar={confirmarAsignacion}
+        />
+      )}
+    </div>
+  );
+}
+
+// Popup con detalle del proyecto + personal ese día
+function PopupDetalleJornada({ personaId, proyectoInfo, fecha, data, gridProyectos, reportesSemana, onCerrar, onVerProyecto, onQuitarPersona }) {
+  const proyecto = data.proyectos.find(p => p.id === proyectoInfo.proyectoId);
+  if (!proyecto) return null;
+  const info = gridProyectos[proyecto.id]?.[fecha];
+  const reportes = reportesSemana.filter(r => r.proyectoId === proyecto.id && r.fecha === fecha);
+  const m2Total = reportes.reduce((s, r) => s + (Number(r.m2) || 0), 0);
+  const fechaLabel = new Date(fecha + 'T12:00:00').toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'long' });
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
+      <div className="bg-zinc-900 border-2 border-red-600 max-w-md w-full p-5 space-y-3 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-start">
+          <div>
+            <div className="text-[10px] font-mono text-zinc-500">{proyecto.referenciaOdoo}</div>
+            <div className="text-lg font-black">{proyecto.cliente}</div>
+            <div className="text-[11px] text-zinc-500 capitalize">{fechaLabel}</div>
+          </div>
+          <button onClick={onCerrar} className="text-zinc-500 hover:text-white"><X className="w-4 h-4" /></button>
+        </div>
+
+        {info && (
+          <>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="bg-zinc-950 border border-zinc-800 p-2">
+                <div className="text-[9px] uppercase text-zinc-500">Avance reportado</div>
+                <div className={`text-sm font-bold ${info.hayReporte ? 'text-green-400' : 'text-yellow-400'}`}>
+                  {info.hayReporte ? `${formatNum(m2Total)} m²` : '⚠ sin reporte'}
+                </div>
+              </div>
+              <div className="bg-zinc-950 border border-zinc-800 p-2">
+                <div className="text-[9px] uppercase text-zinc-500">Condición</div>
+                <div className="text-sm font-bold">
+                  {info.condicionDia === 'lluvia' ? '☔ Lluvia' : info.condicionDia === 'no_laborable' ? '🚫 No laborable' : '☀️ Normal'}
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-2">Equipo asignado ({info.personas.length})</div>
+              <div className="space-y-1">
+                {info.personas.map(p => {
+                  const colorRol = p.rol === 'Sup' ? 'bg-purple-950 text-purple-300 border-purple-800' : p.rol === 'Mae' ? 'bg-red-950 text-red-300 border-red-800' : 'bg-zinc-950 text-zinc-400 border-zinc-800';
+                  return (
+                    <div key={p.id} className={`flex items-center justify-between gap-2 p-2 border ${colorRol}`}>
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <div className="w-7 h-7 rounded-full bg-black/40 flex items-center justify-center text-[10px] font-bold flex-shrink-0">
+                          {p.nombre.split(' ').map(n => n[0]).slice(0, 2).join('')}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-bold truncate">{p.nombre}</div>
+                          <div className="text-[9px] uppercase">{p.rol === 'Sup' ? 'Supervisor' : p.rol === 'Mae' ? 'Maestro' : 'Ayudante'}</div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => onQuitarPersona(info.jornadaId, p.id)}
+                        className="text-[10px] text-zinc-500 hover:text-red-400 px-2 py-1"
+                        title="Quitar de la jornada"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {reportes.length > 0 && (
+              <div>
+                <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1">Reportes del día</div>
+                <div className="space-y-1">
+                  {reportes.map(r => (
+                    <div key={r.id} className="bg-zinc-950 border border-zinc-800 p-2 text-[11px]">
+                      <div className="flex justify-between">
+                        <span>{r.supervisor || '—'}</span>
+                        <span className="text-green-400 font-bold">{formatNum(r.m2 || 0)} m²</span>
+                      </div>
+                      {r.nota && <div className="text-[10px] text-zinc-500 italic mt-1">"{r.nota}"</div>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        <div className="flex gap-2 pt-1">
+          <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2">Cerrar</button>
+          <button onClick={() => onVerProyecto(proyecto)} className="flex-1 bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase py-2 flex items-center justify-center gap-2">
+            <Briefcase className="w-3 h-3" /> Abrir proyecto
+          </button>
+        </div>
       </div>
     </div>
   );
 }
+
+// Modal para asignar persona a un proyecto desde celda vacía
+function ModalAsignarDesdeGrid({ personaId, fecha, data, onCerrar, onConfirmar }) {
+  const persona = data.personal.find(p => p.id === personaId);
+  // Proyectos donde la persona es supervisor/maestro/ayudante
+  const proyectosElegibles = data.proyectos.filter(p =>
+    !p.archivado && (
+      p.supervisorId === personaId ||
+      p.maestroId === personaId ||
+      (p.ayudantesIds || []).includes(personaId)
+    )
+  );
+  const [proyectoId, setProyectoId] = useState(proyectosElegibles[0]?.id || '');
+  const fechaLabel = new Date(fecha + 'T12:00:00').toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'long' });
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
+      <div className="bg-zinc-900 border-2 border-red-600 max-w-md w-full p-5 space-y-3" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-start">
+          <div>
+            <div className="text-xs tracking-widest uppercase text-red-500 font-bold">Asignar a proyecto</div>
+            <div className="text-sm font-bold mt-1">{persona?.nombre}</div>
+            <div className="text-[11px] text-zinc-500 capitalize">{fechaLabel}</div>
+          </div>
+          <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
+        </div>
+
+        {proyectosElegibles.length === 0 ? (
+          <div className="bg-yellow-900/20 border border-yellow-700 text-yellow-400 p-3 text-xs">
+            ⚠️ {persona?.nombre} no tiene proyectos asignados como supervisor, maestro o ayudante.
+            Primero asígnalo a un proyecto desde el editor del proyecto.
+          </div>
+        ) : (
+          <>
+            <Campo label="Proyecto">
+              <select value={proyectoId} onChange={e => setProyectoId(e.target.value)} className="w-full bg-zinc-900 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm">
+                {proyectosElegibles.map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo ? p.referenciaOdoo + ' · ' : ''}{p.cliente}</option>)}
+              </select>
+            </Campo>
+            <div className="text-[10px] text-zinc-500 bg-zinc-950 border border-zinc-800 p-2">
+              💡 Si ya existe una jornada ese día para el proyecto, se agregará a la persona. Si no, se creará una nueva jornada programada.
+            </div>
+          </>
+        )}
+
+        <div className="flex gap-2 pt-1">
+          <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2">Cancelar</button>
+          {proyectosElegibles.length > 0 && (
+            <button
+              onClick={() => onConfirmar({ proyectoId, personaId, fecha })}
+              className="flex-1 bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase py-2 flex items-center justify-center gap-2"
+            >
+              <Plus className="w-3 h-3" /> Asignar
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 
 // ============================================================

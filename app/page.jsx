@@ -10,7 +10,7 @@ import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps }
 // ============================================================
 // HELPERS
 // ============================================================
-const APP_VERSION = '8.9.1';
+const APP_VERSION = '8.9.2';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
@@ -233,13 +233,18 @@ const calcAvanceArea = (proyecto, areaId, reportes, sistema) => {
   return { porcentaje: avancePonderado, produccionRD, m2PorTarea };
 };
 
-const calcAvanceProyecto = (proyecto, reportes, sistema) => {
+const calcAvanceProyecto = (proyecto, reportes, sistema, sistemas) => {
   const m2Total = proyecto.areas.reduce((a, ar) => a + ar.m2, 0);
-  const valorContrato = m2Total * sistema.precio_m2;
+  let valorContrato = 0;
   let avanceTotal = 0, produccionTotal = 0;
   proyecto.areas.forEach(area => {
-    const { porcentaje, produccionRD } = calcAvanceArea(proyecto, area.id, reportes, sistema);
-    avanceTotal += (area.m2 / m2Total) * porcentaje;
+    // v8.9.2: sistema por área si sistemas está disponible
+    const sistemaIdArea = area.sistemaId || proyecto.sistema;
+    const sistemaArea = (sistemas && sistemas[sistemaIdArea]) || sistema;
+    if (!sistemaArea) return;
+    valorContrato += area.m2 * sistemaArea.precio_m2;
+    const { porcentaje, produccionRD } = calcAvanceArea(proyecto, area.id, reportes, sistemaArea);
+    if (m2Total > 0) avanceTotal += (area.m2 / m2Total) * porcentaje;
     produccionTotal += produccionRD;
   });
   return { porcentaje: avanceTotal, produccionRD: produccionTotal, valorContrato, m2Total };
@@ -622,8 +627,10 @@ export default function App() {
           const mapaTempId = {};
           if (proy.sistemasNuevosAutoCrear && proy.sistemasNuevosAutoCrear.length > 0) {
             const sistemasActuales = { ...data.sistemas };
+            let contadorSN = 0;
             for (const sn of proy.sistemasNuevosAutoCrear) {
-              const nuevoId = 's_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+              contadorSN++;
+              const nuevoId = 's_' + Date.now() + '_' + contadorSN + '_' + Math.random().toString(36).slice(2, 7);
               mapaTempId[sn.tempId] = nuevoId;
               sistemasActuales[nuevoId] = {
                 id: nuevoId,
@@ -631,7 +638,7 @@ export default function App() {
                 precio_m2: sn.precio_m2 || 0,
                 costo_mo_m2: 0,
                 tareas: (sn.tareas || []).map((t, i) => ({
-                  id: t.id || ('t_' + Date.now() + '_' + i),
+                  id: t.id || ('t_' + Date.now() + '_' + contadorSN + '_' + i),
                   nombre: t.nombre,
                   peso: t.peso,
                   reporta: t.reporta || 'm2',
@@ -640,16 +647,18 @@ export default function App() {
                 keywords_cotizacion: [],
               };
             }
+            console.log('[v8.9.2] Sistemas nuevos creados:', Object.keys(mapaTempId).length, 'mapeo:', mapaTempId);
             await db.guardarSistemas(sistemasActuales);
           }
           delete proy.sistemasNuevosAutoCrear;
 
           // Reemplazar tempIds en áreas con los ids reales
           if (proy.areas && proy.areas.length > 0) {
-            proy.areas = proy.areas.map(a => ({
-              ...a,
-              sistemaId: mapaTempId[a.sistemaId] || a.sistemaId,
-            }));
+            proy.areas = proy.areas.map(a => {
+              const idFinal = mapaTempId[a.sistemaId] || a.sistemaId;
+              console.log('[v8.9.2] Área', a.nombre, '→ sistemaId:', a.sistemaId, '→ final:', idFinal);
+              return { ...a, sistemaId: idFinal };
+            });
           }
           // Si el proyecto no tiene sistema global pero las áreas sí, usar el primero como default
           if (!proy.sistema && proy.areas?.length > 0) {
@@ -725,7 +734,7 @@ export default function App() {
           />
         )}
         {!esAdmin && vista === 'misProyectos' && <MisProyectos usuario={usuario} data={data} onIrAReportar={(p) => { setProyectoActivo(p); setVista('reportar'); }} onVerDetalle={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
-        {vista === 'reportar' && proyectoActivo && <FormReporte usuario={usuario} proyecto={proyectoActivo} reportes={data.reportes} sistema={data.sistemas[proyectoActivo.sistema]} onCancelar={() => { if (esAdmin) { setVista('proyecto'); setTab('avance'); } else setVista('misProyectos'); }} onTerminar={() => { if (esAdmin) { setVista('proyecto'); setTab('avance'); } else setVista('misProyectos'); }} onGuardar={async (r, fotos) => withSync(async () => {
+        {vista === 'reportar' && proyectoActivo && <FormReporte usuario={usuario} proyecto={proyectoActivo} reportes={data.reportes} sistema={data.sistemas[proyectoActivo.sistema]} sistemas={data.sistemas} onCancelar={() => { if (esAdmin) { setVista('proyecto'); setTab('avance'); } else setVista('misProyectos'); }} onTerminar={() => { if (esAdmin) { setVista('proyecto'); setTab('avance'); } else setVista('misProyectos'); }} onGuardar={async (r, fotos) => withSync(async () => {
           const reporteId = 'r_' + Date.now() + Math.random();
           await db.crearReporte({ ...r, id: reporteId });
           if (fotos && fotos.length) {
@@ -1594,7 +1603,11 @@ function NuevoProyecto({ personal, sistemas, onCancelar, onCrear }) {
           <div className="flex justify-between items-center mb-2"><div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Áreas</div><div className="text-xs text-zinc-500">{formatNum(totalM2)} m²</div></div>
           <div className="space-y-2">{form.areas.map((area, i) => {
             const sistemaArea = area.sistemaId || form.sistema;
+            // v8.9.2: buscar en sistemas existentes O en sistemas nuevos a crear
             const sistemaAreaObj = sistemaArea ? sistemas[sistemaArea] : null;
+            const sistemaNuevoObj = !sistemaAreaObj && sistemaArea ? (form.sistemasNuevosAutoCrear || []).find(s => s.tempId === sistemaArea) : null;
+            const sistemaLabel = sistemaAreaObj?.nombre || sistemaNuevoObj?.nombre;
+            const sistemaPrecio = sistemaAreaObj?.precio_m2 ?? sistemaNuevoObj?.precio_m2 ?? 0;
             return (
               <div key={i} className="bg-zinc-950 border border-zinc-800 p-2 space-y-2">
                 <div className="flex gap-2 items-center">
@@ -1611,8 +1624,10 @@ function NuevoProyecto({ personal, sistemas, onCancelar, onCrear }) {
                   >
                     <option value="">🔧 Usar sistema del proyecto{form.sistema ? ` (${sistemas[form.sistema]?.nombre || ''})` : ''}</option>
                     {sistemasArray.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+                    {/* v8.9.2: sistemas nuevos pendientes de crear */}
+                    {(form.sistemasNuevosAutoCrear || []).map(s => <option key={s.tempId} value={s.tempId}>⚠️ {s.nombre} (nuevo)</option>)}
                   </select>
-                  {sistemaAreaObj && <span className="text-[10px] text-green-400">RD${sistemaAreaObj.precio_m2 || 0}/m²</span>}
+                  {sistemaLabel && <span className="text-[10px] text-green-400">RD${sistemaPrecio}/m²</span>}
                 </div>
               </div>
             );
@@ -1677,7 +1692,7 @@ function MisProyectos({ usuario, data, onIrAReportar, onVerDetalle }) {
       <div className="space-y-3">{misProyectos.map(p => {
         const sistema = data.sistemas[p.sistema];
         if (!sistema) return null;
-        const { porcentaje, m2Total } = calcAvanceProyecto(p, data.reportes, sistema);
+        const { porcentaje, m2Total } = calcAvanceProyecto(p, data.reportes, sistema, data.sistemas);
         return (
           <div key={p.id} className="bg-zinc-900 border border-zinc-800 p-4">
             <div className="flex justify-between items-start mb-2">
@@ -1987,7 +2002,7 @@ function VistaKanban({ proyectos, data, onVerProyecto, onCambiarEstadoRapido }) 
                 const m2Total = (p.areas || []).reduce((a, ar) => a + ar.m2, 0);
                 const valor = m2Total * (sistema?.precio_m2 || 0);
                 const supervisor = getPersona(data.personal, p.supervisorId);
-                const { porcentaje } = sistema ? calcAvanceProyecto(p, data.reportes, sistema) : { porcentaje: 0 };
+                const { porcentaje } = sistema ? calcAvanceProyecto(p, data.reportes, sistema, data.sistemas) : { porcentaje: 0 };
                 return (
                   <div key={p.id}
                     draggable
@@ -2022,7 +2037,7 @@ function VistaLista({ proyectos, data, onVerProyecto }) {
       const sistema = data.sistemas[p.sistema];
       const m2Total = (p.areas || []).reduce((a, ar) => a + ar.m2, 0);
       const valor = m2Total * (sistema?.precio_m2 || 0);
-      const { porcentaje } = sistema ? calcAvanceProyecto(p, data.reportes, sistema) : { porcentaje: 0 };
+      const { porcentaje } = sistema ? calcAvanceProyecto(p, data.reportes, sistema, data.sistemas) : { porcentaje: 0 };
       const supervisor = getPersona(data.personal, p.supervisorId);
       const maestro = getPersona(data.personal, p.maestroId);
       return (
@@ -2414,7 +2429,7 @@ function ModalEditarProyecto({ proyecto, data, usuario, onCerrar, onGuardar, onA
 function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onActualizarProyecto, onRegistrarEnvio, onRegistrarEnviosLote, esSupervisor, onIrAReportar, onCambiarEstado, onArchivarProyecto, onEliminarReporte, onEliminarEnvio, onEliminarJornada }) {
   const sistema = data.sistemas[proyecto.sistema];
   if (!sistema) return <div className="text-zinc-500">Sistema no encontrado.</div>;
-  const { porcentaje, produccionRD, valorContrato } = calcAvanceProyecto(proyecto, data.reportes, sistema);
+  const { porcentaje, produccionRD, valorContrato } = calcAvanceProyecto(proyecto, data.reportes, sistema, data.sistemas);
   const supervisor = getPersona(data.personal, proyecto.supervisorId);
   const maestro = getPersona(data.personal, proyecto.maestroId);
   const materiales = calcMateriales(proyecto, data.reportes, data.envios, sistema);
@@ -2465,7 +2480,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
         {!esSupervisor && proyecto.dieta?.habilitada && <TabBtn active={tab === 'dieta'} onClick={() => setTab('dieta')}><Utensils className="w-3 h-3 inline mr-1" />Dieta</TabBtn>}
       </div>
 
-      {tab === 'avance' && <TabAvance proyecto={proyecto} reportes={data.reportes} sistema={sistema} esSupervisor={esSupervisor} onEliminarReporte={onEliminarReporte} />}
+      {tab === 'avance' && <TabAvance proyecto={proyecto} reportes={data.reportes} sistema={sistema} sistemas={data.sistemas} esSupervisor={esSupervisor} onEliminarReporte={onEliminarReporte} />}
       {tab === 'info' && <TabInfo proyecto={proyecto} />}
       {tab === 'jornada' && <TabJornada usuario={usuario} proyecto={proyecto} personal={data.personal} onActualizarUbicacion={(lat, lng, dir) => onActualizarProyecto({ ...proyecto, ubicacionLat: lat, ubicacionLng: lng, ubicacionDireccion: dir })} onEliminarJornada={onEliminarJornada} />}
       {tab === 'equipo' && <TabEquipoProyecto proyecto={proyecto} data={data} sistema={sistema} />}
@@ -3290,7 +3305,10 @@ function TabCronograma({ proyecto, porcentajeActual, onActualizarProyecto, esSup
         {/* Filas */}
         <div className="space-y-1">
           {proyecto.areas.map(area => {
-            const { porcentaje: pctArea } = calcAvanceArea(proyecto, area.id, reportesProy, sistema);
+            // v8.9.2: sistema del área
+            const sistemaIdArea = area.sistemaId || proyecto.sistema;
+            const sistemaArea = data.sistemas[sistemaIdArea] || sistema;
+            const { porcentaje: pctArea } = calcAvanceArea(proyecto, area.id, reportesProy, sistemaArea);
             const rango = calcRango(r => r.areaId === area.id);
             const leftPct = rango ? fechaAFraccion(rango.inicio) : null;
             const rightPct = rango ? fechaAFraccion(rango.fin) : null;
@@ -3357,24 +3375,63 @@ function TabCronograma({ proyecto, porcentajeActual, onActualizarProyecto, esSup
   );
 }
 
-function TabAvance({ proyecto, reportes, sistema, esSupervisor, onEliminarReporte }) {
+function TabAvance({ proyecto, reportes, sistema, sistemas, esSupervisor, onEliminarReporte }) {
   const reportesProy = reportes.filter(r => r.proyectoId === proyecto.id).sort((a, b) => b.fecha.localeCompare(a.fecha));
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-xs tracking-widest uppercase text-zinc-400 font-bold mb-3">Áreas</h2>
         <div className="space-y-3">{proyecto.areas.map(area => {
-          const { porcentaje, produccionRD, m2PorTarea } = calcAvanceArea(proyecto, area.id, reportes, sistema);
+          // v8.9.2: usar sistema específico del área
+          const sistemaIdArea = area.sistemaId || proyecto.sistema;
+          const sistemaArea = (sistemas && sistemas[sistemaIdArea]) || sistema;
+          if (!sistemaArea) {
+            return (
+              <div key={area.id} className="bg-zinc-900 border border-red-800 p-4">
+                <div className="font-bold">{area.nombre}</div>
+                <div className="text-xs text-red-400 mt-1">⚠️ Sin sistema asignado. Edita el proyecto y asigna uno.</div>
+              </div>
+            );
+          }
+          const { porcentaje, produccionRD, m2PorTarea } = calcAvanceArea(proyecto, area.id, reportes, sistemaArea);
+          const colsClass = sistemaArea.tareas.length <= 3 ? `grid-cols-${sistemaArea.tareas.length}` : sistemaArea.tareas.length === 4 ? 'grid-cols-4' : 'grid-cols-5';
           return (
             <div key={area.id} className="bg-zinc-900 border border-zinc-800 p-4">
-              <div className="flex justify-between items-start mb-2"><div><div className="font-bold">{area.nombre}</div><div className="text-xs text-zinc-500">{area.m2} m²{!esSupervisor && ` · ${formatRD(area.m2 * sistema.precio_m2)}`}</div></div><div className="text-right"><div className="text-xl font-black">{porcentaje.toFixed(1)}%</div>{!esSupervisor && <div className="text-[10px] text-green-400">{formatRD(produccionRD)}</div>}</div></div>
+              <div className="flex justify-between items-start mb-2">
+                <div>
+                  <div className="font-bold">{area.nombre}</div>
+                  <div className="text-xs text-zinc-500">{area.m2} m² · <span className="text-red-400">{sistemaArea.nombre}</span>{!esSupervisor && ` · ${formatRD(area.m2 * sistemaArea.precio_m2)}`}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xl font-black">{porcentaje.toFixed(1)}%</div>
+                  {!esSupervisor && <div className="text-[10px] text-green-400">{formatRD(produccionRD)}</div>}
+                </div>
+              </div>
               <div className="h-1.5 bg-zinc-800 overflow-hidden mb-3"><div className="h-full bg-red-600" style={{ width: `${porcentaje}%` }} /></div>
-              <div className="grid grid-cols-5 gap-1 text-[10px]">{sistema.tareas.map(t => { const m2T = Math.min(m2PorTarea[t.id] || 0, area.m2); const pT = (m2T / area.m2) * 100; return <div key={t.id} className="text-center"><div className={`h-1 mb-1 ${pT >= 100 ? 'bg-green-500' : pT > 0 ? 'bg-yellow-500' : 'bg-zinc-800'}`} /><div className="text-zinc-400 uppercase tracking-wider truncate">{t.nombre}</div><div className="text-zinc-600">{m2T.toFixed(0)}/{area.m2}m²</div></div>; })}</div>
+              <div className={`grid ${colsClass} gap-1 text-[10px]`}>{sistemaArea.tareas.map(t => {
+                const m2T = Math.min(m2PorTarea[t.id] || 0, area.m2);
+                const pT = (m2T / area.m2) * 100;
+                return <div key={t.id} className="text-center"><div className={`h-1 mb-1 ${pT >= 100 ? 'bg-green-500' : pT > 0 ? 'bg-yellow-500' : 'bg-zinc-800'}`} /><div className="text-zinc-400 uppercase tracking-wider truncate">{t.nombre}</div><div className="text-zinc-600">{m2T.toFixed(0)}/{area.m2}m²</div></div>;
+              })}</div>
             </div>
           );
         })}</div>
       </div>
-      {reportesProy.length > 0 && <div><h2 className="text-xs tracking-widest uppercase text-zinc-400 font-bold mb-3">Historial</h2><div className="space-y-1">{reportesProy.map(r => { const area = proyecto.areas.find(a => a.id === r.areaId); const tarea = sistema.tareas.find(t => t.id === r.tareaId); const m2 = getM2Reporte(r, sistema); const prod = m2 * sistema.precio_m2 * (tarea.peso / 100); let det = `${m2.toFixed(0)} m²`; if (r.rollos) det = `${r.rollos} rollos (${m2.toFixed(0)} m²)`; if (r.cubetas) det += ` · ${r.cubetas} cubetas`; return <div key={r.id} className="bg-zinc-900 border-l-2 border-red-600 p-3 flex justify-between items-center text-sm gap-2"><div className="flex-1 min-w-0"><div className="font-bold">{area?.nombre} · {tarea?.nombre}</div><div className="text-xs text-zinc-500">{formatFecha(r.fecha)} · {r.supervisor} · {det}</div></div>{!esSupervisor && <div className="text-green-400 font-bold text-xs">{formatRD(prod)}</div>}{!esSupervisor && onEliminarReporte && <button onClick={() => onEliminarReporte(r.id)} className="text-zinc-500 hover:text-red-400 p-1" title="Eliminar"><Trash2 className="w-3 h-3" /></button>}</div>; })}</div></div>}
+      {reportesProy.length > 0 && <div><h2 className="text-xs tracking-widest uppercase text-zinc-400 font-bold mb-3">Historial</h2><div className="space-y-1">{reportesProy.map(r => {
+        const area = proyecto.areas.find(a => a.id === r.areaId);
+        // v8.9.2: sistema del área del reporte
+        const sistemaIdR = area?.sistemaId || proyecto.sistema;
+        const sistemaR = (sistemas && sistemas[sistemaIdR]) || sistema;
+        if (!sistemaR) return null;
+        const tarea = sistemaR.tareas.find(t => t.id === r.tareaId);
+        if (!tarea) return null;
+        const m2 = getM2Reporte(r, sistemaR);
+        const prod = m2 * sistemaR.precio_m2 * (tarea.peso / 100);
+        let det = `${m2.toFixed(0)} m²`;
+        if (r.rollos) det = `${r.rollos} rollos (${m2.toFixed(0)} m²)`;
+        if (r.cubetas) det += ` · ${r.cubetas} cubetas`;
+        return <div key={r.id} className="bg-zinc-900 border-l-2 border-red-600 p-3 flex justify-between items-center text-sm gap-2"><div className="flex-1 min-w-0"><div className="font-bold">{area?.nombre} · {tarea?.nombre}</div><div className="text-xs text-zinc-500">{formatFecha(r.fecha)} · {r.supervisor} · {det}</div></div>{!esSupervisor && <div className="text-green-400 font-bold text-xs">{formatRD(prod)}</div>}{!esSupervisor && onEliminarReporte && <button onClick={() => onEliminarReporte(r.id)} className="text-zinc-500 hover:text-red-400 p-1" title="Eliminar"><Trash2 className="w-3 h-3" /></button>}</div>;
+      })}</div></div>}
     </div>
   );
 }
@@ -3445,7 +3502,7 @@ function TabMateriales({ proyecto, sistema, materiales, envios, sistemas, onRegi
 // ============================================================
 // FORM REPORTE (SIN RD$ para supervisor/maestro + FOTOS opcionales)
 // ============================================================
-function FormReporte({ usuario, proyecto, reportes, sistema, onGuardar, onCancelar, onTerminar }) {
+function FormReporte({ usuario, proyecto, reportes, sistema, sistemas, onGuardar, onCancelar, onTerminar }) {
   const [paso, setPaso] = useState(1);
   const [form, setForm] = useState({ areaId: '', tareaId: '', m2: '', rollos: '', cubetas: '', fecha: new Date().toISOString().split('T')[0], nota: '' });
   const [fotos, setFotos] = useState([]);
@@ -3456,8 +3513,10 @@ function FormReporte({ usuario, proyecto, reportes, sistema, onGuardar, onCancel
   const esAdmin = tieneRol(usuario, 'admin');
 
   const area = proyecto.areas.find(a => a.id === form.areaId);
-  const tarea = sistema.tareas.find(t => t.id === form.tareaId);
-  const m2Ac = area && tarea ? reportes.filter(r => r.proyectoId === proyecto.id && r.areaId === area.id && r.tareaId === tarea.id).reduce((acc, r) => acc + getM2Reporte(r, sistema), 0) : 0;
+  // v8.9.2: sistema específico del área seleccionada
+  const sistemaAreaActual = area ? ((sistemas && sistemas[area.sistemaId || proyecto.sistema]) || sistema) : sistema;
+  const tarea = sistemaAreaActual?.tareas.find(t => t.id === form.tareaId);
+  const m2Ac = area && tarea ? reportes.filter(r => r.proyectoId === proyecto.id && r.areaId === area.id && r.tareaId === tarea.id).reduce((acc, r) => acc + getM2Reporte(r, sistemaAreaActual), 0) : 0;
   const m2Rest = area && tarea ? Math.max(0, area.m2 - m2Ac) : 0;
   const m2Rep = !tarea ? 0 : tarea.reporta === 'rollos' ? (parseFloat(form.rollos) || 0) * 8.5 : parseFloat(form.m2) || 0;
 
@@ -3522,13 +3581,18 @@ function FormReporte({ usuario, proyecto, reportes, sistema, onGuardar, onCancel
       {paso === 1 && <div className="space-y-3">
         <Label>Fecha</Label><Input type="date" value={form.fecha} onChange={v => setForm({ ...form, fecha: v })} />
         <Label>Área</Label>
-        {proyecto.areas.map(a => { const { porcentaje } = calcAvanceArea(proyecto, a.id, reportes, sistema); return <button key={a.id} onClick={() => setForm({ ...form, areaId: a.id, tareaId: '' })} className={`w-full p-4 border-2 text-left ${form.areaId === a.id ? 'border-red-600 bg-red-600/10' : 'border-zinc-800 bg-zinc-900'}`}><div className="flex justify-between items-center"><div><div className="font-bold">{a.nombre}</div><div className="text-xs text-zinc-500">{a.m2} m²</div></div><div className="text-sm font-black text-zinc-400">{porcentaje.toFixed(0)}%</div></div></button>; })}
+        {proyecto.areas.map(a => {
+          // v8.9.2: calcular con sistema del área
+          const sisA = (sistemas && sistemas[a.sistemaId || proyecto.sistema]) || sistema;
+          const { porcentaje } = calcAvanceArea(proyecto, a.id, reportes, sisA);
+          return <button key={a.id} onClick={() => setForm({ ...form, areaId: a.id, tareaId: '' })} className={`w-full p-4 border-2 text-left ${form.areaId === a.id ? 'border-red-600 bg-red-600/10' : 'border-zinc-800 bg-zinc-900'}`}><div className="flex justify-between items-center"><div><div className="font-bold">{a.nombre}</div><div className="text-xs text-zinc-500">{a.m2} m² · <span className="text-red-400">{sisA?.nombre || '(sin sistema)'}</span></div></div><div className="text-sm font-black text-zinc-400">{porcentaje.toFixed(0)}%</div></div></button>;
+        })}
         <BotonPrincipal disabled={!form.areaId} onClick={() => setPaso(2)}>Siguiente →</BotonPrincipal>
       </div>}
 
       {paso === 2 && <div className="space-y-3">
         <Label>Tarea</Label>
-        <div className="grid grid-cols-2 gap-2">{sistema.tareas.map(t => { const m2AcT = reportes.filter(r => r.proyectoId === proyecto.id && r.areaId === form.areaId && r.tareaId === t.id).reduce((acc, r) => acc + getM2Reporte(r, sistema), 0); const comp = m2AcT >= area.m2; return <button key={t.id} onClick={() => setForm({ ...form, tareaId: t.id })} disabled={comp} className={`p-3 border-2 text-left relative ${comp ? 'border-green-700 bg-green-900/20 opacity-60' : form.tareaId === t.id ? 'border-red-600 bg-red-600/10' : 'border-zinc-800 bg-zinc-900'}`}>{comp && <CheckCircle2 className="w-4 h-4 text-green-500 absolute top-1 right-1" />}<div className="font-bold text-sm">{t.nombre}</div><div className="text-xs text-zinc-500">{t.peso}%</div><div className="text-[10px] text-zinc-600 mt-1">{m2AcT.toFixed(0)}/{area.m2} m²</div></button>; })}</div>
+        <div className="grid grid-cols-2 gap-2">{(sistemaAreaActual?.tareas || []).map(t => { const m2AcT = reportes.filter(r => r.proyectoId === proyecto.id && r.areaId === form.areaId && r.tareaId === t.id).reduce((acc, r) => acc + getM2Reporte(r, sistemaAreaActual), 0); const comp = m2AcT >= area.m2; return <button key={t.id} onClick={() => setForm({ ...form, tareaId: t.id })} disabled={comp} className={`p-3 border-2 text-left relative ${comp ? 'border-green-700 bg-green-900/20 opacity-60' : form.tareaId === t.id ? 'border-red-600 bg-red-600/10' : 'border-zinc-800 bg-zinc-900'}`}>{comp && <CheckCircle2 className="w-4 h-4 text-green-500 absolute top-1 right-1" />}<div className="font-bold text-sm">{t.nombre}</div><div className="text-xs text-zinc-500">{t.peso}%</div><div className="text-[10px] text-zinc-600 mt-1">{m2AcT.toFixed(0)}/{area.m2} m²</div></button>; })}</div>
         <div className="flex gap-2"><BotonSecundario onClick={() => setPaso(1)}>← Atrás</BotonSecundario><BotonPrincipal disabled={!form.tareaId} onClick={() => setPaso(3)}>Siguiente →</BotonPrincipal></div>
       </div>}
 
@@ -4885,7 +4949,7 @@ function ModalReporteAvancePDF({ proyecto, sistema, data, usuario, onCerrar }) {
     .filter(r => r.proyectoId === proyecto.id && r.fecha >= fechaInicio && r.fecha <= fechaFin)
     .sort((a, b) => a.fecha.localeCompare(b.fecha));
 
-  const { porcentaje, produccionRD, valorContrato } = calcAvanceProyecto(proyecto, data.reportes, sistema);
+  const { porcentaje, produccionRD, valorContrato } = calcAvanceProyecto(proyecto, data.reportes, sistema, data.sistemas);
 
   // m² ejecutados en el periodo (por tarea)
   const porTarea = {};

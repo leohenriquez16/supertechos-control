@@ -10,7 +10,7 @@ import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps }
 // ============================================================
 // HELPERS
 // ============================================================
-const APP_VERSION = '8.5';
+const APP_VERSION = '8.6';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
@@ -19,6 +19,14 @@ const getAyudantesDeMaestro = (personal, mId) => personal.filter(p => tieneRol(p
 const getPersonasConLogin = (personal) => personal.filter(p => p.pin);
 const puedeVerProyecto = (persona, proy) => tieneRol(persona, 'admin') || proy.supervisorId === persona.id || proy.maestroId === persona.id;
 const puedeReportar = (persona, proy) => tieneRol(persona, 'admin') || proy.supervisorId === persona.id || proy.maestroId === persona.id;
+
+// v8.6: Nomenclatura consistente de proyecto con Nº Odoo adelante
+const labelProyecto = (p) => {
+  if (!p) return '';
+  const ref = p.referenciaOdoo || '';
+  const nombre = p.cliente || p.nombre || '';
+  return ref ? `${ref} · ${nombre}` : nombre;
+};
 
 // ============================================================
 // v8.1: Estados simplificados (6)
@@ -313,6 +321,7 @@ export default function App() {
     { seccion: 'OPERACIÓN', items: [
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, vista: 'dashboard' },
       { id: 'proyectos', label: 'Proyectos', icon: Briefcase, vista: 'proyectos', esProyectos: true },
+      { id: 'planificacion', label: 'Planificación', icon: Calendar, vista: 'planificacion' },
       { id: 'tareas', label: 'Tareas', icon: ClipboardList, vista: 'tareas', badge: tareas.length },
       { id: 'galeria', label: 'Galería', icon: ImageIcon, vista: 'galeria' },
       { id: 'equipoGlobal', label: 'Equipo en obra', icon: Users, vista: 'equipoGlobal' },
@@ -473,11 +482,28 @@ export default function App() {
         {esAdmin && vista === 'nomina' && <VistaNomina usuario={usuario} data={data} onVolver={() => setVista('dashboard')} />}
         {esAdmin && vista === 'galeria' && <GaleriaGlobal usuario={usuario} data={data} onVolver={() => setVista('dashboard')} />}
         {esAdmin && vista === 'equipoGlobal' && <VistaEquipoGlobal data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
+        {esAdmin && vista === 'planificacion' && <VistaPlanificacion data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'miPerfil' && <MiPerfil usuario={usuario} persona={usuario} soloLectura={false} onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }} onGuardar={(campos) => withSync(() => db.guardarPerfil(usuario.id, campos))} />}
         {esAdmin && vista === 'personal' && <GestionPersonal personal={data.personal} onVolver={() => setVista('dashboard')} onActualizar={(p) => withSync(() => db.reemplazarPersonal(p))} onAbrirPerfil={(p) => { setPerfilViendo(p); setVista('perfilPersona'); }} />}
         {vista === 'perfilPersona' && perfilViendo && <MiPerfil usuario={usuario} persona={perfilViendo} soloLectura={false} onVolver={() => setVista('personal')} onGuardar={(campos) => withSync(async () => { await db.guardarPerfil(perfilViendo.id, campos); const d = await db.loadAllData(); const actualizada = d.personal.find(p => p.id === perfilViendo.id); if (actualizada) setPerfilViendo(actualizada); })} />}
         {esAdmin && vista === 'sistemas' && <GestionSistemas sistemas={data.sistemas} config={data.config} onVolver={() => setVista('dashboard')} onActualizarSistemas={(s) => withSync(() => db.guardarSistemas(s))} onActualizarConfig={(c) => withSync(() => db.guardarConfig(c))} />}
-        {esAdmin && vista === 'nuevoProyecto' && <NuevoProyecto personal={data.personal} sistemas={data.sistemas} onCancelar={() => setVista('dashboard')} onCrear={(proy) => withSync(async () => { await db.crearProyecto({ ...proy, id: 'p_' + Date.now() }); setVista('dashboard'); })} />}
+        {esAdmin && vista === 'nuevoProyecto' && <NuevoProyecto personal={data.personal} sistemas={data.sistemas} onCancelar={() => setVista('dashboard')} onCrear={(proy) => withSync(async () => {
+          // v8.6 ext: si tiene sistema ad-hoc, crearlo primero
+          if (proy.sistemaAdHoc) {
+            const nuevoSistema = {
+              id: proy.sistemaAdHoc.id,
+              nombre: proy.sistemaAdHoc.nombre,
+              precio_m2: 0, costo_mo_m2: 0,
+              tareas: [{ id: 't_' + Date.now(), nombre: 'Por definir', peso: 100, reporta: 'm2' }],
+              materiales: [],
+              keywords_cotizacion: []
+            };
+            await db.guardarSistemas({ ...data.sistemas, [nuevoSistema.id]: nuevoSistema });
+          }
+          delete proy.sistemaAdHoc;
+          await db.crearProyecto({ ...proy, id: 'p_' + Date.now() });
+          setVista('dashboard');
+        })} />}
         {vista === 'proyecto' && proyectoActivo && (
           <DetalleProyecto usuario={usuario} proyecto={data.proyectos.find(p => p.id === proyectoActivo.id) || proyectoActivo} data={data} tab={tab} setTab={setTab}
             onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }}
@@ -1171,7 +1197,7 @@ function NuevoProyecto({ personal, sistemas, onCancelar, onCrear }) {
     nombre: '', cliente: '', referenciaProyecto: '',
     supervisorId: '', maestroId: '', ayudantesIds: [],
     sistema: sistemasArray[0]?.id || '',
-    fecha_inicio: new Date().toISOString().split('T')[0], fecha_entrega: '', referenciaOdoo: '',
+    fecha_inicio: '', fecha_entrega: '', referenciaOdoo: '',
     areas: [{ nombre: '', m2: '' }],
     dieta: { habilitada: false, tarifa_dia_persona: 800, dias_hombre_presupuestados: 0, personasIds: [] },
   });
@@ -1192,15 +1218,18 @@ function NuevoProyecto({ personal, sistemas, onCancelar, onCrear }) {
   };
 
   const crear = () => {
-    if (!form.nombre || !form.supervisorId || !form.maestroId || !form.fecha_entrega) return;
-    if (form.areas.some(a => !a.nombre || !a.m2)) return;
-    onCrear({
-      nombre: form.nombre, cliente: form.cliente, referenciaProyecto: form.referenciaProyecto,
-      sistema: form.sistema, supervisorId: form.supervisorId, maestroId: form.maestroId, ayudantesIds: form.ayudantesIds,
-      fecha_inicio: form.fecha_inicio, fecha_entrega: form.fecha_entrega, referenciaOdoo: form.referenciaOdoo,
+    if (!form.nombre && !form.cliente) { alert('Necesitas al menos un nombre o cliente'); return; }
+    if (form.areas.some(a => !a.nombre || !a.m2)) { alert('Completa áreas o deja una sola'); return; }
+    // v8.6 ext: si tiene sistema ad-hoc, pasarlo para crearlo
+    const payload = {
+      nombre: form.nombre || form.cliente, cliente: form.cliente, referenciaProyecto: form.referenciaProyecto,
+      sistema: form.sistema || null, supervisorId: form.supervisorId || null, maestroId: form.maestroId || null, ayudantesIds: form.ayudantesIds,
+      fecha_inicio: form.fecha_inicio || null, fecha_entrega: form.fecha_entrega || null, referenciaOdoo: form.referenciaOdoo,
       areas: form.areas.map((a, i) => ({ id: 'a_' + Date.now() + '_' + i, nombre: a.nombre, m2: parseFloat(a.m2) })),
       dieta: form.dieta.habilitada ? { habilitada: true, tarifa_dia_persona: parseFloat(form.dieta.tarifa_dia_persona) || 0, dias_hombre_presupuestados: parseFloat(form.dieta.dias_hombre_presupuestados) || 0, personasIds: form.dieta.personasIds } : { habilitada: false },
-    });
+      sistemaAdHoc: form.sistemaAdHoc || null,
+    };
+    onCrear(payload);
   };
 
   const totalM2 = form.areas.reduce((acc, a) => acc + (parseFloat(a.m2) || 0), 0);
@@ -1220,11 +1249,25 @@ function NuevoProyecto({ personal, sistemas, onCancelar, onCrear }) {
       {extraido && <div className="bg-green-900/20 border border-green-700 p-3 flex items-start gap-2"><Sparkles className="w-4 h-4 text-green-400 flex-shrink-0 mt-0.5" /><div className="flex-1"><div className="text-xs font-bold text-green-400">Extraído del PDF</div><div className="text-[11px] text-zinc-400 mt-1"><span className="font-mono">{extraido.numeroOrden}</span> · {formatRD(extraido.total)}</div></div><button onClick={() => setExtraido(null)} className="text-zinc-500"><X className="w-4 h-4" /></button></div>}
       {error && <div className="bg-red-900/30 border border-red-700 p-3 text-sm text-red-300">{error}</div>}
       <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-3"><Campo label="Ref. Odoo"><Input value={form.referenciaOdoo} onChange={v => setForm({ ...form, referenciaOdoo: v })} /></Campo><Campo label="Sistema"><select value={form.sistema} onChange={e => setForm({ ...form, sistema: e.target.value })} className="w-full bg-zinc-900 border-2 border-zinc-800 focus:border-red-600 outline-none px-4 py-3 text-white">{sistemasArray.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select></Campo></div>
+        <div className="grid grid-cols-2 gap-3"><Campo label="Ref. Odoo"><Input value={form.referenciaOdoo} onChange={v => setForm({ ...form, referenciaOdoo: v })} /></Campo><Campo label="Sistema (opcional)"><select value={form.sistema} onChange={e => {
+          if (e.target.value === '__crear__') {
+            const nombre = prompt('Nombre del nuevo sistema (podrás agregarle tareas desde Sistemas luego):');
+            if (!nombre) return;
+            const id = 's_' + Date.now();
+            setForm({ ...form, sistema: id, sistemaAdHoc: { id, nombre: nombre.trim() } });
+          } else {
+            setForm({ ...form, sistema: e.target.value, sistemaAdHoc: null });
+          }
+        }} className="w-full bg-zinc-900 border-2 border-zinc-800 focus:border-red-600 outline-none px-4 py-3 text-white">
+          <option value="">🔧 Por definir</option>
+          {sistemasArray.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+          {form.sistemaAdHoc && <option value={form.sistemaAdHoc.id}>✨ {form.sistemaAdHoc.nombre} (nuevo)</option>}
+          <option value="__crear__">+ Crear nuevo sistema...</option>
+        </select></Campo></div>
         <Campo label="Cliente"><Input value={form.cliente} onChange={v => setForm({ ...form, cliente: v })} /></Campo>
         <Campo label="Referencia del proyecto"><Input value={form.referenciaProyecto} onChange={v => setForm({ ...form, referenciaProyecto: v })} /></Campo>
         <Campo label="Nombre interno"><Input value={form.nombre} onChange={v => setForm({ ...form, nombre: v })} /></Campo>
-        <div className="grid grid-cols-2 gap-3"><Campo label="Inicio"><Input type="date" value={form.fecha_inicio} onChange={v => setForm({ ...form, fecha_inicio: v })} /></Campo><Campo label="Entrega"><Input type="date" value={form.fecha_entrega} onChange={v => setForm({ ...form, fecha_entrega: v })} /></Campo></div>
+        <div className="grid grid-cols-2 gap-3"><Campo label="Inicio (opcional — déjalo vacío si está por definir)"><Input type="date" value={form.fecha_inicio} onChange={v => setForm({ ...form, fecha_inicio: v })} /></Campo><Campo label="Entrega"><Input type="date" value={form.fecha_entrega} onChange={v => setForm({ ...form, fecha_entrega: v })} /></Campo></div>
         <Campo label="Supervisor"><select value={form.supervisorId} onChange={e => setForm({ ...form, supervisorId: e.target.value })} className="w-full bg-zinc-900 border-2 border-zinc-800 focus:border-red-600 outline-none px-4 py-3 text-white"><option value="">Seleccionar...</option>{supervisores.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select></Campo>
         <Campo label="Maestro"><select value={form.maestroId} onChange={e => setForm({ ...form, maestroId: e.target.value, ayudantesIds: [] })} className="w-full bg-zinc-900 border-2 border-zinc-800 focus:border-red-600 outline-none px-4 py-3 text-white"><option value="">Seleccionar...</option>{maestros.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select></Campo>
         {form.maestroId && ayudantesDisp.length > 0 && <Campo label="Ayudantes"><div className="space-y-1">{ayudantesDisp.map(a => <label key={a.id} className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 p-2 cursor-pointer hover:border-red-600"><input type="checkbox" checked={form.ayudantesIds.includes(a.id)} onChange={e => { const n = e.target.checked ? [...form.ayudantesIds, a.id] : form.ayudantesIds.filter(x => x !== a.id); setForm({ ...form, ayudantesIds: n }); }} className="w-4 h-4 accent-red-600" /><span className="text-sm">{a.nombre}</span></label>)}</div></Campo>}
@@ -1720,6 +1763,9 @@ function ModalEditarProyecto({ proyecto, data, usuario, onCerrar, onGuardar, onA
     modoPagoManoObra: proyecto.modoPagoManoObra || 'dia',
     preciosTareasM2: proyecto.preciosTareasM2 || {},
     preciosManoObraTareas: proyecto.preciosManoObraTareas || {},
+    precioM2FijoMaestro: proyecto.precioM2FijoMaestro || 0,
+    tipoAvance: proyecto.tipoAvance || 'tradicional', // v8.6 ext: 'tradicional' | 'unidades'
+    estructuraUnidades: proyecto.estructuraUnidades || [],
     areas: proyecto.areas ? proyecto.areas.map(a => ({ ...a })) : [],
     cronogramaVisibleMaestro: proyecto.cronogramaVisibleMaestro !== false, // default true
   });
@@ -1764,6 +1810,12 @@ function ModalEditarProyecto({ proyecto, data, usuario, onCerrar, onGuardar, onA
   const getCostoPersona = (pid) => costosDia.find(c => c.personaId === pid)?.costoDia || '';
 
   const guardar = async () => {
+    // v8.6: Si tiene supervisor o maestro asignado, exigir fecha de inicio
+    const tienePersonal = form.supervisorId || form.maestroId || (form.ayudantesIds || []).length > 0;
+    if (tienePersonal && !form.fecha_inicio) {
+      alert('⚠️ Cuando se asigna personal al proyecto, debes establecer la fecha de inicio. Si aún está por definir, quita el personal asignado o define una fecha.');
+      return;
+    }
     setGuardando(true);
     await onGuardar({ ...proyecto, ...form });
     setGuardando(false);
@@ -1858,12 +1910,43 @@ function ModalEditarProyecto({ proyecto, data, usuario, onCerrar, onGuardar, onA
         </div>
 
         <div className="space-y-3 border-t border-zinc-800 pt-3">
-          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Pago de mano de obra</div>
-          <div className="grid grid-cols-3 gap-1">
-            <button onClick={() => setForm({ ...form, modoPagoManoObra: 'dia' })} className={`p-2 text-xs font-bold uppercase border-2 ${form.modoPagoManoObra === 'dia' ? 'bg-red-600 text-white border-transparent' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>Por día</button>
-            <button onClick={() => setForm({ ...form, modoPagoManoObra: 'm2' })} className={`p-2 text-xs font-bold uppercase border-2 ${form.modoPagoManoObra === 'm2' ? 'bg-red-600 text-white border-transparent' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>Por m² total</button>
-            <button onClick={() => setForm({ ...form, modoPagoManoObra: 'tarea' })} className={`p-2 text-xs font-bold uppercase border-2 ${form.modoPagoManoObra === 'tarea' ? 'bg-red-600 text-white border-transparent' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>Por tarea</button>
+          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Tipo de reporte de avance</div>
+          <div className="grid grid-cols-2 gap-1">
+            <button onClick={() => setForm({ ...form, tipoAvance: 'tradicional' })} className={`p-2 text-xs font-bold uppercase border-2 ${form.tipoAvance === 'tradicional' ? 'bg-red-600 text-white border-transparent' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>Tradicional (m²)</button>
+            <button onClick={() => setForm({ ...form, tipoAvance: 'unidades' })} className={`p-2 text-xs font-bold uppercase border-2 ${form.tipoAvance === 'unidades' ? 'bg-red-600 text-white border-transparent' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>Por unidades (edificios)</button>
           </div>
+          {form.tipoAvance === 'unidades' && (
+            <div className="text-[10px] text-zinc-500 bg-zinc-950 border border-zinc-800 p-2">
+              💡 Podrás configurar torres/niveles/espacios (baños, balcones, etc.) desde la tab "Unidades" del proyecto.
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-3 border-t border-zinc-800 pt-3">
+          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Pago de mano de obra</div>
+          <div className="grid grid-cols-2 gap-1">
+            <button onClick={() => setForm({ ...form, modoPagoManoObra: 'dia' })} className={`p-2 text-xs font-bold uppercase border-2 ${form.modoPagoManoObra === 'dia' ? 'bg-red-600 text-white border-transparent' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>Por día</button>
+            <button onClick={() => setForm({ ...form, modoPagoManoObra: 'm2_fijo' })} className={`p-2 text-xs font-bold uppercase border-2 ${form.modoPagoManoObra === 'm2_fijo' ? 'bg-red-600 text-white border-transparent' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>m² fijo sistema</button>
+            <button onClick={() => setForm({ ...form, modoPagoManoObra: 'm2' })} className={`p-2 text-xs font-bold uppercase border-2 ${form.modoPagoManoObra === 'm2' ? 'bg-red-600 text-white border-transparent' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>m² por tarea (venta)</button>
+            <button onClick={() => setForm({ ...form, modoPagoManoObra: 'tarea' })} className={`p-2 text-xs font-bold uppercase border-2 ${form.modoPagoManoObra === 'tarea' ? 'bg-red-600 text-white border-transparent' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>Por tarea (venta + maestro)</button>
+          </div>
+          {form.modoPagoManoObra === 'm2_fijo' && (
+            <div className="bg-zinc-950 border border-zinc-800 p-3 space-y-2">
+              <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">Precio fijo al maestro por m² ejecutado del sistema</div>
+              <div className="text-[10px] text-zinc-500">Se paga el mismo precio sin importar qué tarea. Ej: RD$40/m² del sistema completo.</div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs">RD$</span>
+                <input
+                  type="number"
+                  value={form.precioM2FijoMaestro || ''}
+                  onChange={e => setForm({ ...form, precioM2FijoMaestro: parseFloat(e.target.value) || 0 })}
+                  placeholder="0"
+                  className="flex-1 bg-zinc-900 border border-green-800 px-2 py-2 text-green-400 text-sm font-bold text-right"
+                />
+                <span className="text-xs text-zinc-500">/m²</span>
+              </div>
+            </div>
+          )}
           {form.modoPagoManoObra === 'm2' && sistema && (
             <div className="bg-zinc-950 border border-zinc-800 p-3 space-y-2">
               <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">Precio por tarea (RD$/m²)</div>
@@ -1984,7 +2067,9 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
         <TabBtn active={tab === 'equipo'} onClick={() => setTab('equipo')}><Users className="w-3 h-3 inline mr-1" />Equipo</TabBtn>
         <TabBtn active={tab === 'fotos'} onClick={() => setTab('fotos')}><ImageIcon className="w-3 h-3 inline mr-1" />Fotos</TabBtn>
         {(esAdmin || proyecto.cronogramaVisibleMaestro !== false) && <TabBtn active={tab === 'cronograma'} onClick={() => setTab('cronograma')}><Calendar className="w-3 h-3 inline mr-1" />Cronograma</TabBtn>}
+        {proyecto.tipoAvance === 'unidades' && <TabBtn active={tab === 'unidades'} onClick={() => setTab('unidades')}><Briefcase className="w-3 h-3 inline mr-1" />Unidades</TabBtn>}
         <TabBtn active={tab === 'materiales'} onClick={() => setTab('materiales')}><Package className="w-3 h-3 inline mr-1" />Materiales</TabBtn>
+        {!esSupervisor && <TabBtn active={tab === 'productos'} onClick={() => setTab('productos')}><Sparkles className="w-3 h-3 inline mr-1" />Productos</TabBtn>}
         {!esSupervisor && <TabBtn active={tab === 'costo'} onClick={() => setTab('costo')}><DollarSign className="w-3 h-3 inline mr-1" />Costo</TabBtn>}
         {!esSupervisor && proyecto.dieta?.habilitada && <TabBtn active={tab === 'dieta'} onClick={() => setTab('dieta')}><Utensils className="w-3 h-3 inline mr-1" />Dieta</TabBtn>}
       </div>
@@ -1995,7 +2080,9 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
       {tab === 'equipo' && <TabEquipoProyecto proyecto={proyecto} data={data} sistema={sistema} />}
       {tab === 'fotos' && <TabFotos usuario={usuario} proyecto={proyecto} />}
       {tab === 'cronograma' && (esAdmin || proyecto.cronogramaVisibleMaestro !== false) && <TabCronograma proyecto={proyecto} porcentajeActual={porcentaje} onActualizarProyecto={onActualizarProyecto} esSupervisor={esSupervisor} reportes={data.reportes} sistema={sistema} />}
+      {tab === 'unidades' && proyecto.tipoAvance === 'unidades' && <TabUnidades proyecto={proyecto} onActualizarProyecto={onActualizarProyecto} esAdmin={esAdmin} />}
       {tab === 'materiales' && <TabMateriales proyecto={proyecto} sistema={sistema} materiales={materiales} envios={data.envios.filter(e => e.proyectoId === proyecto.id)} sistemas={data.sistemas} onRegistrarEnvio={onRegistrarEnvio} onRegistrarEnviosLote={onRegistrarEnviosLote} esSupervisor={esSupervisor} onEliminarEnvio={onEliminarEnvio} />}
+      {tab === 'productos' && !esSupervisor && <TabProductosAdicionales proyecto={proyecto} onActualizarProyecto={onActualizarProyecto} esAdmin={esAdmin} />}
       {tab === 'costo' && !esSupervisor && <TabCosto proyecto={proyecto} sistema={sistema} reportes={data.reportes} envios={data.envios} config={data.config} />}
       {tab === 'dieta' && !esSupervisor && <TabDieta proyecto={proyecto} reportes={data.reportes} personal={data.personal} onActualizarProyecto={onActualizarProyecto} />}
     </div>
@@ -2194,6 +2281,426 @@ function FotoThumb({ foto, onVer }) {
 // ============================================================
 // RESTO DE TABS
 // ============================================================
+// ============================================================
+// TAB UNIDADES (v8.6) - Proyectos por edificios/niveles/espacios
+// ============================================================
+function TabUnidades({ proyecto, onActualizarProyecto, esAdmin }) {
+  const estructura = proyecto.estructuraUnidades || [];
+  const [expandidos, setExpandidos] = useState({});
+  const [editandoTorre, setEditandoTorre] = useState(null);
+  const [editandoNivel, setEditandoNivel] = useState(null);
+  const [editandoEspacio, setEditandoEspacio] = useState(null);
+
+  const guardarEstructura = async (nueva) => {
+    try {
+      await onActualizarProyecto({ ...proyecto, estructuraUnidades: nueva });
+    } catch (e) { alert('Error: ' + (e.message || e)); }
+  };
+
+  const agregarTorre = () => {
+    const nombre = prompt('Nombre de la torre (ej: Torre A):');
+    if (!nombre) return;
+    const nueva = [...estructura, { id: 't_' + Date.now(), nombre: nombre.trim(), niveles: [] }];
+    guardarEstructura(nueva);
+  };
+
+  const eliminarTorre = (torreId) => {
+    if (!confirm('¿Eliminar esta torre y todos sus niveles?')) return;
+    guardarEstructura(estructura.filter(t => t.id !== torreId));
+  };
+
+  const agregarNivel = (torreId) => {
+    const nombre = prompt('Nombre del nivel (ej: Nivel 1, PB, Azotea):');
+    if (!nombre) return;
+    const nueva = estructura.map(t => t.id === torreId
+      ? { ...t, niveles: [...(t.niveles || []), { id: 'n_' + Date.now(), nombre: nombre.trim(), espacios: [] }] }
+      : t
+    );
+    guardarEstructura(nueva);
+  };
+
+  const eliminarNivel = (torreId, nivelId) => {
+    if (!confirm('¿Eliminar este nivel?')) return;
+    const nueva = estructura.map(t => t.id === torreId
+      ? { ...t, niveles: (t.niveles || []).filter(n => n.id !== nivelId) }
+      : t
+    );
+    guardarEstructura(nueva);
+  };
+
+  const agregarEspacio = (torreId, nivelId) => {
+    const tipo = prompt('Tipo de espacio (ej: baño, balcón, cocina, terraza):');
+    if (!tipo) return;
+    const cantidad = parseInt(prompt('Cantidad de este tipo en el nivel:') || '1');
+    if (isNaN(cantidad) || cantidad < 1) return;
+    const m2 = parseFloat(prompt('m² aproximado por unidad (opcional, enter para saltar):') || '0');
+    const nuevo = { id: 'e_' + Date.now(), tipo: tipo.trim(), cantidad, completadas: 0, m2PorUnidad: m2 };
+    const nueva = estructura.map(t => t.id === torreId
+      ? { ...t, niveles: (t.niveles || []).map(n => n.id === nivelId
+        ? { ...n, espacios: [...(n.espacios || []), nuevo] }
+        : n
+      )}
+      : t
+    );
+    guardarEstructura(nueva);
+  };
+
+  const actualizarCompletadas = (torreId, nivelId, espacioId, completadas) => {
+    const nueva = estructura.map(t => t.id === torreId
+      ? { ...t, niveles: (t.niveles || []).map(n => n.id === nivelId
+        ? { ...n, espacios: (n.espacios || []).map(e => e.id === espacioId
+          ? { ...e, completadas: parseInt(completadas) || 0 }
+          : e
+        )}
+        : n
+      )}
+      : t
+    );
+    guardarEstructura(nueva);
+  };
+
+  const eliminarEspacio = (torreId, nivelId, espacioId) => {
+    if (!confirm('¿Eliminar este espacio?')) return;
+    const nueva = estructura.map(t => t.id === torreId
+      ? { ...t, niveles: (t.niveles || []).map(n => n.id === nivelId
+        ? { ...n, espacios: (n.espacios || []).filter(e => e.id !== espacioId) }
+        : n
+      )}
+      : t
+    );
+    guardarEstructura(nueva);
+  };
+
+  // Totales
+  const totalUnidades = estructura.reduce((s, t) =>
+    s + (t.niveles || []).reduce((sn, n) =>
+      sn + (n.espacios || []).reduce((se, e) => se + e.cantidad, 0)
+    , 0)
+  , 0);
+  const completadas = estructura.reduce((s, t) =>
+    s + (t.niveles || []).reduce((sn, n) =>
+      sn + (n.espacios || []).reduce((se, e) => se + e.completadas, 0)
+    , 0)
+  , 0);
+  const pct = totalUnidades > 0 ? (completadas / totalUnidades) * 100 : 0;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <div className="text-xs tracking-widest uppercase text-red-500 font-bold">Unidades del Proyecto</div>
+          <div className="text-[11px] text-zinc-500">Edificios → Niveles → Espacios (baños, balcones, etc.)</div>
+        </div>
+        {esAdmin && (
+          <button onClick={agregarTorre} className="bg-red-600 text-white font-bold uppercase px-3 py-1.5 text-xs flex items-center gap-1"><Plus className="w-3 h-3" /> Torre</button>
+        )}
+      </div>
+
+      {/* Resumen */}
+      <div className="grid grid-cols-3 gap-2">
+        <div className="bg-zinc-900 border border-zinc-800 p-3">
+          <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Avance</div>
+          <div className="text-xl font-black">{pct.toFixed(1)}%</div>
+        </div>
+        <div className="bg-zinc-900 border border-zinc-800 p-3">
+          <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Completadas</div>
+          <div className="text-xl font-black text-green-400">{completadas}</div>
+        </div>
+        <div className="bg-zinc-900 border border-zinc-800 p-3">
+          <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Total unidades</div>
+          <div className="text-xl font-black">{totalUnidades}</div>
+        </div>
+      </div>
+
+      {estructura.length === 0 && (
+        <div className="text-center py-10 text-zinc-500 text-sm">
+          Sin estructura aún.
+          {esAdmin && <div className="text-[11px] mt-2">Click "+ Torre" arriba para agregar el primer edificio.</div>}
+        </div>
+      )}
+
+      <div className="space-y-3">
+        {estructura.map(torre => {
+          const isExp = expandidos[torre.id] !== false;
+          const nivelesTorre = torre.niveles || [];
+          const unTorre = nivelesTorre.reduce((s, n) => s + (n.espacios || []).reduce((se, e) => se + e.cantidad, 0), 0);
+          const comTorre = nivelesTorre.reduce((s, n) => s + (n.espacios || []).reduce((se, e) => se + e.completadas, 0), 0);
+          const pctTorre = unTorre > 0 ? (comTorre / unTorre) * 100 : 0;
+          return (
+            <div key={torre.id} className="bg-zinc-900 border border-zinc-800">
+              <div className="p-3 flex items-center gap-2 border-b border-zinc-800 bg-zinc-950">
+                <button onClick={() => setExpandidos({ ...expandidos, [torre.id]: !isExp })} className="text-zinc-400">
+                  {isExp ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </button>
+                <div className="flex-1">
+                  <div className="font-bold text-sm">{torre.nombre}</div>
+                  <div className="text-[10px] text-zinc-500">{nivelesTorre.length} niveles · {comTorre}/{unTorre} unidades · {pctTorre.toFixed(0)}%</div>
+                </div>
+                {esAdmin && (
+                  <div className="flex gap-1">
+                    <button onClick={() => agregarNivel(torre.id)} className="text-zinc-400 hover:text-red-500 p-1 text-xs"><Plus className="w-3 h-3 inline" /> nivel</button>
+                    <button onClick={() => eliminarTorre(torre.id)} className="text-zinc-500 hover:text-red-400 p-1"><Trash2 className="w-3 h-3" /></button>
+                  </div>
+                )}
+              </div>
+
+              {isExp && (
+                <div className="p-3 space-y-2">
+                  {nivelesTorre.length === 0 && (
+                    <div className="text-center py-4 text-[11px] text-zinc-600">Sin niveles. {esAdmin && 'Agrega uno.'}</div>
+                  )}
+                  {nivelesTorre.map(nivel => {
+                    const espacios = nivel.espacios || [];
+                    const unNivel = espacios.reduce((s, e) => s + e.cantidad, 0);
+                    const comNivel = espacios.reduce((s, e) => s + e.completadas, 0);
+                    const pctNivel = unNivel > 0 ? (comNivel / unNivel) * 100 : 0;
+                    return (
+                      <div key={nivel.id} className="bg-zinc-950 border border-zinc-800 p-3">
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="flex-1">
+                            <div className="font-bold text-xs">{nivel.nombre}</div>
+                            <div className="text-[10px] text-zinc-500">{comNivel}/{unNivel} · {pctNivel.toFixed(0)}%</div>
+                          </div>
+                          {esAdmin && (
+                            <div className="flex gap-1">
+                              <button onClick={() => agregarEspacio(torre.id, nivel.id)} className="text-zinc-400 hover:text-red-500 text-[10px]"><Plus className="w-3 h-3 inline" /> espacio</button>
+                              <button onClick={() => eliminarNivel(torre.id, nivel.id)} className="text-zinc-500 hover:text-red-400 p-1"><Trash2 className="w-3 h-3" /></button>
+                            </div>
+                          )}
+                        </div>
+                        {espacios.length === 0 && (
+                          <div className="text-[10px] text-zinc-600 text-center py-2">Sin espacios en este nivel</div>
+                        )}
+                        <div className="space-y-1">
+                          {espacios.map(esp => (
+                            <div key={esp.id} className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 p-2">
+                              <div className="flex-1 text-[11px]">
+                                <span className="font-bold capitalize">{esp.tipo}</span>
+                                {esp.m2PorUnidad > 0 && <span className="text-zinc-500 ml-2">({esp.m2PorUnidad} m²/u)</span>}
+                              </div>
+                              <input
+                                type="number"
+                                min="0"
+                                max={esp.cantidad}
+                                value={esp.completadas}
+                                onChange={e => actualizarCompletadas(torre.id, nivel.id, esp.id, e.target.value)}
+                                disabled={!esAdmin}
+                                className="w-14 bg-zinc-950 border border-zinc-700 px-1 py-0.5 text-xs text-center"
+                              />
+                              <span className="text-[10px] text-zinc-500">/ {esp.cantidad}</span>
+                              <div className="w-16 bg-zinc-800 h-1.5">
+                                <div className="bg-green-500 h-full" style={{ width: `${esp.cantidad > 0 ? (esp.completadas / esp.cantidad) * 100 : 0}%` }}></div>
+                              </div>
+                              {esAdmin && (
+                                <button onClick={() => eliminarEspacio(torre.id, nivel.id, esp.id)} className="text-zinc-500 hover:text-red-400 p-1"><Trash2 className="w-3 h-3" /></button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+
+// ============================================================
+// TAB PRODUCTOS ADICIONALES (v8.6)
+// Productos que se cobran aparte del sistema principal
+// Ej: Limpieza y bote de escombros, desmonte, etc.
+// ============================================================
+function TabProductosAdicionales({ proyecto, onActualizarProyecto, esAdmin }) {
+  const productos = proyecto.productosAdicionales || [];
+  const [editando, setEditando] = useState(null); // id del producto en edición o 'nuevo'
+  const [form, setForm] = useState({ nombre: '', cantidad: 0, unidad: 'm²', precioVenta: 0, precioManoObraMaestro: 0, nota: '' });
+
+  const guardar = async () => {
+    if (!form.nombre) { alert('Ingresa un nombre de producto'); return; }
+    const cantidad = parseFloat(form.cantidad) || 0;
+    const precioVenta = parseFloat(form.precioVenta) || 0;
+    const precioManoObra = parseFloat(form.precioManoObraMaestro) || 0;
+    let nuevos;
+    if (editando === 'nuevo') {
+      nuevos = [...productos, { id: 'prod_' + Date.now(), nombre: form.nombre, cantidad, unidad: form.unidad, precioVenta, precioManoObraMaestro: precioManoObra, nota: form.nota }];
+    } else {
+      nuevos = productos.map(p => p.id === editando ? { ...p, nombre: form.nombre, cantidad, unidad: form.unidad, precioVenta, precioManoObraMaestro: precioManoObra, nota: form.nota } : p);
+    }
+    try {
+      await onActualizarProyecto({ ...proyecto, productosAdicionales: nuevos });
+      setEditando(null);
+      setForm({ nombre: '', cantidad: 0, unidad: 'm²', precioVenta: 0, precioManoObraMaestro: 0, nota: '' });
+    } catch (e) { alert('Error: ' + (e.message || e)); }
+  };
+
+  const eliminar = async (id) => {
+    if (!confirm('¿Eliminar este producto del proyecto?')) return;
+    const nuevos = productos.filter(p => p.id !== id);
+    try {
+      await onActualizarProyecto({ ...proyecto, productosAdicionales: nuevos });
+    } catch (e) { alert('Error: ' + (e.message || e)); }
+  };
+
+  const comenzarEdicion = (p) => {
+    setEditando(p.id);
+    setForm({ nombre: p.nombre, cantidad: p.cantidad, unidad: p.unidad || 'm²', precioVenta: p.precioVenta, precioManoObraMaestro: p.precioManoObraMaestro, nota: p.nota || '' });
+  };
+
+  const comenzarNuevo = () => {
+    setEditando('nuevo');
+    setForm({ nombre: '', cantidad: 0, unidad: 'm²', precioVenta: 0, precioManoObraMaestro: 0, nota: '' });
+  };
+
+  const productoPlantilla = () => {
+    setEditando('nuevo');
+    setForm({ nombre: 'Limpieza y Bote de Escombros', cantidad: 0, unidad: 'm²', precioVenta: 80, precioManoObraMaestro: 15, nota: '' });
+  };
+
+  const totalVenta = productos.reduce((s, p) => s + (p.cantidad * p.precioVenta), 0);
+  const totalManoObra = productos.reduce((s, p) => s + (p.cantidad * p.precioManoObraMaestro), 0);
+  const utilidad = totalVenta - totalManoObra;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <div className="text-xs tracking-widest uppercase text-red-500 font-bold">Productos Adicionales</div>
+          <div className="text-[11px] text-zinc-500">Se cobran aparte del sistema principal. Ej: limpieza, bote de escombros, etc.</div>
+        </div>
+        {esAdmin && (
+          <div className="flex gap-2">
+            <button onClick={productoPlantilla} className="text-xs text-zinc-400 hover:text-red-500 flex items-center gap-1"><Sparkles className="w-3 h-3" /> Limpieza</button>
+            <button onClick={comenzarNuevo} className="bg-red-600 text-white font-bold uppercase px-3 py-1.5 text-xs flex items-center gap-1"><Plus className="w-3 h-3" /> Nuevo</button>
+          </div>
+        )}
+      </div>
+
+      {/* Resumen arriba */}
+      {productos.length > 0 && (
+        <div className="grid grid-cols-3 gap-2">
+          <div className="bg-zinc-900 border border-zinc-800 p-3">
+            <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Venta total</div>
+            <div className="text-lg font-black text-green-400">{formatRD(totalVenta)}</div>
+          </div>
+          <div className="bg-zinc-900 border border-zinc-800 p-3">
+            <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Pago al maestro</div>
+            <div className="text-lg font-black text-red-400">{formatRD(totalManoObra)}</div>
+          </div>
+          <div className="bg-zinc-900 border border-zinc-800 p-3">
+            <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Utilidad bruta</div>
+            <div className="text-lg font-black text-white">{formatRD(utilidad)}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal editar/crear */}
+      {editando && (
+        <div className="bg-zinc-900 border-2 border-red-600 p-4 space-y-3">
+          <div className="flex justify-between items-center">
+            <div className="text-[11px] tracking-widest uppercase text-red-500 font-bold">
+              {editando === 'nuevo' ? 'Nuevo producto adicional' : 'Editar producto'}
+            </div>
+            <button onClick={() => { setEditando(null); }} className="text-zinc-500"><X className="w-4 h-4" /></button>
+          </div>
+
+          <Campo label="Nombre del producto">
+            <Input value={form.nombre} onChange={v => setForm({ ...form, nombre: v })} placeholder="Ej: Limpieza y Bote de Escombros" />
+          </Campo>
+
+          <div className="grid grid-cols-3 gap-2">
+            <Campo label="Cantidad">
+              <Input type="number" value={form.cantidad} onChange={v => setForm({ ...form, cantidad: v })} />
+            </Campo>
+            <Campo label="Unidad">
+              <select value={form.unidad} onChange={e => setForm({ ...form, unidad: e.target.value })} className="w-full bg-zinc-900 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white text-sm">
+                <option value="m²">m²</option>
+                <option value="ml">ml (metro lineal)</option>
+                <option value="unidad">unidad</option>
+                <option value="día">día</option>
+                <option value="lote">lote (precio fijo)</option>
+              </select>
+            </Campo>
+            <Campo label="Venta (RD$ / unidad)">
+              <Input type="number" value={form.precioVenta} onChange={v => setForm({ ...form, precioVenta: v })} />
+            </Campo>
+          </div>
+
+          <Campo label="Pago al maestro (RD$ / unidad)">
+            <Input type="number" value={form.precioManoObraMaestro} onChange={v => setForm({ ...form, precioManoObraMaestro: v })} />
+          </Campo>
+
+          <Campo label="Nota (opcional)">
+            <Input value={form.nota} onChange={v => setForm({ ...form, nota: v })} placeholder="Ej: incluye alquiler de camión" />
+          </Campo>
+
+          {/* Preview del cálculo */}
+          {(parseFloat(form.cantidad) > 0 && parseFloat(form.precioVenta) > 0) && (
+            <div className="bg-zinc-950 border border-zinc-800 p-3 text-xs space-y-1">
+              <div className="flex justify-between"><span className="text-zinc-500">Venta total:</span><span className="text-green-400 font-bold">{formatRD((parseFloat(form.cantidad) || 0) * (parseFloat(form.precioVenta) || 0))}</span></div>
+              <div className="flex justify-between"><span className="text-zinc-500">Pago al maestro:</span><span className="text-red-400 font-bold">{formatRD((parseFloat(form.cantidad) || 0) * (parseFloat(form.precioManoObraMaestro) || 0))}</span></div>
+              <div className="flex justify-between border-t border-zinc-800 pt-1 mt-1"><span className="text-zinc-500 font-bold">Utilidad bruta:</span><span className="text-white font-black">{formatRD((parseFloat(form.cantidad) || 0) * ((parseFloat(form.precioVenta) || 0) - (parseFloat(form.precioManoObraMaestro) || 0)))}</span></div>
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <button onClick={() => setEditando(null)} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button>
+            <button onClick={guardar} className="flex-1 bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase py-3 flex items-center justify-center gap-2">
+              <Save className="w-3 h-3" /> Guardar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Lista de productos */}
+      {productos.length === 0 && !editando && (
+        <div className="text-center py-10 text-zinc-500 text-sm">
+          Sin productos adicionales en este proyecto.
+          {esAdmin && <div className="text-[11px] mt-2">Click "+ Nuevo" arriba para agregar uno.</div>}
+        </div>
+      )}
+
+      <div className="space-y-2">
+        {productos.map(p => {
+          const totalV = p.cantidad * p.precioVenta;
+          const totalMO = p.cantidad * p.precioManoObraMaestro;
+          return (
+            <div key={p.id} className="bg-zinc-900 border border-zinc-800 p-3">
+              <div className="flex justify-between items-start gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-sm">{p.nombre}</div>
+                  <div className="text-[10px] text-zinc-500 uppercase">{p.cantidad} {p.unidad} · RD${p.precioVenta}/{p.unidad} venta · RD${p.precioManoObraMaestro}/{p.unidad} maestro</div>
+                  {p.nota && <div className="text-[10px] text-zinc-400 italic mt-1">"{p.nota}"</div>}
+                </div>
+                {esAdmin && (
+                  <div className="flex items-start gap-1">
+                    <button onClick={() => comenzarEdicion(p)} className="text-zinc-500 hover:text-white p-1"><Edit2 className="w-3 h-3" /></button>
+                    <button onClick={() => eliminar(p.id)} className="text-zinc-500 hover:text-red-400 p-1"><Trash2 className="w-3 h-3" /></button>
+                  </div>
+                )}
+              </div>
+              <div className="grid grid-cols-3 gap-2 mt-2 text-[10px]">
+                <div><div className="text-zinc-500 uppercase">Venta</div><div className="font-bold text-green-400">{formatRD(totalV)}</div></div>
+                <div><div className="text-zinc-500 uppercase">Maestro</div><div className="font-bold text-red-400">{formatRD(totalMO)}</div></div>
+                <div><div className="text-zinc-500 uppercase">Utilidad</div><div className="font-bold">{formatRD(totalV - totalMO)}</div></div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+
+// ============================================================
+// TAB COSTO
+// ============================================================
 function TabCosto({ proyecto, sistema, reportes, envios, config }) {
   const a = calcAnalisisCosto(proyecto, reportes, envios, sistema, config);
   const FilaCosto = ({ label, teorico, real, destacado }) => (<div className={`grid grid-cols-3 gap-2 py-2 border-b border-zinc-800 ${destacado ? 'font-bold' : ''}`}><div className={`text-xs ${destacado ? 'text-white' : 'text-zinc-400'}`}>{label}</div><div className="text-right text-xs">{formatRD(teorico)}</div><div className={`text-right text-xs ${real > teorico ? 'text-yellow-400' : real < teorico ? 'text-green-400' : ''}`}>{formatRD(real)}</div></div>);
@@ -2371,7 +2878,7 @@ function TabCronograma({ proyecto, porcentajeActual, onActualizarProyecto, esSup
 
       <div className="bg-zinc-900 border border-zinc-800 p-4">
         <div className="flex justify-between items-center mb-3"><div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Fechas</div>{!esSupervisor && (edit ? <div className="flex gap-1"><button onClick={() => { setEdit(false); setFechas({ fecha_inicio: proyecto.fecha_inicio, fecha_entrega: proyecto.fecha_entrega }); }} className="text-xs text-zinc-500">Cancelar</button><button onClick={() => { onActualizarProyecto({ ...proyecto, ...fechas }); setEdit(false); }} className="text-xs text-red-500 font-bold flex items-center gap-1"><Save className="w-3 h-3" /> Guardar</button></div> : <button onClick={() => setEdit(true)} className="text-xs text-zinc-500 hover:text-red-500 flex items-center gap-1"><Edit2 className="w-3 h-3" /> Editar</button>)}</div>
-        {edit ? <div className="grid grid-cols-2 gap-3"><Campo label="Inicio"><Input type="date" value={fechas.fecha_inicio} onChange={v => setFechas({ ...fechas, fecha_inicio: v })} /></Campo><Campo label="Entrega"><Input type="date" value={fechas.fecha_entrega} onChange={v => setFechas({ ...fechas, fecha_entrega: v })} /></Campo></div> : <div className="grid grid-cols-2 gap-3 text-sm"><div><div className="text-[10px] text-zinc-500">Inicio</div><div className="font-bold">{formatFechaCorta(proyecto.fecha_inicio)}</div></div><div><div className="text-[10px] text-zinc-500">Entrega</div><div className="font-bold">{formatFechaCorta(proyecto.fecha_entrega)}</div></div></div>}
+        {edit ? <div className="grid grid-cols-2 gap-3"><Campo label="Inicio"><Input type="date" value={fechas.fecha_inicio} onChange={v => setFechas({ ...fechas, fecha_inicio: v })} /></Campo><Campo label="Entrega"><Input type="date" value={fechas.fecha_entrega} onChange={v => setFechas({ ...fechas, fecha_entrega: v })} /></Campo></div> : <div className="grid grid-cols-2 gap-3 text-sm"><div><div className="text-[10px] text-zinc-500">Inicio</div><div className="font-bold">{proyecto.fecha_inicio ? formatFechaCorta(proyecto.fecha_inicio) : <span className="text-yellow-500">📅 Por definir</span>}</div></div><div><div className="text-[10px] text-zinc-500">Entrega</div><div className="font-bold">{proyecto.fecha_entrega ? formatFechaCorta(proyecto.fecha_entrega) : <span className="text-zinc-500">—</span>}</div></div></div>}
       </div>
 
       {/* GANTT JERÁRQUICO */}
@@ -2789,6 +3296,213 @@ function FotoThumbGlobal({ foto, onClick }) {
 
 // ============================================================
 // VISTA EQUIPO GLOBAL (v8.1) - personal en obra hoy
+// ============================================================
+// ============================================================
+// VISTA PLANIFICACIÓN (v8.6) - Grid semanal Personal × 7 días
+// Vista simple de quién está en qué obra cada día basado en jornadas reales
+// ============================================================
+function VistaPlanificacion({ data, onVolver, onVerProyecto }) {
+  const [semanaRef, setSemanaRef] = useState(new Date());
+  const [jornadasSemana, setJornadasSemana] = useState([]);
+  const [cargando, setCargando] = useState(false);
+  const [filtroRol, setFiltroRol] = useState(''); // '' | 'maestro' | 'supervisor' | 'ayudante'
+  const [filtroProyecto, setFiltroProyecto] = useState('');
+
+  // Calcular días de la semana (lunes a domingo)
+  const dias = React.useMemo(() => {
+    const dia = new Date(semanaRef);
+    const dow = dia.getDay(); // 0 dom, 1 lun...
+    const lunes = new Date(dia);
+    lunes.setDate(dia.getDate() - (dow === 0 ? 6 : dow - 1));
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(lunes);
+      d.setDate(lunes.getDate() + i);
+      return d;
+    });
+  }, [semanaRef]);
+
+  const fechaStr = (d) => d.toISOString().split('T')[0];
+  const fechaCorta = (d) => d.toLocaleDateString('es-DO', { day: 'numeric', month: 'short' });
+  const nombreDia = (d) => ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'][d.getDay() === 0 ? 6 : d.getDay() - 1];
+
+  const cargar = async () => {
+    setCargando(true);
+    const todas = [];
+    for (const p of data.proyectos) {
+      if (p.archivado) continue;
+      try {
+        const lista = await db.listarJornadasProyecto(p.id);
+        const finInicio = fechaStr(dias[0]);
+        const finFin = fechaStr(dias[6]);
+        lista.forEach(j => {
+          if (j.fecha >= finInicio && j.fecha <= finFin) todas.push({ ...j, proyecto: p });
+        });
+      } catch {}
+    }
+    setJornadasSemana(todas);
+    setCargando(false);
+  };
+
+  useEffect(() => { cargar(); }, [semanaRef, data.proyectos.length]);
+
+  // Agrupar por persona y día: { personaId: { fecha: [proyectos] } }
+  const grid = React.useMemo(() => {
+    const g = {};
+    jornadasSemana.forEach(j => {
+      (j.personasPresentesIds || []).forEach(pid => {
+        if (!g[pid]) g[pid] = {};
+        if (!g[pid][j.fecha]) g[pid][j.fecha] = [];
+        g[pid][j.fecha].push({ proyectoId: j.proyectoId, proyectoNombre: j.proyecto.cliente, referenciaOdoo: j.proyecto.referenciaOdoo, condicionDia: j.condicionDia });
+      });
+    });
+    return g;
+  }, [jornadasSemana]);
+
+  // Personas a mostrar: aquellas con al menos una jornada en la semana O que estén asignadas a algún proyecto
+  const personasActivas = React.useMemo(() => {
+    const ids = new Set(Object.keys(grid));
+    data.proyectos.forEach(p => {
+      if (p.archivado) return;
+      if (filtroProyecto && p.id !== filtroProyecto) return;
+      if (p.supervisorId) ids.add(p.supervisorId);
+      if (p.maestroId) ids.add(p.maestroId);
+      (p.ayudantesIds || []).forEach(a => ids.add(a));
+    });
+    let personas = [...ids].map(id => data.personal.find(p => p.id === id)).filter(Boolean);
+    if (filtroRol) personas = personas.filter(p => p.roles?.includes(filtroRol));
+    return personas.sort((a, b) => {
+      // Supervisores primero, luego maestros, luego ayudantes
+      const orden = (r) => r?.includes('supervisor') ? 1 : r?.includes('maestro') ? 2 : 3;
+      const oa = orden(a.roles); const ob = orden(b.roles);
+      if (oa !== ob) return oa - ob;
+      return a.nombre.localeCompare(b.nombre);
+    });
+  }, [grid, data.personal, data.proyectos, filtroRol, filtroProyecto]);
+
+  // Colores por proyecto (hash → color consistente)
+  const coloresProyecto = React.useMemo(() => {
+    const colores = ['bg-red-900/40 border-red-700 text-red-300', 'bg-blue-900/40 border-blue-700 text-blue-300', 'bg-green-900/40 border-green-700 text-green-300', 'bg-yellow-900/40 border-yellow-700 text-yellow-300', 'bg-purple-900/40 border-purple-700 text-purple-300', 'bg-cyan-900/40 border-cyan-700 text-cyan-300', 'bg-orange-900/40 border-orange-700 text-orange-300', 'bg-pink-900/40 border-pink-700 text-pink-300'];
+    const map = {};
+    data.proyectos.forEach((p, i) => { map[p.id] = colores[i % colores.length]; });
+    return map;
+  }, [data.proyectos]);
+
+  const cambiarSemana = (delta) => {
+    const nueva = new Date(semanaRef);
+    nueva.setDate(nueva.getDate() + (delta * 7));
+    setSemanaRef(nueva);
+  };
+
+  const irAEstaSemana = () => setSemanaRef(new Date());
+  const hoy = fechaStr(new Date());
+
+  return (
+    <div className="space-y-4">
+      <button onClick={onVolver} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button>
+
+      <div className="flex items-start justify-between flex-wrap gap-2">
+        <div>
+          <h1 className="text-3xl font-black tracking-tight">Planificación</h1>
+          <div className="text-xs text-zinc-500">Vista semanal del personal × proyectos</div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => cambiarSemana(-1)} className="bg-zinc-900 border border-zinc-800 px-3 py-2 text-xs hover:border-red-500"><ChevronLeft className="w-3 h-3 inline" /> Anterior</button>
+          <button onClick={irAEstaSemana} className="bg-zinc-800 px-3 py-2 text-xs font-bold uppercase">Hoy</button>
+          <button onClick={() => cambiarSemana(1)} className="bg-zinc-900 border border-zinc-800 px-3 py-2 text-xs hover:border-red-500">Siguiente <ChevronRight className="w-3 h-3 inline" /></button>
+        </div>
+      </div>
+
+      {/* Filtros */}
+      <div className="flex gap-2 flex-wrap">
+        <select value={filtroRol} onChange={e => setFiltroRol(e.target.value)} className="bg-zinc-900 border border-zinc-800 px-3 py-1.5 text-xs text-white">
+          <option value="">Todos los roles</option>
+          <option value="supervisor">Supervisores</option>
+          <option value="maestro">Maestros</option>
+          <option value="ayudante">Ayudantes</option>
+        </select>
+        <select value={filtroProyecto} onChange={e => setFiltroProyecto(e.target.value)} className="bg-zinc-900 border border-zinc-800 px-3 py-1.5 text-xs text-white">
+          <option value="">Todos los proyectos</option>
+          {data.proyectos.filter(p => !p.archivado).map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo ? p.referenciaOdoo + ' · ' : ''}{p.cliente}</option>)}
+        </select>
+        {(filtroRol || filtroProyecto) && <button onClick={() => { setFiltroRol(''); setFiltroProyecto(''); }} className="text-xs text-zinc-500 hover:text-red-500">Limpiar</button>}
+      </div>
+
+      {cargando && <div className="text-center text-zinc-500 text-sm py-4">Cargando jornadas de la semana...</div>}
+
+      {/* Grid semanal */}
+      <div className="bg-zinc-900 border border-zinc-800 overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead className="bg-zinc-950">
+            <tr>
+              <th className="p-2 text-left border-r border-zinc-800 sticky left-0 bg-zinc-950 z-10 min-w-[140px]">Personal</th>
+              {dias.map(d => {
+                const s = fechaStr(d);
+                const esHoy = s === hoy;
+                return (
+                  <th key={s} className={`p-2 text-center border-r border-zinc-800 min-w-[110px] ${esHoy ? 'bg-red-900/30 text-red-300' : ''}`}>
+                    <div className="text-[10px] font-bold uppercase">{nombreDia(d)}</div>
+                    <div className="text-[10px] text-zinc-500">{fechaCorta(d)}</div>
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {personasActivas.length === 0 && (
+              <tr><td colSpan={8} className="p-8 text-center text-zinc-500 text-sm">No hay personal activo para estos filtros.</td></tr>
+            )}
+            {personasActivas.map(persona => {
+              const rolPrincipal = persona.roles?.includes('supervisor') ? 'Sup' : persona.roles?.includes('maestro') ? 'Mae' : persona.roles?.includes('ayudante') ? 'Ay' : '—';
+              const rolColor = rolPrincipal === 'Sup' ? 'text-purple-400' : rolPrincipal === 'Mae' ? 'text-red-400' : 'text-zinc-400';
+              return (
+                <tr key={persona.id} className="border-t border-zinc-800">
+                  <td className="p-2 border-r border-zinc-800 sticky left-0 bg-zinc-900 z-10">
+                    <div className="font-bold truncate">{persona.nombre}</div>
+                    <div className={`text-[10px] uppercase ${rolColor}`}>{rolPrincipal}</div>
+                  </td>
+                  {dias.map(d => {
+                    const fechaStrDia = fechaStr(d);
+                    const proyectos = grid[persona.id]?.[fechaStrDia] || [];
+                    const esHoy = fechaStrDia === hoy;
+                    return (
+                      <td key={fechaStrDia} className={`p-1 border-r border-zinc-800 align-top ${esHoy ? 'bg-red-950/10' : ''}`}>
+                        <div className="space-y-1">
+                          {proyectos.map((proy, idx) => (
+                            <button
+                              key={idx}
+                              onClick={() => {
+                                const p = data.proyectos.find(x => x.id === proy.proyectoId);
+                                if (p) onVerProyecto(p);
+                              }}
+                              className={`w-full text-left px-1.5 py-1 text-[10px] border hover:brightness-125 ${coloresProyecto[proy.proyectoId] || 'bg-zinc-800 border-zinc-700'}`}
+                              title={proy.proyectoNombre}
+                            >
+                              <div className="font-bold truncate">{proy.referenciaOdoo || proy.proyectoNombre}</div>
+                              {proy.condicionDia === 'lluvia' && <div className="text-blue-400">☔</div>}
+                            </button>
+                          ))}
+                          {proyectos.length === 0 && <div className="text-[10px] text-zinc-600 text-center py-1">—</div>}
+                        </div>
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="text-[10px] text-zinc-600 text-center">
+        💡 Las casillas muestran las jornadas registradas (pasadas o programadas con "Programar jornada" v8.5). Click en una casilla para ver el proyecto.
+      </div>
+    </div>
+  );
+}
+
+
+// ============================================================
+// VISTA EQUIPO GLOBAL
 // ============================================================
 function VistaEquipoGlobal({ data, onVolver, onVerProyecto }) {
   const [jornadas, setJornadas] = useState([]);
@@ -4178,11 +4892,21 @@ function DetalleCorte({ corte, data, usuario, onVolver }) {
   const [ajustes, setAjustes] = useState([]);
   const [ajusteModal, setAjusteModal] = useState(null);
   const [vistaDetalle, setVistaDetalle] = useState('persona'); // persona | proyecto | recibos
+  const [soloMaestros, setSoloMaestros] = useState(true); // v8.6: default solo maestros
+
+  // v8.6: Detalle filtrado por modo "solo maestros"
+  const detalleFiltrado = React.useMemo(() => {
+    if (!soloMaestros) return detalle;
+    return detalle.filter(r => {
+      const persona = data.personal.find(p => p.id === r.personaId);
+      return persona?.roles?.includes('maestro');
+    });
+  }, [detalle, soloMaestros, data.personal]);
 
   // Agrupaciones derivadas del detalle (recibos persona×proyecto)
   const resumenPersonas = React.useMemo(() => {
     const g = {};
-    detalle.forEach(r => {
+    detalleFiltrado.forEach(r => {
       if (!g[r.personaId]) g[r.personaId] = { personaId: r.personaId, personaNombre: r.personaNombre, proyectos: [], total: 0, totalDias: 0, totalM2: 0 };
       g[r.personaId].proyectos.push(r);
       g[r.personaId].total += r.montoTotal;
@@ -4190,18 +4914,18 @@ function DetalleCorte({ corte, data, usuario, onVolver }) {
       g[r.personaId].totalM2 += r.m2Producidos || 0;
     });
     return Object.values(g).sort((a, b) => b.total - a.total);
-  }, [detalle]);
+  }, [detalleFiltrado]);
 
   const resumenProyectos = React.useMemo(() => {
     const g = {};
-    detalle.forEach(r => {
+    detalleFiltrado.forEach(r => {
       const key = r.proyectoId || 'sin';
       if (!g[key]) g[key] = { proyectoId: r.proyectoId, proyectoNombre: r.proyectoNombre, personas: [], total: 0 };
       g[key].personas.push(r);
       g[key].total += r.montoTotal;
     });
     return Object.values(g).sort((a, b) => b.total - a.total);
-  }, [detalle]);
+  }, [detalleFiltrado]);
 
   const cargar = async () => {
     setLoading(true);
@@ -4289,6 +5013,10 @@ function DetalleCorte({ corte, data, usuario, onVolver }) {
       if (proy.modoPagoManoObra === 'dia') {
         const costoDia = costosDiaMap[proy.id]?.[b.personaId] || 0;
         montoBase = diasEfectivos * costoDia;
+      } else if (proy.modoPagoManoObra === 'm2_fijo') {
+        // v8.6: Precio fijo por m² total ejecutado (sin distinguir tarea)
+        const precioFijo = proy.precioM2FijoMaestro || 0;
+        montoBase = b.m2 * precioFijo;
       } else if (proy.modoPagoManoObra === 'm2') {
         // Pago por m² según precio por tarea del proyecto (o 0 si no configurado)
         const precios = proy.preciosTareasM2 || {};
@@ -4310,7 +5038,7 @@ function DetalleCorte({ corte, data, usuario, onVolver }) {
       filas.push({
         id: 'd_' + corte.id + '_' + b.personaId + '_' + b.proyectoId,
         corteId: corte.id, personaId: b.personaId, personaNombre: p.nombre,
-        proyectoId: b.proyectoId, proyectoNombre: proy.cliente,
+        proyectoId: b.proyectoId, proyectoNombre: labelProyecto(proy),
         modoPago: proy.modoPagoManoObra || 'dia',
         diasTrabajados: diasN, diasDobles: dobles, m2Producidos: b.m2,
         montoBase, montoDieta: 0, montoAdelantos: 0, montoOtros: 0,
@@ -4411,9 +5139,28 @@ function DetalleCorte({ corte, data, usuario, onVolver }) {
         <button onClick={() => setVistaDetalle('recibos')} className={`flex-1 px-3 py-1.5 text-[10px] font-bold uppercase ${vistaDetalle === 'recibos' ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>Recibos</button>
       </div>
 
+      {/* v8.6: Toggle solo maestros */}
+      <div className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 p-2">
+        <label className="flex items-center gap-2 cursor-pointer flex-1">
+          <input
+            type="checkbox"
+            checked={soloMaestros}
+            onChange={e => setSoloMaestros(e.target.checked)}
+            className="w-4 h-4 accent-red-600"
+          />
+          <div className="text-xs">
+            <span className="font-bold">Solo maestros</span>
+            <span className="text-zinc-500 ml-2">({soloMaestros ? 'Ocultando supervisores y ayudantes' : 'Mostrando todos'})</span>
+          </div>
+        </label>
+        <div className="text-[10px] text-zinc-500">
+          {detalle.length - detalleFiltrado.length} ocultos
+        </div>
+      </div>
+
       <div className="space-y-2">
         <div className="flex justify-between items-center">
-          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">{vistaDetalle === 'persona' ? `Personal (${resumenPersonas.length})` : vistaDetalle === 'proyecto' ? `Proyectos (${resumenProyectos.length})` : `Recibos (${detalle.length})`}</div>
+          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">{vistaDetalle === 'persona' ? `Personal (${resumenPersonas.length})` : vistaDetalle === 'proyecto' ? `Proyectos (${resumenProyectos.length})` : `Recibos (${detalleFiltrado.length})`}</div>
           <button onClick={() => setAjusteModal({})} className="text-xs text-red-500 flex items-center gap-1"><Plus className="w-3 h-3" /> Ajuste</button>
         </div>
 
@@ -4447,7 +5194,7 @@ function DetalleCorte({ corte, data, usuario, onVolver }) {
           </div>
         ))}
 
-        {vistaDetalle === 'recibos' && detalle.map(d => (
+        {vistaDetalle === 'recibos' && detalleFiltrado.map(d => (
           <div key={d.id} className="bg-zinc-900 border border-zinc-800 p-3">
             <div className="flex justify-between items-start">
               <div>

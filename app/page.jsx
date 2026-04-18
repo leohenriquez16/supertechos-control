@@ -10,7 +10,7 @@ import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps }
 // ============================================================
 // HELPERS
 // ============================================================
-const APP_VERSION = '8.8';
+const APP_VERSION = '8.9';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
@@ -52,6 +52,19 @@ const labelProyecto = (p) => {
   const ref = p.referenciaOdoo || '';
   const nombre = p.cliente || p.nombre || '';
   return ref ? `${ref} · ${nombre}` : nombre;
+};
+
+// v8.9: Sistema efectivo de un área (fallback al sistema del proyecto)
+const sistemaDeArea = (area, proyecto) => area?.sistemaId || proyecto?.sistema || null;
+
+// v8.9: Conjunto de sistemas distintos presentes en las áreas de un proyecto
+const sistemasDelProyecto = (proyecto) => {
+  const set = new Set();
+  (proyecto?.areas || []).forEach(a => {
+    const s = a.sistemaId || proyecto.sistema;
+    if (s) set.add(s);
+  });
+  return [...set];
 };
 
 // ============================================================
@@ -1232,6 +1245,12 @@ function NuevoProyecto({ personal, sistemas, onCancelar, onCrear }) {
   const maestros = getMaestros(personal);
   const ayudantesDisp = form.maestroId ? getAyudantesDeMaestro(personal, form.maestroId) : [];
   const sistema = sistemas[form.sistema];
+  // v8.9: conteo de sistemas distintos en áreas
+  const sistemasDelProyectoDelForm = React.useMemo(() => {
+    const set = new Set();
+    (form.areas || []).forEach(a => { const s = a.sistemaId || form.sistema; if (s) set.add(s); });
+    return [...set];
+  }, [form.areas, form.sistema]);
 
   const procesarPDF = async (file) => {
     setCargando(true); setError('');
@@ -1253,7 +1272,12 @@ function NuevoProyecto({ personal, sistemas, onCancelar, onCrear }) {
       nombre: form.nombre || form.cliente, cliente: form.cliente, referenciaProyecto: form.referenciaProyecto,
       sistema: form.sistema || null, supervisorId: form.supervisorId || null, maestroId: form.maestroId || null, ayudantesIds: form.ayudantesIds,
       fecha_inicio: form.fecha_inicio || null, fecha_entrega: form.fecha_entrega || null, referenciaOdoo: form.referenciaOdoo,
-      areas: form.areas.map((a, i) => ({ id: 'a_' + Date.now() + '_' + i, nombre: a.nombre, m2: parseFloat(a.m2) })),
+      areas: form.areas.map((a, i) => ({
+        id: 'a_' + Date.now() + '_' + i,
+        nombre: a.nombre,
+        m2: parseFloat(a.m2),
+        sistemaId: a.sistemaId || form.sistema || null, // v8.9
+      })),
       dieta: form.dieta.habilitada ? { habilitada: true, tarifa_dia_persona: parseFloat(form.dieta.tarifa_dia_persona) || 0, dias_hombre_presupuestados: parseFloat(form.dieta.dias_hombre_presupuestados) || 0, personasIds: form.dieta.personasIds } : { habilitada: false },
       sistemaAdHoc: form.sistemaAdHoc || null,
     };
@@ -1300,9 +1324,38 @@ function NuevoProyecto({ personal, sistemas, onCancelar, onCrear }) {
         <Campo label="Maestro"><select value={form.maestroId} onChange={e => setForm({ ...form, maestroId: e.target.value, ayudantesIds: [] })} className="w-full bg-zinc-900 border-2 border-zinc-800 focus:border-red-600 outline-none px-4 py-3 text-white"><option value="">Seleccionar...</option>{maestros.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select></Campo>
         {form.maestroId && ayudantesDisp.length > 0 && <Campo label="Ayudantes"><div className="space-y-1">{ayudantesDisp.map(a => <label key={a.id} className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 p-2 cursor-pointer hover:border-red-600"><input type="checkbox" checked={form.ayudantesIds.includes(a.id)} onChange={e => { const n = e.target.checked ? [...form.ayudantesIds, a.id] : form.ayudantesIds.filter(x => x !== a.id); setForm({ ...form, ayudantesIds: n }); }} className="w-4 h-4 accent-red-600" /><span className="text-sm">{a.nombre}</span></label>)}</div></Campo>}
         <div>
-          <div className="flex justify-between items-center mb-2"><div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Áreas</div><div className="text-xs text-zinc-500">{formatNum(totalM2)} m² · {formatRD(totalM2 * (sistema?.precio_m2 || 0))}</div></div>
-          <div className="space-y-2">{form.areas.map((area, i) => (<div key={i} className="flex gap-2 items-center"><Input value={area.nombre} onChange={v => { const n = [...form.areas]; n[i].nombre = v; setForm({ ...form, areas: n }); }} placeholder="Nombre" /><div className="w-32"><Input type="number" value={area.m2} onChange={v => { const n = [...form.areas]; n[i].m2 = v; setForm({ ...form, areas: n }); }} placeholder="m²" /></div>{form.areas.length > 1 && <button onClick={() => setForm({ ...form, areas: form.areas.filter((_, idx) => idx !== i) })} className="text-zinc-500 hover:text-red-400"><X className="w-4 h-4" /></button>}</div>))}</div>
-          <button onClick={() => setForm({ ...form, areas: [...form.areas, { nombre: '', m2: '' }] })} className="mt-2 text-xs text-red-500 flex items-center gap-1"><Plus className="w-3 h-3" /> Agregar área</button>
+          <div className="flex justify-between items-center mb-2"><div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Áreas</div><div className="text-xs text-zinc-500">{formatNum(totalM2)} m²</div></div>
+          <div className="space-y-2">{form.areas.map((area, i) => {
+            const sistemaArea = area.sistemaId || form.sistema;
+            const sistemaAreaObj = sistemaArea ? sistemas[sistemaArea] : null;
+            return (
+              <div key={i} className="bg-zinc-950 border border-zinc-800 p-2 space-y-2">
+                <div className="flex gap-2 items-center">
+                  <Input value={area.nombre} onChange={v => { const n = [...form.areas]; n[i].nombre = v; setForm({ ...form, areas: n }); }} placeholder="Nombre del área" />
+                  <div className="w-28"><Input type="number" value={area.m2} onChange={v => { const n = [...form.areas]; n[i].m2 = v; setForm({ ...form, areas: n }); }} placeholder="m²" /></div>
+                  {form.areas.length > 1 && <button onClick={() => setForm({ ...form, areas: form.areas.filter((_, idx) => idx !== i) })} className="text-zinc-500 hover:text-red-400"><X className="w-4 h-4" /></button>}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">Sistema:</span>
+                  <select
+                    value={area.sistemaId || ''}
+                    onChange={e => { const n = [...form.areas]; n[i] = { ...n[i], sistemaId: e.target.value || null }; setForm({ ...form, areas: n }); }}
+                    className="flex-1 bg-zinc-900 border border-zinc-800 px-2 py-1 text-white text-xs"
+                  >
+                    <option value="">🔧 Usar sistema del proyecto{form.sistema ? ` (${sistemas[form.sistema]?.nombre || ''})` : ''}</option>
+                    {sistemasArray.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+                  </select>
+                  {sistemaAreaObj && <span className="text-[10px] text-green-400">RD${sistemaAreaObj.precio_m2 || 0}/m²</span>}
+                </div>
+              </div>
+            );
+          })}</div>
+          <button onClick={() => setForm({ ...form, areas: [...form.areas, { nombre: '', m2: '', sistemaId: null }] })} className="mt-2 text-xs text-red-500 flex items-center gap-1"><Plus className="w-3 h-3" /> Agregar área</button>
+          {sistemasDelProyectoDelForm.length > 1 && (
+            <div className="mt-2 text-[10px] bg-blue-900/20 border border-blue-800 text-blue-300 p-2">
+              💡 Este proyecto tiene <strong>{sistemasDelProyectoDelForm.length} sistemas distintos</strong> entre sus áreas.
+            </div>
+          )}
         </div>
         <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
           <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={form.dieta.habilitada} onChange={e => setForm({ ...form, dieta: { ...form.dieta, habilitada: e.target.checked } })} className="w-4 h-4 accent-red-600" /><div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold flex items-center gap-1"><Utensils className="w-3 h-3" /> Proyecto en el interior</div></label>
@@ -1795,12 +1848,14 @@ function ModalEditarProyecto({ proyecto, data, usuario, onCerrar, onGuardar, onA
     tipoAvance: proyecto.tipoAvance || 'tradicional', // v8.6 ext: 'tradicional' | 'unidades'
     estructuraUnidades: proyecto.estructuraUnidades || [],
     areas: proyecto.areas ? proyecto.areas.map(a => ({ ...a })) : [],
+    sistema: proyecto.sistema || '', // v8.9: sistema default del proyecto
     cronogramaVisibleMaestro: proyecto.cronogramaVisibleMaestro !== false, // default true
   });
   const [guardando, setGuardando] = useState(false);
   const [costosDia, setCostosDia] = useState([]);
   const [loadingCostos, setLoadingCostos] = useState(true);
   const sistema = data.sistemas[proyecto.sistema];
+  const sistemasArray = Object.values(data.sistemas || {}); // v8.9
 
   useEffect(() => {
     (async () => {
@@ -1914,21 +1969,46 @@ function ModalEditarProyecto({ proyecto, data, usuario, onCerrar, onGuardar, onA
             <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Áreas ({form.areas.length})</div>
             <button onClick={() => setForm({ ...form, areas: [...form.areas, { id: 'a_' + Date.now() + Math.random().toString(36).slice(2, 6), nombre: '', m2: 0 }] })} className="text-xs text-red-500 flex items-center gap-1"><Plus className="w-3 h-3" /> Agregar área</button>
           </div>
-          {form.areas.map((area, i) => (
-            <div key={area.id} className="bg-zinc-950 border border-zinc-800 p-2 space-y-1">
-              <div className="flex items-center gap-2">
-                <input type="text" value={area.nombre} onChange={e => { const n = [...form.areas]; n[i] = { ...area, nombre: e.target.value }; setForm({ ...form, areas: n }); }} placeholder="Nombre (ej: Techo Hombres)" className="flex-1 bg-zinc-900 border border-zinc-800 px-2 py-1.5 text-white text-xs" />
-                <input type="number" value={area.m2 || ''} onChange={e => { const n = [...form.areas]; n[i] = { ...area, m2: parseFloat(e.target.value) || 0 }; setForm({ ...form, areas: n }); }} placeholder="m²" className="w-20 bg-zinc-900 border border-zinc-800 px-2 py-1.5 text-white text-xs text-right" />
-                <button onClick={() => { if (confirm('¿Eliminar esta área? Se perderán los reportes asociados.')) { setForm({ ...form, areas: form.areas.filter(x => x.id !== area.id) }); } }} className="text-zinc-500 hover:text-red-400"><Trash2 className="w-3 h-3" /></button>
+          {form.areas.map((area, i) => {
+            const sistemaArea = area.sistemaId || form.sistema;
+            const sistemaAreaObj = sistemaArea ? data.sistemas[sistemaArea] : null;
+            return (
+              <div key={area.id} className="bg-zinc-950 border border-zinc-800 p-2 space-y-1">
+                <div className="flex items-center gap-2">
+                  <input type="text" value={area.nombre} onChange={e => { const n = [...form.areas]; n[i] = { ...area, nombre: e.target.value }; setForm({ ...form, areas: n }); }} placeholder="Nombre (ej: Techo Hombres)" className="flex-1 bg-zinc-900 border border-zinc-800 px-2 py-1.5 text-white text-xs" />
+                  <input type="number" value={area.m2 || ''} onChange={e => { const n = [...form.areas]; n[i] = { ...area, m2: parseFloat(e.target.value) || 0 }; setForm({ ...form, areas: n }); }} placeholder="m²" className="w-20 bg-zinc-900 border border-zinc-800 px-2 py-1.5 text-white text-xs text-right" />
+                  <button onClick={() => { if (confirm('¿Eliminar esta área? Se perderán los reportes asociados.')) { setForm({ ...form, areas: form.areas.filter(x => x.id !== area.id) }); } }} className="text-zinc-500 hover:text-red-400"><Trash2 className="w-3 h-3" /></button>
+                </div>
+                {/* v8.9: selector de sistema por área */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] tracking-widest uppercase text-zinc-500 font-bold shrink-0">Sistema:</span>
+                  <select
+                    value={area.sistemaId || ''}
+                    onChange={e => { const n = [...form.areas]; n[i] = { ...area, sistemaId: e.target.value || null }; setForm({ ...form, areas: n }); }}
+                    className="flex-1 bg-zinc-900 border border-zinc-800 px-2 py-1 text-white text-[10px]"
+                  >
+                    <option value="">🔧 Por defecto del proyecto{form.sistema ? ` (${data.sistemas[form.sistema]?.nombre || ''})` : ''}</option>
+                    {sistemasArray.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+                  </select>
+                  {sistemaAreaObj && <span className="text-[9px] text-green-500 shrink-0">RD${sistemaAreaObj.precio_m2 || 0}/m²</span>}
+                </div>
+                <select value={area.maestroAreaId || ''} onChange={e => { const n = [...form.areas]; n[i] = { ...area, maestroAreaId: e.target.value || null }; setForm({ ...form, areas: n }); }} className="w-full bg-zinc-900 border border-zinc-800 px-2 py-1.5 text-white text-[10px]">
+                  <option value="">Usar maestro principal del proyecto</option>
+                  {maestros.map(m => <option key={m.id} value={m.id}>🔨 {m.nombre}</option>)}
+                </select>
               </div>
-              <select value={area.maestroAreaId || ''} onChange={e => { const n = [...form.areas]; n[i] = { ...area, maestroAreaId: e.target.value || null }; setForm({ ...form, areas: n }); }} className="w-full bg-zinc-900 border border-zinc-800 px-2 py-1.5 text-white text-[10px]">
-                <option value="">Usar maestro principal del proyecto</option>
-                {maestros.map(m => <option key={m.id} value={m.id}>🔨 {m.nombre}</option>)}
-              </select>
-            </div>
-          ))}
+            );
+          })}
           {form.areas.length === 0 && <div className="text-xs text-zinc-500 text-center py-2">Sin áreas. Click en "Agregar área" para crear.</div>}
           <div className="text-[10px] text-zinc-600">Total: {formatNum(form.areas.reduce((s, a) => s + (a.m2 || 0), 0))} m²</div>
+          {(() => {
+            const sistemasDistintos = new Set();
+            form.areas.forEach(a => { const s = a.sistemaId || form.sistema; if (s) sistemasDistintos.add(s); });
+            if (sistemasDistintos.size > 1) {
+              return <div className="text-[10px] bg-blue-900/20 border border-blue-800 text-blue-300 p-2">💡 Este proyecto tiene <strong>{sistemasDistintos.size} sistemas distintos</strong> entre sus áreas.</div>;
+            }
+            return null;
+          })()}
         </div>
 
         <div className="space-y-3 border-t border-zinc-800 pt-3">

@@ -10,7 +10,7 @@ import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps }
 // ============================================================
 // HELPERS
 // ============================================================
-const APP_VERSION = '8.3';
+const APP_VERSION = '8.4';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
@@ -661,6 +661,7 @@ function GestionSistemas({ sistemas, config, onVolver, onActualizarSistemas, onA
   const [importModal, setImportModal] = useState(null); // 'sistemas' | 'materiales'
   const [importResult, setImportResult] = useState(null);
   const [importando, setImportando] = useState(false);
+  const [plantillasModal, setPlantillasModal] = useState(false);
   const sistemasArray = Object.values(sistemas);
 
   const guardarSistema = () => {
@@ -801,7 +802,10 @@ function GestionSistemas({ sistemas, config, onVolver, onActualizarSistemas, onA
       <div>
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-xs tracking-widest uppercase text-zinc-400 font-bold">Sistemas ({sistemasArray.length})</h2>
-          <button onClick={() => setSistemaEditando({ id: 's_' + Date.now(), nombre: '', precio_m2: 0, costo_mo_m2: 0, tareas: [{ id: 't_' + Date.now(), nombre: '', peso: 100, reporta: 'm2' }], materiales: [], keywords_cotizacion: [] })} className="text-xs text-red-500 flex items-center gap-1 font-bold uppercase tracking-wider"><Plus className="w-3 h-3" /> Nuevo</button>
+          <div className="flex gap-2">
+            <button onClick={() => setPlantillasModal(true)} className="text-xs text-zinc-400 flex items-center gap-1 font-bold uppercase tracking-wider hover:text-red-500"><Sparkles className="w-3 h-3" /> Plantillas</button>
+            <button onClick={() => setSistemaEditando({ id: 's_' + Date.now(), nombre: '', precio_m2: 0, costo_mo_m2: 0, tareas: [{ id: 't_' + Date.now(), nombre: '', peso: 100, reporta: 'm2' }], materiales: [], keywords_cotizacion: [] })} className="text-xs text-red-500 flex items-center gap-1 font-bold uppercase tracking-wider"><Plus className="w-3 h-3" /> Nuevo</button>
+          </div>
         </div>
         <div className="space-y-2">
           {sistemasArray.map(s => {
@@ -825,9 +829,183 @@ function GestionSistemas({ sistemas, config, onVolver, onActualizarSistemas, onA
           })}
         </div>
       </div>
+
+      {plantillasModal && (
+        <ModalPlantillasSistemas
+          sistemasActuales={sistemas}
+          onCerrar={() => setPlantillasModal(false)}
+          onAgregar={(nuevosSistemas) => {
+            onActualizarSistemas({ ...sistemas, ...nuevosSistemas });
+            setPlantillasModal(false);
+          }}
+        />
+      )}
     </div>
   );
 }
+
+// ============================================================
+// v8.4: Plantillas de sistemas predefinidas
+// ============================================================
+const PLANTILLAS_SISTEMAS = {
+  servicios_adicionales: {
+    id: 'servicios_adicionales',
+    nombre: 'Servicios Adicionales',
+    descripcion: 'Servicios que se pueden cobrar independientes o sumar a otro sistema',
+    precio_m2: 0,
+    costo_mo_m2: 0,
+    tareas: [
+      { id: 't_limpieza_bote', nombre: 'Limpieza y Bote de Escombros', peso: 100, reporta: 'm2', precio_maestro_m2: 15 },
+    ],
+    materiales: [],
+    keywords_cotizacion: ['limpieza', 'bote', 'escombros', 'remoción']
+  },
+  cementicio_impac: {
+    id: 'cementicio_impac',
+    nombre: 'AP Impac Cemenflex (Bicomponente)',
+    descripcion: 'Sistema cementicio bicomponente de Impac. Kit A+B.',
+    precio_m2: 0,
+    costo_mo_m2: 0,
+    tareas: [
+      { id: 't_limpieza', nombre: 'Limpieza / Preparación', peso: 10, reporta: 'm2', precio_maestro_m2: 15 },
+      { id: 't_primera', nombre: 'Primera Capa + Malla en Detalles', peso: 45, reporta: 'm2', precio_maestro_m2: 0 },
+      { id: 't_segunda', nombre: 'Segunda Capa', peso: 45, reporta: 'm2', precio_maestro_m2: 0 },
+    ],
+    materiales: [
+      { id: 'm_impac_kit', nombre: 'Impac Cemenflex Kit (A+B)', unidad: 'kit', rinde_m2: 1, costo_unidad: 0, keywords_odoo: ['impac', 'cemenflex'] },
+    ],
+    keywords_cotizacion: ['impac', 'cemenflex', 'cementicio']
+  },
+  cementicio_sika: {
+    id: 'cementicio_sika',
+    nombre: 'AP Sikatopseal 107 (Bicomponente)',
+    descripcion: 'Sistema cementicio bicomponente de Sika. Kit A+B.',
+    precio_m2: 0,
+    costo_mo_m2: 0,
+    tareas: [
+      { id: 't_limpieza', nombre: 'Limpieza / Preparación', peso: 10, reporta: 'm2', precio_maestro_m2: 15 },
+      { id: 't_primera', nombre: 'Primera Capa + Malla en Detalles', peso: 45, reporta: 'm2', precio_maestro_m2: 0 },
+      { id: 't_segunda', nombre: 'Segunda Capa', peso: 45, reporta: 'm2', precio_maestro_m2: 0 },
+    ],
+    materiales: [
+      { id: 'm_sika_kit', nombre: 'Sikatopseal 107 Kit (A+B)', unidad: 'kit', rinde_m2: 1, costo_unidad: 0, keywords_odoo: ['sika', 'sikatopseal', 'topseal'] },
+    ],
+    keywords_cotizacion: ['sika', 'sikatopseal', 'cementicio']
+  },
+  cementicio_mapei: {
+    id: 'cementicio_mapei',
+    nombre: 'AP Planiseal 88 (Monocomponente con agua)',
+    descripcion: 'Sistema cementicio monocomponente de Mapei. Se mezcla con agua.',
+    precio_m2: 0,
+    costo_mo_m2: 0,
+    tareas: [
+      { id: 't_limpieza', nombre: 'Limpieza / Preparación', peso: 10, reporta: 'm2', precio_maestro_m2: 15 },
+      { id: 't_primera', nombre: 'Primera Capa + Malla en Detalles', peso: 45, reporta: 'm2', precio_maestro_m2: 0 },
+      { id: 't_segunda', nombre: 'Segunda Capa', peso: 45, reporta: 'm2', precio_maestro_m2: 0 },
+    ],
+    materiales: [
+      { id: 'm_mapei_saco', nombre: 'Planiseal 88 (saco monocomponente)', unidad: 'saco', rinde_m2: 1, costo_unidad: 0, keywords_odoo: ['mapei', 'planiseal'] },
+    ],
+    keywords_cotizacion: ['mapei', 'planiseal', 'cementicio', 'monocomponente']
+  },
+};
+
+function ModalPlantillasSistemas({ sistemasActuales, onCerrar, onAgregar }) {
+  const [seleccionadas, setSeleccionadas] = useState(new Set());
+
+  const toggle = (id) => {
+    const n = new Set(seleccionadas);
+    if (n.has(id)) n.delete(id); else n.add(id);
+    setSeleccionadas(n);
+  };
+
+  const confirmar = () => {
+    const nuevos = {};
+    seleccionadas.forEach(id => {
+      if (PLANTILLAS_SISTEMAS[id]) {
+        // Si ya existe un sistema con ese nombre, agregar timestamp
+        const plantilla = PLANTILLAS_SISTEMAS[id];
+        const nuevoId = sistemasActuales[id] ? `${id}_${Date.now()}` : id;
+        nuevos[nuevoId] = { ...plantilla, id: nuevoId };
+      }
+    });
+    onAgregar(nuevos);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+      <div className="bg-zinc-900 border-2 border-red-600 max-w-2xl w-full max-h-[90vh] overflow-auto">
+        <div className="sticky top-0 bg-zinc-900 border-b border-zinc-800 p-4 flex justify-between items-center">
+          <div>
+            <div className="text-xs tracking-widest uppercase text-red-500 font-bold">Plantillas de Sistemas</div>
+            <div className="text-[11px] text-zinc-500 mt-1">Agrega sistemas predefinidos al ERP. Luego los ajustas en Editar.</div>
+          </div>
+          <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
+        </div>
+
+        <div className="p-5 space-y-3">
+          {Object.values(PLANTILLAS_SISTEMAS).map(p => {
+            const yaExiste = !!sistemasActuales[p.id];
+            const seleccionado = seleccionadas.has(p.id);
+            return (
+              <label
+                key={p.id}
+                className={`block bg-zinc-950 border-2 p-4 cursor-pointer ${seleccionado ? 'border-red-600' : 'border-zinc-800 hover:border-zinc-600'}`}
+              >
+                <div className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={seleccionado}
+                    onChange={() => toggle(p.id)}
+                    className="w-5 h-5 accent-red-600 mt-0.5"
+                  />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <div className="font-bold text-sm">{p.nombre}</div>
+                      {yaExiste && <span className="text-[9px] bg-yellow-600 text-black px-1.5 py-0.5 font-black">YA EXISTE</span>}
+                    </div>
+                    {p.descripcion && <div className="text-[10px] text-zinc-500 mt-1">{p.descripcion}</div>}
+                    <div className="mt-2">
+                      <div className="text-[9px] tracking-widest uppercase text-zinc-500 font-bold">Tareas ({p.tareas.length})</div>
+                      <div className="text-[10px] text-zinc-400 mt-1">
+                        {p.tareas.map(t => (
+                          <div key={t.id} className="flex justify-between py-0.5">
+                            <span>• {t.nombre}</span>
+                            {t.precio_maestro_m2 > 0 && <span className="text-green-400">RD${t.precio_maestro_m2}/m² maestro</span>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    {p.materiales.length > 0 && (
+                      <div className="mt-2">
+                        <div className="text-[9px] tracking-widest uppercase text-zinc-500 font-bold">Materiales ({p.materiales.length})</div>
+                        <div className="text-[10px] text-zinc-400 mt-1">
+                          {p.materiales.map(m => <div key={m.id}>• {m.nombre}</div>)}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </label>
+            );
+          })}
+        </div>
+
+        <div className="sticky bottom-0 bg-zinc-900 border-t border-zinc-800 p-4 flex justify-end gap-2">
+          <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2">Cancelar</button>
+          <button
+            onClick={confirmar}
+            disabled={seleccionadas.size === 0}
+            className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-2"
+          >
+            Agregar {seleccionadas.size} sistema{seleccionadas.size !== 1 ? 's' : ''}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 function EditorSistema({ sistema, setSistema, onGuardar, onCancelar }) {
   const sumaPesos = sistema.tareas.reduce((a, t) => a + (parseFloat(t.peso) || 0), 0);
@@ -1541,6 +1719,7 @@ function ModalEditarProyecto({ proyecto, data, usuario, onCerrar, onGuardar, onA
     fecha_entrega: proyecto.fecha_entrega,
     modoPagoManoObra: proyecto.modoPagoManoObra || 'dia',
     preciosTareasM2: proyecto.preciosTareasM2 || {},
+    preciosManoObraTareas: proyecto.preciosManoObraTareas || {},
     areas: proyecto.areas ? proyecto.areas.map(a => ({ ...a })) : [],
     cronogramaVisibleMaestro: proyecto.cronogramaVisibleMaestro !== false, // default true
   });
@@ -1680,9 +1859,10 @@ function ModalEditarProyecto({ proyecto, data, usuario, onCerrar, onGuardar, onA
 
         <div className="space-y-3 border-t border-zinc-800 pt-3">
           <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Pago de mano de obra</div>
-          <div className="grid grid-cols-2 gap-1">
+          <div className="grid grid-cols-3 gap-1">
             <button onClick={() => setForm({ ...form, modoPagoManoObra: 'dia' })} className={`p-2 text-xs font-bold uppercase border-2 ${form.modoPagoManoObra === 'dia' ? 'bg-red-600 text-white border-transparent' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>Por día</button>
-            <button onClick={() => setForm({ ...form, modoPagoManoObra: 'm2' })} className={`p-2 text-xs font-bold uppercase border-2 ${form.modoPagoManoObra === 'm2' ? 'bg-red-600 text-white border-transparent' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>Por m² ejecutado</button>
+            <button onClick={() => setForm({ ...form, modoPagoManoObra: 'm2' })} className={`p-2 text-xs font-bold uppercase border-2 ${form.modoPagoManoObra === 'm2' ? 'bg-red-600 text-white border-transparent' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>Por m² total</button>
+            <button onClick={() => setForm({ ...form, modoPagoManoObra: 'tarea' })} className={`p-2 text-xs font-bold uppercase border-2 ${form.modoPagoManoObra === 'tarea' ? 'bg-red-600 text-white border-transparent' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>Por tarea</button>
           </div>
           {form.modoPagoManoObra === 'm2' && sistema && (
             <div className="bg-zinc-950 border border-zinc-800 p-3 space-y-2">
@@ -1693,6 +1873,39 @@ function ModalEditarProyecto({ proyecto, data, usuario, onCerrar, onGuardar, onA
                   <input type="number" value={form.preciosTareasM2[t.id] || ''} onChange={e => setPrecio(t.id, e.target.value)} placeholder="0" className="w-24 bg-zinc-900 border border-zinc-800 px-2 py-1 text-white text-xs text-right" />
                 </div>
               ))}
+            </div>
+          )}
+          {form.modoPagoManoObra === 'tarea' && sistema && (
+            <div className="bg-zinc-950 border border-zinc-800 p-3 space-y-3">
+              <div>
+                <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1">Precio de venta al cliente (RD$/m²)</div>
+                <div className="space-y-1.5">
+                  {(sistema.tareas || []).map(t => (
+                    <div key={t.id} className="flex items-center gap-2">
+                      <div className="flex-1 text-xs">{t.nombre}</div>
+                      <input type="number" value={form.preciosTareasM2[t.id] || ''} onChange={e => setPrecio(t.id, e.target.value)} placeholder="venta" className="w-24 bg-zinc-900 border border-zinc-800 px-2 py-1 text-white text-xs text-right" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="border-t border-zinc-800 pt-3">
+                <div className="text-[10px] tracking-widest uppercase text-green-500 font-bold mb-1">Pago al maestro por tarea (RD$/m²)</div>
+                <div className="text-[10px] text-zinc-500 mb-2">El maestro recibe este monto por cada m² ejecutado de cada tarea. Él cubre sus ayudantes.</div>
+                <div className="space-y-1.5">
+                  {(sistema.tareas || []).map(t => (
+                    <div key={t.id} className="flex items-center gap-2">
+                      <div className="flex-1 text-xs">{t.nombre}</div>
+                      <input
+                        type="number"
+                        value={(form.preciosManoObraTareas || {})[t.id] || ''}
+                        onChange={e => setForm({ ...form, preciosManoObraTareas: { ...(form.preciosManoObraTareas || {}), [t.id]: e.target.value } })}
+                        placeholder="maestro"
+                        className="w-24 bg-zinc-950 border border-green-800 px-2 py-1 text-green-400 text-xs text-right"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
           {form.modoPagoManoObra === 'dia' && personasProyecto.length > 0 && (
@@ -3709,25 +3922,56 @@ function VistaNomina({ usuario, data, onVolver }) {
           )}
         </div>
       ))}</div>
-      {crearModal && <ModalCrearCorte onCerrar={() => setCrearModal(false)} onCrear={async (c) => { await db.crearCorte(c); setCrearModal(false); recargar(); }} />}
+      {crearModal && <ModalCrearCorte ultimoCorte={cortes.filter(c => c.estado === 'cerrado' || c.estado === 'pagado')[0]} onCerrar={() => setCrearModal(false)} onCrear={async (c) => { await db.crearCorte(c); setCrearModal(false); recargar(); }} />}
     </div>
   );
 }
 
-function ModalCrearCorte({ onCerrar, onCrear }) {
-  // Por defecto lunes a sábado de esta semana
-  const hoy = new Date();
-  const dow = hoy.getDay() || 7;
-  const lunes = new Date(hoy); lunes.setDate(hoy.getDate() - dow + 1);
-  const sabado = new Date(lunes); sabado.setDate(lunes.getDate() + 5);
-  const [fi, setFi] = useState(lunes.toISOString().split('T')[0]);
-  const [ff, setFf] = useState(sabado.toISOString().split('T')[0]);
+function ModalCrearCorte({ onCerrar, onCrear, ultimoCorte }) {
+  // v8.4: Quincenal (sábado sí, sábado no)
+  // Por defecto: desde el domingo siguiente al último corte cerrado
+  // hasta el sábado de 13 días después (14 días = quincena)
+  const calcularRango = () => {
+    const hoy = new Date();
+    let inicio;
+    if (ultimoCorte && ultimoCorte.fechaFin) {
+      // Desde el día siguiente al último corte
+      inicio = new Date(ultimoCorte.fechaFin);
+      inicio.setDate(inicio.getDate() + 1);
+    } else {
+      // Si no hay corte anterior: desde hace 13 días
+      inicio = new Date(hoy);
+      inicio.setDate(hoy.getDate() - 13);
+    }
+    const fin = new Date(inicio);
+    fin.setDate(inicio.getDate() + 13); // 14 días total
+    return { fi: inicio.toISOString().split('T')[0], ff: fin.toISOString().split('T')[0] };
+  };
+  const rango = calcularRango();
+  const [fi, setFi] = useState(rango.fi);
+  const [ff, setFf] = useState(rango.ff);
   const [notas, setNotas] = useState('');
+
+  // Calcular cuántos días tiene el rango para mostrar info
+  const dias = (() => {
+    try { return Math.round((new Date(ff) - new Date(fi)) / 86400000) + 1; }
+    catch { return 0; }
+  })();
+
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
       <div className="bg-zinc-900 border-2 border-red-600 max-w-md w-full p-5 space-y-3">
         <div className="flex justify-between items-start"><div className="text-xs tracking-widest uppercase text-red-500 font-bold">Nuevo corte de nómina</div><button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button></div>
-        <div className="grid grid-cols-2 gap-3"><Campo label="Inicio"><Input type="date" value={fi} onChange={setFi} /></Campo><Campo label="Fin"><Input type="date" value={ff} onChange={setFf} /></Campo></div>
+        <div className="text-[10px] text-zinc-500">
+          {ultimoCorte ? `Último corte cerró el ${formatFechaCorta(ultimoCorte.fechaFin)}` : 'Primer corte registrado'}
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Campo label="Inicio"><Input type="date" value={fi} onChange={setFi} /></Campo>
+          <Campo label="Fin"><Input type="date" value={ff} onChange={setFf} /></Campo>
+        </div>
+        <div className="text-[11px] text-zinc-400 bg-zinc-950 border border-zinc-800 p-2">
+          📅 {dias} días · {dias === 14 ? 'Quincena completa' : dias === 7 ? 'Semana' : 'Rango personalizado'}
+        </div>
         <Campo label="Notas (opcional)"><Input value={notas} onChange={setNotas} /></Campo>
         <div className="flex gap-2 pt-1"><button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button><button onClick={() => onCrear({ id: 'c_' + Date.now(), fechaInicio: fi, fechaFin: ff, notas })} className="flex-1 bg-red-600 text-white text-xs font-black uppercase py-3"><Save className="w-3 h-3 inline mr-1" /> Crear</button></div>
       </div>

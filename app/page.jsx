@@ -4371,6 +4371,23 @@ function DetalleCorte({ corte, data, usuario, onVolver }) {
     onVolver();
   };
 
+  // v8.5: Reabrir corte cerrado o pagado
+  const reabrirCorte = async () => {
+    const msg = corte.estado === 'pagado'
+      ? '⚠️ Este corte ya está PAGADO. Reabrirlo permitirá editarlo de nuevo, pero el registro de pago se perderá. ¿Confirmas?'
+      : '¿Reabrir este corte? Volverá a ser editable y los adelantos del periodo se liberarán.';
+    if (!confirm(msg)) return;
+    if (corte.estado === 'pagado') {
+      // Doble confirmación para pagados
+      if (!confirm('Última confirmación: ¿DE VERDAD reabrir este corte pagado?')) return;
+    }
+    try {
+      await db.reabrirCorte(corte.id);
+      alert('Corte reabierto');
+      onVolver();
+    } catch (e) { alert('Error: ' + (e.message || e)); }
+  };
+
   const crearAjuste = async (aj) => {
     await db.crearAjuste({ ...aj, id: 'a_' + Date.now(), creadoPorId: usuario.id });
     setAjusteModal(null);
@@ -4530,7 +4547,21 @@ function DetalleCorte({ corte, data, usuario, onVolver }) {
           <button onClick={cerrar} className="flex-1 bg-red-600 text-white font-black uppercase py-3 text-xs">Cerrar corte</button>
         </div>
       )}
-      {corte.estado === 'cerrado' && <button onClick={marcarPagado} className="w-full bg-green-600 text-white font-black uppercase py-3 text-xs">Marcar pagado</button>}
+      {corte.estado === 'cerrado' && (
+        <div className="flex gap-2">
+          {tieneRol(usuario, 'admin') && (
+            <button onClick={reabrirCorte} className="px-4 bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-yellow-400 hover:border-yellow-500 font-bold uppercase py-3 text-xs flex items-center gap-1">
+              <ArrowLeft className="w-3 h-3" /> Reabrir
+            </button>
+          )}
+          <button onClick={marcarPagado} className="flex-1 bg-green-600 text-white font-black uppercase py-3 text-xs">Marcar pagado</button>
+        </div>
+      )}
+      {corte.estado === 'pagado' && tieneRol(usuario, 'admin') && (
+        <button onClick={reabrirCorte} className="w-full bg-zinc-900 border-2 border-yellow-700 text-yellow-400 hover:bg-yellow-900/20 font-bold uppercase py-3 text-xs flex items-center justify-center gap-2">
+          <ArrowLeft className="w-3.5 h-3.5" /> Reabrir corte pagado
+        </button>
+      )}
 
       {ajusteModal && <ModalAjuste personal={data.personal} onCerrar={() => setAjusteModal(null)} onCrear={crearAjuste} fechaMin={corte.fechaInicio} fechaMax={corte.fechaFin} />}
     </div>

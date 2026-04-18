@@ -10,7 +10,7 @@ import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps }
 // ============================================================
 // HELPERS
 // ============================================================
-const APP_VERSION = '8.7.1';
+const APP_VERSION = '8.8';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
@@ -19,6 +19,32 @@ const getAyudantesDeMaestro = (personal, mId) => personal.filter(p => tieneRol(p
 const getPersonasConLogin = (personal) => personal.filter(p => p.pin);
 const puedeVerProyecto = (persona, proy) => tieneRol(persona, 'admin') || proy.supervisorId === persona.id || proy.maestroId === persona.id;
 const puedeReportar = (persona, proy) => tieneRol(persona, 'admin') || proy.supervisorId === persona.id || proy.maestroId === persona.id;
+
+// v8.8: Sistema de permisos configurable
+const puede = (usuario, permisos, modulo, accion) => {
+  if (!usuario) return false;
+  // Admin siempre puede todo (regla fija de negocio)
+  if (tieneRol(usuario, 'admin')) return true;
+  // Buscar en la matriz de permisos el rol correspondiente
+  const roles = usuario.roles || [];
+  // Si cualquiera de sus roles tiene permitido, devuelve true
+  return roles.some(rol => {
+    const p = (permisos || []).find(x => x.rol === rol && x.modulo === modulo && x.accion === accion);
+    return p?.permitido === true;
+  });
+};
+
+// v8.8: Filtrar proyectos "actuales o futuros" (no facturados)
+const proyectosActualesFuturos = (proyectos) => (proyectos || []).filter(p => !p.archivado && p.estado !== 'facturado');
+
+// v8.8: Proyectos propios del usuario (supervisor/maestro/ayudante)
+const proyectosPropios = (usuario, proyectos) => (proyectos || []).filter(p =>
+  !p.archivado && (
+    p.supervisorId === usuario.id ||
+    p.maestroId === usuario.id ||
+    (p.ayudantesIds || []).includes(usuario.id)
+  )
+);
 
 // v8.6: Nomenclatura consistente de proyecto con Nº Odoo adelante
 const labelProyecto = (p) => {
@@ -336,6 +362,7 @@ export default function App() {
   ] : [
     { seccion: 'MIS PROYECTOS', items: [
       { id: 'misProyectos', label: 'Proyectos', icon: Briefcase, vista: 'misProyectos' },
+      ...(puede(usuario, data.permisos, 'planificacion', 'ver') ? [{ id: 'planificacion', label: 'Planificación', icon: Calendar, vista: 'planificacion' }] : []),
       ...(tareas.filter(t => t.asignadaAId === usuario.id).length > 0 ? [{ id: 'tareas', label: 'Tareas', icon: ClipboardList, vista: 'tareas', badge: tareas.filter(t => t.asignadaAId === usuario.id).length }] : []),
     ]},
   ];
@@ -482,7 +509,7 @@ export default function App() {
         {esAdmin && vista === 'nomina' && <VistaNomina usuario={usuario} data={data} onVolver={() => setVista('dashboard')} />}
         {esAdmin && vista === 'galeria' && <GaleriaGlobal usuario={usuario} data={data} onVolver={() => setVista('dashboard')} />}
         {esAdmin && vista === 'equipoGlobal' && <VistaEquipoGlobal data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
-        {esAdmin && vista === 'planificacion' && <VistaPlanificacion data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
+        {vista === 'planificacion' && puede(usuario, data.permisos, 'planificacion', 'ver') && <VistaPlanificacion usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'miPerfil' && <MiPerfil usuario={usuario} persona={usuario} soloLectura={false} onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }} onGuardar={(campos) => withSync(() => db.guardarPerfil(usuario.id, campos))} />}
         {esAdmin && vista === 'personal' && <GestionPersonal personal={data.personal} onVolver={() => setVista('dashboard')} onActualizar={(p) => withSync(() => db.reemplazarPersonal(p))} onAbrirPerfil={(p) => { setPerfilViendo(p); setVista('perfilPersona'); }} />}
         {vista === 'perfilPersona' && perfilViendo && <MiPerfil usuario={usuario} persona={perfilViendo} soloLectura={false} onVolver={() => setVista('personal')} onGuardar={(campos) => withSync(async () => { await db.guardarPerfil(perfilViendo.id, campos); const d = await db.loadAllData(); const actualizada = d.personal.find(p => p.id === perfilViendo.id); if (actualizada) setPerfilViendo(actualizada); })} />}
@@ -3240,7 +3267,7 @@ function GaleriaGlobal({ usuario, data, onVolver }) {
       <div className="bg-zinc-900 border border-zinc-800 p-3 space-y-2">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
           <select value={filtros.sistemaId} onChange={e => setFiltros({ ...filtros, sistemaId: e.target.value })} className="bg-zinc-950 border border-zinc-800 px-2 py-2 text-xs text-white"><option value="">Todos los sistemas</option>{Object.values(data.sistemas).map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select>
-          <select value={filtros.proyectoId} onChange={e => setFiltros({ ...filtros, proyectoId: e.target.value })} className="bg-zinc-950 border border-zinc-800 px-2 py-2 text-xs text-white"><option value="">Todos los proyectos</option>{data.proyectos.map(p => <option key={p.id} value={p.id}>{p.cliente}</option>)}</select>
+          <select value={filtros.proyectoId} onChange={e => setFiltros({ ...filtros, proyectoId: e.target.value })} className="bg-zinc-950 border border-zinc-800 px-2 py-2 text-xs text-white"><option value="">Todos los proyectos</option>{data.proyectos.map(p => <option key={p.id} value={p.id}>{labelProyecto(p)}</option>)}</select>
           <label className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 px-3 py-2 cursor-pointer text-xs text-white"><input type="checkbox" checked={filtros.favoritasSolo} onChange={e => setFiltros({ ...filtros, favoritasSolo: e.target.checked })} className="w-4 h-4 accent-red-600" />⭐ Solo favoritas</label>
         </div>
       </div>
@@ -3307,7 +3334,13 @@ function FotoThumbGlobal({ foto, onClick }) {
 // VISTA PLANIFICACIÓN (v8.7) - Grid semanal interactivo
 // Por Personal / Por Proyecto + popup + asignación directa + días sin reporte
 // ============================================================
-function VistaPlanificacion({ data, onVolver, onVerProyecto }) {
+function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto }) {
+  const esAdmin = tieneRol(usuario, 'admin');
+  const puedeAsignar = esAdmin || puede(usuario, data.permisos, 'planificacion', 'asignar_personal');
+  // v8.8: Filtrar proyectos según rol
+  // - Admin: todos
+  // - Supervisor: donde es supervisor
+  // - Maestro: donde es maestro + solo no-facturados
   const [semanaRef, setSemanaRef] = useState(new Date());
   const [jornadasSemana, setJornadasSemana] = useState([]);
   const [reportesSemana, setReportesSemana] = useState([]);
@@ -3336,12 +3369,24 @@ function VistaPlanificacion({ data, onVolver, onVerProyecto }) {
   const fechaCorta = (d) => d.toLocaleDateString('es-DO', { day: 'numeric', month: 'short' });
   const nombreDia = (d) => ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'][d.getDay() === 0 ? 6 : d.getDay() - 1];
 
+  // v8.8: Proyectos visibles según rol
+  const proyectosVisibles = React.useMemo(() => {
+    if (esAdmin) return (data.proyectos || []).filter(p => !p.archivado);
+    // Supervisor/Maestro: solo sus proyectos
+    const propios = proyectosPropios(usuario, data.proyectos);
+    // Maestro: además, solo "actuales o futuros" (no facturados)
+    if (tieneRol(usuario, 'maestro')) {
+      return propios.filter(p => p.estado !== 'facturado');
+    }
+    return propios;
+  }, [esAdmin, usuario, data.proyectos]);
+
   const cargar = async () => {
     setCargando(true);
     const finInicio = fechaStr(dias[0]);
     const finFin = fechaStr(dias[6]);
     const todasJornadas = [];
-    for (const p of data.proyectos) {
+    for (const p of proyectosVisibles) {
       if (p.archivado) continue;
       try {
         const lista = await db.listarJornadasProyecto(p.id);
@@ -3357,7 +3402,7 @@ function VistaPlanificacion({ data, onVolver, onVerProyecto }) {
     setCargando(false);
   };
 
-  useEffect(() => { cargar(); }, [semanaRef, data.proyectos.length]);
+  useEffect(() => { cargar(); }, [semanaRef, proyectosVisibles.length]);
 
   // Grid por persona: { personaId: { fecha: [proyectos] } }
   const gridPersonas = React.useMemo(() => {
@@ -3408,8 +3453,7 @@ function VistaPlanificacion({ data, onVolver, onVerProyecto }) {
   // Personas a mostrar en vista por personal
   const personasActivas = React.useMemo(() => {
     const ids = new Set(Object.keys(gridPersonas));
-    data.proyectos.forEach(p => {
-      if (p.archivado) return;
+    proyectosVisibles.forEach(p => {
       if (filtroProyecto && p.id !== filtroProyecto) return;
       if (p.supervisorId) ids.add(p.supervisorId);
       if (p.maestroId) ids.add(p.maestroId);
@@ -3419,7 +3463,7 @@ function VistaPlanificacion({ data, onVolver, onVerProyecto }) {
     if (filtroRol) personas = personas.filter(p => p.roles?.includes(filtroRol));
     // v8.7: filtro "solo con proyecto asignado"
     if (soloConProyecto) {
-      personas = personas.filter(p => data.proyectos.some(pr => !pr.archivado && (pr.maestroId === p.id || pr.supervisorId === p.id || (pr.ayudantesIds || []).includes(p.id))));
+      personas = personas.filter(p => proyectosVisibles.some(pr => pr.maestroId === p.id || pr.supervisorId === p.id || (pr.ayudantesIds || []).includes(p.id)));
     }
     return personas.sort((a, b) => {
       const orden = (r) => r?.includes('supervisor') ? 1 : r?.includes('maestro') ? 2 : 3;
@@ -3427,18 +3471,18 @@ function VistaPlanificacion({ data, onVolver, onVerProyecto }) {
       if (oa !== ob) return oa - ob;
       return a.nombre.localeCompare(b.nombre);
     });
-  }, [gridPersonas, data.personal, data.proyectos, filtroRol, filtroProyecto, soloConProyecto]);
+  }, [gridPersonas, data.personal, proyectosVisibles, filtroRol, filtroProyecto, soloConProyecto]);
 
   // Proyectos a mostrar en vista por proyecto
   const proyectosActivos = React.useMemo(() => {
-    let ps = data.proyectos.filter(p => !p.archivado);
+    let ps = proyectosVisibles;
     if (filtroProyecto) ps = ps.filter(p => p.id === filtroProyecto);
-    return ps.sort((a, b) => {
+    return ps.slice().sort((a, b) => {
       const ra = a.referenciaOdoo || a.cliente;
       const rb = b.referenciaOdoo || b.cliente;
       return ra.localeCompare(rb);
     });
-  }, [data.proyectos, filtroProyecto]);
+  }, [proyectosVisibles, filtroProyecto]);
 
   // Colores consistentes por proyecto
   const coloresProyecto = React.useMemo(() => {
@@ -3555,7 +3599,7 @@ function VistaPlanificacion({ data, onVolver, onVerProyecto }) {
         )}
         <select value={filtroProyecto} onChange={e => setFiltroProyecto(e.target.value)} className="bg-zinc-900 border border-zinc-800 px-3 py-1.5 text-xs text-white">
           <option value="">Todos los proyectos</option>
-          {data.proyectos.filter(p => !p.archivado).map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo ? p.referenciaOdoo + ' · ' : ''}{p.cliente}</option>)}
+          {proyectosVisibles.map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo ? p.referenciaOdoo + ' · ' : ''}{p.cliente}</option>)}
         </select>
         {(filtroRol || filtroProyecto || !soloConProyecto) && <button onClick={() => { setFiltroRol('maestro'); setFiltroProyecto(''); setSoloConProyecto(true); }} className="text-xs text-zinc-500 hover:text-red-500">Restablecer</button>}
         {vistaModo === 'proyecto' && diasSinReporte > 0 && (
@@ -3622,13 +3666,17 @@ function VistaPlanificacion({ data, onVolver, onVerProyecto }) {
                               </button>
                             ))}
                             {proyectos.length === 0 && (
-                              <button
-                                onClick={() => abrirAsignacion(persona.id, fechaStrDia)}
-                                className="w-full h-8 border border-dashed border-zinc-800 hover:border-red-500 hover:bg-red-950/20 text-[10px] text-zinc-700 hover:text-red-400"
-                                title="Click para asignar proyecto"
-                              >
-                                +
-                              </button>
+                              puedeAsignar ? (
+                                <button
+                                  onClick={() => abrirAsignacion(persona.id, fechaStrDia)}
+                                  className="w-full h-8 border border-dashed border-zinc-800 hover:border-red-500 hover:bg-red-950/20 text-[10px] text-zinc-700 hover:text-red-400"
+                                  title="Click para asignar proyecto"
+                                >
+                                  +
+                                </button>
+                              ) : (
+                                <div className="w-full h-8 text-[10px] text-zinc-700 flex items-center justify-center">—</div>
+                              )
                             )}
                           </div>
                         </td>
@@ -3717,6 +3765,7 @@ function VistaPlanificacion({ data, onVolver, onVerProyecto }) {
           data={data}
           gridProyectos={gridProyectos}
           reportesSemana={reportesSemana}
+          puedeAsignar={puedeAsignar}
           onCerrar={() => setCeldaSeleccionada(null)}
           onVerProyecto={(p) => { setCeldaSeleccionada(null); onVerProyecto(p); }}
           onQuitarPersona={quitarPersona}
@@ -3729,6 +3778,7 @@ function VistaPlanificacion({ data, onVolver, onVerProyecto }) {
           personaId={modalAsignar.personaId}
           fecha={modalAsignar.fecha}
           data={data}
+          usuario={usuario}
           onCerrar={() => setModalAsignar(null)}
           onConfirmar={confirmarAsignacion}
         />
@@ -3738,7 +3788,7 @@ function VistaPlanificacion({ data, onVolver, onVerProyecto }) {
 }
 
 // Popup con detalle del proyecto + personal ese día
-function PopupDetalleJornada({ personaId, proyectoInfo, fecha, data, gridProyectos, reportesSemana, onCerrar, onVerProyecto, onQuitarPersona }) {
+function PopupDetalleJornada({ personaId, proyectoInfo, fecha, data, gridProyectos, reportesSemana, puedeAsignar, onCerrar, onVerProyecto, onQuitarPersona }) {
   const proyecto = data.proyectos.find(p => p.id === proyectoInfo.proyectoId);
   if (!proyecto) return null;
   const info = gridProyectos[proyecto.id]?.[fecha];
@@ -3791,13 +3841,15 @@ function PopupDetalleJornada({ personaId, proyectoInfo, fecha, data, gridProyect
                           <div className="text-[9px] uppercase">{p.rol === 'Sup' ? 'Supervisor' : p.rol === 'Mae' ? 'Maestro' : 'Ayudante'}</div>
                         </div>
                       </div>
-                      <button
-                        onClick={() => onQuitarPersona(info.jornadaId, p.id)}
-                        className="text-[10px] text-zinc-500 hover:text-red-400 px-2 py-1"
-                        title="Quitar de la jornada"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
+                      {puedeAsignar && (
+                        <button
+                          onClick={() => onQuitarPersona(info.jornadaId, p.id)}
+                          className="text-[10px] text-zinc-500 hover:text-red-400 px-2 py-1"
+                          title="Quitar de la jornada"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      )}
                     </div>
                   );
                 })}
@@ -3835,16 +3887,25 @@ function PopupDetalleJornada({ personaId, proyectoInfo, fecha, data, gridProyect
 }
 
 // Modal para asignar persona a un proyecto desde celda vacía
-function ModalAsignarDesdeGrid({ personaId, fecha, data, onCerrar, onConfirmar }) {
+function ModalAsignarDesdeGrid({ personaId, fecha, data, usuario, onCerrar, onConfirmar }) {
   const persona = data.personal.find(p => p.id === personaId);
+  const esAdmin = tieneRol(usuario, 'admin');
   // Proyectos donde la persona es supervisor/maestro/ayudante
-  const proyectosElegibles = data.proyectos.filter(p =>
+  let proyectosElegibles = data.proyectos.filter(p =>
     !p.archivado && (
       p.supervisorId === personaId ||
       p.maestroId === personaId ||
       (p.ayudantesIds || []).includes(personaId)
     )
   );
+  // v8.8: Si el usuario NO es admin, solo puede asignar en sus propios proyectos
+  if (!esAdmin) {
+    proyectosElegibles = proyectosElegibles.filter(p =>
+      p.supervisorId === usuario.id ||
+      p.maestroId === usuario.id ||
+      (p.ayudantesIds || []).includes(usuario.id)
+    );
+  }
   const [proyectoId, setProyectoId] = useState(proyectosElegibles[0]?.id || '');
   const fechaLabel = new Date(fecha + 'T12:00:00').toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'long' });
 
@@ -5095,7 +5156,7 @@ function ModalCrearTarea({ usuario, proyectos, personal, onCerrar, onCrear }) {
         <div className="flex justify-between items-start"><div className="text-xs tracking-widest uppercase text-red-500 font-bold">Nueva tarea</div><button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button></div>
         <Campo label="Título"><Input value={titulo} onChange={setTitulo} /></Campo>
         <Campo label="Descripción"><textarea value={descripcion} onChange={e => setDescripcion(e.target.value)} rows={2} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm" /></Campo>
-        <Campo label="Proyecto"><select value={proyectoId} onChange={e => setProyectoId(e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="">(General)</option>{proyectos.map(p => <option key={p.id} value={p.id}>{p.cliente}</option>)}</select></Campo>
+        <Campo label="Proyecto"><select value={proyectoId} onChange={e => setProyectoId(e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="">(General)</option>{proyectos.map(p => <option key={p.id} value={p.id}>{labelProyecto(p)}</option>)}</select></Campo>
         <Campo label="Asignar a"><select value={asignadaAId} onChange={e => setAsignadaAId(e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="">Sin asignar</option>{asignablesRoles.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}</select></Campo>
         <Campo label="Fecha límite"><Input type="date" value={fechaLimite} onChange={setFechaLimite} /></Campo>
         <div className="flex gap-2 pt-1"><button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button><button onClick={crear} disabled={!titulo} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-3"><Save className="w-3 h-3 inline mr-1" /> Crear</button></div>
@@ -5107,6 +5168,85 @@ function ModalCrearTarea({ usuario, proyectos, personal, onCerrar, onCrear }) {
 // ============================================================
 // NÓMINA (v8.3)
 // ============================================================
+// v8.8: Imprimir / PDF de recibo individual de nómina
+function imprimirReciboNomina(d, corte, data) {
+  const proyecto = data.proyectos.find(p => p.id === d.proyectoId);
+  const label = proyecto ? (proyecto.referenciaOdoo ? `${proyecto.referenciaOdoo} · ${proyecto.cliente}` : proyecto.cliente) : d.proyectoNombre || '';
+  const persona = data.personal.find(p => p.id === d.personaId);
+  const rol = persona?.roles?.includes('maestro') ? 'Maestro' : persona?.roles?.includes('supervisor') ? 'Supervisor' : 'Ayudante';
+  const hoy = new Date().toLocaleDateString('es-DO', { year: 'numeric', month: 'long', day: 'numeric' });
+  const fmt = (n) => new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n) || 0);
+  const formatFecha = (s) => {
+    if (!s) return '';
+    const d = new Date(s + 'T12:00:00');
+    return d.toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' });
+  };
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Recibo ${d.personaNombre}</title>
+<style>
+  @page { size: letter; margin: 0.5in; }
+  body { font-family: Arial, sans-serif; color: #000; margin: 0; padding: 0; font-size: 12px; }
+  .letterhead { border-bottom: 3px solid #CC0000; padding-bottom: 10px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
+  .logo { font-size: 22px; font-weight: 900; color: #CC0000; letter-spacing: -0.5px; }
+  .logo-sub { font-size: 9px; color: #555; letter-spacing: 1px; text-transform: uppercase; }
+  .company-data { font-size: 9px; color: #555; text-align: right; line-height: 1.4; }
+  h1 { font-size: 16px; margin: 0 0 5px; }
+  .meta { color: #555; font-size: 10px; margin-bottom: 20px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  td, th { padding: 6px 8px; text-align: left; border-bottom: 1px solid #ddd; font-size: 11px; }
+  th { background: #f5f5f5; font-weight: bold; text-transform: uppercase; font-size: 10px; }
+  .right { text-align: right; }
+  .total-row { background: #000; color: #fff; font-weight: bold; font-size: 13px; }
+  .total-row td { color: #fff; padding: 10px 8px; }
+  .minus { color: #CC0000; }
+  .signature { margin-top: 60px; border-top: 1px solid #000; padding-top: 8px; width: 250px; font-size: 10px; color: #555; }
+  .footer { margin-top: 40px; padding-top: 10px; border-top: 1px solid #eee; font-size: 9px; color: #888; text-align: center; }
+</style></head><body>
+<div class="letterhead">
+  <div>
+    <div class="logo">SUPER TECHOS</div>
+    <div class="logo-sub">Sistema de Impermeabilización</div>
+  </div>
+  <div class="company-data">
+    C/ Arena #1, Mar Azul, Santo Domingo R.D.<br>
+    Tel. 809-535-9293 · www.supertechos.com.do<br>
+    RNC: 130-77433-1
+  </div>
+</div>
+<h1>Recibo de Nómina</h1>
+<div class="meta">
+  Corte: ${formatFecha(corte.fechaInicio)} → ${formatFecha(corte.fechaFin)} · Impreso: ${hoy}
+</div>
+<table>
+  <tr><th style="width: 30%;">Persona</th><td><b>${d.personaNombre}</b> <span style="color:#888">(${rol})</span></td></tr>
+  <tr><th>Proyecto</th><td>${label}</td></tr>
+  <tr><th>Modo de pago</th><td style="text-transform:capitalize;">${d.modoPago === 'dia' ? `Por día · ${d.diasTrabajados} días${d.diasDobles ? ` (${d.diasDobles} doble)` : ''}` : d.modoPago === 'm2' ? `Por m² · ${fmt(d.m2Producidos)} m²` : d.modoPago === 'm2_fijo' ? `m² fijo sistema · ${fmt(d.m2Producidos)} m²` : d.modoPago === 'tarea' ? `Por tarea · ${fmt(d.m2Producidos)} m²` : 'Ajuste'}</td></tr>
+</table>
+<table style="margin-top: 20px;">
+  <tr><th style="width: 40%;">Concepto</th><th class="right">Monto RD$</th></tr>
+  <tr><td>Pago base</td><td class="right">${fmt(d.montoBase)}</td></tr>
+  ${d.montoDieta ? `<tr><td>Dieta</td><td class="right">${fmt(d.montoDieta)}</td></tr>` : ''}
+  ${d.montoOtros ? `<tr><td>Otros conceptos</td><td class="right">${fmt(d.montoOtros)}</td></tr>` : ''}
+  ${d.montoApoyo ? `<tr><td>Apoyo del proyecto${d.notaApoyo ? ' — ' + d.notaApoyo : ''}</td><td class="right">${fmt(d.montoApoyo)}</td></tr>` : ''}
+  ${d.montoAdelantos ? `<tr><td>Adelantos / descuentos</td><td class="right minus">-${fmt(d.montoAdelantos)}</td></tr>` : ''}
+  <tr class="total-row"><td>TOTAL A PAGAR</td><td class="right">RD$ ${fmt(d.montoTotal)}</td></tr>
+</table>
+<div class="signature">
+  Firma · ${d.personaNombre}
+</div>
+<div class="footer">
+  Generado por Super Techos ERP · ${hoy}
+</div>
+<script>window.onload = function(){ window.print(); }</script>
+</body></html>`;
+  const w = window.open('', '_blank');
+  if (!w) { alert('Bloqueador de popups activo. Permite popups para imprimir.'); return; }
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+}
+
+
 function VistaNomina({ usuario, data, onVolver }) {
   const [cortes, setCortes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -5599,6 +5739,13 @@ function DetalleCorte({ corte, data, usuario, onVolver }) {
               </div>
               <div className="flex items-start gap-2">
                 <div className="text-right"><div className="text-lg font-black text-green-400">{formatRD(d.montoTotal)}</div></div>
+                <button
+                  onClick={() => imprimirReciboNomina(d, corte, data)}
+                  className="text-zinc-500 hover:text-white p-1"
+                  title="Imprimir/descargar PDF"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                </button>
                 {corte.estado === 'abierto' && tieneRol(usuario, 'admin') && (
                   <button
                     onClick={async () => {

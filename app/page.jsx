@@ -10,7 +10,7 @@ import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps }
 // ============================================================
 // HELPERS
 // ============================================================
-const APP_VERSION = '8.4';
+const APP_VERSION = '8.5';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
@@ -2894,6 +2894,7 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
   const [procesando, setProcesando] = useState(null);
   const [personasSel, setPersonasSel] = useState([]);
   const [finalizarModal, setFinalizarModal] = useState(false);
+  const [programarModal, setProgramarModal] = useState(false);
   const [verHistorial, setVerHistorial] = useState(false);
 
   const recargar = async () => {
@@ -2975,6 +2976,44 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
 
   const togglePersona = (id) => {
     setPersonasSel(personasSel.includes(id) ? personasSel.filter(x => x !== id) : [...personasSel, id]);
+  };
+
+  // v8.5: Admin puede agregar/programar jornadas en fechas pasadas o futuras
+  const programarJornada = async ({ fecha, personasIds, nota, horaInicio, horaFin, condicionDia, condicionNota }) => {
+    setProcesando('programar');
+    try {
+      const yaExiste = await db.obtenerJornadaHoy(proyecto.id, fecha);
+      if (yaExiste) {
+        // Ya existe jornada ese día - actualizar personas
+        await db.actualizarPersonasJornada(yaExiste.id, personasIds);
+        alert('Jornada existente actualizada con nuevas personas');
+      } else {
+        const id = 'j_' + Date.now() + Math.random();
+        await db.iniciarJornada({
+          id, proyectoId: proyecto.id, fecha,
+          horaInicio: horaInicio || `${fecha}T08:00:00.000Z`,
+          iniciadaPorId: usuario.id, iniciadaPorNombre: usuario.nombre + ' (programada)',
+          inicioLat: null, inicioLng: null,
+          inicioPrecisionM: null, inicioDistanciaObraM: null,
+          personasPresentesIds: personasIds,
+          nota: nota || null,
+        });
+        // Si además se marcó la hora fin, finalizamos la jornada con esa info
+        if (horaFin) {
+          await db.finalizarJornada(id, {
+            horaFin,
+            finalizadaPorId: usuario.id, finalizadaPorNombre: usuario.nombre + ' (programada)',
+            finLat: null, finLng: null,
+            finPrecisionM: null, finDistanciaObraM: null,
+            condicionDia: condicionDia || 'normal',
+            condicionNota: condicionNota || null,
+          });
+        }
+      }
+      setProgramarModal(false);
+      await recargar();
+    } catch (e) { alert('Error: ' + (e.message || e)); }
+    setProcesando(null);
   };
 
   // Personas relacionadas al proyecto: maestro, supervisor, ayudantes
@@ -3094,6 +3133,14 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
             )}
           </>
         )}
+        {tieneRol(usuario, 'admin') && (
+          <button
+            onClick={() => setProgramarModal(true)}
+            className="w-full mt-2 bg-zinc-900 border border-zinc-700 hover:border-red-500 text-zinc-300 font-bold uppercase py-2.5 text-xs flex items-center justify-center gap-2"
+          >
+            <Calendar className="w-3.5 h-3.5" /> Programar jornada (pasada o futura)
+          </button>
+        )}
       </div>
 
       {/* Ubicación del proyecto */}
@@ -3178,6 +3225,18 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
           onCerrar={() => setFinalizarModal(false)}
           onConfirmar={finalizarJornada}
           procesando={procesando === 'fin'}
+        />
+      )}
+
+      {/* Modal programar jornada pasada/futura (v8.5, admin only) */}
+      {programarModal && (
+        <ModalProgramarJornada
+          proyecto={proyecto}
+          personal={personal}
+          personasElegibles={personasElegibles}
+          onCerrar={() => setProgramarModal(false)}
+          onConfirmar={programarJornada}
+          procesando={procesando === 'programar'}
         />
       )}
     </div>
@@ -3671,6 +3730,139 @@ function ReportePDFContenido({ proyecto, sistema, data, tipo, fechaInicio, fecha
 
 
 // ============================================================
+// MODAL PROGRAMAR JORNADA (v8.5) - Admin puede agregar jornadas pasadas o futuras
+// ============================================================
+function ModalProgramarJornada({ proyecto, personal, personasElegibles, onCerrar, onConfirmar, procesando }) {
+  const hoy = new Date().toISOString().split('T')[0];
+  const [fecha, setFecha] = useState(hoy);
+  const [personasSel, setPersonasSel] = useState(personasElegibles.map(p => p.id));
+  const [nota, setNota] = useState('');
+  const [incluirHoras, setIncluirHoras] = useState(false);
+  const [horaInicio, setHoraInicio] = useState('08:00');
+  const [horaFin, setHoraFin] = useState('16:00');
+  const [condicionDia, setCondicionDia] = useState('normal');
+  const [condicionNota, setCondicionNota] = useState('');
+
+  const toggle = (id) => {
+    setPersonasSel(personasSel.includes(id) ? personasSel.filter(x => x !== id) : [...personasSel, id]);
+  };
+
+  const esPasada = fecha < hoy;
+  const esFutura = fecha > hoy;
+
+  const confirmar = () => {
+    if (personasSel.length === 0) {
+      alert('Selecciona al menos una persona');
+      return;
+    }
+    const payload = { fecha, personasIds: personasSel, nota };
+    if (incluirHoras) {
+      payload.horaInicio = new Date(`${fecha}T${horaInicio}:00`).toISOString();
+      payload.horaFin = new Date(`${fecha}T${horaFin}:00`).toISOString();
+      payload.condicionDia = condicionDia;
+      payload.condicionNota = condicionNota;
+    }
+    onConfirmar(payload);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto">
+      <div className="bg-zinc-900 border-2 border-red-600 max-w-md w-full p-5 space-y-4 max-h-[90vh] overflow-auto">
+        <div className="flex justify-between items-start">
+          <div>
+            <div className="text-xs tracking-widest uppercase text-red-500 font-bold">Programar Jornada</div>
+            <div className="text-[11px] text-zinc-500 mt-1">Agregar una jornada en fecha pasada (correcciones) o futura (planificación)</div>
+          </div>
+          <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
+        </div>
+
+        <Campo label="Fecha">
+          <Input type="date" value={fecha} onChange={setFecha} />
+        </Campo>
+
+        {fecha && (
+          <div className={`text-[10px] p-2 border ${esPasada ? 'border-yellow-700 bg-yellow-900/20 text-yellow-400' : esFutura ? 'border-blue-700 bg-blue-900/20 text-blue-400' : 'border-green-700 bg-green-900/20 text-green-400'}`}>
+            {esPasada ? '📅 Fecha pasada - corrección/retroactivo' : esFutura ? '📆 Fecha futura - planificación' : '✅ Hoy'}
+          </div>
+        )}
+
+        <div>
+          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2">Personas presentes ({personasSel.length})</div>
+          <div className="space-y-1 max-h-48 overflow-auto">
+            {personasElegibles.map(p => (
+              <label key={p.id} className="flex items-center gap-2 p-2 bg-zinc-950 border border-zinc-800 cursor-pointer hover:border-zinc-600">
+                <input
+                  type="checkbox"
+                  checked={personasSel.includes(p.id)}
+                  onChange={() => toggle(p.id)}
+                  className="w-4 h-4 accent-red-600"
+                />
+                <div className="flex-1 text-xs">
+                  <div className="font-bold">{p.nombre}</div>
+                  <div className="text-[10px] text-zinc-500 uppercase">
+                    {p.id === proyecto.supervisorId ? 'Supervisor' : p.id === proyecto.maestroId ? 'Maestro' : 'Ayudante'}
+                  </div>
+                </div>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <label className="flex items-center gap-2 cursor-pointer bg-zinc-950 border border-zinc-800 p-2">
+          <input
+            type="checkbox"
+            checked={incluirHoras}
+            onChange={e => setIncluirHoras(e.target.checked)}
+            className="w-4 h-4 accent-red-600"
+          />
+          <div className="text-xs">
+            <div className="font-bold">Incluir horas de entrada/salida</div>
+            <div className="text-[10px] text-zinc-500">Si es una corrección retroactiva con horario conocido</div>
+          </div>
+        </label>
+
+        {incluirHoras && (
+          <div className="space-y-3 bg-zinc-950 border border-zinc-800 p-3">
+            <div className="grid grid-cols-2 gap-2">
+              <Campo label="Hora inicio"><Input type="time" value={horaInicio} onChange={setHoraInicio} /></Campo>
+              <Campo label="Hora fin"><Input type="time" value={horaFin} onChange={setHoraFin} /></Campo>
+            </div>
+            <div>
+              <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1">Condición del día</div>
+              <select value={condicionDia} onChange={e => setCondicionDia(e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 px-2 py-2 text-white text-xs">
+                <option value="normal">☀️ Día normal</option>
+                <option value="lluvia">☔ Día de lluvia</option>
+                <option value="no_laborable">🚫 No laborable</option>
+                <option value="otro">⚠️ Otro</option>
+              </select>
+            </div>
+            {condicionDia !== 'normal' && (
+              <Campo label="Nota condición"><Input value={condicionNota} onChange={setCondicionNota} /></Campo>
+            )}
+          </div>
+        )}
+
+        <Campo label="Nota (opcional)">
+          <Input value={nota} onChange={setNota} placeholder="Ej: corrección por olvido de marcar" />
+        </Campo>
+
+        <div className="flex gap-2 pt-1">
+          <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button>
+          <button
+            onClick={confirmar}
+            disabled={procesando || personasSel.length === 0}
+            className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-3 flex items-center justify-center gap-2"
+          >
+            {procesando ? <><Loader2 className="w-3 h-3 animate-spin" /> Guardando...</> : <><Calendar className="w-3 h-3" /> Programar</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ============================================================
 // MODAL CAMBIAR ESTADO DE PROYECTO (v8)
 // ============================================================
 function ModalCambiarEstado({ proyecto, usuario, personal, onCerrar, onConfirmar }) {
@@ -4105,6 +4297,14 @@ function DetalleCorte({ corte, data, usuario, onVolver }) {
             montoBase += m2 * (precios[tid] || 0);
           });
         }
+      } else if (proy.modoPagoManoObra === 'tarea') {
+        // v8.5: Pago al maestro por tarea - cada tarea tiene su precio al maestro
+        const preciosMO = proy.preciosManoObraTareas || {};
+        if (b.tareaReportes) {
+          Object.entries(b.tareaReportes).forEach(([tid, m2]) => {
+            montoBase += m2 * (preciosMO[tid] || 0);
+          });
+        }
       }
 
       filas.push({
@@ -4114,6 +4314,8 @@ function DetalleCorte({ corte, data, usuario, onVolver }) {
         modoPago: proy.modoPagoManoObra || 'dia',
         diasTrabajados: diasN, diasDobles: dobles, m2Producidos: b.m2,
         montoBase, montoDieta: 0, montoAdelantos: 0, montoOtros: 0,
+        montoApoyo: 0, // v8.5: ajuste manual admin
+        notaApoyo: '', // v8.5: motivo del ajuste
         montoTotal: montoBase,
       });
     });
@@ -4263,6 +4465,54 @@ function DetalleCorte({ corte, data, usuario, onVolver }) {
               <div><div className="text-zinc-500 uppercase">Adelantos</div><div className="font-bold text-red-400">-{formatRD(d.montoAdelantos)}</div></div>
               <div><div className="text-zinc-500 uppercase">Total</div><div className="font-bold">{formatRD(d.montoTotal)}</div></div>
             </div>
+            {/* v8.5: Apoyo al maestro - solo si es maestro y corte abierto */}
+            {(() => {
+              const persona = data.personal.find(p => p.id === d.personaId);
+              const esMaestro = persona?.roles?.includes('maestro');
+              if (!esMaestro) return null;
+              if (corte.estado !== 'abierto' && !d.montoApoyo) return null;
+              return (
+                <div className="border-t border-zinc-800 mt-2 pt-2">
+                  <div className="text-[10px] tracking-widest uppercase text-green-500 font-bold mb-1">💰 Apoyo del proyecto (quincena)</div>
+                  {corte.estado === 'abierto' ? (
+                    <div className="space-y-1">
+                      <div className="flex gap-2 items-center">
+                        <span className="text-[10px] text-zinc-500">RD$</span>
+                        <input
+                          type="number"
+                          value={d.montoApoyo || ''}
+                          onChange={e => {
+                            const nuevoApoyo = parseFloat(e.target.value) || 0;
+                            setDetalle(prev => prev.map(x => {
+                              if (x.id !== d.id) return x;
+                              const nuevoTotal = (x.montoBase || 0) + (x.montoDieta || 0) + (x.montoOtros || 0) + nuevoApoyo - (x.montoAdelantos || 0);
+                              return { ...x, montoApoyo: nuevoApoyo, montoTotal: nuevoTotal };
+                            }));
+                          }}
+                          placeholder="0"
+                          className="flex-1 bg-zinc-950 border border-green-800 px-2 py-1 text-green-400 text-xs font-bold"
+                        />
+                      </div>
+                      <input
+                        type="text"
+                        value={d.notaApoyo || ''}
+                        onChange={e => {
+                          const nueva = e.target.value;
+                          setDetalle(prev => prev.map(x => x.id === d.id ? { ...x, notaApoyo: nueva } : x));
+                        }}
+                        placeholder="Motivo del apoyo (ej: lluvia, apoyo ayudantes)"
+                        className="w-full bg-zinc-950 border border-zinc-800 px-2 py-1 text-zinc-300 text-[10px]"
+                      />
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="text-[10px] text-green-400 font-bold">+{formatRD(d.montoApoyo || 0)}</div>
+                      {d.notaApoyo && <div className="text-[10px] text-zinc-500 italic">"{d.notaApoyo}"</div>}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         ))}
       </div>

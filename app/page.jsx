@@ -10,7 +10,7 @@ import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps }
 // ============================================================
 // HELPERS
 // ============================================================
-const APP_VERSION = '8.9.2';
+const APP_VERSION = '8.9.3';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
@@ -271,6 +271,62 @@ const calcMateriales = (proyecto, reportes, envios, sistema) => {
     const m2EjTarea = reportesProy.filter(r => r.tareaId === mat.tarea_asociada).reduce((acc, r) => acc + getM2Reporte(r, sistema), 0);
     const desviacion = m2EjTarea > 0 ? ((usado - (m2EjTarea / mat.rinde_m2)) / (m2EjTarea / mat.rinde_m2)) * 100 : 0;
     return { ...mat, requerido, enviado, usado, enObra: enviado - usado, m2EjecutadosTarea: m2EjTarea, desviacion };
+  });
+};
+
+// v8.9.3: Agrupa áreas del proyecto por su sistema. Devuelve array de grupos.
+const agruparAreasPorSistema = (proyecto, sistemas) => {
+  const grupos = {};
+  (proyecto.areas || []).forEach(area => {
+    const sisId = area.sistemaId || proyecto.sistema;
+    if (!sisId) return;
+    if (!grupos[sisId]) {
+      grupos[sisId] = {
+        sistemaId: sisId,
+        sistema: sistemas[sisId] || null,
+        areas: [],
+        m2Total: 0,
+      };
+    }
+    grupos[sisId].areas.push(area);
+    grupos[sisId].m2Total += area.m2;
+  });
+  return Object.values(grupos);
+};
+
+// v8.9.3: Calcula materiales requeridos por grupo (sistema + sus áreas)
+const calcMaterialesGrupo = (grupo, proyecto, reportes, envios) => {
+  if (!grupo.sistema || !grupo.sistema.materiales || grupo.sistema.materiales.length === 0) {
+    return [];
+  }
+  const reportesProy = reportes.filter(r => r.proyectoId === proyecto.id);
+  const enviosProy = envios.filter(e => e.proyectoId === proyecto.id);
+  const areaIds = new Set(grupo.areas.map(a => a.id));
+  // Reportes solo de ESAS áreas
+  const reportesGrupo = reportesProy.filter(r => areaIds.has(r.areaId));
+
+  return grupo.sistema.materiales.map(mat => {
+    const requerido = mat.rinde_m2 > 0 ? grupo.m2Total / mat.rinde_m2 : 0;
+    const enviado = enviosProy.filter(e => e.materialId === mat.id).reduce((acc, e) => acc + e.cantidad, 0);
+    let usado = 0;
+    if (mat.modo_consumo === 'reportado') {
+      reportesGrupo.forEach(r => {
+        if (mat.id === 'membrana' && r.rollos) usado += r.rollos;
+        if (mat.id === 'primer' && r.cubetas) usado += r.cubetas;
+      });
+    } else if (mat.modo_consumo === 'calculado') {
+      reportesGrupo.filter(r => r.tareaId === mat.tarea_asociada).forEach(r => {
+        usado += getM2Reporte(r, grupo.sistema) / mat.rinde_m2;
+      });
+    }
+    // Desglose por área
+    const porArea = grupo.areas.map(area => ({
+      id: area.id,
+      nombre: area.nombre,
+      m2: area.m2,
+      requerido: mat.rinde_m2 > 0 ? area.m2 / mat.rinde_m2 : 0,
+    }));
+    return { ...mat, requerido, enviado, usado, enObra: enviado - usado, porArea };
   });
 };
 
@@ -677,6 +733,7 @@ export default function App() {
             onRegistrarEnviosLote={(es) => withSync(() => db.crearEnviosLote(es.map(e => ({ ...e, id: 'e_' + Date.now() + Math.random() }))))}
             esSupervisor={!esAdmin}
             onIrAReportar={() => setVista('reportar')}
+            onIrASistemas={esAdmin ? () => setVista('sistemas') : undefined}
             onArchivarProyecto={async (id) => withSync(async () => { await db.archivarProyecto(id, usuario.id); if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); })}
             onEliminarReporte={async (id) => { if (confirm('¿Eliminar este reporte? Los m² asociados volverán al pendiente.')) withSync(() => db.eliminarReporte(id)); }}
             onEliminarEnvio={async (id) => { if (confirm('¿Eliminar este envío de material?')) withSync(() => db.eliminarEnvio(id)); }}
@@ -2426,7 +2483,7 @@ function ModalEditarProyecto({ proyecto, data, usuario, onCerrar, onGuardar, onA
 // ============================================================
 // DETALLE DE PROYECTO
 // ============================================================
-function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onActualizarProyecto, onRegistrarEnvio, onRegistrarEnviosLote, esSupervisor, onIrAReportar, onCambiarEstado, onArchivarProyecto, onEliminarReporte, onEliminarEnvio, onEliminarJornada }) {
+function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onActualizarProyecto, onRegistrarEnvio, onRegistrarEnviosLote, esSupervisor, onIrAReportar, onIrASistemas, onCambiarEstado, onArchivarProyecto, onEliminarReporte, onEliminarEnvio, onEliminarJornada }) {
   const sistema = data.sistemas[proyecto.sistema];
   if (!sistema) return <div className="text-zinc-500">Sistema no encontrado.</div>;
   const { porcentaje, produccionRD, valorContrato } = calcAvanceProyecto(proyecto, data.reportes, sistema, data.sistemas);
@@ -2487,7 +2544,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
       {tab === 'fotos' && <TabFotos usuario={usuario} proyecto={proyecto} />}
       {tab === 'cronograma' && (esAdmin || proyecto.cronogramaVisibleMaestro !== false) && <TabCronograma proyecto={proyecto} porcentajeActual={porcentaje} onActualizarProyecto={onActualizarProyecto} esSupervisor={esSupervisor} reportes={data.reportes} sistema={sistema} />}
       {tab === 'unidades' && proyecto.tipoAvance === 'unidades' && <TabUnidades proyecto={proyecto} onActualizarProyecto={onActualizarProyecto} esAdmin={esAdmin} />}
-      {tab === 'materiales' && <TabMateriales proyecto={proyecto} sistema={sistema} materiales={materiales} envios={data.envios.filter(e => e.proyectoId === proyecto.id)} sistemas={data.sistemas} onRegistrarEnvio={onRegistrarEnvio} onRegistrarEnviosLote={onRegistrarEnviosLote} esSupervisor={esSupervisor} onEliminarEnvio={onEliminarEnvio} />}
+      {tab === 'materiales' && <TabMateriales proyecto={proyecto} sistema={sistema} materiales={materiales} envios={data.envios.filter(e => e.proyectoId === proyecto.id)} reportes={data.reportes} sistemas={data.sistemas} onRegistrarEnvio={onRegistrarEnvio} onRegistrarEnviosLote={onRegistrarEnviosLote} esSupervisor={esSupervisor} onEliminarEnvio={onEliminarEnvio} onIrASistemas={onIrASistemas} />}
       {tab === 'productos' && !esSupervisor && <TabProductosAdicionales proyecto={proyecto} onActualizarProyecto={onActualizarProyecto} esAdmin={esAdmin} />}
       {tab === 'costo' && !esSupervisor && <TabCosto proyecto={proyecto} sistema={sistema} reportes={data.reportes} envios={data.envios} config={data.config} />}
       {tab === 'dieta' && !esSupervisor && <TabDieta proyecto={proyecto} reportes={data.reportes} personal={data.personal} onActualizarProyecto={onActualizarProyecto} />}
@@ -3436,13 +3493,28 @@ function TabAvance({ proyecto, reportes, sistema, sistemas, esSupervisor, onElim
   );
 }
 
-function TabMateriales({ proyecto, sistema, materiales, envios, sistemas, onRegistrarEnvio, onRegistrarEnviosLote, esSupervisor, onEliminarEnvio }) {
+function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], sistemas, onRegistrarEnvio, onRegistrarEnviosLote, esSupervisor, onEliminarEnvio, onIrASistemas }) {
   const [modo, setModo] = useState(null);
   const [cargando, setCargando] = useState(false);
   const [errorPDF, setErrorPDF] = useState('');
   const [pdfExtraido, setPdfExtraido] = useState(null);
   const [lineasConfirmar, setLineasConfirmar] = useState([]);
   const [matForm, setMatForm] = useState({ materialId: '', cantidad: '', costoUnidad: '', fecha: new Date().toISOString().split('T')[0] });
+  const [expandidos, setExpandidos] = useState({}); // v8.9.3: expandir desglose por área
+
+  // v8.9.3: Agrupar áreas por sistema y calcular materiales de cada grupo
+  const grupos = React.useMemo(() => agruparAreasPorSistema(proyecto, sistemas), [proyecto, sistemas]);
+  const gruposFinal = grupos.map(g => ({
+    ...g,
+    materialesCalculados: calcMaterialesGrupo(g, proyecto, reportes, envios),
+  }));
+
+  // Lista plana de todos los materiales de todos los sistemas del proyecto (para selector manual + PDF)
+  const todosLosMaterialesDeProyecto = grupos.flatMap(g => (g.sistema?.materiales || []).map(m => ({ ...m, _sistemaNombre: g.sistema.nombre })));
+
+  const toggleArea = (key) => {
+    setExpandidos(prev => ({ ...prev, [key]: !prev[key] }));
+  };
 
   const procesarPDFSalida = async (file) => {
     setCargando(true); setErrorPDF('');
@@ -3453,19 +3525,34 @@ function TabMateriales({ proyecto, sistema, materiales, envios, sistemas, onRegi
       const rN = (result.ordenReferencia || '').replace(/[-\s]/g, '').toUpperCase();
       const pR = (proyecto.referenciaOdoo || '').replace(/[-\s]/g, '').toUpperCase();
       if (!(rN && pR && (rN.includes(pR) || pR.includes(rN)))) setErrorPDF(`⚠ Ref PDF no coincide.`);
-      setLineasConfirmar(result.productos.map((p, i) => { const material = mapearProductoAMaterial(p.descripcion, sistema); return { key: i, descripcion: p.descripcion, cantidad: p.cantidadEntregada, unidad: p.unidad, materialId: material?.id || '', material, incluir: !!material }; }));
+      setLineasConfirmar(result.productos.map((p, i) => {
+        // v8.9.3: buscar en materiales de TODOS los sistemas del proyecto
+        let material = null;
+        for (const g of grupos) {
+          if (g.sistema) {
+            material = mapearProductoAMaterial(p.descripcion, g.sistema);
+            if (material) break;
+          }
+        }
+        return { key: i, descripcion: p.descripcion, cantidad: p.cantidadEntregada, unidad: p.unidad, materialId: material?.id || '', material, incluir: !!material };
+      }));
     } catch (e) { setErrorPDF('Error al extraer.'); console.error(e); }
     setCargando(false);
   };
 
+  const totalSistemasSinConfigurar = grupos.filter(g => !g.sistema || !g.sistema.materiales || g.sistema.materiales.length === 0).length;
+
   return (
     <div className="space-y-4">
-      {!esSupervisor && !modo && !pdfExtraido && (
+      {/* Botones de registro de envío */}
+      {!esSupervisor && !modo && !pdfExtraido && todosLosMaterialesDeProyecto.length > 0 && (
         <div className="grid grid-cols-2 gap-2">
           <button onClick={() => setModo('pdf')} className="bg-zinc-900 border-2 border-dashed border-zinc-700 hover:border-red-600 py-4 flex flex-col items-center gap-1 text-sm font-bold uppercase text-zinc-400"><FileText className="w-5 h-5" /> PDF Odoo</button>
           <button onClick={() => setModo('manual')} className="bg-zinc-900 border-2 border-dashed border-zinc-700 hover:border-red-600 py-4 flex flex-col items-center gap-1 text-sm font-bold uppercase text-zinc-400"><Truck className="w-5 h-5" /> Manual</button>
         </div>
       )}
+
+      {/* PDF extracción */}
       {modo === 'pdf' && !pdfExtraido && (
         <div className="space-y-3">
           <div className="flex justify-between items-center"><div className="text-xs font-bold uppercase">Subir PDF</div><button onClick={() => setModo(null)} className="text-zinc-500"><X className="w-4 h-4" /></button></div>
@@ -3476,24 +3563,184 @@ function TabMateriales({ proyecto, sistema, materiales, envios, sistemas, onRegi
         <div className="space-y-3 bg-zinc-900 border border-zinc-800 p-4">
           <div className="flex justify-between items-start"><div><div className="text-xs tracking-widest uppercase text-green-400 font-bold flex items-center gap-1"><Sparkles className="w-3 h-3" /> {pdfExtraido.numeroSalida}</div><div className="text-[11px] text-zinc-500 mt-1">Orden: <span className="font-mono">{pdfExtraido.ordenReferencia}</span></div></div><button onClick={() => { setPdfExtraido(null); setLineasConfirmar([]); }} className="text-zinc-500"><X className="w-4 h-4" /></button></div>
           {errorPDF && <div className="text-xs text-yellow-400 bg-yellow-900/20 border border-yellow-700 p-2">{errorPDF}</div>}
-          <div className="space-y-2">{lineasConfirmar.map((l, i) => <div key={l.key} className={`border p-3 ${l.incluir ? 'border-green-700 bg-green-900/10' : 'border-zinc-800 bg-zinc-950'}`}><div className="flex items-start gap-2"><input type="checkbox" checked={l.incluir} onChange={e => { const n = [...lineasConfirmar]; n[i] = { ...l, incluir: e.target.checked }; setLineasConfirmar(n); }} className="mt-1 w-4 h-4 accent-red-600" /><div className="flex-1 min-w-0"><div className="text-xs font-bold truncate">{l.descripcion}</div><div className="text-[10px] text-zinc-500">{l.cantidad} {l.unidad}</div><select value={l.materialId} onChange={e => { const n = [...lineasConfirmar]; n[i] = { ...l, materialId: e.target.value, incluir: !!e.target.value }; setLineasConfirmar(n); }} className="mt-2 w-full bg-zinc-950 border border-zinc-700 text-xs px-2 py-1.5"><option value="">— No incluir —</option>{sistema.materiales.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select></div></div></div>)}</div>
-          <div className="flex gap-2 pt-2"><button onClick={() => { setPdfExtraido(null); setLineasConfirmar([]); }} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button><button onClick={async () => { const envs = lineasConfirmar.filter(l => l.incluir && l.materialId).map(l => { const mat = sistema.materiales.find(m => m.id === l.materialId); const cantidad = parseFloat(l.cantidad); const costo = mat?.costo_unidad || 0; return { proyectoId: proyecto.id, materialId: l.materialId, cantidad, fecha: pdfExtraido.fecha, pdfRef: pdfExtraido.numeroSalida, costoUnidad: costo, costoTotal: cantidad * costo }; }); if (envs.length > 0) onRegistrarEnviosLote(envs); setPdfExtraido(null); setLineasConfirmar([]); setModo(null); }} disabled={!lineasConfirmar.some(l => l.incluir && l.materialId)} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-3">Confirmar</button></div>
+          <div className="space-y-2">{lineasConfirmar.map((l, i) => <div key={l.key} className={`border p-3 ${l.incluir ? 'border-green-700 bg-green-900/10' : 'border-zinc-800 bg-zinc-950'}`}>
+            <div className="flex items-start gap-2">
+              <input type="checkbox" checked={l.incluir} onChange={e => { const n = [...lineasConfirmar]; n[i] = { ...l, incluir: e.target.checked }; setLineasConfirmar(n); }} className="mt-1 w-4 h-4 accent-red-600" />
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-bold truncate">{l.descripcion}</div>
+                <div className="text-[10px] text-zinc-500">{l.cantidad} {l.unidad}</div>
+                <select value={l.materialId} onChange={e => { const n = [...lineasConfirmar]; n[i] = { ...l, materialId: e.target.value, incluir: !!e.target.value }; setLineasConfirmar(n); }} className="mt-2 w-full bg-zinc-950 border border-zinc-700 text-xs px-2 py-1.5">
+                  <option value="">— No incluir —</option>
+                  {todosLosMaterialesDeProyecto.map(m => <option key={m.id} value={m.id}>{m.nombre} ({m._sistemaNombre})</option>)}
+                </select>
+              </div>
+            </div>
+          </div>)}</div>
+          <div className="flex gap-2 pt-2">
+            <button onClick={() => { setPdfExtraido(null); setLineasConfirmar([]); }} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button>
+            <button onClick={async () => {
+              const envs = lineasConfirmar.filter(l => l.incluir && l.materialId).map(l => {
+                const mat = todosLosMaterialesDeProyecto.find(m => m.id === l.materialId);
+                const cantidad = parseFloat(l.cantidad);
+                const costo = mat?.costo_unidad || 0;
+                return { proyectoId: proyecto.id, materialId: l.materialId, cantidad, fecha: pdfExtraido.fecha, pdfRef: pdfExtraido.numeroSalida, costoUnidad: costo, costoTotal: cantidad * costo };
+              });
+              if (envs.length > 0) onRegistrarEnviosLote(envs);
+              setPdfExtraido(null); setLineasConfirmar([]); setModo(null);
+            }} disabled={!lineasConfirmar.some(l => l.incluir && l.materialId)} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-3">Confirmar</button>
+          </div>
         </div>
       )}
       {modo === 'manual' && (
         <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
           <div className="flex justify-between items-center"><div className="text-xs tracking-widest uppercase text-zinc-400 font-bold">Manual</div><button onClick={() => setModo(null)} className="text-zinc-500"><X className="w-4 h-4" /></button></div>
-          <Campo label="Material"><select value={matForm.materialId} onChange={e => { const mat = materiales.find(m => m.id === e.target.value); setMatForm({ ...matForm, materialId: e.target.value, costoUnidad: mat?.costo_unidad || '' }); }} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="">Seleccionar...</option>{materiales.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select></Campo>
+          <Campo label="Material">
+            <select value={matForm.materialId} onChange={e => {
+              const mat = todosLosMaterialesDeProyecto.find(m => m.id === e.target.value);
+              setMatForm({ ...matForm, materialId: e.target.value, costoUnidad: mat?.costo_unidad || '' });
+            }} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white">
+              <option value="">Seleccionar...</option>
+              {todosLosMaterialesDeProyecto.map(m => <option key={m.id} value={m.id}>{m.nombre} · {m._sistemaNombre}</option>)}
+            </select>
+          </Campo>
           <div className="grid grid-cols-2 gap-2"><Campo label="Cantidad"><Input type="number" value={matForm.cantidad} onChange={v => setMatForm({ ...matForm, cantidad: v })} /></Campo><Campo label="Costo por unidad (RD$)"><Input type="number" value={matForm.costoUnidad} onChange={v => setMatForm({ ...matForm, costoUnidad: v })} /></Campo></div>
           {matForm.cantidad && matForm.costoUnidad && <div className="text-xs text-green-400 bg-green-900/20 border border-green-700 p-2">Costo total: {formatRD(parseFloat(matForm.cantidad) * parseFloat(matForm.costoUnidad))}</div>}
           <Campo label="Fecha"><Input type="date" value={matForm.fecha} onChange={v => setMatForm({ ...matForm, fecha: v })} /></Campo>
-          <button onClick={() => { if (matForm.materialId && matForm.cantidad) { const cantidad = parseFloat(matForm.cantidad); const costo = parseFloat(matForm.costoUnidad) || 0; onRegistrarEnvio({ proyectoId: proyecto.id, materialId: matForm.materialId, cantidad, fecha: matForm.fecha, costoUnidad: costo, costoTotal: cantidad * costo }); setMatForm({ materialId: '', cantidad: '', costoUnidad: '', fecha: new Date().toISOString().split('T')[0] }); setModo(null); } }} className="w-full bg-red-600 text-white font-black uppercase py-3">Registrar</button>
+          <button onClick={() => {
+            if (matForm.materialId && matForm.cantidad) {
+              const cantidad = parseFloat(matForm.cantidad);
+              const costo = parseFloat(matForm.costoUnidad) || 0;
+              onRegistrarEnvio({ proyectoId: proyecto.id, materialId: matForm.materialId, cantidad, fecha: matForm.fecha, costoUnidad: costo, costoTotal: cantidad * costo });
+              setMatForm({ materialId: '', cantidad: '', costoUnidad: '', fecha: new Date().toISOString().split('T')[0] });
+              setModo(null);
+            }
+          }} className="w-full bg-red-600 text-white font-black uppercase py-3">Registrar</button>
         </div>
       )}
-      <div className="space-y-3">{materiales.map(m => { const pctU = m.requerido > 0 ? (m.usado / m.requerido) * 100 : 0; const pctE = m.requerido > 0 ? (m.enviado / m.requerido) * 100 : 0; const prob = m.enObra < 0 || m.desviacion > 15; const pendiente = Math.max(0, m.requerido - m.enviado); return <div key={m.id} className={`bg-zinc-900 border p-4 ${prob ? 'border-yellow-600' : 'border-zinc-800'}`}><div className="flex justify-between items-start mb-3"><div><div className="font-bold">{m.nombre}</div><div className="text-[10px] text-zinc-500 uppercase">1 {m.unidad} = {m.rinde_m2} m²</div></div>{prob && <AlertTriangle className="w-5 h-5 text-yellow-500" />}</div><div className="grid grid-cols-4 gap-2 mb-3"><div className="text-center"><div className="text-[9px] text-zinc-500 uppercase">Req</div><div className="text-lg font-black">{formatNum(m.requerido)}</div></div><div className="text-center border-x border-zinc-800"><div className="text-[9px] text-blue-400 uppercase">Env</div><div className="text-lg font-black text-blue-400">{formatNum(m.enviado)}</div></div><div className={`text-center ${pendiente > 0 ? '' : 'opacity-50'}`}><div className="text-[9px] text-orange-400 uppercase">Pend.</div><div className={`text-lg font-black ${pendiente > 0 ? 'text-orange-400' : 'text-zinc-600'}`}>{formatNum(pendiente)}</div></div><div className="text-center border-l border-zinc-800"><div className="text-[9px] text-green-400 uppercase">Usa</div><div className="text-lg font-black text-green-400">{formatNum(m.usado)}</div></div></div><div className="relative h-3 bg-zinc-800 overflow-hidden mb-2"><div className="absolute inset-y-0 left-0 bg-blue-600/40" style={{ width: `${Math.min(pctE, 100)}%` }} /><div className="absolute inset-y-0 left-0 bg-green-500" style={{ width: `${Math.min(pctU, 100)}%` }} /></div></div>; })}</div>
+
+      {/* v8.9.3: Aviso de sistemas sin configurar */}
+      {totalSistemasSinConfigurar > 0 && !esSupervisor && (
+        <div className="bg-yellow-900/20 border border-yellow-700 text-yellow-300 p-3 text-xs flex items-center justify-between gap-2">
+          <div>⚠️ <strong>{totalSistemasSinConfigurar} sistema{totalSistemasSinConfigurar !== 1 ? 's' : ''}</strong> del proyecto sin materiales configurados.</div>
+          {onIrASistemas && <button onClick={onIrASistemas} className="text-[10px] bg-yellow-700 text-white px-2 py-1 font-bold uppercase whitespace-nowrap">⚙️ Configurar</button>}
+        </div>
+      )}
+
+      {/* v8.9.3: Renderizar por sistema, con desglose por área */}
+      <div className="space-y-4">
+        {gruposFinal.map(grupo => (
+          <div key={grupo.sistemaId} className="bg-zinc-950 border border-zinc-800 overflow-hidden">
+            {/* Header del sistema */}
+            <div className="bg-zinc-900 border-b border-zinc-800 px-4 py-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] tracking-widest uppercase text-zinc-500">Sistema</div>
+                  <div className="font-black text-base">{grupo.sistema?.nombre || '(sin sistema)'}</div>
+                  <div className="text-[10px] text-zinc-500 mt-0.5">
+                    {grupo.areas.length} área{grupo.areas.length !== 1 ? 's' : ''} · <span className="text-red-400 font-bold">{formatNum(grupo.m2Total)} m²</span>
+                  </div>
+                </div>
+                {grupo.sistema && <div className="text-right">
+                  <div className="text-[10px] text-zinc-500 uppercase">Precio venta</div>
+                  <div className="text-sm font-bold text-green-400">RD${formatNum(grupo.sistema.precio_m2 || 0)}/m²</div>
+                </div>}
+              </div>
+              {/* Lista de áreas incluidas */}
+              <div className="mt-2 flex flex-wrap gap-1">
+                {grupo.areas.map(a => (
+                  <span key={a.id} className="text-[10px] bg-zinc-800 text-zinc-400 px-2 py-0.5">{a.nombre} ({formatNum(a.m2)} m²)</span>
+                ))}
+              </div>
+            </div>
+
+            {/* Materiales del sistema */}
+            <div className="p-3 space-y-2">
+              {grupo.materialesCalculados.length === 0 ? (
+                // Lista vacía con botón para agregar
+                <div className="bg-zinc-900 border-2 border-dashed border-zinc-700 p-6 text-center space-y-3">
+                  <Package className="w-10 h-10 text-zinc-600 mx-auto" />
+                  <div className="text-sm text-zinc-400">Este sistema no tiene materiales configurados</div>
+                  {!esSupervisor && onIrASistemas && (
+                    <button onClick={onIrASistemas} className="bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase px-4 py-2 inline-flex items-center gap-2">
+                      <Plus className="w-3 h-3" /> Agregar materiales
+                    </button>
+                  )}
+                </div>
+              ) : (
+                grupo.materialesCalculados.map(mat => {
+                  const pctE = mat.requerido > 0 ? (mat.enviado / mat.requerido) * 100 : 0;
+                  const pctU = mat.requerido > 0 ? (mat.usado / mat.requerido) * 100 : 0;
+                  const pendiente = Math.max(0, mat.requerido - mat.enviado);
+                  const expandKey = `${grupo.sistemaId}:${mat.id}`;
+                  const abierto = expandidos[expandKey];
+                  return (
+                    <div key={mat.id} className="bg-zinc-900 border border-zinc-800 p-3">
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <div className="font-bold text-sm">{mat.nombre}</div>
+                          <div className="text-[10px] text-zinc-500 uppercase">1 {mat.unidad} = {mat.rinde_m2} m²</div>
+                        </div>
+                        {grupo.areas.length > 1 && (
+                          <button onClick={() => toggleArea(expandKey)} className="text-[10px] text-zinc-500 hover:text-white">
+                            {abierto ? '▼ ocultar' : '▶ por área'}
+                          </button>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-4 gap-2 mb-2">
+                        <div className="text-center"><div className="text-[9px] text-zinc-500 uppercase">Req</div><div className="text-base font-black">{formatNum(mat.requerido)}</div></div>
+                        <div className="text-center border-x border-zinc-800"><div className="text-[9px] text-blue-400 uppercase">Env</div><div className="text-base font-black text-blue-400">{formatNum(mat.enviado)}</div></div>
+                        <div className={`text-center ${pendiente > 0 ? '' : 'opacity-50'}`}><div className="text-[9px] text-orange-400 uppercase">Pend.</div><div className={`text-base font-black ${pendiente > 0 ? 'text-orange-400' : 'text-zinc-600'}`}>{formatNum(pendiente)}</div></div>
+                        <div className="text-center border-l border-zinc-800"><div className="text-[9px] text-green-400 uppercase">Usa</div><div className="text-base font-black text-green-400">{formatNum(mat.usado)}</div></div>
+                      </div>
+                      <div className="relative h-2 bg-zinc-800 overflow-hidden">
+                        <div className="absolute inset-y-0 left-0 bg-blue-600/40" style={{ width: `${Math.min(pctE, 100)}%` }} />
+                        <div className="absolute inset-y-0 left-0 bg-green-500" style={{ width: `${Math.min(pctU, 100)}%` }} />
+                      </div>
+                      {/* v8.9.3: Desglose por área */}
+                      {abierto && grupo.areas.length > 1 && (
+                        <div className="mt-3 pt-3 border-t border-zinc-800 space-y-1">
+                          <div className="text-[9px] tracking-widest uppercase text-zinc-500 font-bold">Por área</div>
+                          {mat.porArea.map(pa => (
+                            <div key={pa.id} className="flex justify-between items-center text-xs">
+                              <div className="text-zinc-400">{pa.nombre} · {formatNum(pa.m2)} m²</div>
+                              <div className="text-zinc-300 font-bold">{formatNum(pa.requerido)} {mat.unidad_plural || mat.unidad}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        ))}
+
+        {grupos.length === 0 && (
+          <div className="text-center py-10 text-zinc-500">
+            <Package className="w-10 h-10 mx-auto mb-2 opacity-50" />
+            <div className="text-sm">Este proyecto no tiene áreas con sistema asignado</div>
+          </div>
+        )}
+      </div>
+
+      {/* Envíos registrados */}
       {!esSupervisor && envios.length > 0 && (
-        <div className="mt-4"><div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2">Envíos registrados ({envios.length})</div>
-          <div className="space-y-1">{envios.sort((a, b) => b.fecha.localeCompare(a.fecha)).map(e => { const mat = sistema.materiales.find(m => m.id === e.materialId); return (<div key={e.id} className="bg-zinc-900 border-l-2 border-blue-600 p-2 flex items-center gap-2 text-xs"><div className="flex-1 min-w-0"><div className="font-bold">{mat?.nombre || e.materialId} · {e.cantidad} {mat?.unidad_plural || ''}</div><div className="text-[10px] text-zinc-500">{formatFecha(e.fecha)}{e.pdfRef && ` · ${e.pdfRef}`}{e.costoTotal && ` · ${formatRD(e.costoTotal)}`}</div></div>{onEliminarEnvio && <button onClick={() => onEliminarEnvio(e.id)} className="text-zinc-500 hover:text-red-400"><Trash2 className="w-3 h-3" /></button>}</div>); })}</div></div>
+        <div className="mt-4">
+          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2">Envíos registrados ({envios.length})</div>
+          <div className="space-y-1">{envios.sort((a, b) => b.fecha.localeCompare(a.fecha)).map(e => {
+            const mat = todosLosMaterialesDeProyecto.find(m => m.id === e.materialId);
+            return (
+              <div key={e.id} className="bg-zinc-900 border-l-2 border-blue-600 p-2 flex items-center gap-2 text-xs">
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold">{mat?.nombre || e.materialId} · {e.cantidad} {mat?.unidad_plural || ''}</div>
+                  <div className="text-[10px] text-zinc-500">{formatFecha(e.fecha)}{e.pdfRef && ` · ${e.pdfRef}`}{e.costoTotal && ` · ${formatRD(e.costoTotal)}`}</div>
+                </div>
+                {onEliminarEnvio && <button onClick={() => onEliminarEnvio(e.id)} className="text-zinc-500 hover:text-red-400"><Trash2 className="w-3 h-3" /></button>}
+              </div>
+            );
+          })}</div>
+        </div>
       )}
     </div>
   );

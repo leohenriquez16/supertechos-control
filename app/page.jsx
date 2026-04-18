@@ -10,7 +10,7 @@ import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps }
 // ============================================================
 // HELPERS
 // ============================================================
-const APP_VERSION = '8.9.5';
+const APP_VERSION = '8.9.6';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
@@ -3536,9 +3536,11 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
     return resumen;
   }, [gruposFinal]);
 
-  // v8.9.5: Resumen TOTAL POR ÁREA (cada área con sus materiales requeridos)
+  // v8.9.5/6: Resumen TOTAL POR ÁREA (cada área con sus materiales requeridos + env/usa/pend)
   const resumenPorArea = React.useMemo(() => {
     const porArea = [];
+    const enviosProy = envios.filter(e => e.proyectoId === proyecto.id);
+
     (proyecto.areas || []).forEach(area => {
       const sisId = area.sistemaId || proyecto.sistema;
       const sis = sistemas[sisId];
@@ -3552,14 +3554,46 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
         });
         return;
       }
-      const materialesArea = (sis.materiales || []).map(mat => ({
-        id: mat.id,
-        nombre: mat.nombre,
-        unidad: mat.unidad,
-        unidad_plural: mat.unidad_plural,
-        rinde_m2: mat.rinde_m2,
-        requerido: mat.rinde_m2 > 0 ? area.m2 / mat.rinde_m2 : 0,
-      }));
+      const areaM2Total = (proyecto.areas || []).filter(a => (a.sistemaId || proyecto.sistema) === sisId).reduce((s, a) => s + a.m2, 0);
+      const materialesArea = (sis.materiales || []).map(mat => {
+        const requerido = mat.rinde_m2 > 0 ? area.m2 / mat.rinde_m2 : 0;
+        // v8.9.6: calcular ENV por área
+        let enviado = 0;
+        enviosProy.filter(e => e.materialId === mat.id).forEach(e => {
+          const aa = e.areasAsignadas || [];
+          if (aa.length === 0) {
+            // Envío genérico → prorrateo por m² del área sobre el total del sistema
+            if (areaM2Total > 0) enviado += e.cantidad * (area.m2 / areaM2Total);
+          } else if (aa.includes(area.id)) {
+            // Envío específico a esta área: toda la cantidad cuenta
+            enviado += e.cantidad;
+          }
+        });
+        // Usado por reportes de esta área (solo si material es reportado/calculado)
+        let usado = 0;
+        const reportesArea = (reportes || []).filter(r => r.proyectoId === proyecto.id && r.areaId === area.id);
+        if (mat.modo_consumo === 'reportado') {
+          reportesArea.forEach(r => {
+            if (mat.id === 'membrana' && r.rollos) usado += r.rollos;
+            if (mat.id === 'primer' && r.cubetas) usado += r.cubetas;
+          });
+        } else if (mat.modo_consumo === 'calculado') {
+          reportesArea.filter(r => r.tareaId === mat.tarea_asociada).forEach(r => {
+            usado += getM2Reporte(r, sis) / mat.rinde_m2;
+          });
+        }
+        return {
+          id: mat.id,
+          nombre: mat.nombre,
+          unidad: mat.unidad,
+          unidad_plural: mat.unidad_plural,
+          rinde_m2: mat.rinde_m2,
+          requerido,
+          enviado,
+          usado,
+          pendiente: Math.max(0, requerido - enviado),
+        };
+      });
       porArea.push({
         areaId: area.id,
         nombre: area.nombre,
@@ -3570,7 +3604,7 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
       });
     });
     return porArea;
-  }, [proyecto, sistemas]);
+  }, [proyecto, sistemas, envios, reportes]);
 
   const toggleArea = (key) => {
     setExpandidos(prev => ({ ...prev, [key]: !prev[key] }));
@@ -3700,19 +3734,65 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
                       Sin materiales configurados para {area.sistemaNombre}
                     </div>
                   ) : (
-                    <div className="space-y-1">
-                      {area.materiales.map(mat => (
-                        <div key={mat.id} className="bg-zinc-900 border border-zinc-800 p-2 flex justify-between items-center text-xs">
-                          <div>
-                            <div className="font-bold">{mat.nombre}</div>
-                            <div className="text-[10px] text-zinc-500">1 {mat.unidad} = {mat.rinde_m2} m²</div>
+                    <div className="space-y-2">
+                      {area.materiales.map(mat => {
+                        const pctE = mat.requerido > 0 ? (mat.enviado / mat.requerido) * 100 : 0;
+                        const pctU = mat.requerido > 0 ? (mat.usado / mat.requerido) * 100 : 0;
+                        // v8.9.6: estado visual del envío
+                        let estado = 'rojo';
+                        if (mat.enviado >= mat.requerido && mat.requerido > 0) estado = 'verde';
+                        else if (mat.enviado > 0) estado = 'amarillo';
+                        const clsBorde = estado === 'verde' ? 'border-green-700' : estado === 'amarillo' ? 'border-yellow-700' : 'border-zinc-800';
+                        const labelEstado = estado === 'verde' ? '✓ ENVÍO COMPLETO' : estado === 'amarillo' ? '◐ PARCIAL' : '✗ NO ENVIADO';
+                        const clsEstado = estado === 'verde' ? 'text-green-400' : estado === 'amarillo' ? 'text-yellow-400' : 'text-red-400';
+                        return (
+                          <div key={mat.id} className={`bg-zinc-900 border ${clsBorde} p-3`}>
+                            <div className="flex justify-between items-start mb-2">
+                              <div>
+                                <div className="font-bold text-xs">{mat.nombre}</div>
+                                <div className="text-[10px] text-zinc-500">1 {mat.unidad} = {mat.rinde_m2} m²</div>
+                              </div>
+                              <div className={`text-[9px] font-bold uppercase tracking-wider ${clsEstado}`}>{labelEstado}</div>
+                            </div>
+                            <div className="grid grid-cols-4 gap-2 mb-2">
+                              <div className="text-center">
+                                <div className="text-[9px] text-zinc-500 uppercase">Req</div>
+                                <div className="text-sm font-black">{formatNum(mat.requerido)}</div>
+                              </div>
+                              <div className="text-center border-x border-zinc-800">
+                                <div className="text-[9px] text-blue-400 uppercase">Env</div>
+                                <div className="text-sm font-black text-blue-400">{formatNum(mat.enviado)}</div>
+                              </div>
+                              <div className={`text-center ${mat.pendiente > 0 ? '' : 'opacity-50'}`}>
+                                <div className="text-[9px] text-orange-400 uppercase">Pend.</div>
+                                <div className={`text-sm font-black ${mat.pendiente > 0 ? 'text-orange-400' : 'text-zinc-600'}`}>{formatNum(mat.pendiente)}</div>
+                              </div>
+                              <div className="text-center border-l border-zinc-800">
+                                <div className="text-[9px] text-green-400 uppercase">Usa</div>
+                                <div className="text-sm font-black text-green-400">{formatNum(mat.usado)}</div>
+                              </div>
+                            </div>
+                            <div className="relative h-1.5 bg-zinc-800 overflow-hidden">
+                              <div className="absolute inset-y-0 left-0 bg-blue-600/40" style={{ width: `${Math.min(pctE, 100)}%` }} />
+                              <div className="absolute inset-y-0 left-0 bg-green-500" style={{ width: `${Math.min(pctU, 100)}%` }} />
+                            </div>
+                            <div className="text-[9px] text-zinc-600 mt-1 uppercase">{mat.unidad_plural || mat.unidad}</div>
                           </div>
-                          <div className="text-right">
-                            <div className="text-base font-black text-white">{formatNum(mat.requerido)}</div>
-                            <div className="text-[9px] text-zinc-500">{mat.unidad_plural || mat.unidad}</div>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
+                      {!esSupervisor && area.materiales.length > 0 && (
+                        <button
+                          onClick={() => {
+                            // v8.9.6: abrir registro manual preseleccionando área
+                            setSubTab('por_sistema');
+                            setMatForm({ materialId: '', cantidad: '', costoUnidad: '', fecha: new Date().toISOString().split('T')[0], destino: 'areas', asignaciones: { [area.areaId]: '' } });
+                            setModo('manual');
+                          }}
+                          className="w-full text-[10px] bg-zinc-800 hover:bg-red-600/20 hover:text-red-400 text-zinc-400 py-2 uppercase font-bold flex items-center justify-center gap-1"
+                        >
+                          <Plus className="w-3 h-3" /> Registrar envío a esta área
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -3783,32 +3863,149 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
           </div>
         </div>
       )}
-      {modo === 'manual' && (
-        <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
-          <div className="flex justify-between items-center"><div className="text-xs tracking-widest uppercase text-zinc-400 font-bold">Manual</div><button onClick={() => setModo(null)} className="text-zinc-500"><X className="w-4 h-4" /></button></div>
-          <Campo label="Material">
-            <select value={matForm.materialId} onChange={e => {
-              const mat = todosLosMaterialesDeProyecto.find(m => m.id === e.target.value);
-              setMatForm({ ...matForm, materialId: e.target.value, costoUnidad: mat?.costo_unidad || '' });
-            }} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white">
-              <option value="">Seleccionar...</option>
-              {todosLosMaterialesDeProyecto.map(m => <option key={m.id} value={m.id}>{m.nombre} · {m._sistemaNombre}</option>)}
-            </select>
-          </Campo>
-          <div className="grid grid-cols-2 gap-2"><Campo label="Cantidad"><Input type="number" value={matForm.cantidad} onChange={v => setMatForm({ ...matForm, cantidad: v })} /></Campo><Campo label="Costo por unidad (RD$)"><Input type="number" value={matForm.costoUnidad} onChange={v => setMatForm({ ...matForm, costoUnidad: v })} /></Campo></div>
-          {matForm.cantidad && matForm.costoUnidad && <div className="text-xs text-green-400 bg-green-900/20 border border-green-700 p-2">Costo total: {formatRD(parseFloat(matForm.cantidad) * parseFloat(matForm.costoUnidad))}</div>}
-          <Campo label="Fecha"><Input type="date" value={matForm.fecha} onChange={v => setMatForm({ ...matForm, fecha: v })} /></Campo>
-          <button onClick={() => {
-            if (matForm.materialId && matForm.cantidad) {
-              const cantidad = parseFloat(matForm.cantidad);
-              const costo = parseFloat(matForm.costoUnidad) || 0;
-              onRegistrarEnvio({ proyectoId: proyecto.id, materialId: matForm.materialId, cantidad, fecha: matForm.fecha, costoUnidad: costo, costoTotal: cantidad * costo });
-              setMatForm({ materialId: '', cantidad: '', costoUnidad: '', fecha: new Date().toISOString().split('T')[0] });
-              setModo(null);
-            }
-          }} className="w-full bg-red-600 text-white font-black uppercase py-3">Registrar</button>
-        </div>
-      )}
+      {modo === 'manual' && (() => {
+        // Áreas compatibles con el material seleccionado (mismas sistemaId)
+        const materialElegido = matForm.materialId ? todosLosMaterialesDeProyecto.find(m => m.id === matForm.materialId) : null;
+        const areasCompat = materialElegido
+          ? (proyecto.areas || []).filter(a => (a.sistemaId || proyecto.sistema) === materialElegido._sistemaId)
+          : [];
+        const cantidadTotal = parseFloat(matForm.cantidad) || 0;
+        const asignaciones = matForm.asignaciones || {}; // { areaId: cantidad }
+        const sumaAsig = Object.values(asignaciones).reduce((s, v) => s + (parseFloat(v) || 0), 0);
+        const restante = cantidadTotal - sumaAsig;
+        const asignarTodoAUnArea = (areaId) => {
+          setMatForm({ ...matForm, destino: 'areas', asignaciones: { [areaId]: cantidadTotal } });
+        };
+        const asignarPorM2 = () => {
+          // Reparte proporcional
+          const totalM2 = areasCompat.reduce((s, a) => s + a.m2, 0);
+          const nueva = {};
+          areasCompat.forEach(a => {
+            nueva[a.id] = totalM2 > 0 ? (cantidadTotal * a.m2 / totalM2).toFixed(2) : 0;
+          });
+          setMatForm({ ...matForm, destino: 'areas', asignaciones: nueva });
+        };
+        return (
+          <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
+            <div className="flex justify-between items-center"><div className="text-xs tracking-widest uppercase text-zinc-400 font-bold">Manual</div><button onClick={() => setModo(null)} className="text-zinc-500"><X className="w-4 h-4" /></button></div>
+            <Campo label="Material">
+              <select value={matForm.materialId} onChange={e => {
+                const mat = todosLosMaterialesDeProyecto.find(m => m.id === e.target.value);
+                setMatForm({ ...matForm, materialId: e.target.value, costoUnidad: mat?.costo_unidad || '', destino: '', asignaciones: {} });
+              }} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white">
+                <option value="">Seleccionar...</option>
+                {todosLosMaterialesDeProyecto.map(m => <option key={m.id} value={m.id}>{m.nombre} · {m._sistemaNombre}</option>)}
+              </select>
+            </Campo>
+            <div className="grid grid-cols-2 gap-2">
+              <Campo label={`Cantidad${materialElegido ? ` (${materialElegido.unidad_plural || materialElegido.unidad || ''})` : ''}`}>
+                <Input type="number" value={matForm.cantidad} onChange={v => setMatForm({ ...matForm, cantidad: v })} />
+              </Campo>
+              <Campo label="Costo por unidad (RD$)"><Input type="number" value={matForm.costoUnidad} onChange={v => setMatForm({ ...matForm, costoUnidad: v })} /></Campo>
+            </div>
+            {matForm.cantidad && matForm.costoUnidad && <div className="text-xs text-green-400 bg-green-900/20 border border-green-700 p-2">Costo total: {formatRD(cantidadTotal * parseFloat(matForm.costoUnidad))}</div>}
+            <Campo label="Fecha"><Input type="date" value={matForm.fecha} onChange={v => setMatForm({ ...matForm, fecha: v })} /></Campo>
+
+            {/* v8.9.6: Asignación a áreas */}
+            {materialElegido && cantidadTotal > 0 && areasCompat.length > 0 && (
+              <div className="bg-zinc-950 border border-zinc-800 p-3 space-y-2">
+                <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">🏢 ¿A qué área va este envío?</div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setMatForm({ ...matForm, destino: 'proyecto', asignaciones: {} })}
+                    className={`py-2 px-3 text-xs font-bold uppercase border-2 ${matForm.destino === 'proyecto' ? 'border-red-600 bg-red-600/10 text-red-400' : 'border-zinc-700 text-zinc-400'}`}
+                  >
+                    🔀 Todo el proyecto
+                  </button>
+                  <button
+                    onClick={() => setMatForm({ ...matForm, destino: 'areas', asignaciones: matForm.asignaciones || {} })}
+                    className={`py-2 px-3 text-xs font-bold uppercase border-2 ${matForm.destino === 'areas' ? 'border-red-600 bg-red-600/10 text-red-400' : 'border-zinc-700 text-zinc-400'}`}
+                  >
+                    📍 Áreas específicas
+                  </button>
+                </div>
+
+                {matForm.destino === 'proyecto' && (
+                  <div className="text-[10px] text-zinc-500 italic bg-zinc-900 p-2">
+                    El envío quedará asociado al proyecto sin asignar a un área específica. Se mostrará como "general" en el resumen.
+                  </div>
+                )}
+
+                {matForm.destino === 'areas' && (
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <button onClick={asignarPorM2} className="text-[10px] bg-zinc-800 text-zinc-400 px-2 py-1 uppercase font-bold">📊 Repartir por m²</button>
+                      <button onClick={() => setMatForm({ ...matForm, asignaciones: {} })} className="text-[10px] bg-zinc-800 text-zinc-400 px-2 py-1 uppercase font-bold">🧹 Limpiar</button>
+                    </div>
+                    {areasCompat.map(area => {
+                      const asig = asignaciones[area.id] || '';
+                      const reqArea = materialElegido.rinde_m2 > 0 ? (area.m2 / materialElegido.rinde_m2) : 0;
+                      return (
+                        <div key={area.id} className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 p-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs font-bold truncate">{area.nombre}</div>
+                            <div className="text-[10px] text-zinc-500">{formatNum(area.m2)} m² · requiere {formatNum(reqArea)} {materialElegido.unidad_plural || materialElegido.unidad}</div>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => asignarTodoAUnArea(area.id)}
+                              className="text-[9px] bg-zinc-800 text-zinc-400 px-1.5 py-1 uppercase font-bold"
+                              title="Asignar todo el envío a esta área"
+                            >Todo</button>
+                            <input
+                              type="number"
+                              value={asig}
+                              onChange={e => setMatForm({ ...matForm, asignaciones: { ...asignaciones, [area.id]: e.target.value } })}
+                              placeholder="0"
+                              className="w-16 bg-zinc-950 border border-zinc-700 px-2 py-1 text-right text-xs text-white"
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <div className={`text-[10px] p-2 border ${Math.abs(restante) < 0.01 ? 'bg-green-900/20 border-green-700 text-green-300' : restante > 0 ? 'bg-yellow-900/20 border-yellow-700 text-yellow-300' : 'bg-red-900/20 border-red-700 text-red-300'}`}>
+                      Asignado: <strong>{formatNum(sumaAsig)}</strong> de <strong>{formatNum(cantidadTotal)}</strong>
+                      {Math.abs(restante) >= 0.01 && ` · ${restante > 0 ? 'Falta' : 'Sobra'} ${formatNum(Math.abs(restante))}`}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <button
+              onClick={() => {
+                if (!matForm.materialId || !matForm.cantidad) return;
+                if (!matForm.destino) { alert('Selecciona si es para todo el proyecto o áreas específicas'); return; }
+
+                const cantidad = cantidadTotal;
+                const costo = parseFloat(matForm.costoUnidad) || 0;
+                const baseEnv = { proyectoId: proyecto.id, materialId: matForm.materialId, fecha: matForm.fecha, costoUnidad: costo };
+
+                if (matForm.destino === 'proyecto') {
+                  onRegistrarEnvio({ ...baseEnv, cantidad, costoTotal: cantidad * costo, areasAsignadas: [] });
+                } else {
+                  // Filtrar áreas con cantidad > 0 y crear envíos separados (uno por área)
+                  const envs = [];
+                  Object.entries(asignaciones).forEach(([areaId, cant]) => {
+                    const c = parseFloat(cant);
+                    if (c > 0) envs.push({ ...baseEnv, cantidad: c, costoTotal: c * costo, areasAsignadas: [areaId] });
+                  });
+                  if (envs.length === 0) { alert('Asigna cantidades a al menos un área'); return; }
+                  if (Math.abs(restante) >= 0.01) {
+                    if (!confirm(`La suma asignada (${formatNum(sumaAsig)}) no coincide con el total (${formatNum(cantidadTotal)}). ¿Continuar así?`)) return;
+                  }
+                  if (envs.length === 1) onRegistrarEnvio(envs[0]);
+                  else onRegistrarEnviosLote(envs);
+                }
+                setMatForm({ materialId: '', cantidad: '', costoUnidad: '', fecha: new Date().toISOString().split('T')[0], destino: '', asignaciones: {} });
+                setModo(null);
+              }}
+              className="w-full bg-red-600 text-white font-black uppercase py-3"
+            >Registrar</button>
+          </div>
+        );
+      })()}
 
       {/* v8.9.3: Aviso de sistemas sin configurar */}
       {totalSistemasSinConfigurar > 0 && !esSupervisor && (

@@ -10,7 +10,7 @@ import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps }
 // ============================================================
 // HELPERS
 // ============================================================
-const APP_VERSION = '8.9.3';
+const APP_VERSION = '8.9.4';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
@@ -2542,7 +2542,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
       {tab === 'jornada' && <TabJornada usuario={usuario} proyecto={proyecto} personal={data.personal} onActualizarUbicacion={(lat, lng, dir) => onActualizarProyecto({ ...proyecto, ubicacionLat: lat, ubicacionLng: lng, ubicacionDireccion: dir })} onEliminarJornada={onEliminarJornada} />}
       {tab === 'equipo' && <TabEquipoProyecto proyecto={proyecto} data={data} sistema={sistema} />}
       {tab === 'fotos' && <TabFotos usuario={usuario} proyecto={proyecto} />}
-      {tab === 'cronograma' && (esAdmin || proyecto.cronogramaVisibleMaestro !== false) && <TabCronograma proyecto={proyecto} porcentajeActual={porcentaje} onActualizarProyecto={onActualizarProyecto} esSupervisor={esSupervisor} reportes={data.reportes} sistema={sistema} />}
+      {tab === 'cronograma' && (esAdmin || proyecto.cronogramaVisibleMaestro !== false) && <TabCronograma proyecto={proyecto} porcentajeActual={porcentaje} onActualizarProyecto={onActualizarProyecto} esSupervisor={esSupervisor} reportes={data.reportes} sistema={sistema} sistemas={data.sistemas} />}
       {tab === 'unidades' && proyecto.tipoAvance === 'unidades' && <TabUnidades proyecto={proyecto} onActualizarProyecto={onActualizarProyecto} esAdmin={esAdmin} />}
       {tab === 'materiales' && <TabMateriales proyecto={proyecto} sistema={sistema} materiales={materiales} envios={data.envios.filter(e => e.proyectoId === proyecto.id)} reportes={data.reportes} sistemas={data.sistemas} onRegistrarEnvio={onRegistrarEnvio} onRegistrarEnviosLote={onRegistrarEnviosLote} esSupervisor={esSupervisor} onEliminarEnvio={onEliminarEnvio} onIrASistemas={onIrASistemas} />}
       {tab === 'productos' && !esSupervisor && <TabProductosAdicionales proyecto={proyecto} onActualizarProyecto={onActualizarProyecto} esAdmin={esAdmin} />}
@@ -3306,7 +3306,7 @@ function TabEquipoProyecto({ proyecto, data, sistema }) {
   );
 }
 
-function TabCronograma({ proyecto, porcentajeActual, onActualizarProyecto, esSupervisor, reportes, sistema }) {
+function TabCronograma({ proyecto, porcentajeActual, onActualizarProyecto, esSupervisor, reportes, sistema, sistemas }) {
   const [edit, setEdit] = useState(false);
   const [fechas, setFechas] = useState({ fecha_inicio: proyecto.fecha_inicio, fecha_entrega: proyecto.fecha_entrega });
   const [areasExpand, setAreasExpand] = useState(() => new Set(proyecto.areas.map(a => a.id))); // todas expandidas por defecto
@@ -3364,7 +3364,7 @@ function TabCronograma({ proyecto, porcentajeActual, onActualizarProyecto, esSup
           {proyecto.areas.map(area => {
             // v8.9.2: sistema del área
             const sistemaIdArea = area.sistemaId || proyecto.sistema;
-            const sistemaArea = data.sistemas[sistemaIdArea] || sistema;
+            const sistemaArea = (sistemas && sistemas[sistemaIdArea]) || sistema;
             const { porcentaje: pctArea } = calcAvanceArea(proyecto, area.id, reportesProy, sistemaArea);
             const rango = calcRango(r => r.areaId === area.id);
             const leftPct = rango ? fechaAFraccion(rango.inicio) : null;
@@ -3392,14 +3392,14 @@ function TabCronograma({ proyecto, porcentajeActual, onActualizarProyecto, esSup
                 </div>
 
                 {/* Tareas del área cuando está expandida */}
-                {expandida && sistema?.tareas && (
+                {expandida && sistemaArea?.tareas && (
                   <div className="pl-6">
-                    {sistema.tareas.map(t => {
+                    {sistemaArea.tareas.map(t => {
                       const rt = calcRango(r => r.areaId === area.id && r.tareaId === t.id);
                       const lP = rt ? fechaAFraccion(rt.inicio) : null;
                       const rP = rt ? fechaAFraccion(rt.fin) : null;
                       const w = (rt && lP !== null && rP !== null) ? Math.max(2, rP - lP) : null;
-                      const m2Tarea = reportesProy.filter(r => r.areaId === area.id && r.tareaId === t.id).reduce((s, r) => s + getM2Reporte(r, sistema), 0);
+                      const m2Tarea = reportesProy.filter(r => r.areaId === area.id && r.tareaId === t.id).reduce((s, r) => s + getM2Reporte(r, sistemaArea), 0);
                       const pctTarea = area.m2 > 0 ? Math.min(100, (m2Tarea / area.m2) * 100) : 0;
                       return (
                         <div key={t.id} className="flex items-center gap-2 h-5 hover:bg-zinc-900/70">

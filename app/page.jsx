@@ -711,6 +711,20 @@ export default function App() {
   const [tareas, setTareas] = useState([]);
   const [jornadasHoy, setJornadasHoy] = useState([]);
   const [sidebarAbierta, setSidebarAbierta] = useState(false);
+  // v8.9.26: secciones colapsables del sidebar
+  const [seccionesColapsadas, setSeccionesColapsadas] = useState(() => {
+    try {
+      const stored = typeof window !== 'undefined' ? localStorage.getItem('supertechos_secciones_colapsadas') : null;
+      return stored ? JSON.parse(stored) : { 'PLANIFICACIÓN': true };
+    } catch { return { 'PLANIFICACIÓN': true }; }
+  });
+  const toggleSeccion = (nombre) => {
+    setSeccionesColapsadas(prev => {
+      const next = { ...prev, [nombre]: !prev[nombre] };
+      try { localStorage.setItem('supertechos_secciones_colapsadas', JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
   const [proyectosExpandidos, setProyectosExpandidos] = useState(true);
   const [modoReporte, setModoReporte] = useState(null); // v8.9.11: 'rapido' | 'manual' | null (chooser)
 
@@ -814,7 +828,7 @@ export default function App() {
       { id: 'personal', label: 'Personal', icon: UserIcon, vista: 'personal' },
       { id: 'estadisticasPersonal', label: 'Estadísticas', icon: TrendingUp, vista: 'estadisticasPersonal' },
     ]},
-    { seccion: 'PLANIFICACIÓN', items: [
+    { seccion: 'PLANIFICACIÓN', colapsable: true, items: [
       { id: 'disponibilidad', label: 'Disponibilidad', icon: Calendar, vista: 'disponibilidad' },
       { id: 'ausencias', label: 'Ausencias', icon: Calendar, vista: 'ausencias' },
       { id: 'equipos', label: 'Equipos', icon: Settings, vista: 'equipos' },
@@ -869,38 +883,51 @@ export default function App() {
           </button>
         </div>
         <nav className="flex-1 overflow-y-auto py-4 min-h-0">
-          {itemsMenu.map(grupo => (
-            <div key={grupo.seccion} className="mb-4">
-              <div className="px-4 text-[9px] tracking-widest text-zinc-600 font-bold mb-1">{grupo.seccion}</div>
-              {grupo.items.map(it => {
-                const Icon = it.icon;
-                // v8.9.22: Proyectos como enlace simple (sin desplegar lista)
-                if (it.esProyectos) {
-                  const activo = vista === 'proyectos';
+          {itemsMenu.map(grupo => {
+            const estaColapsada = grupo.colapsable && seccionesColapsadas[grupo.seccion];
+            return (
+              <div key={grupo.seccion} className="mb-4">
+                {grupo.colapsable ? (
+                  <button
+                    onClick={() => toggleSeccion(grupo.seccion)}
+                    className="w-full flex items-center justify-between px-4 py-1 text-[9px] tracking-widest text-zinc-600 font-bold hover:text-zinc-400"
+                  >
+                    <span>{grupo.seccion}</span>
+                    <span className="text-zinc-600">{estaColapsada ? '▶' : '▼'}</span>
+                  </button>
+                ) : (
+                  <div className="px-4 text-[9px] tracking-widest text-zinc-600 font-bold mb-1">{grupo.seccion}</div>
+                )}
+                {!estaColapsada && grupo.items.map(it => {
+                  const Icon = it.icon;
+                  // v8.9.22: Proyectos como enlace simple (sin desplegar lista)
+                  if (it.esProyectos) {
+                    const activo = vista === 'proyectos';
+                    return (
+                      <button
+                        key={it.id}
+                        onClick={() => { setVista('proyectos'); setSidebarAbierta(false); }}
+                        className={`w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm border-l-2 ${activo ? 'bg-red-600/20 text-red-400 border-red-600' : 'text-zinc-400 hover:bg-zinc-900 border-transparent'}`}
+                      >
+                        <Icon className="w-4 h-4" />
+                        <span className="flex-1">{it.label}</span>
+                        <span className="text-zinc-600 text-[10px]">{proyectosMenu.length}</span>
+                      </button>
+                    );
+                  }
+                  // Ítem normal
+                  const activo = vista === it.vista;
                   return (
-                    <button
-                      key={it.id}
-                      onClick={() => { setVista('proyectos'); setSidebarAbierta(false); }}
-                      className={`w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm border-l-2 ${activo ? 'bg-red-600/20 text-red-400 border-red-600' : 'text-zinc-400 hover:bg-zinc-900 border-transparent'}`}
-                    >
+                    <button key={it.id} onClick={() => { setVista(it.vista); setSidebarAbierta(false); }} className={`w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors ${activo ? 'bg-red-600/20 text-red-400 border-l-2 border-red-600' : 'text-zinc-400 hover:bg-zinc-900 border-l-2 border-transparent'}`}>
                       <Icon className="w-4 h-4" />
                       <span className="flex-1">{it.label}</span>
-                      <span className="text-zinc-600 text-[10px]">{proyectosMenu.length}</span>
+                      {it.badge > 0 && <span className="bg-red-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">{it.badge}</span>}
                     </button>
                   );
-                }
-                // Ítem normal
-                const activo = vista === it.vista;
-                return (
-                  <button key={it.id} onClick={() => { setVista(it.vista); setSidebarAbierta(false); }} className={`w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors ${activo ? 'bg-red-600/20 text-red-400 border-l-2 border-red-600' : 'text-zinc-400 hover:bg-zinc-900 border-l-2 border-transparent'}`}>
-                    <Icon className="w-4 h-4" />
-                    <span className="flex-1">{it.label}</span>
-                    {it.badge > 0 && <span className="bg-red-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">{it.badge}</span>}
-                  </button>
-                );
-              })}
-            </div>
-          ))}
+                })}
+              </div>
+            );
+          })}
         </nav>
         <div className="border-t border-zinc-800 p-3 bg-black flex-shrink-0">
           <button onClick={() => { setVista('miPerfil'); setSidebarAbierta(false); }} className="w-full flex items-center gap-2 text-left text-xs p-2 hover:bg-zinc-900">
@@ -956,7 +983,7 @@ export default function App() {
         {vista === 'miProduccion' && tieneRol(usuario, 'maestro') && <VistaMiProduccion usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'estadisticasPersonal' && esAdmin && <VistaEstadisticasPersonal data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'categorias' && esAdmin && <VistaCategorias data={data} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
-        {vista === 'disponibilidad' && esAdmin && <VistaDisponibilidad usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
+        {vista === 'disponibilidad' && esAdmin && <VistaDisponibilidad usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} onRecargar={recargar} />}
         {vista === 'ausencias' && esAdmin && <VistaAusencias usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
         {vista === 'equipos' && esAdmin && <VistaEquipos data={data} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
         {vista === 'credenciales' && esAdmin && <VistaCredenciales data={data} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
@@ -1759,130 +1786,607 @@ function VistaCategorias({ data, onVolver, onRecargar }) {
 
 
 // --- DISPONIBILIDAD SEMANAL ---
-function VistaDisponibilidad({ usuario, data, onVolver, onVerProyecto }) {
-  const [semanaOffset, setSemanaOffset] = useState(0);
+function VistaDisponibilidad({ usuario, data, onVolver, onVerProyecto, onRecargar }) {
+  // v8.9.26: Vista tipo Gantt con 4 escalas + asignación directa
+  const [escala, setEscala] = useState('semana'); // dia | semana | mes | anio
+  const [offset, setOffset] = useState(0);
+  const [modalCrear, setModalCrear] = useState(null);
+  const [modalEditar, setModalEditar] = useState(null);
 
+  const personal = (data.personal || []).filter(p =>
+    !p.archivado && (tieneRol(p, 'maestro') || tieneRol(p, 'ayudante'))
+  );
+  const proyectos = (data.proyectos || []).filter(p =>
+    !p.archivado && p.estado !== 'cancelado' && p.estado !== 'cobrado'
+  );
+  const asignaciones = data.asignaciones || [];
+  const ausencias = data.ausencias || [];
+  const checkins = data.checkins || [];
+
+  // ======================================================
+  // Calcular rango visible según escala
+  // ======================================================
   const hoy = new Date();
-  const inicio = new Date(hoy);
-  inicio.setDate(hoy.getDate() - hoy.getDay() + 1 + (semanaOffset * 7));
-  const dias = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(inicio);
-    d.setDate(inicio.getDate() + i);
-    return d.toISOString().split('T')[0];
-  });
+  const dStart = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+  let fechaInicio, fechaFin, diasVisibles = [];
 
-  const personal = (data.personal || []).filter(p => !p.archivado && (p.roles || []).some(r => ['maestro', 'supervisor', 'ayudante'].includes(r)));
-
-  // Proyectos activos + mapeo de personas-día
-  const proyectosActivos = (data.proyectos || []).filter(p => !p.archivado && p.estado === 'en_ejecucion');
-
-  const actividadPersonaDia = (personaId, fecha) => {
-    // 1. Ausente?
-    if (personaAusenteEnRango(personaId, fecha, fecha, data.ausencias)) return { tipo: 'ausente' };
-
-    // 2. Tiene jornada/check-in?
-    const checkin = (data.checkins || []).find(c => c.personaId === personaId && c.fecha === fecha);
-    if (checkin) {
-      const proy = proyectosActivos.find(p => p.id === checkin.proyectoId);
-      return { tipo: 'en_obra', proyecto: proy };
+  if (escala === 'dia') {
+    fechaInicio = new Date(dStart);
+    fechaInicio.setDate(dStart.getDate() + offset);
+    fechaFin = new Date(fechaInicio);
+    diasVisibles = [fechaInicio];
+  } else if (escala === 'semana') {
+    const inicio = new Date(dStart);
+    inicio.setDate(dStart.getDate() - dStart.getDay() + 1 + (offset * 7));
+    fechaInicio = inicio;
+    fechaFin = new Date(inicio);
+    fechaFin.setDate(inicio.getDate() + 6);
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(inicio);
+      d.setDate(inicio.getDate() + i);
+      diasVisibles.push(d);
     }
+  } else if (escala === 'mes') {
+    const inicio = new Date(hoy.getFullYear(), hoy.getMonth() + offset, 1);
+    const fin = new Date(hoy.getFullYear(), hoy.getMonth() + offset + 1, 0);
+    fechaInicio = inicio;
+    fechaFin = fin;
+    for (let d = new Date(inicio); d <= fin; d.setDate(d.getDate() + 1)) {
+      diasVisibles.push(new Date(d));
+    }
+  } else {
+    // año: mostrar 12 meses
+    fechaInicio = new Date(hoy.getFullYear() + offset, 0, 1);
+    fechaFin = new Date(hoy.getFullYear() + offset, 11, 31);
+  }
 
-    // 3. Asignado a área?
-    const asignado = (data.estadosArea || []).find(a =>
-      a.maestroAsignadoId === personaId &&
-      ['en_ejecucion', 'disponible'].includes(a.estado)
+  const fechaStr = (d) => d.toISOString().split('T')[0];
+  const inicioStr = fechaStr(fechaInicio);
+  const finStr = fechaStr(fechaFin);
+
+  // ======================================================
+  // Helpers
+  // ======================================================
+  const asignacionesEnRango = (personaId) => {
+    return asignaciones.filter(a =>
+      a.personaId === personaId &&
+      a.estado !== 'cancelada' &&
+      a.fechaDesde <= finStr &&
+      a.fechaHasta >= inicioStr
     );
-    if (asignado) {
-      const proy = proyectosActivos.find(p => p.id === asignado.proyectoId);
-      return { tipo: 'asignado', proyecto: proy };
-    }
-
-    return { tipo: 'libre' };
   };
 
-  const dayLabel = (f) => new Date(f + 'T12:00:00').toLocaleDateString('es-DO', { weekday: 'short', day: 'numeric' });
-  const esHoy = (f) => f === hoy.toISOString().split('T')[0];
+  const ausenciasEnRango = (personaId) => {
+    return ausencias.filter(a =>
+      a.personaId === personaId &&
+      a.fechaDesde <= finStr &&
+      a.fechaHasta >= inicioStr
+    );
+  };
 
-  const coloresEstado = {
-    en_obra: 'bg-red-900/40 border-red-700 text-red-300',
-    asignado: 'bg-orange-900/30 border-orange-700 text-orange-300',
-    ausente: 'bg-zinc-800 border-zinc-700 text-zinc-600',
-    libre: 'bg-green-900/20 border-green-700/50 text-green-400',
+  const tieneCheckinEn = (personaId, fechaStr2) => {
+    return checkins.some(c => c.personaId === personaId && (c.fecha || '').startsWith(fechaStr2));
+  };
+
+  // Color por cliente (hash simple)
+  const colorCliente = (cliente) => {
+    const colores = [
+      'bg-blue-600', 'bg-purple-600', 'bg-pink-600', 'bg-orange-600',
+      'bg-teal-600', 'bg-indigo-600', 'bg-cyan-600', 'bg-emerald-600'
+    ];
+    let h = 0;
+    for (let i = 0; i < (cliente || '').length; i++) h = cliente.charCodeAt(i) + ((h << 5) - h);
+    return colores[Math.abs(h) % colores.length];
+  };
+
+  const getProyectoNombre = (id) => {
+    const p = proyectos.find(p => p.id === id) || data.proyectos.find(p => p.id === id);
+    return p ? `${p.referenciaOdoo || ''} ${p.cliente || p.nombre || ''}`.trim() : id;
+  };
+
+  const getProyecto = (id) => data.proyectos.find(p => p.id === id);
+
+  // ======================================================
+  // Navegación temporal
+  // ======================================================
+  const labelPeriodo = () => {
+    const meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+    if (escala === 'dia') {
+      return fechaInicio.toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    } else if (escala === 'semana') {
+      return `${fechaInicio.getDate()} ${meses[fechaInicio.getMonth()]} - ${fechaFin.getDate()} ${meses[fechaFin.getMonth()]} ${fechaFin.getFullYear()}`;
+    } else if (escala === 'mes') {
+      return `${meses[fechaInicio.getMonth()]} ${fechaInicio.getFullYear()}`;
+    } else {
+      return `${fechaInicio.getFullYear()}`;
+    }
+  };
+
+  // ======================================================
+  // Render vista AÑO (heatmap)
+  // ======================================================
+  if (escala === 'anio') {
+    const anio = fechaInicio.getFullYear();
+    const mesesNombres = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
+    // Calcular % ocupación por mes para cada persona
+    const utilizacion = personal.map(p => {
+      const meses = [];
+      for (let m = 0; m < 12; m++) {
+        const inicioMes = new Date(anio, m, 1);
+        const finMes = new Date(anio, m + 1, 0);
+        const diasMes = finMes.getDate();
+        const inicioStrMes = fechaStr(inicioMes);
+        const finStrMes = fechaStr(finMes);
+        const asigsMes = asignaciones.filter(a =>
+          a.personaId === p.id && a.estado !== 'cancelada' &&
+          a.fechaDesde <= finStrMes && a.fechaHasta >= inicioStrMes
+        );
+        let diasOcupados = 0;
+        for (let d = 1; d <= diasMes; d++) {
+          const fs = fechaStr(new Date(anio, m, d));
+          if (asigsMes.some(a => a.fechaDesde <= fs && a.fechaHasta >= fs)) diasOcupados++;
+        }
+        meses.push({ mes: m, pct: diasMes > 0 ? Math.round((diasOcupados / diasMes) * 100) : 0 });
+      }
+      return { persona: p, meses };
+    });
+
+    return (
+      <div className="space-y-3">
+        <button onClick={onVolver} className="flex items-center gap-2 text-zinc-400 text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button>
+        <div>
+          <div className="text-xs tracking-widest uppercase text-red-500 font-bold">PLANIFICACIÓN</div>
+          <h1 className="text-3xl font-black">Disponibilidad · Año</h1>
+        </div>
+
+        <ControlesGantt escala={escala} setEscala={setEscala} offset={offset} setOffset={setOffset} labelPeriodo={labelPeriodo()} />
+
+        <div className="bg-zinc-900 border border-zinc-800 overflow-x-auto">
+          <table className="w-full text-[10px]">
+            <thead>
+              <tr className="border-b border-zinc-800">
+                <th className="text-left px-2 py-2 font-bold text-zinc-400 sticky left-0 bg-zinc-900 min-w-[120px]">Persona</th>
+                {mesesNombres.map((m, i) => (
+                  <th key={i} className="px-1 py-2 font-bold text-zinc-400 text-center">{m}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {utilizacion.map(({ persona, meses }) => (
+                <tr key={persona.id} className="border-b border-zinc-900 hover:bg-zinc-950">
+                  <td className="px-2 py-2 font-bold sticky left-0 bg-zinc-900">{persona.nombre.split(' ').slice(0, 2).join(' ')}</td>
+                  {meses.map(({ mes, pct }) => {
+                    const color = pct === 0 ? 'bg-zinc-900 text-zinc-600' :
+                                  pct < 25 ? 'bg-green-900/40 text-green-400' :
+                                  pct < 50 ? 'bg-yellow-900/40 text-yellow-400' :
+                                  pct < 75 ? 'bg-orange-900/40 text-orange-400' :
+                                             'bg-red-900/60 text-red-300';
+                    return (
+                      <td key={mes} className={`px-1 py-2 text-center font-bold ${color}`} title={`${pct}% ocupación`}>
+                        {pct > 0 ? `${pct}%` : '·'}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="bg-zinc-900 border border-zinc-800 p-3 text-[10px] flex items-center gap-3 flex-wrap">
+          <span className="text-zinc-400 font-bold">Leyenda:</span>
+          <span className="text-zinc-600">· sin trabajo</span>
+          <span className="text-green-400 bg-green-900/40 px-2 py-0.5">1-24%</span>
+          <span className="text-yellow-400 bg-yellow-900/40 px-2 py-0.5">25-49%</span>
+          <span className="text-orange-400 bg-orange-900/40 px-2 py-0.5">50-74%</span>
+          <span className="text-red-300 bg-red-900/60 px-2 py-0.5">75-100%</span>
+        </div>
+      </div>
+    );
+  }
+
+  // ======================================================
+  // Render vista GANTT (día/semana/mes)
+  // ======================================================
+  const totalDias = diasVisibles.length;
+  const colWidth = escala === 'dia' ? 'w-full' : escala === 'semana' ? 'min-w-[90px]' : 'min-w-[30px]';
+
+  const renderBarraAsignacion = (asig, persona) => {
+    const proyecto = getProyecto(asig.proyectoId);
+    const cliente = proyecto?.cliente || proyecto?.nombre || '?';
+    const color = colorCliente(cliente);
+    const diaIdxInicio = diasVisibles.findIndex(d => fechaStr(d) >= asig.fechaDesde);
+    const diaIdxFin = diasVisibles.findIndex(d => fechaStr(d) > asig.fechaHasta);
+    const inicio = diaIdxInicio < 0 ? 0 : diaIdxInicio;
+    const fin = diaIdxFin < 0 ? totalDias : diaIdxFin;
+    const ancho = fin - inicio;
+    if (ancho <= 0) return null;
+
+    const left = (inicio / totalDias) * 100;
+    const width = (ancho / totalDias) * 100;
+
+    return (
+      <button
+        key={asig.id}
+        onClick={(e) => { e.stopPropagation(); setModalEditar({ asig, persona }); }}
+        className={`absolute top-1 bottom-1 ${color} text-white text-[9px] font-bold px-1 truncate flex items-center hover:opacity-80 transition-opacity cursor-pointer`}
+        style={{ left: `${left}%`, width: `${width}%` }}
+        title={`${getProyectoNombre(asig.proyectoId)} · ${asig.fechaDesde} a ${asig.fechaHasta}${asig.rol !== 'maestro' ? ' · ' + asig.rol : ''}`}
+      >
+        {asig.rol === 'ayudante' && '🔧 '}{cliente}
+      </button>
+    );
+  };
+
+  const renderBarraAusencia = (aus) => {
+    const diaIdxInicio = diasVisibles.findIndex(d => fechaStr(d) >= aus.fechaDesde);
+    const diaIdxFin = diasVisibles.findIndex(d => fechaStr(d) > aus.fechaHasta);
+    const inicio = diaIdxInicio < 0 ? 0 : diaIdxInicio;
+    const fin = diaIdxFin < 0 ? totalDias : diaIdxFin;
+    const ancho = fin - inicio;
+    if (ancho <= 0) return null;
+    const left = (inicio / totalDias) * 100;
+    const width = (ancho / totalDias) * 100;
+    return (
+      <div
+        key={aus.id}
+        className="absolute top-1 bottom-1 bg-zinc-700 text-zinc-400 text-[9px] font-bold px-1 flex items-center border border-zinc-600"
+        style={{ left: `${left}%`, width: `${width}%`, backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(0,0,0,0.3) 4px, rgba(0,0,0,0.3) 8px)' }}
+        title={`Ausente: ${aus.motivo} · ${aus.fechaDesde} a ${aus.fechaHasta}`}
+      >
+        ❌ {aus.motivo}
+      </div>
+    );
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <button onClick={onVolver} className="flex items-center gap-2 text-zinc-400 text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button>
-      <div className="flex justify-between items-start">
-        <div>
-          <div className="text-xs tracking-widest uppercase text-red-500 font-bold">PLANIFICACIÓN</div>
-          <h1 className="text-3xl font-black">Disponibilidad Semanal</h1>
-          <div className="text-sm text-zinc-400 mt-1">Quién está libre, ocupado o ausente cada día</div>
-        </div>
-        <div className="flex gap-1">
-          <button onClick={() => setSemanaOffset(semanaOffset - 1)} className="bg-zinc-900 border border-zinc-800 px-3 py-1 text-xs">◀</button>
-          <button onClick={() => setSemanaOffset(0)} className="bg-zinc-900 border border-zinc-800 px-3 py-1 text-xs">Hoy</button>
-          <button onClick={() => setSemanaOffset(semanaOffset + 1)} className="bg-zinc-900 border border-zinc-800 px-3 py-1 text-xs">▶</button>
-        </div>
+      <div>
+        <div className="text-xs tracking-widest uppercase text-red-500 font-bold">PLANIFICACIÓN</div>
+        <h1 className="text-3xl font-black">Disponibilidad</h1>
+        <div className="text-sm text-zinc-400 mt-1">Asigna maestros a proyectos arrastrando en la grilla</div>
       </div>
 
-      <div className="bg-zinc-900 border border-zinc-800 overflow-auto">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="border-b border-zinc-800">
-              <th className="p-2 text-left">Persona</th>
-              {dias.map(d => (
-                <th key={d} className={`p-2 text-center ${esHoy(d) ? 'bg-red-900/20' : ''}`}>
-                  <div className="text-[10px] uppercase tracking-widest text-zinc-500">{dayLabel(d).split(' ')[0]}</div>
-                  <div className="font-bold">{dayLabel(d).split(' ')[1]}</div>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {personal.map(p => (
-              <tr key={p.id} className="border-b border-zinc-800/50">
-                <td className="p-2">
-                  <div className="font-bold">{p.nombre}</div>
-                  <div className="text-[9px] text-zinc-500 uppercase">{(p.roles || []).join(' · ')}</div>
-                </td>
-                {dias.map(d => {
-                  const act = actividadPersonaDia(p.id, d);
-                  const clase = coloresEstado[act.tipo] || 'bg-zinc-900';
+      <ControlesGantt escala={escala} setEscala={setEscala} offset={offset} setOffset={setOffset} labelPeriodo={labelPeriodo()} />
+
+      {/* Gantt */}
+      <div className="bg-zinc-900 border border-zinc-800 overflow-x-auto">
+        {/* Header días */}
+        <div className="flex border-b border-zinc-800 sticky top-0 bg-zinc-900 z-10">
+          <div className="w-32 flex-shrink-0 px-2 py-2 text-[10px] uppercase tracking-widest text-zinc-500 font-bold border-r border-zinc-800">Persona</div>
+          <div className="flex-1 flex">
+            {diasVisibles.map((d, i) => {
+              const esHoy = fechaStr(d) === fechaStr(hoy);
+              const esFinSemana = d.getDay() === 0 || d.getDay() === 6;
+              return (
+                <div key={i} className={`${colWidth} flex-1 px-1 py-2 text-center border-l border-zinc-800 ${esHoy ? 'bg-red-900/30' : esFinSemana ? 'bg-zinc-950' : ''}`}>
+                  <div className="text-[9px] text-zinc-500 uppercase">{d.toLocaleDateString('es-DO', { weekday: 'short' }).slice(0, 3)}</div>
+                  <div className={`text-xs font-bold ${esHoy ? 'text-red-400' : 'text-zinc-300'}`}>{d.getDate()}</div>
+                  {escala === 'dia' && <div className="text-[9px] text-zinc-500">{d.toLocaleDateString('es-DO', { month: 'short' })}</div>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Filas personas */}
+        {personal.length === 0 ? (
+          <div className="p-6 text-center text-zinc-500 text-sm">No hay personal activo</div>
+        ) : personal.map(persona => {
+          const asigs = asignacionesEnRango(persona.id);
+          const auss = ausenciasEnRango(persona.id);
+          return (
+            <div key={persona.id} className="flex border-b border-zinc-900 hover:bg-zinc-950">
+              <div className="w-32 flex-shrink-0 px-2 py-3 border-r border-zinc-800">
+                <div className="text-xs font-bold truncate">{persona.nombre.split(' ').slice(0, 2).join(' ')}</div>
+                <div className="text-[9px] text-zinc-500 uppercase truncate">{(persona.roles || []).join(' · ')}</div>
+              </div>
+              <div className="flex-1 flex relative" style={{ minHeight: '52px' }}>
+                {/* Fondo celdas clickeables */}
+                {diasVisibles.map((d, i) => {
+                  const esHoy = fechaStr(d) === fechaStr(hoy);
+                  const esFinSemana = d.getDay() === 0 || d.getDay() === 6;
+                  const tieneCheck = tieneCheckinEn(persona.id, fechaStr(d));
                   return (
-                    <td key={d} className={`p-1 text-center ${esHoy(d) ? 'bg-red-900/10' : ''}`}>
-                      <div className={`border text-[10px] p-1 ${clase}`}>
-                        {act.tipo === 'en_obra' && '🔴'}
-                        {act.tipo === 'asignado' && '🟠'}
-                        {act.tipo === 'ausente' && '❌'}
-                        {act.tipo === 'libre' && '🟢'}
-                        {act.proyecto && (
-                          <div className="text-[8px] truncate mt-0.5 opacity-80">
-                            {act.proyecto.referenciaOdoo || act.proyecto.cliente?.slice(0, 8) || ''}
-                          </div>
-                        )}
-                      </div>
-                    </td>
+                    <button
+                      key={i}
+                      onClick={() => setModalCrear({ personaId: persona.id, fechaSugerida: fechaStr(d) })}
+                      className={`${colWidth} flex-1 border-l border-zinc-800 hover:bg-red-900/10 ${esHoy ? 'bg-red-900/10' : esFinSemana ? 'bg-zinc-950/50' : ''}`}
+                      title={`Click para asignar ${persona.nombre.split(' ')[0]} el ${fechaStr(d)}`}
+                    >
+                      {tieneCheck && <div className="w-1 h-1 bg-red-500 rounded-full mx-auto mt-1" title="Check-in registrado"></div>}
+                    </button>
                   );
                 })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                {/* Barras encima */}
+                {auss.map(renderBarraAusencia)}
+                {asigs.map(asig => renderBarraAsignacion(asig, persona))}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
-      <div className="text-[10px] text-zinc-500 flex gap-4 flex-wrap">
-        <span>🟢 Libre</span>
-        <span>🟠 Asignado</span>
-        <span>🔴 En obra</span>
-        <span>❌ Ausente</span>
+      {/* Leyenda */}
+      <div className="bg-zinc-900 border border-zinc-800 p-3 text-[10px] flex items-center gap-3 flex-wrap">
+        <span className="text-zinc-400 font-bold">Leyenda:</span>
+        <span className="bg-blue-600 text-white px-2 py-0.5">Proyecto</span>
+        <span className="bg-zinc-700 text-zinc-400 px-2 py-0.5 border border-zinc-600">❌ Ausente</span>
+        <span className="text-zinc-500">· Click en celda vacía para asignar</span>
+        <span className="text-zinc-500">· Click en barra para editar</span>
+      </div>
+
+      {/* Modales */}
+      {modalCrear && (
+        <ModalCrearAsignacion
+          personaId={modalCrear.personaId}
+          fechaSugerida={modalCrear.fechaSugerida}
+          data={data}
+          usuario={usuario}
+          onCerrar={() => setModalCrear(null)}
+          onGuardado={async () => { setModalCrear(null); if (onRecargar) await onRecargar(); }}
+        />
+      )}
+      {modalEditar && (
+        <ModalEditarAsignacion
+          asignacion={modalEditar.asig}
+          persona={modalEditar.persona}
+          data={data}
+          onCerrar={() => setModalEditar(null)}
+          onGuardado={async () => { setModalEditar(null); if (onRecargar) await onRecargar(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// --- Controles del Gantt (navegación + escala) ---
+function ControlesGantt({ escala, setEscala, offset, setOffset, labelPeriodo }) {
+  return (
+    <div className="bg-zinc-900 border border-zinc-800 p-3 flex items-center justify-between flex-wrap gap-2">
+      <div className="flex items-center gap-2">
+        <button onClick={() => setOffset(offset - 1)} className="bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 text-sm">◀</button>
+        <button onClick={() => setOffset(0)} className="bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 text-xs font-bold uppercase">Hoy</button>
+        <button onClick={() => setOffset(offset + 1)} className="bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 text-sm">▶</button>
+        <div className="text-sm font-bold ml-2 capitalize">{labelPeriodo}</div>
+      </div>
+      <div className="flex">
+        {[['dia','Día'],['semana','Semana'],['mes','Mes'],['anio','Año']].map(([k, lbl]) => (
+          <button
+            key={k}
+            onClick={() => { setEscala(k); setOffset(0); }}
+            className={`px-3 py-1.5 text-xs font-bold uppercase ${escala === k ? 'bg-red-600 text-white' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}
+          >
+            {lbl}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// --- Modal crear asignación ---
+function ModalCrearAsignacion({ personaId, fechaSugerida, data, usuario, onCerrar, onGuardado }) {
+  const persona = data.personal.find(p => p.id === personaId);
+  const [proyectoId, setProyectoId] = useState('');
+  const [areaId, setAreaId] = useState('');
+  const [fechaDesde, setFechaDesde] = useState(fechaSugerida);
+  const [fechaHasta, setFechaHasta] = useState(fechaSugerida);
+  const [rol, setRol] = useState('maestro');
+  const [notas, setNotas] = useState('');
+  const [conflictos, setConflictos] = useState([]);
+  const [guardando, setGuardando] = useState(false);
+
+  const proyectosActivos = (data.proyectos || []).filter(p =>
+    !p.archivado && p.estado !== 'cancelado' && p.estado !== 'cobrado'
+  ).sort((a, b) => (a.cliente || a.nombre || '').localeCompare(b.cliente || b.nombre || ''));
+
+  const proyectoSeleccionado = proyectosActivos.find(p => p.id === proyectoId);
+  const areasProyecto = proyectoSeleccionado?.areas || [];
+
+  // Detectar conflictos cuando cambien fechas
+  useEffect(() => {
+    if (!personaId || !fechaDesde || !fechaHasta) return;
+    db.detectarConflictosAsignacion(personaId, fechaDesde, fechaHasta).then(setConflictos);
+  }, [personaId, fechaDesde, fechaHasta]);
+
+  const guardar = async () => {
+    if (!proyectoId || !fechaDesde || !fechaHasta) {
+      alert('Proyecto y fechas son obligatorios');
+      return;
+    }
+    if (fechaHasta < fechaDesde) {
+      alert('La fecha fin debe ser posterior o igual a la fecha inicio');
+      return;
+    }
+    setGuardando(true);
+    try {
+      await db.crearAsignacion({
+        personaId, proyectoId, areaId: areaId || null,
+        fechaDesde, fechaHasta, rol, notas,
+        creadoPorId: usuario.id,
+      });
+      await onGuardado();
+    } catch (e) {
+      alert('Error: ' + e.message);
+      setGuardando(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
+      <div className="bg-zinc-900 border-2 border-red-600 max-w-md w-full p-5 space-y-3 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-start">
+          <div>
+            <div className="text-[10px] tracking-widest uppercase text-red-500 font-bold">Nueva asignación</div>
+            <h2 className="text-lg font-black">{persona?.nombre}</h2>
+          </div>
+          <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
+        </div>
+
+        <div>
+          <label className="text-[10px] uppercase text-zinc-500 font-bold">Proyecto *</label>
+          <select value={proyectoId} onChange={e => { setProyectoId(e.target.value); setAreaId(''); }} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+            <option value="">Seleccionar...</option>
+            {proyectosActivos.map(p => (
+              <option key={p.id} value={p.id}>{p.referenciaOdoo || ''} {p.cliente || p.nombre}</option>
+            ))}
+          </select>
+        </div>
+
+        {areasProyecto.length > 0 && (
+          <div>
+            <label className="text-[10px] uppercase text-zinc-500 font-bold">Área (opcional)</label>
+            <select value={areaId} onChange={e => setAreaId(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+              <option value="">Todo el proyecto</option>
+              {areasProyecto.map(a => <option key={a.id} value={a.id}>{a.nombre} ({a.m2} m²)</option>)}
+            </select>
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-[10px] uppercase text-zinc-500 font-bold">Desde *</label>
+            <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="text-[10px] uppercase text-zinc-500 font-bold">Hasta *</label>
+            <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+          </div>
+        </div>
+
+        <div>
+          <label className="text-[10px] uppercase text-zinc-500 font-bold">Rol</label>
+          <select value={rol} onChange={e => setRol(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+            <option value="maestro">👷 Maestro (principal)</option>
+            <option value="ayudante">🔧 Ayudante</option>
+            <option value="supervisor">👁️ Supervisor</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="text-[10px] uppercase text-zinc-500 font-bold">Notas</label>
+          <textarea value={notas} onChange={e => setNotas(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" rows={2} placeholder="Opcional..." />
+        </div>
+
+        {conflictos.length > 0 && (
+          <div className="bg-yellow-900/20 border border-yellow-700 p-2 text-xs">
+            <div className="font-bold text-yellow-400 mb-1">⚠️ Conflictos detectados ({conflictos.length})</div>
+            {conflictos.slice(0, 3).map(c => {
+              const p = data.proyectos.find(pp => pp.id === c.proyecto_id);
+              return (
+                <div key={c.id} className="text-yellow-300 text-[10px]">
+                  · {p?.cliente || p?.nombre || c.proyecto_id} · {c.fecha_desde} a {c.fecha_hasta}
+                </div>
+              );
+            })}
+            <div className="text-[10px] text-zinc-500 mt-1">Puedes guardar igual si está bien</div>
+          </div>
+        )}
+
+        <div className="flex gap-2">
+          <button onClick={onCerrar} className="flex-1 bg-zinc-800 text-zinc-400 py-2 text-xs font-bold uppercase">Cancelar</button>
+          <button onClick={guardar} disabled={guardando || !proyectoId} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white py-2 text-xs font-bold uppercase">
+            {guardando ? 'Guardando...' : 'Asignar'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- Modal editar asignación ---
+function ModalEditarAsignacion({ asignacion, persona, data, onCerrar, onGuardado }) {
+  const [fechaDesde, setFechaDesde] = useState(asignacion.fechaDesde);
+  const [fechaHasta, setFechaHasta] = useState(asignacion.fechaHasta);
+  const [rol, setRol] = useState(asignacion.rol || 'maestro');
+  const [estado, setEstado] = useState(asignacion.estado || 'planificada');
+  const [notas, setNotas] = useState(asignacion.notas || '');
+  const [guardando, setGuardando] = useState(false);
+
+  const proyecto = (data.proyectos || []).find(p => p.id === asignacion.proyectoId);
+  const area = proyecto?.areas?.find(a => a.id === asignacion.areaId);
+
+  const guardar = async () => {
+    setGuardando(true);
+    try {
+      await db.actualizarAsignacion(asignacion.id, { fechaDesde, fechaHasta, rol, estado, notas });
+      await onGuardado();
+    } catch (e) { alert('Error: ' + e.message); setGuardando(false); }
+  };
+
+  const eliminar = async () => {
+    if (!confirm('¿Eliminar esta asignación?')) return;
+    setGuardando(true);
+    try {
+      await db.eliminarAsignacion(asignacion.id);
+      await onGuardado();
+    } catch (e) { alert('Error: ' + e.message); setGuardando(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
+      <div className="bg-zinc-900 border-2 border-red-600 max-w-md w-full p-5 space-y-3 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-start">
+          <div>
+            <div className="text-[10px] tracking-widest uppercase text-red-500 font-bold">Editar asignación</div>
+            <h2 className="text-lg font-black">{persona?.nombre}</h2>
+            <div className="text-sm text-zinc-300">{proyecto?.cliente || proyecto?.nombre}{area && ` · ${area.nombre}`}</div>
+          </div>
+          <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-[10px] uppercase text-zinc-500 font-bold">Desde</label>
+            <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="text-[10px] uppercase text-zinc-500 font-bold">Hasta</label>
+            <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+          </div>
+        </div>
+
+        <div>
+          <label className="text-[10px] uppercase text-zinc-500 font-bold">Rol</label>
+          <select value={rol} onChange={e => setRol(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+            <option value="maestro">👷 Maestro</option>
+            <option value="ayudante">🔧 Ayudante</option>
+            <option value="supervisor">👁️ Supervisor</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="text-[10px] uppercase text-zinc-500 font-bold">Estado</label>
+          <select value={estado} onChange={e => setEstado(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+            <option value="planificada">📅 Planificada</option>
+            <option value="confirmada">✓ Confirmada</option>
+            <option value="en_curso">🟠 En curso</option>
+            <option value="completada">✅ Completada</option>
+            <option value="cancelada">❌ Cancelada</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="text-[10px] uppercase text-zinc-500 font-bold">Notas</label>
+          <textarea value={notas} onChange={e => setNotas(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" rows={2} />
+        </div>
+
+        <div className="flex gap-2">
+          <button onClick={eliminar} disabled={guardando} className="bg-zinc-800 hover:bg-red-900 text-red-400 py-2 px-3 text-xs font-bold uppercase">🗑️ Eliminar</button>
+          <button onClick={onCerrar} className="flex-1 bg-zinc-800 text-zinc-400 py-2 text-xs font-bold uppercase">Cancelar</button>
+          <button onClick={guardar} disabled={guardando} className="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 text-xs font-bold uppercase">
+            {guardando ? 'Guardando...' : 'Guardar'}
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
 
-// --- AUSENCIAS ---
 function VistaAusencias({ usuario, data, onVolver, onRecargar }) {
   const [form, setForm] = useState(null);
   const personal = (data.personal || []).filter(p => !p.archivado);
@@ -8012,6 +8516,22 @@ function TabAreas({ proyecto, data, usuario, onRecargar }) {
       maestroAsignadoId: personaId,
       fechaInicioReal: new Date().toISOString().split('T')[0],
     });
+    // v8.9.26: también crear registro en asignaciones_personal (7 días por defecto)
+    try {
+      const hoy = new Date().toISOString().split('T')[0];
+      const enUnaSemana = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
+      await db.crearAsignacion({
+        personaId,
+        proyectoId: proyecto.id,
+        areaId,
+        fechaDesde: hoy,
+        fechaHasta: enUnaSemana,
+        rol: 'maestro',
+        estado: 'confirmada',
+        creadoPorId: usuario.id,
+        notas: 'Asignación desde tab Áreas',
+      });
+    } catch (e) { console.warn('No se pudo crear asignación:', e); }
     setSugerenciasPara(null);
   };
 

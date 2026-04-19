@@ -10,7 +10,7 @@ import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps }
 // ============================================================
 // HELPERS
 // ============================================================
-const APP_VERSION = '8.9.26';
+const APP_VERSION = '8.9.26.1';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
@@ -8071,6 +8071,46 @@ function TabEquipoProyecto({ proyecto, data, sistema }) {
           ))}</div>
         </div>
       )}
+
+      {/* v8.9.26.1: Asignaciones programadas (del Gantt de Disponibilidad) */}
+      {(() => {
+        const asignacionesProyecto = (data.asignaciones || []).filter(a =>
+          a.estado !== 'cancelada' && a.proyectoId === proyecto.id
+        );
+        if (asignacionesProyecto.length === 0) return null;
+        return (
+          <div>
+            <div className="text-[11px] tracking-widest uppercase text-blue-400 font-bold mb-2">📅 Personal programado ({asignacionesProyecto.length})</div>
+            <div className="space-y-1">{asignacionesProyecto.map(asig => {
+              const persona = (data.personal || []).find(p => p.id === asig.personaId);
+              const area = (proyecto.areas || []).find(a => a.id === asig.areaId);
+              const rolIcon = asig.rol === 'maestro' ? '👷' : asig.rol === 'ayudante' ? '🔧' : '👁️';
+              const estadoColor =
+                asig.estado === 'en_curso' ? 'text-orange-400' :
+                asig.estado === 'completada' ? 'text-green-400' :
+                asig.estado === 'confirmada' ? 'text-cyan-400' :
+                'text-blue-300';
+              return (
+                <div key={asig.id} className="bg-blue-900/10 border border-blue-800 border-l-2 border-l-blue-500 p-2 text-xs flex justify-between items-center">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold flex items-center gap-1">
+                      <span>{rolIcon}</span>
+                      <span>{persona?.nombre || '?'}</span>
+                    </div>
+                    <div className="text-[10px] text-zinc-500">
+                      {formatFechaCorta(asig.fechaDesde)} → {formatFechaCorta(asig.fechaHasta)}
+                      {area && ` · ${area.nombre}`}
+                      {!area && asig.areaId === null && ' · todo el proyecto'}
+                      {' · '}<span className={estadoColor}>{asig.estado}</span>
+                    </div>
+                    {asig.notas && <div className="text-[9px] text-zinc-400 italic mt-1">{asig.notas}</div>}
+                  </div>
+                </div>
+              );
+            })}</div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -8558,6 +8598,13 @@ function TabAreas({ proyecto, data, usuario, onRecargar }) {
         const maestro = (data.personal || []).find(p => p.id === estado?.maestroAsignadoId);
         const esEdicion = areaEditando === area.id;
 
+        // v8.9.26.1: Asignaciones programadas de esta área (o sin área específica del proyecto)
+        const asignacionesArea = (data.asignaciones || []).filter(a =>
+          a.estado !== 'cancelada' &&
+          a.proyectoId === proyecto.id &&
+          (a.areaId === area.id || !a.areaId)
+        );
+
         return (
           <div key={area.id} className={`border p-4 ${conf.bg}`}>
             <div className="flex items-start justify-between gap-3">
@@ -8581,6 +8628,26 @@ function TabAreas({ proyecto, data, usuario, onRecargar }) {
                 )}
                 {estado?.notasCliente && (
                   <div className="text-[10px] text-yellow-300 mt-1 bg-yellow-900/20 border border-yellow-800 p-2">💬 {estado.notasCliente}</div>
+                )}
+
+                {/* v8.9.26.1: Asignaciones programadas */}
+                {asignacionesArea.length > 0 && (
+                  <div className="mt-2 bg-blue-900/20 border border-blue-800 p-2 space-y-1">
+                    <div className="text-[9px] uppercase tracking-widest text-blue-400 font-bold">📅 Personal programado</div>
+                    {asignacionesArea.map(asig => {
+                      const persona = (data.personal || []).find(p => p.id === asig.personaId);
+                      const rolIcon = asig.rol === 'maestro' ? '👷' : asig.rol === 'ayudante' ? '🔧' : '👁️';
+                      const estadoColor = asig.estado === 'en_curso' ? 'text-orange-400' : asig.estado === 'completada' ? 'text-green-400' : 'text-blue-300';
+                      return (
+                        <div key={asig.id} className="text-[10px] flex items-center justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="text-zinc-200"><span>{rolIcon}</span> <span className="font-bold">{persona?.nombre || '?'}</span></div>
+                            <div className="text-[9px] text-zinc-500">{formatFecha(asig.fechaDesde)} → {formatFecha(asig.fechaHasta)} · <span className={estadoColor}>{asig.estado}</span></div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
               <div className="flex flex-col gap-1">
@@ -10762,11 +10829,43 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto }) {
           condicionDia: j.condicionDia,
           horaInicio: j.horaInicio,
           hayReporte,
+          esProgramada: false, // viene de jornada real
+        });
+      });
+    });
+    // v8.9.26.1: agregar ASIGNACIONES programadas (futuras o sin jornada)
+    const asignaciones = (data.asignaciones || []).filter(a => a.estado !== 'cancelada');
+    const finInicioStr = fechaStr(dias[0]);
+    const finFinStr = fechaStr(dias[6]);
+    asignaciones.forEach(asig => {
+      // ¿solapa con la semana visible?
+      if (asig.fechaDesde > finFinStr || asig.fechaHasta < finInicioStr) return;
+      const proyecto = (data.proyectos || []).find(p => p.id === asig.proyectoId);
+      if (!proyecto) return;
+      // iterar día por día dentro del rango de la asignación
+      dias.forEach(d => {
+        const fStr = fechaStr(d);
+        if (fStr < asig.fechaDesde || fStr > asig.fechaHasta) return;
+        const pid = asig.personaId;
+        if (!g[pid]) g[pid] = {};
+        if (!g[pid][fStr]) g[pid][fStr] = [];
+        // NO duplicar si ya hay jornada para este proyecto ese día
+        const yaExiste = g[pid][fStr].some(x => x.proyectoId === asig.proyectoId);
+        if (yaExiste) return;
+        g[pid][fStr].push({
+          asignacionId: asig.id,
+          proyectoId: asig.proyectoId,
+          proyectoNombre: proyecto.cliente || proyecto.nombre,
+          referenciaOdoo: proyecto.referenciaOdoo,
+          rol: asig.rol,
+          estado: asig.estado,
+          esProgramada: true, // viene de asignación
+          hayReporte: false,
         });
       });
     });
     return g;
-  }, [jornadasSemana, reportesSemana]);
+  }, [jornadasSemana, reportesSemana, data.asignaciones, data.proyectos, dias]);
 
   // Grid por proyecto: { proyectoId: { fecha: { personas: [...], m2Reportado: N, condicionDia, jornadaId } } }
   const gridProyectos = React.useMemo(() => {
@@ -10788,8 +10887,44 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto }) {
         condicionDia: j.condicionDia,
       };
     });
+    // v8.9.26.1: sumar personas de asignaciones programadas
+    const asignaciones = (data.asignaciones || []).filter(a => a.estado !== 'cancelada');
+    const finInicioStr = fechaStr(dias[0]);
+    const finFinStr = fechaStr(dias[6]);
+    asignaciones.forEach(asig => {
+      if (asig.fechaDesde > finFinStr || asig.fechaHasta < finInicioStr) return;
+      dias.forEach(d => {
+        const fStr = fechaStr(d);
+        if (fStr < asig.fechaDesde || fStr > asig.fechaHasta) return;
+        if (!g[asig.proyectoId]) g[asig.proyectoId] = {};
+        if (!g[asig.proyectoId][fStr]) {
+          g[asig.proyectoId][fStr] = {
+            jornadaId: null,
+            personas: [],
+            m2Reportado: 0,
+            hayReporte: false,
+            condicionDia: null,
+            esProgramada: true,
+          };
+        }
+        // Agregar persona si no está ya
+        const yaExiste = g[asig.proyectoId][fStr].personas.some(pp => pp.id === asig.personaId);
+        if (!yaExiste) {
+          const p = data.personal.find(x => x.id === asig.personaId);
+          if (p) {
+            const rolCorto = asig.rol === 'maestro' ? 'Mae' : asig.rol === 'ayudante' ? 'Ay' : 'Sup';
+            g[asig.proyectoId][fStr].personas.push({
+              id: asig.personaId,
+              nombre: p.nombre,
+              rol: rolCorto,
+              programada: true,
+            });
+          }
+        }
+      });
+    });
     return g;
-  }, [jornadasSemana, reportesSemana, data.personal]);
+  }, [jornadasSemana, reportesSemana, data.personal, data.asignaciones, dias]);
 
   // Personas a mostrar en vista por personal
   const personasActivas = React.useMemo(() => {
@@ -11002,14 +11137,16 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto }) {
                               <button
                                 key={idx}
                                 onClick={() => abrirPopup(persona.id, proy, fechaStrDia)}
-                                className={`w-full text-left px-1.5 py-1 text-[10px] border hover:brightness-125 ${!proy.hayReporte ? 'bg-yellow-900/40 border-yellow-700 text-yellow-300' : coloresProyecto[proy.proyectoId] || 'bg-zinc-800 border-zinc-700'}`}
-                                title={`${proy.proyectoNombre}${!proy.hayReporte ? ' · SIN REPORTE DE m²' : ''}`}
+                                className={`w-full text-left px-1.5 py-1 text-[10px] border hover:brightness-125 ${proy.esProgramada ? 'bg-blue-900/40 border-blue-700 text-blue-300 border-dashed' : !proy.hayReporte ? 'bg-yellow-900/40 border-yellow-700 text-yellow-300' : coloresProyecto[proy.proyectoId] || 'bg-zinc-800 border-zinc-700'}`}
+                                title={`${proy.proyectoNombre}${proy.esProgramada ? ' · PROGRAMADO (sin check-in aún)' : !proy.hayReporte ? ' · SIN REPORTE DE m²' : ''}`}
                               >
                                 <div className="font-bold truncate">{proy.referenciaOdoo || proy.proyectoNombre}</div>
                                 <div className="flex items-center gap-1 text-[9px]">
-                                  {!proy.hayReporte && <span>⚠️</span>}
+                                  {proy.esProgramada && <span>📅</span>}
+                                  {proy.esProgramada && proy.rol === 'ayudante' && <span>🔧</span>}
+                                  {!proy.esProgramada && !proy.hayReporte && <span>⚠️</span>}
                                   {proy.condicionDia === 'lluvia' && <span>☔</span>}
-                                  {proy.hayReporte && <span className="text-green-500">✓</span>}
+                                  {!proy.esProgramada && proy.hayReporte && <span className="text-green-500">✓</span>}
                                 </div>
                               </button>
                             ))}

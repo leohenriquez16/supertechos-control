@@ -715,44 +715,19 @@ export default function App() {
               <div className="px-4 text-[9px] tracking-widest text-zinc-600 font-bold mb-1">{grupo.seccion}</div>
               {grupo.items.map(it => {
                 const Icon = it.icon;
-                // Caso especial: Proyectos expandible
+                // v8.9.22: Proyectos como enlace simple (sin desplegar lista)
                 if (it.esProyectos) {
+                  const activo = vista === 'proyectos';
                   return (
-                    <div key={it.id}>
-                      <button
-                        onClick={() => { setVista('proyectos'); setProyectosExpandidos(!proyectosExpandidos); setSidebarAbierta(false); }}
-                        className={`w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm border-l-2 ${vista === 'proyectos' ? 'bg-red-600/20 text-red-400 border-red-600' : 'text-zinc-400 hover:bg-zinc-900 border-transparent'}`}
-                      >
-                        <Icon className="w-4 h-4" />
-                        <span className="flex-1">{it.label}</span>
-                        <span className="text-zinc-600 text-[10px]">{proyectosMenu.length}</span>
-                        <ChevronRight className={`w-3 h-3 transition-transform ${proyectosExpandidos ? 'rotate-90' : ''}`} />
-                      </button>
-                      {proyectosExpandidos && (
-                        <div className="py-1">
-                          {proyectosMenu.length === 0 && <div className="pl-11 py-1.5 text-[11px] text-zinc-600 italic">Sin proyectos</div>}
-                          {proyectosMenu.map(p => {
-                            const activoP = vista === 'proyecto' && proyectoActivo?.id === p.id;
-                            return (
-                              <button
-                                key={p.id}
-                                onClick={() => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); setSidebarAbierta(false); }}
-                                className={`w-full flex items-center gap-2 pl-11 pr-4 py-1.5 text-left text-[11px] ${activoP ? 'bg-red-600/10 text-red-400' : 'text-zinc-300 hover:bg-zinc-900'}`}
-                              >
-                                <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: colorEstado(p.estado) }}></span>
-                                <span className="flex-1 truncate">{p.nombre}</span>
-                              </button>
-                            );
-                          })}
-                          <button
-                            onClick={() => { setVista('nuevoProyecto'); setSidebarAbierta(false); }}
-                            className="w-full flex items-center gap-2 pl-11 pr-4 py-1.5 text-left text-[11px] text-red-500 hover:bg-zinc-900 font-bold"
-                          >
-                            <Plus className="w-3 h-3" /> Nuevo proyecto
-                          </button>
-                        </div>
-                      )}
-                    </div>
+                    <button
+                      key={it.id}
+                      onClick={() => { setVista('proyectos'); setSidebarAbierta(false); }}
+                      className={`w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm border-l-2 ${activo ? 'bg-red-600/20 text-red-400 border-red-600' : 'text-zinc-400 hover:bg-zinc-900 border-transparent'}`}
+                    >
+                      <Icon className="w-4 h-4" />
+                      <span className="flex-1">{it.label}</span>
+                      <span className="text-zinc-600 text-[10px]">{proyectosMenu.length}</span>
+                    </button>
                   );
                 }
                 // Ítem normal

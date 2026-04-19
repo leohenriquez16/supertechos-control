@@ -7122,18 +7122,26 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto }) {
     const ids = new Set(Object.keys(gridPersonas));
     proyectosVisibles.forEach(p => {
       if (filtroProyecto && p.id !== filtroProyecto) return;
-      if (p.supervisorId) ids.add(p.supervisorId);
       if (p.maestroId) ids.add(p.maestroId);
       (p.ayudantesIds || []).forEach(a => ids.add(a));
     });
     let personas = [...ids].map(id => data.personal.find(p => p.id === id)).filter(Boolean);
+    // v8.9.17: Excluir supervisores puros del listado de planificación
+    // (la planificación es para maestros y ayudantes de campo)
+    personas = personas.filter(p => {
+      const roles = p.roles || [];
+      // Si es maestro o ayudante, mostrar
+      // Si es SOLO supervisor (sin ser también maestro), excluir
+      if (roles.includes('maestro') || roles.includes('ayudante')) return true;
+      return false;
+    });
     if (filtroRol) personas = personas.filter(p => p.roles?.includes(filtroRol));
     // v8.7: filtro "solo con proyecto asignado"
     if (soloConProyecto) {
-      personas = personas.filter(p => proyectosVisibles.some(pr => pr.maestroId === p.id || pr.supervisorId === p.id || (pr.ayudantesIds || []).includes(p.id)));
+      personas = personas.filter(p => proyectosVisibles.some(pr => pr.maestroId === p.id || (pr.ayudantesIds || []).includes(p.id)));
     }
     return personas.sort((a, b) => {
-      const orden = (r) => r?.includes('supervisor') ? 1 : r?.includes('maestro') ? 2 : 3;
+      const orden = (r) => r?.includes('maestro') ? 1 : 2;
       const oa = orden(a.roles); const ob = orden(b.roles);
       if (oa !== ob) return oa - ob;
       return a.nombre.localeCompare(b.nombre);
@@ -7253,10 +7261,9 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto }) {
         {vistaModo === 'personal' && (
           <>
             <select value={filtroRol} onChange={e => setFiltroRol(e.target.value)} className="bg-zinc-900 border border-zinc-800 px-3 py-1.5 text-xs text-white">
-              <option value="">Todos los roles</option>
-              <option value="supervisor">Supervisores</option>
-              <option value="maestro">Maestros</option>
-              <option value="ayudante">Ayudantes</option>
+              <option value="">Todos (maestros + ayudantes)</option>
+              <option value="maestro">Solo Maestros</option>
+              <option value="ayudante">Solo Ayudantes</option>
             </select>
             <label className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 px-3 py-1.5 text-xs cursor-pointer">
               <input type="checkbox" checked={soloConProyecto} onChange={e => setSoloConProyecto(e.target.checked)} className="w-3 h-3 accent-red-600" />

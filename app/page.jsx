@@ -3011,7 +3011,7 @@ function Dashboard({ data, onVerProyecto, onNuevoProyecto, tareas, onCompletarTa
   }, 0);
 
   // Proyectos activos y personas en obra HOY (siempre)
-  const proyectosEjecutando = data.proyectos.filter(p => ['en_ejecucion', 'finalizado_no_entregado'].includes(p.estado));
+  const proyectosEjecutando = data.proyectos.filter(p => p.estado === 'en_ejecucion');
   const personasHoy = new Set();
   (jornadasHoy || []).forEach(j => { (j.personasPresentesIds || []).forEach(id => personasHoy.add(id)); });
 
@@ -3235,7 +3235,7 @@ function ModalDetalleHoyEnObra({ data, jornadasHoy, onCerrar, onVerProyecto }) {
         <div className="flex justify-between items-center sticky top-0 bg-zinc-900 pb-2 border-b border-zinc-800">
           <div>
             <div className="text-[10px] tracking-widest uppercase text-red-500 font-bold">👥 Hoy en obra</div>
-            <h2 className="text-xl font-black">{formatFecha(hoy)}</h2>
+            <h2 className="text-xl font-black capitalize">{new Date(hoy + 'T12:00:00').toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</h2>
             <div className="text-xs text-zinc-400">{detallePorProyecto.length} proyecto{detallePorProyecto.length !== 1 ? 's' : ''} · {totalPersonas} persona{totalPersonas !== 1 ? 's' : ''}</div>
           </div>
           <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>

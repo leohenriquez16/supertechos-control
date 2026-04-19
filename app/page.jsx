@@ -10,7 +10,7 @@ import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps }
 // ============================================================
 // HELPERS
 // ============================================================
-const APP_VERSION = '8.9.20';
+const APP_VERSION = '8.9.21';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
@@ -3034,6 +3034,9 @@ function Dashboard({ data, onVerProyecto, onNuevoProyecto, tareas, onCompletarTa
 
   const tareasPendientes = (tareas || []).filter(t => !t.completada).slice(0, 5);
 
+  // v8.9.21: Modales del dashboard (tarjetas interactivas)
+  const [modalDetalle, setModalDetalle] = useState(null); // 'hoy' | 'produccion' | 'aprobados' | null
+
   // v8.9.14: Proyectos aprobados hace más de 7 días sin moverse a 'en_ejecucion'
   const proyectosAprobadosAtrasados = React.useMemo(() => {
     const ahora = new Date();
@@ -3112,24 +3115,33 @@ function Dashboard({ data, onVerProyecto, onNuevoProyecto, tareas, onCompletarTa
         </div>
       </div>
 
-      {/* HERO: Métricas ejecutivas del periodo */}
+      {/* HERO: Métricas ejecutivas del periodo - v8.9.21: 3 de 4 clickeables */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-        <div className="bg-gradient-to-br from-red-600 to-red-800 p-4">
-          <div className="text-[10px] tracking-widest uppercase text-red-200">Hoy en obra</div>
+        <button onClick={() => setModalDetalle('hoy')} className="bg-gradient-to-br from-red-600 to-red-800 p-4 text-left hover:brightness-110 transition-all cursor-pointer">
+          <div className="flex items-center justify-between">
+            <div className="text-[10px] tracking-widest uppercase text-red-200">Hoy en obra</div>
+            <ChevronRight className="w-3 h-3 text-red-200" />
+          </div>
           <div className="text-3xl font-black mt-1">{proyectosEjecutando.length}</div>
           <div className="text-[10px] text-red-200">proyectos · {personasHoy.size} personas</div>
-        </div>
-        <div className="bg-zinc-900 border border-zinc-800 p-4">
-          <div className="text-[10px] tracking-widest uppercase text-zinc-500">Producción</div>
+        </button>
+        <button onClick={() => setModalDetalle('produccion')} className="bg-zinc-900 border border-zinc-800 hover:border-green-600 p-4 text-left cursor-pointer transition-all">
+          <div className="flex items-center justify-between">
+            <div className="text-[10px] tracking-widest uppercase text-zinc-500">Producción</div>
+            <ChevronRight className="w-3 h-3 text-zinc-600" />
+          </div>
           <div className="text-2xl font-black text-green-400 mt-1">{formatRD(prodPeriodo)}</div>
           {deltaProd !== null && <div className={`text-[10px] ${deltaProd >= 0 ? 'text-green-500' : 'text-red-400'}`}>{deltaProd >= 0 ? '↑' : '↓'} {Math.abs(deltaProd).toFixed(0)}% vs anterior</div>}
           {deltaProd === null && <div className="text-[10px] text-zinc-600">{formatRD(prodAnt)} anterior</div>}
-        </div>
-        <div className="bg-zinc-900 border border-zinc-800 p-4">
-          <div className="text-[10px] tracking-widest uppercase text-zinc-500">Aprobados</div>
+        </button>
+        <button onClick={() => setModalDetalle('aprobados')} className="bg-zinc-900 border border-zinc-800 hover:border-cyan-600 p-4 text-left cursor-pointer transition-all">
+          <div className="flex items-center justify-between">
+            <div className="text-[10px] tracking-widest uppercase text-zinc-500">Aprobados</div>
+            <ChevronRight className="w-3 h-3 text-zinc-600" />
+          </div>
           <div className="text-2xl font-black text-cyan-400 mt-1">{formatRD(montoAprobadosPeriodo)}</div>
           <div className="text-[10px] text-zinc-600">{aprobadosPeriodo.length} proyecto{aprobadosPeriodo.length !== 1 ? 's' : ''}</div>
-        </div>
+        </button>
         <div className="bg-zinc-900 border border-zinc-800 p-4">
           <div className="text-[10px] tracking-widest uppercase text-zinc-500">Margen</div>
           <div className={`text-2xl font-black mt-1 ${margenPeriodo >= 0 ? 'text-green-400' : 'text-red-400'}`}>{formatRD(margenPeriodo)}</div>
@@ -3155,6 +3167,339 @@ function Dashboard({ data, onVerProyecto, onNuevoProyecto, tareas, onCompletarTa
           })}</div>
         </div>
       )}
+
+      {/* v8.9.21: Modales del dashboard */}
+      {modalDetalle === 'hoy' && <ModalDetalleHoyEnObra data={data} jornadasHoy={jornadasHoy} onCerrar={() => setModalDetalle(null)} onVerProyecto={(p) => { setModalDetalle(null); onVerProyecto(p); }} />}
+      {modalDetalle === 'produccion' && <ModalDetalleProduccion data={data} rango={rango} prodPeriodo={prodPeriodo} onCerrar={() => setModalDetalle(null)} onVerProyecto={(p) => { setModalDetalle(null); onVerProyecto(p); }} />}
+      {modalDetalle === 'aprobados' && <ModalDetalleAprobados aprobadosPeriodo={aprobadosPeriodo} montoTotal={montoAprobadosPeriodo} onCerrar={() => setModalDetalle(null)} onVerProyecto={(p) => { setModalDetalle(null); onVerProyecto(p); }} />}
+    </div>
+  );
+}
+
+// ============================================================
+// v8.9.21: MODALES DEL DASHBOARD (tarjetas interactivas)
+// ============================================================
+function ModalDetalleHoyEnObra({ data, jornadasHoy, onCerrar, onVerProyecto }) {
+  const hoy = new Date().toISOString().split('T')[0];
+  const proyectosEjec = (data.proyectos || []).filter(p => !p.archivado && p.estado === 'en_ejecucion');
+  const checkinsHoy = (data.checkins || []).filter(c => c.fecha === hoy);
+
+  // Construir mapa: proyecto → personas presentes hoy
+  const detallePorProyecto = proyectosEjec.map(proy => {
+    const checkinsProy = checkinsHoy.filter(c => c.proyectoId === proy.id);
+    const jornadaProy = (jornadasHoy || []).find(j => j.proyectoId === proy.id);
+
+    // Combinar: personas que hicieron check-in + personas marcadas en jornada
+    const idsPresentes = new Set();
+    checkinsProy.forEach(c => idsPresentes.add(c.personaId));
+    if (jornadaProy && Array.isArray(jornadaProy.personasIds)) {
+      jornadaProy.personasIds.forEach(id => idsPresentes.add(id));
+    }
+
+    const personas = [...idsPresentes].map(pid => {
+      const persona = (data.personal || []).find(p => p.id === pid);
+      const checkin = checkinsProy.find(c => c.personaId === pid);
+      return {
+        id: pid,
+        persona,
+        checkin,
+        enJornada: jornadaProy && Array.isArray(jornadaProy.personasIds) && jornadaProy.personasIds.includes(pid),
+      };
+    }).filter(x => x.persona);
+
+    return {
+      proyecto: proy,
+      personas,
+      jornada: jornadaProy,
+    };
+  }).filter(x => x.personas.length > 0 || x.jornada);
+
+  const totalPersonas = detallePorProyecto.reduce((s, x) => s + x.personas.length, 0);
+
+  const rolLabel = (persona) => {
+    if (!persona?.roles) return '—';
+    if (persona.roles.includes('supervisor')) return '👔 Sup';
+    if (persona.roles.includes('maestro')) return '🔨 Maestro';
+    if (persona.roles.includes('ayudante')) return '🛠️ Ayud';
+    return persona.roles[0];
+  };
+
+  const formatHora = (isoString) => {
+    if (!isoString) return null;
+    return new Date(isoString).toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
+      <div className="bg-zinc-900 border-2 border-red-600 max-w-xl w-full p-5 space-y-4 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center sticky top-0 bg-zinc-900 pb-2 border-b border-zinc-800">
+          <div>
+            <div className="text-[10px] tracking-widest uppercase text-red-500 font-bold">👥 Hoy en obra</div>
+            <h2 className="text-xl font-black">{formatFecha(hoy)}</h2>
+            <div className="text-xs text-zinc-400">{detallePorProyecto.length} proyecto{detallePorProyecto.length !== 1 ? 's' : ''} · {totalPersonas} persona{totalPersonas !== 1 ? 's' : ''}</div>
+          </div>
+          <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
+        </div>
+
+        {detallePorProyecto.length === 0 ? (
+          <div className="bg-zinc-950 border border-zinc-800 p-6 text-center text-sm text-zinc-500">
+            Aún no hay actividad registrada hoy
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {detallePorProyecto.map(({ proyecto, personas, jornada }) => (
+              <div key={proyecto.id} className="bg-zinc-950 border border-zinc-800 overflow-hidden">
+                <button
+                  onClick={() => onVerProyecto(proyecto)}
+                  className="w-full p-3 text-left hover:bg-zinc-900 flex items-start gap-2"
+                >
+                  <Briefcase className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[10px] text-zinc-500 font-mono">{proyecto.referenciaOdoo}</div>
+                    <div className="font-bold text-sm truncate">{proyecto.cliente || proyecto.nombre}</div>
+                    <div className="text-[10px] text-zinc-400 mt-1">
+                      {personas.length} persona{personas.length !== 1 ? 's' : ''} presente{personas.length !== 1 ? 's' : ''}
+                      {jornada && <span className="ml-2">· 🕐 {jornada.horaInicio || '—'}{jornada.horaFin ? ` → ${jornada.horaFin}` : ' · abierta'}</span>}
+                    </div>
+                  </div>
+                  <ChevronRight className="w-3 h-3 text-zinc-500" />
+                </button>
+
+                <div className="border-t border-zinc-800 p-2 space-y-1">
+                  {personas.map(({ persona, checkin, enJornada }) => (
+                    <div key={persona.id} className="flex items-center gap-2 bg-zinc-900 p-2 text-xs">
+                      {persona.foto2x2 ? (
+                        <img src={persona.foto2x2} alt="" className="w-7 h-7 object-cover border border-zinc-700 flex-shrink-0" />
+                      ) : (
+                        <UserCircle className="w-7 h-7 text-zinc-500 flex-shrink-0" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="font-bold truncate">{persona.nombre}</div>
+                        <div className="text-[9px] text-zinc-500">{rolLabel(persona)}</div>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        {checkin ? (
+                          <>
+                            <div className="text-[10px] text-green-400 font-bold">✓ {formatHora(checkin.hora)}</div>
+                            {checkin.ubicacionDistanciaM != null && (
+                              <div className={`text-[9px] ${checkin.ubicacionDistanciaM < 200 ? 'text-green-500' : 'text-yellow-400'}`}>
+                                {checkin.ubicacionDistanciaM}m
+                              </div>
+                            )}
+                          </>
+                        ) : enJornada ? (
+                          <div className="text-[10px] text-zinc-400">En jornada</div>
+                        ) : (
+                          <div className="text-[10px] text-zinc-600">—</div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ModalDetalleProduccion({ data, rango, prodPeriodo, onCerrar, onVerProyecto }) {
+  // Calcular producción por proyecto en el rango
+  const reportesRango = (data.reportes || []).filter(r => r.fecha >= rango.desde && r.fecha <= rango.hasta);
+
+  const porProyecto = {};
+  const porMaestro = {};
+
+  reportesRango.forEach(r => {
+    const proy = (data.proyectos || []).find(p => p.id === r.proyectoId);
+    if (!proy) return;
+    const sistema = data.sistemas[proy.sistema];
+    if (!sistema) return;
+
+    // Precio de la tarea (m²)
+    let precio = 0;
+    const precios = proy.preciosTareasM2 || {};
+    precio = precios[r.tareaId] || 0;
+    // Si es m2_fijo o no hay precio por tarea, intentar m² del proyecto
+    if (!precio && proy.modoPagoManoObra === 'm2_fijo') {
+      // No aplica - m2_fijo es para maestros, no precio al cliente
+    }
+    // Fallback: usar precio de la tarea del sistema directamente
+    if (!precio && sistema.tareas) {
+      const tarea = sistema.tareas.find(t => t.id === r.tareaId);
+      if (tarea) precio = tarea.precioM2 || 0;
+    }
+
+    const m2 = parseFloat(r.m2) || 0;
+    const monto = m2 * precio;
+
+    // Por proyecto
+    if (!porProyecto[proy.id]) {
+      porProyecto[proy.id] = { proyecto: proy, m2: 0, monto: 0, dias: new Set() };
+    }
+    porProyecto[proy.id].m2 += m2;
+    porProyecto[proy.id].monto += monto;
+    porProyecto[proy.id].dias.add(r.fecha);
+
+    // Por maestro
+    if (r.personaId) {
+      if (!porMaestro[r.personaId]) {
+        const p = (data.personal || []).find(pe => pe.id === r.personaId);
+        porMaestro[r.personaId] = { persona: p, m2: 0, monto: 0 };
+      }
+      porMaestro[r.personaId].m2 += m2;
+      porMaestro[r.personaId].monto += monto;
+    }
+  });
+
+  const proyectosOrdenados = Object.values(porProyecto).sort((a, b) => b.monto - a.monto);
+  const maestrosOrdenados = Object.values(porMaestro)
+    .filter(m => m.persona && (m.persona.roles || []).includes('maestro'))
+    .sort((a, b) => b.m2 - a.m2);
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
+      <div className="bg-zinc-900 border-2 border-green-600 max-w-xl w-full p-5 space-y-4 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center sticky top-0 bg-zinc-900 pb-2 border-b border-zinc-800">
+          <div>
+            <div className="text-[10px] tracking-widest uppercase text-green-500 font-bold">💰 Producción</div>
+            <h2 className="text-xl font-black">{formatRD(prodPeriodo)}</h2>
+            <div className="text-xs text-zinc-400">{formatFecha(rango.desde)} → {formatFecha(rango.hasta)}</div>
+          </div>
+          <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
+        </div>
+
+        {/* Por proyecto */}
+        {proyectosOrdenados.length > 0 && (
+          <div>
+            <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2">📂 Por proyecto</div>
+            <div className="space-y-1">
+              {proyectosOrdenados.map(p => (
+                <button
+                  key={p.proyecto.id}
+                  onClick={() => onVerProyecto(p.proyecto)}
+                  className="w-full bg-zinc-950 border border-zinc-800 hover:border-green-600 p-2 flex items-center justify-between text-left"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[10px] text-zinc-500 font-mono">{p.proyecto.referenciaOdoo}</div>
+                    <div className="text-sm font-bold truncate">{p.proyecto.cliente || p.proyecto.nombre}</div>
+                    <div className="text-[10px] text-zinc-500">
+                      {formatNum(p.m2, 1)} m² · {p.dias.size} día{p.dias.size !== 1 ? 's' : ''} activo
+                    </div>
+                  </div>
+                  <div className="text-right ml-2">
+                    <div className="text-sm font-black text-green-400">{formatRD(p.monto)}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Por maestro */}
+        {maestrosOrdenados.length > 0 && (
+          <div>
+            <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2">🔨 Por maestro</div>
+            <div className="space-y-1">
+              {maestrosOrdenados.slice(0, 10).map((m, idx) => (
+                <div key={m.persona.id} className="bg-zinc-950 border border-zinc-800 p-2 flex items-center justify-between">
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    {idx === 0 ? <span className="text-lg">🥇</span> : idx === 1 ? <span className="text-lg">🥈</span> : idx === 2 ? <span className="text-lg">🥉</span> : <span className="w-6 text-center text-zinc-500 text-xs">{idx + 1}</span>}
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-bold truncate">{m.persona.nombre}</div>
+                      <div className="text-[10px] text-zinc-500">{formatNum(m.m2, 1)} m² producidos</div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm font-black text-green-400">{formatRD(m.monto)}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {proyectosOrdenados.length === 0 && (
+          <div className="bg-zinc-950 border border-zinc-800 p-6 text-center text-sm text-zinc-500">
+            Sin producción en este período
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ModalDetalleAprobados({ aprobadosPeriodo, montoTotal, onCerrar, onVerProyecto }) {
+  const hoy = new Date();
+
+  const diasEnAprobado = (proyecto) => {
+    const fref = proyecto.fecha_inicio || proyecto.createdAt;
+    if (!fref) return 0;
+    return Math.floor((hoy - new Date(fref)) / (1000 * 60 * 60 * 24));
+  };
+
+  // Ordenar por monto descendente
+  const ordenados = [...(aprobadosPeriodo || [])].sort((a, b) => {
+    const mA = (a.areas || []).reduce((s, ar) => s + (ar.m2 || 0) * (ar.precio || 0), 0);
+    const mB = (b.areas || []).reduce((s, ar) => s + (ar.m2 || 0) * (ar.precio || 0), 0);
+    return mB - mA;
+  });
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
+      <div className="bg-zinc-900 border-2 border-cyan-600 max-w-xl w-full p-5 space-y-4 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center sticky top-0 bg-zinc-900 pb-2 border-b border-zinc-800">
+          <div>
+            <div className="text-[10px] tracking-widest uppercase text-cyan-500 font-bold">✅ Proyectos aprobados</div>
+            <h2 className="text-xl font-black">{formatRD(montoTotal)}</h2>
+            <div className="text-xs text-zinc-400">{ordenados.length} proyecto{ordenados.length !== 1 ? 's' : ''} esperando iniciar</div>
+          </div>
+          <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
+        </div>
+
+        {ordenados.length === 0 ? (
+          <div className="bg-zinc-950 border border-zinc-800 p-6 text-center text-sm text-zinc-500">
+            No hay proyectos en estado "Aprobado"
+          </div>
+        ) : (
+          <div className="space-y-1">
+            {ordenados.map(p => {
+              const m2Total = (p.areas || []).reduce((s, a) => s + (a.m2 || 0), 0);
+              const monto = (p.areas || []).reduce((s, a) => s + (a.m2 || 0) * (a.precio || 0), 0);
+              const dias = diasEnAprobado(p);
+              const atrasado = dias > 7;
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => onVerProyecto(p)}
+                  className={`w-full border p-3 flex items-center justify-between text-left ${atrasado ? 'bg-yellow-900/10 border-yellow-700 hover:border-yellow-500' : 'bg-zinc-950 border-zinc-800 hover:border-cyan-600'}`}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-zinc-500 font-mono">{p.referenciaOdoo}</span>
+                      {atrasado && <span className="text-[9px] text-yellow-400 font-bold">⚠️ {dias} días</span>}
+                    </div>
+                    <div className="text-sm font-bold truncate">{p.cliente || p.nombre}</div>
+                    <div className="text-[10px] text-zinc-500 truncate">{p.referenciaProyecto}</div>
+                    <div className="text-[10px] text-zinc-400 mt-1">
+                      {formatNum(m2Total, 0)} m² · Aprobado hace {dias} día{dias !== 1 ? 's' : ''}
+                    </div>
+                  </div>
+                  <div className="text-right ml-2">
+                    <div className="text-sm font-black text-cyan-400">{formatRD(monto)}</div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="bg-zinc-950 border border-zinc-800 p-2 text-[10px] text-zinc-500">
+          💡 Los proyectos en amarillo llevan más de 7 días aprobados sin arrancar. Considera moverlos a "En ejecución" o "Parado".
+        </div>
+      </div>
     </div>
   );
 }

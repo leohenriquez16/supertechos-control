@@ -10,7 +10,7 @@ import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps }
 // ============================================================
 // HELPERS
 // ============================================================
-const APP_VERSION = '8.9.22';
+const APP_VERSION = '8.9.24';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
@@ -119,6 +119,152 @@ const checkinsDelProyecto = (proyecto, todosLosCheckins) =>
 // ============================================================
 // v8.9.19: Helper - Estadísticas de experiencia de una persona
 // ============================================================
+// ============================================================
+// v8.9.23: Motor de elegibilidad y helpers de planificación
+// ============================================================
+
+// Verifica si una persona está ausente en un rango de fechas
+const personaAusenteEnRango = (personaId, fechaDesde, fechaHasta, ausencias) => {
+  if (!fechaDesde) return false;
+  const hasta = fechaHasta || fechaDesde;
+  return (ausencias || []).some(a => {
+    if (a.personaId !== personaId) return false;
+    return !(a.fechaHasta < fechaDesde || a.fechaDesde > hasta);
+  });
+};
+
+// Devuelve la lista de categorías que domina una persona
+const categoriasDePersona = (personaId, capacidades) => {
+  return (capacidades || []).filter(c => c.personaId === personaId).map(c => c.categoriaId);
+};
+
+// Verifica si una persona puede hacer un sistema (según su categoría)
+const personaPuedeHacerSistema = (personaId, sistemaId, sistemas, capacidades) => {
+  const sistema = sistemas?.[sistemaId];
+  if (!sistema) return false;
+  const categoriaId = sistema.categoriaId;
+  if (!categoriaId) return true; // sistema sin categoría = cualquiera puede (legacy)
+  return (capacidades || []).some(c => c.personaId === personaId && c.categoriaId === categoriaId);
+};
+
+// Verifica credenciales vigentes de una persona
+const credencialesVigentes = (personaId, fecha, credencialesPersonas) => {
+  const f = fecha || new Date().toISOString().split('T')[0];
+  return (credencialesPersonas || []).filter(c => {
+    if (c.personaId !== personaId || !c.activa) return false;
+    if (c.fechaVencimiento && c.fechaVencimiento < f) return false;
+    return true;
+  });
+};
+
+// Determina qué credenciales requiere un proyecto (cliente + ubicación)
+const credencialesRequeridasProyecto = (proyecto, clienteRequisitos, ubicacionRequisitos) => {
+  const requeridos = new Set();
+
+  // Por cliente
+  if (proyecto?.clienteId) {
+    (clienteRequisitos || []).forEach(r => {
+      if (r.clienteId === proyecto.clienteId && r.obligatorio) {
+        requeridos.add(r.tipoCredencialId);
+      }
+    });
+  }
+
+  // Por ubicación (match por patrón en dirección)
+  const direccion = (proyecto?.direccion || '').toLowerCase();
+  (ubicacionRequisitos || []).forEach(r => {
+    if (!r.obligatorio) return;
+    const patron = (r.patronDireccion || r.nombreUbicacion || '').toLowerCase();
+    if (patron && direccion.includes(patron)) {
+      requeridos.add(r.tipoCredencialId);
+    }
+  });
+
+  return [...requeridos];
+};
+
+// Verifica si una persona cumple con los requisitos de un proyecto
+const personaEsElegibleParaProyecto = (personaId, proyecto, data, opciones = {}) => {
+  const { verificarCapacidades = true, verificarCredenciales = true, fechaRef } = opciones;
+  const hoy = fechaRef || new Date().toISOString().split('T')[0];
+
+  const razones = [];
+
+  // 1. Capacidad técnica
+  if (verificarCapacidades) {
+    const sistemaId = proyecto.sistema;
+    if (sistemaId && !personaPuedeHacerSistema(personaId, sistemaId, data.sistemas, data.capacidades)) {
+      razones.push('No domina el sistema requerido');
+    }
+  }
+
+  // 2. Credenciales
+  if (verificarCredenciales) {
+    const requeridos = credencialesRequeridasProyecto(proyecto, data.clienteRequisitos, data.ubicacionRequisitos);
+    const vigentes = credencialesVigentes(personaId, hoy, data.credencialesPersonas).map(c => c.tipoCredencialId);
+
+    // ¿Hay autorización temporal que cubra?
+    const autorizacionesPersona = (data.autorizaciones || []).filter(a =>
+      a.personaId === personaId &&
+      a.estado === 'aprobada' &&
+      a.fechaDesde <= hoy &&
+      a.fechaHasta >= hoy &&
+      (a.proyectoId === proyecto.id || a.clienteId === proyecto.clienteId)
+    );
+    const autorizadosTemporal = autorizacionesPersona.map(a => a.tipoCredencialId);
+
+    const faltantes = requeridos.filter(req => !vigentes.includes(req) && !autorizadosTemporal.includes(req));
+    if (faltantes.length > 0) {
+      const tiposStr = faltantes.map(id => {
+        const tc = (data.tiposCredenciales || []).find(t => t.id === id);
+        return tc?.nombre || id;
+      }).join(', ');
+      razones.push(`Falta credencial: ${tiposStr}`);
+    }
+  }
+
+  return { elegible: razones.length === 0, razones };
+};
+
+// Sugiere personal para una obra/área
+const sugerirPersonalParaArea = (proyecto, areaId, fechaObjetivo, data) => {
+  const area = (proyecto.areas || []).find(a => a.id === areaId);
+  if (!area) return [];
+
+  const fechaRef = fechaObjetivo || new Date().toISOString().split('T')[0];
+  const proyectoEfectivo = { ...proyecto, sistema: area.sistemaId || proyecto.sistema };
+
+  const personalActivo = (data.personal || []).filter(p => !p.archivado);
+  const conRolOperativo = personalActivo.filter(p =>
+    (p.roles || []).some(r => ['maestro', 'supervisor', 'ayudante'].includes(r))
+  );
+
+  const brigadaPref = (data.brigadasPreferentes || []).filter(b =>
+    (b.clienteId && b.clienteId === proyecto.clienteId) ||
+    (b.ubicacionPatron && (proyecto.direccion || '').toLowerCase().includes(b.ubicacionPatron.toLowerCase()))
+  );
+  const idsPreferentes = new Set(brigadaPref.map(b => b.personaId));
+
+  return conRolOperativo.map(p => {
+    const elegibilidad = personaEsElegibleParaProyecto(p.id, proyectoEfectivo, data, { fechaRef });
+    const ausente = personaAusenteEnRango(p.id, fechaRef, fechaRef, data.ausencias);
+    const esPreferente = idsPreferentes.has(p.id);
+    return {
+      persona: p,
+      elegible: elegibilidad.elegible && !ausente,
+      razones: elegibilidad.razones,
+      ausente,
+      esPreferente,
+    };
+  }).sort((a, b) => {
+    // Preferentes primero, luego elegibles, luego por nombre
+    if (a.esPreferente !== b.esPreferente) return b.esPreferente - a.esPreferente;
+    if (a.elegible !== b.elegible) return b.elegible - a.elegible;
+    return a.persona.nombre.localeCompare(b.persona.nombre);
+  });
+};
+
+
 const calcEstadisticasPersona = (personaId, reportes, proyectos, sistemas) => {
   const repsPersona = (reportes || []).filter(r => r.personaId === personaId);
   const proyectosIds = new Set(repsPersona.map(r => r.proyectoId));
@@ -662,9 +808,18 @@ export default function App() {
     ]},
     { seccion: 'CONFIGURACIÓN', items: [
       { id: 'sistemas', label: 'Sistemas', icon: Settings, vista: 'sistemas' },
+      { id: 'categorias', label: 'Categorías', icon: Settings, vista: 'categorias' },
       { id: 'clientes', label: 'Clientes', icon: Building2, vista: 'clientes' },
       { id: 'personal', label: 'Personal', icon: UserIcon, vista: 'personal' },
       { id: 'estadisticasPersonal', label: 'Estadísticas', icon: TrendingUp, vista: 'estadisticasPersonal' },
+    ]},
+    { seccion: 'PLANIFICACIÓN', items: [
+      { id: 'disponibilidad', label: 'Disponibilidad', icon: Calendar, vista: 'disponibilidad' },
+      { id: 'ausencias', label: 'Ausencias', icon: Calendar, vista: 'ausencias' },
+      { id: 'equipos', label: 'Equipos', icon: Settings, vista: 'equipos' },
+      { id: 'credenciales', label: 'Credenciales', icon: Settings, vista: 'credenciales' },
+      { id: 'autorizaciones', label: 'Autorizaciones', icon: Settings, vista: 'autorizaciones' },
+      { id: 'brigadas', label: 'Brigadas', icon: UserIcon, vista: 'brigadas' },
     ]},
   ] : [
     { seccion: 'MIS PROYECTOS', items: [
@@ -796,10 +951,17 @@ export default function App() {
         {vista === 'planificacion' && puede(usuario, data.permisos, 'planificacion', 'ver') && <VistaPlanificacion usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'miProduccion' && tieneRol(usuario, 'maestro') && <VistaMiProduccion usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'estadisticasPersonal' && esAdmin && <VistaEstadisticasPersonal data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
+        {vista === 'categorias' && esAdmin && <VistaCategorias data={data} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
+        {vista === 'disponibilidad' && esAdmin && <VistaDisponibilidad usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
+        {vista === 'ausencias' && esAdmin && <VistaAusencias usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
+        {vista === 'equipos' && esAdmin && <VistaEquipos data={data} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
+        {vista === 'credenciales' && esAdmin && <VistaCredenciales data={data} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
+        {vista === 'autorizaciones' && esAdmin && <VistaAutorizaciones usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
+        {vista === 'brigadas' && esAdmin && <VistaBrigadas data={data} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
         {vista === 'miPerfil' && <MiPerfil usuario={usuario} persona={usuario} soloLectura={false} onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }} onGuardar={(campos) => withSync(() => db.guardarPerfil(usuario.id, campos))} />}
         {esAdmin && vista === 'personal' && <GestionPersonal personal={data.personal} data={data} onVolver={() => setVista('dashboard')} onActualizar={(p) => withSync(() => db.reemplazarPersonal(p))} onAbrirPerfil={(p) => { setPerfilViendo(p); setVista('perfilPersona'); }} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'perfilPersona' && perfilViendo && <MiPerfil usuario={usuario} persona={perfilViendo} soloLectura={false} onVolver={() => setVista('personal')} onGuardar={(campos) => withSync(async () => { await db.guardarPerfil(perfilViendo.id, campos); const d = await db.loadAllData(); const actualizada = d.personal.find(p => p.id === perfilViendo.id); if (actualizada) setPerfilViendo(actualizada); })} />}
-        {esAdmin && vista === 'sistemas' && <GestionSistemas sistemas={data.sistemas} config={data.config} onVolver={() => setVista('dashboard')} onActualizarSistemas={(s) => withSync(() => db.guardarSistemas(s))} onActualizarConfig={(c) => withSync(() => db.guardarConfig(c))} />}
+        {esAdmin && vista === 'sistemas' && <GestionSistemas sistemas={data.sistemas} config={data.config} dataGlobal={data} onVolver={() => setVista('dashboard')} onActualizarSistemas={(s) => withSync(() => db.guardarSistemas(s))} onActualizarConfig={(c) => withSync(() => db.guardarConfig(c))} />}
         {esAdmin && vista === 'clientes' && <GestionClientes clientes={data.clientes || []} contactos={data.contactos || []} proyectos={data.proyectos || []} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
         {esAdmin && vista === 'nuevoProyecto' && <NuevoProyecto personal={data.personal} sistemas={data.sistemas} clientes={data.clientes || []} contactos={data.contactos || []} onCancelar={() => setVista('dashboard')} onCrear={(proy) => withSync(async () => {
           // v8.9.10: Si no hay clienteId pero hay nombre o RNC, matchear o crear
@@ -1487,6 +1649,823 @@ function AsistenteIA({ usuario, data }) {
 }
 
 
+// ============================================================
+// v8.9.23: VISTAS DE PLANIFICACIÓN ESTRATÉGICA
+// ============================================================
+
+// --- CATEGORÍAS DE SISTEMAS ---
+function VistaCategorias({ data, onVolver, onRecargar }) {
+  const [editando, setEditando] = useState(null);
+  const [form, setForm] = useState({ id: '', nombre: '', icono: '📂', orden: 0 });
+  const [guardando, setGuardando] = useState(false);
+
+  const categorias = data.categorias || [];
+  const sistemas = data.sistemas || {};
+
+  const sistemasDeCategoria = (catId) => {
+    return Object.entries(sistemas).filter(([, s]) => s.categoriaId === catId).map(([id, s]) => ({ id, ...s }));
+  };
+  const sistemasSinCategoria = Object.entries(sistemas).filter(([, s]) => !s.categoriaId).map(([id, s]) => ({ id, ...s }));
+
+  const guardar = async () => {
+    if (!form.nombre.trim()) return alert('Nombre requerido');
+    setGuardando(true);
+    try {
+      const id = form.id || 'cat_' + Date.now() + Math.random().toString(36).slice(2, 6);
+      await db.guardarCategoria({ ...form, id });
+      setEditando(null); setForm({ id: '', nombre: '', icono: '📂', orden: 0 });
+      await onRecargar();
+    } catch (e) { alert('Error: ' + e.message); }
+    setGuardando(false);
+  };
+
+  const eliminar = async (id) => {
+    if (!confirm('¿Eliminar esta categoría? Los sistemas quedarán sin categoría.')) return;
+    try { await db.eliminarCategoria(id); await onRecargar(); }
+    catch (e) { alert('Error: ' + e.message); }
+  };
+
+  return (
+    <div className="space-y-4">
+      <button onClick={onVolver} className="flex items-center gap-2 text-zinc-400 text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button>
+      <div>
+        <div className="text-xs tracking-widest uppercase text-red-500 font-bold">CONFIGURACIÓN</div>
+        <h1 className="text-3xl font-black">Categorías de Sistemas</h1>
+        <div className="text-sm text-zinc-400 mt-1">Agrupa sistemas técnicos para asignar capacidades a maestros</div>
+      </div>
+
+      {editando && (
+        <div className="bg-zinc-900 border-2 border-red-600 p-4 space-y-3">
+          <div className="text-[10px] uppercase tracking-widest text-red-500 font-bold">{editando === 'new' ? 'Nueva categoría' : 'Editar'}</div>
+          <div className="grid grid-cols-4 gap-2">
+            <input placeholder="📂" value={form.icono} onChange={e => setForm({ ...form, icono: e.target.value })} className="bg-zinc-950 border border-zinc-800 px-2 py-2 text-center text-lg" />
+            <input placeholder="Nombre" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} className="bg-zinc-950 border border-zinc-800 px-3 py-2 col-span-2" />
+            <input type="number" placeholder="Orden" value={form.orden} onChange={e => setForm({ ...form, orden: parseInt(e.target.value) || 0 })} className="bg-zinc-950 border border-zinc-800 px-3 py-2" />
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => { setEditando(null); setForm({ id: '', nombre: '', icono: '📂', orden: 0 }); }} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2">Cancelar</button>
+            <button onClick={guardar} disabled={guardando} className="flex-1 bg-red-600 text-white text-xs font-black uppercase py-2">{guardando ? 'Guardando...' : 'Guardar'}</button>
+          </div>
+        </div>
+      )}
+
+      {!editando && (
+        <button onClick={() => setEditando('new')} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 text-xs font-black uppercase flex items-center gap-2"><Plus className="w-3 h-3" /> Nueva categoría</button>
+      )}
+
+      <div className="space-y-2">
+        {categorias.map(c => {
+          const sistemasCat = sistemasDeCategoria(c.id);
+          return (
+            <div key={c.id} className="bg-zinc-900 border border-zinc-800 p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-2xl">{c.icono}</span>
+                <div className="flex-1">
+                  <div className="font-bold">{c.nombre}</div>
+                  <div className="text-[10px] text-zinc-500">{sistemasCat.length} sistema{sistemasCat.length !== 1 ? 's' : ''}</div>
+                </div>
+                <button onClick={() => { setEditando(c.id); setForm({ id: c.id, nombre: c.nombre, icono: c.icono, orden: c.orden }); }} className="text-zinc-500 hover:text-white p-1"><Edit2 className="w-3 h-3" /></button>
+                <button onClick={() => eliminar(c.id)} className="text-zinc-500 hover:text-red-400 p-1"><Trash2 className="w-3 h-3" /></button>
+              </div>
+              {sistemasCat.length > 0 && (
+                <div className="pl-10 flex flex-wrap gap-1">
+                  {sistemasCat.map(s => (
+                    <span key={s.id} className="bg-zinc-950 border border-zinc-800 text-[10px] px-2 py-0.5">{s.nombre}</span>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {sistemasSinCategoria.length > 0 && (
+        <div className="bg-yellow-900/20 border border-yellow-700 p-3">
+          <div className="text-[11px] font-bold text-yellow-400 uppercase mb-2">⚠️ Sistemas sin categoría ({sistemasSinCategoria.length})</div>
+          <div className="text-xs text-yellow-200 mb-2">Asigna categoría a cada sistema desde "Sistemas"</div>
+          <div className="flex flex-wrap gap-1">
+            {sistemasSinCategoria.map(s => <span key={s.id} className="bg-zinc-950 border border-yellow-700 text-[10px] px-2 py-0.5">{s.nombre}</span>)}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// --- DISPONIBILIDAD SEMANAL ---
+function VistaDisponibilidad({ usuario, data, onVolver, onVerProyecto }) {
+  const [semanaOffset, setSemanaOffset] = useState(0);
+
+  const hoy = new Date();
+  const inicio = new Date(hoy);
+  inicio.setDate(hoy.getDate() - hoy.getDay() + 1 + (semanaOffset * 7));
+  const dias = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(inicio);
+    d.setDate(inicio.getDate() + i);
+    return d.toISOString().split('T')[0];
+  });
+
+  const personal = (data.personal || []).filter(p => !p.archivado && (p.roles || []).some(r => ['maestro', 'supervisor', 'ayudante'].includes(r)));
+
+  // Proyectos activos + mapeo de personas-día
+  const proyectosActivos = (data.proyectos || []).filter(p => !p.archivado && p.estado === 'en_ejecucion');
+
+  const actividadPersonaDia = (personaId, fecha) => {
+    // 1. Ausente?
+    if (personaAusenteEnRango(personaId, fecha, fecha, data.ausencias)) return { tipo: 'ausente' };
+
+    // 2. Tiene jornada/check-in?
+    const checkin = (data.checkins || []).find(c => c.personaId === personaId && c.fecha === fecha);
+    if (checkin) {
+      const proy = proyectosActivos.find(p => p.id === checkin.proyectoId);
+      return { tipo: 'en_obra', proyecto: proy };
+    }
+
+    // 3. Asignado a área?
+    const asignado = (data.estadosArea || []).find(a =>
+      a.maestroAsignadoId === personaId &&
+      ['en_ejecucion', 'disponible'].includes(a.estado)
+    );
+    if (asignado) {
+      const proy = proyectosActivos.find(p => p.id === asignado.proyectoId);
+      return { tipo: 'asignado', proyecto: proy };
+    }
+
+    return { tipo: 'libre' };
+  };
+
+  const dayLabel = (f) => new Date(f + 'T12:00:00').toLocaleDateString('es-DO', { weekday: 'short', day: 'numeric' });
+  const esHoy = (f) => f === hoy.toISOString().split('T')[0];
+
+  const coloresEstado = {
+    en_obra: 'bg-red-900/40 border-red-700 text-red-300',
+    asignado: 'bg-orange-900/30 border-orange-700 text-orange-300',
+    ausente: 'bg-zinc-800 border-zinc-700 text-zinc-600',
+    libre: 'bg-green-900/20 border-green-700/50 text-green-400',
+  };
+
+  return (
+    <div className="space-y-4">
+      <button onClick={onVolver} className="flex items-center gap-2 text-zinc-400 text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button>
+      <div className="flex justify-between items-start">
+        <div>
+          <div className="text-xs tracking-widest uppercase text-red-500 font-bold">PLANIFICACIÓN</div>
+          <h1 className="text-3xl font-black">Disponibilidad Semanal</h1>
+          <div className="text-sm text-zinc-400 mt-1">Quién está libre, ocupado o ausente cada día</div>
+        </div>
+        <div className="flex gap-1">
+          <button onClick={() => setSemanaOffset(semanaOffset - 1)} className="bg-zinc-900 border border-zinc-800 px-3 py-1 text-xs">◀</button>
+          <button onClick={() => setSemanaOffset(0)} className="bg-zinc-900 border border-zinc-800 px-3 py-1 text-xs">Hoy</button>
+          <button onClick={() => setSemanaOffset(semanaOffset + 1)} className="bg-zinc-900 border border-zinc-800 px-3 py-1 text-xs">▶</button>
+        </div>
+      </div>
+
+      <div className="bg-zinc-900 border border-zinc-800 overflow-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-zinc-800">
+              <th className="p-2 text-left">Persona</th>
+              {dias.map(d => (
+                <th key={d} className={`p-2 text-center ${esHoy(d) ? 'bg-red-900/20' : ''}`}>
+                  <div className="text-[10px] uppercase tracking-widest text-zinc-500">{dayLabel(d).split(' ')[0]}</div>
+                  <div className="font-bold">{dayLabel(d).split(' ')[1]}</div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {personal.map(p => (
+              <tr key={p.id} className="border-b border-zinc-800/50">
+                <td className="p-2">
+                  <div className="font-bold">{p.nombre}</div>
+                  <div className="text-[9px] text-zinc-500 uppercase">{(p.roles || []).join(' · ')}</div>
+                </td>
+                {dias.map(d => {
+                  const act = actividadPersonaDia(p.id, d);
+                  const clase = coloresEstado[act.tipo] || 'bg-zinc-900';
+                  return (
+                    <td key={d} className={`p-1 text-center ${esHoy(d) ? 'bg-red-900/10' : ''}`}>
+                      <div className={`border text-[10px] p-1 ${clase}`}>
+                        {act.tipo === 'en_obra' && '🔴'}
+                        {act.tipo === 'asignado' && '🟠'}
+                        {act.tipo === 'ausente' && '❌'}
+                        {act.tipo === 'libre' && '🟢'}
+                        {act.proyecto && (
+                          <div className="text-[8px] truncate mt-0.5 opacity-80">
+                            {act.proyecto.referenciaOdoo || act.proyecto.cliente?.slice(0, 8) || ''}
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="text-[10px] text-zinc-500 flex gap-4 flex-wrap">
+        <span>🟢 Libre</span>
+        <span>🟠 Asignado</span>
+        <span>🔴 En obra</span>
+        <span>❌ Ausente</span>
+      </div>
+    </div>
+  );
+}
+
+
+// --- AUSENCIAS ---
+function VistaAusencias({ usuario, data, onVolver, onRecargar }) {
+  const [form, setForm] = useState(null);
+  const personal = (data.personal || []).filter(p => !p.archivado);
+
+  const nueva = () => setForm({ personaId: '', fechaDesde: '', fechaHasta: '', motivo: 'trabajo_externo', nota: '' });
+  const guardar = async () => {
+    if (!form.personaId || !form.fechaDesde || !form.fechaHasta) return alert('Completa los campos');
+    try {
+      if (form.id) await db.actualizarAusencia(form.id, form);
+      else await db.crearAusencia({ ...form, creadoPorId: usuario.id });
+      setForm(null);
+      await onRecargar();
+    } catch (e) { alert('Error: ' + e.message); }
+  };
+  const eliminar = async (id) => {
+    if (!confirm('¿Eliminar esta ausencia?')) return;
+    try { await db.eliminarAusencia(id); await onRecargar(); }
+    catch (e) { alert('Error: ' + e.message); }
+  };
+
+  const ausencias = (data.ausencias || []).slice().sort((a, b) => b.fechaDesde.localeCompare(a.fechaDesde));
+
+  return (
+    <div className="space-y-4">
+      <button onClick={onVolver} className="flex items-center gap-2 text-zinc-400 text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button>
+      <div>
+        <div className="text-xs tracking-widest uppercase text-red-500 font-bold">PLANIFICACIÓN</div>
+        <h1 className="text-3xl font-black">Ausencias Programadas</h1>
+      </div>
+
+      {form && (
+        <div className="bg-zinc-900 border-2 border-red-600 p-4 space-y-2">
+          <select value={form.personaId} onChange={e => setForm({ ...form, personaId: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+            <option value="">Seleccionar persona</option>
+            {personal.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+          </select>
+          <div className="grid grid-cols-2 gap-2">
+            <input type="date" value={form.fechaDesde} onChange={e => setForm({ ...form, fechaDesde: e.target.value })} className="bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+            <input type="date" value={form.fechaHasta} onChange={e => setForm({ ...form, fechaHasta: e.target.value })} className="bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+          </div>
+          <select value={form.motivo} onChange={e => setForm({ ...form, motivo: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+            <option value="trabajo_externo">Trabajo externo</option>
+            <option value="vacaciones">Vacaciones</option>
+            <option value="licencia">Licencia</option>
+            <option value="enfermedad">Enfermedad</option>
+            <option value="otro">Otro</option>
+          </select>
+          <textarea placeholder="Nota (opcional)" value={form.nota} onChange={e => setForm({ ...form, nota: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" rows={2} />
+          <div className="flex gap-2">
+            <button onClick={() => setForm(null)} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2">Cancelar</button>
+            <button onClick={guardar} className="flex-1 bg-red-600 text-white text-xs font-black uppercase py-2">Guardar</button>
+          </div>
+        </div>
+      )}
+
+      {!form && <button onClick={nueva} className="bg-red-600 text-white px-4 py-2 text-xs font-black uppercase flex items-center gap-2"><Plus className="w-3 h-3" /> Nueva ausencia</button>}
+
+      <div className="space-y-1">
+        {ausencias.map(a => {
+          const p = personal.find(x => x.id === a.personaId);
+          return (
+            <div key={a.id} className="bg-zinc-900 border border-zinc-800 p-3 flex items-center justify-between">
+              <div className="flex-1">
+                <div className="font-bold text-sm">{p?.nombre || '?'}</div>
+                <div className="text-[10px] text-zinc-500">{formatFecha(a.fechaDesde)} → {formatFecha(a.fechaHasta)} · {a.motivo}</div>
+                {a.nota && <div className="text-[10px] text-zinc-400 mt-1">{a.nota}</div>}
+              </div>
+              <div className="flex gap-1">
+                <button onClick={() => setForm({ ...a })} className="text-zinc-500 hover:text-white p-1"><Edit2 className="w-3 h-3" /></button>
+                <button onClick={() => eliminar(a.id)} className="text-zinc-500 hover:text-red-400 p-1"><Trash2 className="w-3 h-3" /></button>
+              </div>
+            </div>
+          );
+        })}
+        {ausencias.length === 0 && <div className="text-center text-zinc-500 text-sm py-8">Sin ausencias registradas</div>}
+      </div>
+    </div>
+  );
+}
+
+
+// --- EQUIPOS / MAQUINARIA ---
+function VistaEquipos({ data, onVolver, onRecargar }) {
+  const [form, setForm] = useState(null);
+  const categorias = data.categorias || [];
+  const equipos = data.equipos || [];
+
+  const nuevo = () => setForm({ nombre: '', cantidadTotal: 1, categoriaId: '', notas: '' });
+  const guardar = async () => {
+    if (!form.nombre.trim()) return alert('Nombre requerido');
+    try {
+      await db.guardarEquipo(form);
+      setForm(null);
+      await onRecargar();
+    } catch (e) { alert('Error: ' + e.message); }
+  };
+
+  return (
+    <div className="space-y-4">
+      <button onClick={onVolver} className="flex items-center gap-2 text-zinc-400 text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button>
+      <div>
+        <div className="text-xs tracking-widest uppercase text-red-500 font-bold">PLANIFICACIÓN</div>
+        <h1 className="text-3xl font-black">Equipos / Maquinaria</h1>
+        <div className="text-sm text-zinc-400 mt-1">Recursos limitados (máquinas de poliurea, pulidoras, etc.)</div>
+      </div>
+
+      {form && (
+        <div className="bg-zinc-900 border-2 border-red-600 p-4 space-y-2">
+          <input placeholder="Nombre del equipo" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+          <div className="grid grid-cols-2 gap-2">
+            <input type="number" placeholder="Cantidad total" value={form.cantidadTotal} onChange={e => setForm({ ...form, cantidadTotal: parseInt(e.target.value) || 1 })} className="bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+            <select value={form.categoriaId} onChange={e => setForm({ ...form, categoriaId: e.target.value })} className="bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+              <option value="">Sin categoría vinculada</option>
+              {categorias.map(c => <option key={c.id} value={c.id}>{c.icono} {c.nombre}</option>)}
+            </select>
+          </div>
+          <textarea placeholder="Notas (opcional)" value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" rows={2} />
+          <div className="flex gap-2">
+            <button onClick={() => setForm(null)} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2">Cancelar</button>
+            <button onClick={guardar} className="flex-1 bg-red-600 text-white text-xs font-black uppercase py-2">Guardar</button>
+          </div>
+        </div>
+      )}
+
+      {!form && <button onClick={nuevo} className="bg-red-600 text-white px-4 py-2 text-xs font-black uppercase flex items-center gap-2"><Plus className="w-3 h-3" /> Nuevo equipo</button>}
+
+      <div className="space-y-1">
+        {equipos.map(e => {
+          const cat = categorias.find(c => c.id === e.categoriaId);
+          const enUso = (data.equipoAsignaciones || []).filter(a => a.equipoId === e.id && (!a.fechaHasta || a.fechaHasta >= new Date().toISOString().split('T')[0])).length;
+          return (
+            <div key={e.id} className="bg-zinc-900 border border-zinc-800 p-3 flex items-center justify-between">
+              <div className="flex-1">
+                <div className="font-bold text-sm">{e.nombre}</div>
+                <div className="text-[10px] text-zinc-500">
+                  {enUso}/{e.cantidadTotal} en uso
+                  {cat && <> · {cat.icono} {cat.nombre}</>}
+                </div>
+                {e.notas && <div className="text-[10px] text-zinc-400 mt-1">{e.notas}</div>}
+              </div>
+              <div className="flex gap-1">
+                <button onClick={() => setForm({ ...e })} className="text-zinc-500 hover:text-white p-1"><Edit2 className="w-3 h-3" /></button>
+                <button onClick={async () => { if (confirm('¿Archivar equipo?')) { await db.archivarEquipo(e.id); await onRecargar(); } }} className="text-zinc-500 hover:text-red-400 p-1"><Trash2 className="w-3 h-3" /></button>
+              </div>
+            </div>
+          );
+        })}
+        {equipos.length === 0 && <div className="text-center text-zinc-500 text-sm py-8">Sin equipos registrados</div>}
+      </div>
+    </div>
+  );
+}
+
+
+// --- CREDENCIALES ---
+function VistaCredenciales({ data, onVolver, onRecargar }) {
+  const [seccion, setSeccion] = useState('personas'); // personas | tipos | requisitos
+  const [formTipo, setFormTipo] = useState(null);
+  const [formCred, setFormCred] = useState(null);
+  const [formReq, setFormReq] = useState(null);
+
+  const personal = (data.personal || []).filter(p => !p.archivado);
+  const tipos = data.tiposCredenciales || [];
+  const credenciales = data.credencialesPersonas || [];
+  const clientes = data.clientes || [];
+  const clienteReqs = data.clienteRequisitos || [];
+  const ubicacionReqs = data.ubicacionRequisitos || [];
+
+  const hoy = new Date().toISOString().split('T')[0];
+
+  const credencialVencimientoEstado = (c) => {
+    if (!c.fechaVencimiento) return { label: 'Sin vencimiento', color: 'text-zinc-400' };
+    if (c.fechaVencimiento < hoy) return { label: 'VENCIDA', color: 'text-red-400' };
+    const dias = Math.ceil((new Date(c.fechaVencimiento) - new Date(hoy)) / (1000 * 60 * 60 * 24));
+    if (dias < 30) return { label: `Vence en ${dias} días`, color: 'text-yellow-400' };
+    return { label: `Vence ${formatFecha(c.fechaVencimiento)}`, color: 'text-green-400' };
+  };
+
+  const guardarTipo = async () => {
+    if (!formTipo.nombre?.trim()) return;
+    await db.guardarTipoCredencial(formTipo);
+    setFormTipo(null);
+    await onRecargar();
+  };
+  const guardarCred = async () => {
+    if (!formCred.personaId || !formCred.tipoCredencialId) return alert('Completa los campos');
+    await db.guardarCredencialPersona(formCred);
+    setFormCred(null);
+    await onRecargar();
+  };
+  const guardarReq = async () => {
+    if (formReq.tipoTipo === 'cliente') {
+      if (!formReq.clienteId || !formReq.tipoCredencialId) return alert('Completa');
+      await db.agregarClienteRequisito({ clienteId: formReq.clienteId, tipoCredencialId: formReq.tipoCredencialId, obligatorio: true, nota: formReq.nota });
+    } else {
+      if (!formReq.nombreUbicacion || !formReq.tipoCredencialId) return alert('Completa');
+      await db.guardarUbicacionRequisito({
+        nombreUbicacion: formReq.nombreUbicacion,
+        patronDireccion: formReq.patronDireccion || formReq.nombreUbicacion,
+        tipoCredencialId: formReq.tipoCredencialId,
+        obligatorio: true, nota: formReq.nota,
+      });
+    }
+    setFormReq(null);
+    await onRecargar();
+  };
+
+  return (
+    <div className="space-y-4">
+      <button onClick={onVolver} className="flex items-center gap-2 text-zinc-400 text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button>
+      <div>
+        <div className="text-xs tracking-widest uppercase text-red-500 font-bold">PLANIFICACIÓN</div>
+        <h1 className="text-3xl font-black">Credenciales y Requisitos</h1>
+      </div>
+
+      <div className="flex gap-1 border-b border-zinc-800">
+        {['personas', 'tipos', 'requisitos'].map(s => (
+          <button key={s} onClick={() => setSeccion(s)} className={`px-3 py-2 text-xs font-bold uppercase ${seccion === s ? 'text-red-400 border-b-2 border-red-500' : 'text-zinc-500'}`}>
+            {s === 'personas' ? '🔐 Por persona' : s === 'tipos' ? '📋 Tipos' : '🎯 Requisitos'}
+          </button>
+        ))}
+      </div>
+
+      {seccion === 'tipos' && (
+        <div className="space-y-2">
+          {!formTipo && <button onClick={() => setFormTipo({ nombre: '', icono: '🔖', descripcion: '', tieneVencimiento: true })} className="bg-red-600 text-white px-4 py-2 text-xs font-black uppercase flex items-center gap-2"><Plus className="w-3 h-3" /> Nuevo tipo</button>}
+          {formTipo && (
+            <div className="bg-zinc-900 border-2 border-red-600 p-4 space-y-2">
+              <div className="flex gap-2">
+                <input placeholder="🔖" value={formTipo.icono} onChange={e => setFormTipo({ ...formTipo, icono: e.target.value })} className="w-16 bg-zinc-950 border border-zinc-800 px-2 py-2 text-center text-lg" />
+                <input placeholder="Nombre" value={formTipo.nombre} onChange={e => setFormTipo({ ...formTipo, nombre: e.target.value })} className="flex-1 bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+              </div>
+              <textarea placeholder="Descripción" value={formTipo.descripcion} onChange={e => setFormTipo({ ...formTipo, descripcion: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" rows={2} />
+              <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={formTipo.tieneVencimiento} onChange={e => setFormTipo({ ...formTipo, tieneVencimiento: e.target.checked })} /> Tiene fecha de vencimiento</label>
+              <div className="flex gap-2">
+                <button onClick={() => setFormTipo(null)} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2">Cancelar</button>
+                <button onClick={guardarTipo} className="flex-1 bg-red-600 text-white text-xs font-black uppercase py-2">Guardar</button>
+              </div>
+            </div>
+          )}
+          {tipos.map(t => (
+            <div key={t.id} className="bg-zinc-900 border border-zinc-800 p-3 flex items-center gap-2">
+              <span className="text-2xl">{t.icono}</span>
+              <div className="flex-1">
+                <div className="font-bold">{t.nombre}</div>
+                {t.descripcion && <div className="text-[10px] text-zinc-500">{t.descripcion}</div>}
+              </div>
+              <button onClick={() => setFormTipo({ ...t })} className="text-zinc-500 p-1"><Edit2 className="w-3 h-3" /></button>
+              <button onClick={async () => { if (confirm('¿Eliminar tipo?')) { await db.eliminarTipoCredencial(t.id); await onRecargar(); } }} className="text-zinc-500 hover:text-red-400 p-1"><Trash2 className="w-3 h-3" /></button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {seccion === 'personas' && (
+        <div className="space-y-2">
+          {!formCred && <button onClick={() => setFormCred({ personaId: '', tipoCredencialId: '', numero: '', fechaEmision: '', fechaVencimiento: '', activa: true, notas: '' })} className="bg-red-600 text-white px-4 py-2 text-xs font-black uppercase flex items-center gap-2"><Plus className="w-3 h-3" /> Registrar credencial</button>}
+          {formCred && (
+            <div className="bg-zinc-900 border-2 border-red-600 p-4 space-y-2">
+              <select value={formCred.personaId} onChange={e => setFormCred({ ...formCred, personaId: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+                <option value="">Persona</option>
+                {personal.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+              </select>
+              <select value={formCred.tipoCredencialId} onChange={e => setFormCred({ ...formCred, tipoCredencialId: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+                <option value="">Tipo de credencial</option>
+                {tipos.map(t => <option key={t.id} value={t.id}>{t.icono} {t.nombre}</option>)}
+              </select>
+              <input placeholder="Número / código (opcional)" value={formCred.numero} onChange={e => setFormCred({ ...formCred, numero: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] text-zinc-500 uppercase">Emisión</label>
+                  <input type="date" value={formCred.fechaEmision} onChange={e => setFormCred({ ...formCred, fechaEmision: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-zinc-500 uppercase">Vencimiento</label>
+                  <input type="date" value={formCred.fechaVencimiento} onChange={e => setFormCred({ ...formCred, fechaVencimiento: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+                </div>
+              </div>
+              <textarea placeholder="Notas (opcional)" value={formCred.notas} onChange={e => setFormCred({ ...formCred, notas: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" rows={2} />
+              <div className="flex gap-2">
+                <button onClick={() => setFormCred(null)} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2">Cancelar</button>
+                <button onClick={guardarCred} className="flex-1 bg-red-600 text-white text-xs font-black uppercase py-2">Guardar</button>
+              </div>
+            </div>
+          )}
+
+          {credenciales.map(c => {
+            const p = personal.find(x => x.id === c.personaId);
+            const t = tipos.find(x => x.id === c.tipoCredencialId);
+            const est = credencialVencimientoEstado(c);
+            return (
+              <div key={c.id} className="bg-zinc-900 border border-zinc-800 p-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">{t?.icono || '🔖'}</span>
+                  <div className="flex-1">
+                    <div className="font-bold text-sm">{p?.nombre || '?'}</div>
+                    <div className="text-[10px] text-zinc-500">{t?.nombre || 'Desconocido'}{c.numero && ` · ${c.numero}`}</div>
+                    <div className={`text-[10px] font-bold ${est.color}`}>{est.label}</div>
+                  </div>
+                  <button onClick={() => setFormCred({ ...c })} className="text-zinc-500 p-1"><Edit2 className="w-3 h-3" /></button>
+                  <button onClick={async () => { if (confirm('¿Revocar credencial?')) { await db.revocarCredencialPersona(c.id); await onRecargar(); } }} className="text-zinc-500 hover:text-red-400 p-1"><Trash2 className="w-3 h-3" /></button>
+                </div>
+              </div>
+            );
+          })}
+          {credenciales.length === 0 && <div className="text-center text-zinc-500 text-sm py-8">Sin credenciales registradas</div>}
+        </div>
+      )}
+
+      {seccion === 'requisitos' && (
+        <div className="space-y-4">
+          {!formReq && (
+            <div className="flex gap-2">
+              <button onClick={() => setFormReq({ tipoTipo: 'cliente', clienteId: '', tipoCredencialId: '', nota: '' })} className="bg-red-600 text-white px-4 py-2 text-xs font-black uppercase">+ Por cliente</button>
+              <button onClick={() => setFormReq({ tipoTipo: 'ubicacion', nombreUbicacion: '', patronDireccion: '', tipoCredencialId: '', nota: '' })} className="bg-red-600 text-white px-4 py-2 text-xs font-black uppercase">+ Por ubicación</button>
+            </div>
+          )}
+          {formReq && (
+            <div className="bg-zinc-900 border-2 border-red-600 p-4 space-y-2">
+              <div className="text-xs font-bold uppercase text-red-500">{formReq.tipoTipo === 'cliente' ? 'Requisito por cliente' : 'Requisito por ubicación'}</div>
+              {formReq.tipoTipo === 'cliente' ? (
+                <select value={formReq.clienteId} onChange={e => setFormReq({ ...formReq, clienteId: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+                  <option value="">Cliente</option>
+                  {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                </select>
+              ) : (
+                <>
+                  <input placeholder="Nombre ubicación (ej: CapCana)" value={formReq.nombreUbicacion} onChange={e => setFormReq({ ...formReq, nombreUbicacion: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+                  <input placeholder="Patrón en dirección (ej: capcana, punta cana)" value={formReq.patronDireccion} onChange={e => setFormReq({ ...formReq, patronDireccion: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+                </>
+              )}
+              <select value={formReq.tipoCredencialId} onChange={e => setFormReq({ ...formReq, tipoCredencialId: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+                <option value="">Credencial requerida</option>
+                {tipos.map(t => <option key={t.id} value={t.id}>{t.icono} {t.nombre}</option>)}
+              </select>
+              <textarea placeholder="Nota" value={formReq.nota} onChange={e => setFormReq({ ...formReq, nota: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" rows={2} />
+              <div className="flex gap-2">
+                <button onClick={() => setFormReq(null)} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2">Cancelar</button>
+                <button onClick={guardarReq} className="flex-1 bg-red-600 text-white text-xs font-black uppercase py-2">Guardar</button>
+              </div>
+            </div>
+          )}
+
+          <div>
+            <div className="text-[11px] uppercase tracking-widest font-bold text-zinc-400 mb-2">Por cliente ({clienteReqs.length})</div>
+            <div className="space-y-1">
+              {clienteReqs.map(r => {
+                const cl = clientes.find(c => c.id === r.clienteId);
+                const t = tipos.find(x => x.id === r.tipoCredencialId);
+                return (
+                  <div key={r.id} className="bg-zinc-900 border border-zinc-800 p-2 flex items-center gap-2 text-xs">
+                    <span className="text-lg">{t?.icono}</span>
+                    <div className="flex-1"><strong>{cl?.nombre || '?'}</strong> requiere {t?.nombre}</div>
+                    <button onClick={async () => { if (confirm('¿Quitar?')) { await db.quitarClienteRequisito(r.clienteId, r.tipoCredencialId); await onRecargar(); } }} className="text-zinc-500 hover:text-red-400 p-1"><Trash2 className="w-3 h-3" /></button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <div className="text-[11px] uppercase tracking-widest font-bold text-zinc-400 mb-2">Por ubicación ({ubicacionReqs.length})</div>
+            <div className="space-y-1">
+              {ubicacionReqs.map(r => {
+                const t = tipos.find(x => x.id === r.tipoCredencialId);
+                return (
+                  <div key={r.id} className="bg-zinc-900 border border-zinc-800 p-2 flex items-center gap-2 text-xs">
+                    <span className="text-lg">{t?.icono}</span>
+                    <div className="flex-1"><strong>{r.nombreUbicacion}</strong> requiere {t?.nombre} <span className="text-zinc-600">(match: "{r.patronDireccion}")</span></div>
+                    <button onClick={async () => { if (confirm('¿Eliminar?')) { await db.eliminarUbicacionRequisito(r.id); await onRecargar(); } }} className="text-zinc-500 hover:text-red-400 p-1"><Trash2 className="w-3 h-3" /></button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// --- AUTORIZACIONES ---
+function VistaAutorizaciones({ usuario, data, onVolver, onRecargar }) {
+  const [form, setForm] = useState(null);
+  const personal = (data.personal || []).filter(p => !p.archivado);
+  const tipos = data.tiposCredenciales || [];
+  const clientes = data.clientes || [];
+  const proyectos = (data.proyectos || []).filter(p => !p.archivado);
+  const autorizaciones = data.autorizaciones || [];
+
+  const nueva = () => setForm({
+    personaId: '', tipoCredencialId: '', clienteId: '', proyectoId: '',
+    fechaDesde: '', fechaHasta: '', estado: 'solicitada', notas: '',
+  });
+  const guardar = async () => {
+    if (!form.personaId || !form.tipoCredencialId || !form.fechaDesde || !form.fechaHasta) return alert('Completa los campos');
+    try {
+      if (form.id) await db.actualizarAutorizacion(form.id, form);
+      else await db.crearAutorizacion({ ...form, solicitadoPorId: usuario.id });
+      setForm(null);
+      await onRecargar();
+    } catch (e) { alert('Error: ' + e.message); }
+  };
+
+  const estadoStyle = {
+    solicitada: { color: 'text-yellow-400', bg: 'bg-yellow-900/20 border-yellow-700', label: 'Solicitada' },
+    aprobada: { color: 'text-green-400', bg: 'bg-green-900/20 border-green-700', label: 'Aprobada' },
+    rechazada: { color: 'text-red-400', bg: 'bg-red-900/20 border-red-700', label: 'Rechazada' },
+    usada: { color: 'text-zinc-400', bg: 'bg-zinc-900/20 border-zinc-700', label: 'Usada' },
+  };
+
+  return (
+    <div className="space-y-4">
+      <button onClick={onVolver} className="flex items-center gap-2 text-zinc-400 text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button>
+      <div>
+        <div className="text-xs tracking-widest uppercase text-red-500 font-bold">PLANIFICACIÓN</div>
+        <h1 className="text-3xl font-black">Autorizaciones Temporales</h1>
+        <div className="text-sm text-zinc-400 mt-1">Permisos puntuales para personal sin credencial permanente</div>
+      </div>
+
+      {form && (
+        <div className="bg-zinc-900 border-2 border-red-600 p-4 space-y-2">
+          <select value={form.personaId} onChange={e => setForm({ ...form, personaId: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+            <option value="">Persona</option>
+            {personal.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+          </select>
+          <select value={form.tipoCredencialId} onChange={e => setForm({ ...form, tipoCredencialId: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+            <option value="">Tipo de credencial</option>
+            {tipos.map(t => <option key={t.id} value={t.id}>{t.icono} {t.nombre}</option>)}
+          </select>
+          <select value={form.clienteId} onChange={e => setForm({ ...form, clienteId: e.target.value, proyectoId: '' })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+            <option value="">Cliente (opcional)</option>
+            {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+          </select>
+          <select value={form.proyectoId} onChange={e => setForm({ ...form, proyectoId: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+            <option value="">Proyecto específico (opcional)</option>
+            {proyectos.filter(p => !form.clienteId || p.clienteId === form.clienteId).map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo || p.cliente}</option>)}
+          </select>
+          <div className="grid grid-cols-2 gap-2">
+            <input type="date" value={form.fechaDesde} onChange={e => setForm({ ...form, fechaDesde: e.target.value })} className="bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+            <input type="date" value={form.fechaHasta} onChange={e => setForm({ ...form, fechaHasta: e.target.value })} className="bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+          </div>
+          <select value={form.estado} onChange={e => setForm({ ...form, estado: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+            <option value="solicitada">Solicitada</option>
+            <option value="aprobada">Aprobada</option>
+            <option value="rechazada">Rechazada</option>
+            <option value="usada">Usada</option>
+          </select>
+          <textarea placeholder="Notas" value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" rows={2} />
+          <div className="flex gap-2">
+            <button onClick={() => setForm(null)} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2">Cancelar</button>
+            <button onClick={guardar} className="flex-1 bg-red-600 text-white text-xs font-black uppercase py-2">Guardar</button>
+          </div>
+        </div>
+      )}
+
+      {!form && <button onClick={nueva} className="bg-red-600 text-white px-4 py-2 text-xs font-black uppercase flex items-center gap-2"><Plus className="w-3 h-3" /> Nueva autorización</button>}
+
+      <div className="space-y-1">
+        {autorizaciones.map(a => {
+          const p = personal.find(x => x.id === a.personaId);
+          const t = tipos.find(x => x.id === a.tipoCredencialId);
+          const cl = clientes.find(c => c.id === a.clienteId);
+          const est = estadoStyle[a.estado] || estadoStyle.solicitada;
+          return (
+            <div key={a.id} className={`border p-3 ${est.bg}`}>
+              <div className="flex items-center gap-2">
+                <span className="text-xl">{t?.icono || '🔖'}</span>
+                <div className="flex-1">
+                  <div className="font-bold text-sm">{p?.nombre || '?'}</div>
+                  <div className="text-[10px] text-zinc-400">{t?.nombre}{cl && ` · ${cl.nombre}`}</div>
+                  <div className="text-[10px] text-zinc-500">{formatFecha(a.fechaDesde)} → {formatFecha(a.fechaHasta)}</div>
+                </div>
+                <div className={`text-[10px] font-black uppercase ${est.color}`}>{est.label}</div>
+                <button onClick={() => setForm({ ...a })} className="text-zinc-500 hover:text-white p-1"><Edit2 className="w-3 h-3" /></button>
+              </div>
+              {a.notas && <div className="text-[10px] text-zinc-500 mt-1 pl-7">{a.notas}</div>}
+            </div>
+          );
+        })}
+        {autorizaciones.length === 0 && <div className="text-center text-zinc-500 text-sm py-8">Sin autorizaciones registradas</div>}
+      </div>
+    </div>
+  );
+}
+
+
+// --- BRIGADAS PREFERENTES ---
+function VistaBrigadas({ data, onVolver, onRecargar }) {
+  const [form, setForm] = useState(null);
+  const personal = (data.personal || []).filter(p => !p.archivado);
+  const clientes = data.clientes || [];
+  const brigadas = data.brigadasPreferentes || [];
+
+  const nueva = () => setForm({ tipoAsignacion: 'cliente', clienteId: '', ubicacionPatron: '', personaId: '', rolEnBrigada: 'miembro', prioridad: 1, nota: '' });
+  const guardar = async () => {
+    if (!form.personaId) return alert('Selecciona persona');
+    if (form.tipoAsignacion === 'cliente' && !form.clienteId) return alert('Selecciona cliente');
+    if (form.tipoAsignacion === 'ubicacion' && !form.ubicacionPatron) return alert('Indica patrón de ubicación');
+    const payload = {
+      personaId: form.personaId,
+      rolEnBrigada: form.rolEnBrigada,
+      prioridad: form.prioridad,
+      nota: form.nota,
+      clienteId: form.tipoAsignacion === 'cliente' ? form.clienteId : null,
+      ubicacionPatron: form.tipoAsignacion === 'ubicacion' ? form.ubicacionPatron : null,
+    };
+    try {
+      await db.guardarBrigadaPreferente(payload);
+      setForm(null);
+      await onRecargar();
+    } catch (e) { alert('Error: ' + e.message); }
+  };
+
+  return (
+    <div className="space-y-4">
+      <button onClick={onVolver} className="flex items-center gap-2 text-zinc-400 text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button>
+      <div>
+        <div className="text-xs tracking-widest uppercase text-red-500 font-bold">PLANIFICACIÓN</div>
+        <h1 className="text-3xl font-black">Brigadas Preferentes</h1>
+        <div className="text-sm text-zinc-400 mt-1">Personal preferente para ciertos clientes o ubicaciones</div>
+      </div>
+
+      {form && (
+        <div className="bg-zinc-900 border-2 border-red-600 p-4 space-y-2">
+          <div className="flex gap-2">
+            <button onClick={() => setForm({ ...form, tipoAsignacion: 'cliente' })} className={`flex-1 py-2 text-xs font-bold uppercase ${form.tipoAsignacion === 'cliente' ? 'bg-red-600 text-white' : 'bg-zinc-800 text-zinc-400'}`}>Por cliente</button>
+            <button onClick={() => setForm({ ...form, tipoAsignacion: 'ubicacion' })} className={`flex-1 py-2 text-xs font-bold uppercase ${form.tipoAsignacion === 'ubicacion' ? 'bg-red-600 text-white' : 'bg-zinc-800 text-zinc-400'}`}>Por ubicación</button>
+          </div>
+          {form.tipoAsignacion === 'cliente' ? (
+            <select value={form.clienteId} onChange={e => setForm({ ...form, clienteId: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+              <option value="">Cliente</option>
+              {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            </select>
+          ) : (
+            <input placeholder="Patrón (ej: capcana, aeropuerto)" value={form.ubicacionPatron} onChange={e => setForm({ ...form, ubicacionPatron: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+          )}
+          <select value={form.personaId} onChange={e => setForm({ ...form, personaId: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+            <option value="">Persona</option>
+            {personal.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+          </select>
+          <div className="grid grid-cols-2 gap-2">
+            <select value={form.rolEnBrigada} onChange={e => setForm({ ...form, rolEnBrigada: e.target.value })} className="bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+              <option value="miembro">Miembro</option>
+              <option value="lider">Líder</option>
+              <option value="suplente">Suplente</option>
+            </select>
+            <input type="number" placeholder="Prioridad" value={form.prioridad} onChange={e => setForm({ ...form, prioridad: parseInt(e.target.value) || 1 })} className="bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+          </div>
+          <input placeholder="Nota" value={form.nota} onChange={e => setForm({ ...form, nota: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+          <div className="flex gap-2">
+            <button onClick={() => setForm(null)} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2">Cancelar</button>
+            <button onClick={guardar} className="flex-1 bg-red-600 text-white text-xs font-black uppercase py-2">Guardar</button>
+          </div>
+        </div>
+      )}
+
+      {!form && <button onClick={nueva} className="bg-red-600 text-white px-4 py-2 text-xs font-black uppercase flex items-center gap-2"><Plus className="w-3 h-3" /> Nueva brigada</button>}
+
+      <div className="space-y-1">
+        {brigadas.map(b => {
+          const p = personal.find(x => x.id === b.personaId);
+          const cl = clientes.find(c => c.id === b.clienteId);
+          return (
+            <div key={b.id} className="bg-zinc-900 border border-zinc-800 p-3">
+              <div className="flex items-center gap-2">
+                <div className="flex-1">
+                  <div className="font-bold text-sm">{p?.nombre || '?'}</div>
+                  <div className="text-[10px] text-zinc-500">
+                    {cl ? `Cliente: ${cl.nombre}` : `Ubicación: ${b.ubicacionPatron}`}
+                    {' · '}{b.rolEnBrigada}
+                    {b.prioridad > 1 && ` · Prioridad ${b.prioridad}`}
+                  </div>
+                  {b.nota && <div className="text-[10px] text-zinc-400 mt-1">{b.nota}</div>}
+                </div>
+                <button onClick={async () => { if (confirm('¿Quitar?')) { await db.quitarBrigadaPreferente(b.id); await onRecargar(); } }} className="text-zinc-500 hover:text-red-400 p-1"><Trash2 className="w-3 h-3" /></button>
+              </div>
+            </div>
+          );
+        })}
+        {brigadas.length === 0 && <div className="text-center text-zinc-500 text-sm py-8">Sin brigadas preferentes</div>}
+      </div>
+    </div>
+  );
+}
+
+
 function IconBtn({ onClick, title, children }) {
   return <button onClick={onClick} title={title} className="flex items-center gap-1 text-xs text-zinc-400 hover:text-white bg-zinc-900 border border-zinc-800 px-2 py-1.5">{children}</button>;
 }
@@ -2078,7 +3057,7 @@ function ModalEditarContacto({ contacto, onCerrar, onGuardar, guardando }) {
 }
 
 
-function GestionSistemas({ sistemas, config, onVolver, onActualizarSistemas, onActualizarConfig }) {
+function GestionSistemas({ sistemas, config, onVolver, onActualizarSistemas, onActualizarConfig, dataGlobal }) {
   const [sistemaEditando, setSistemaEditando] = useState(null);
   const [configEditada, setConfigEditada] = useState(config);
   const [expandidos, setExpandidos] = useState({});
@@ -2140,7 +3119,7 @@ function GestionSistemas({ sistemas, config, onVolver, onActualizarSistemas, onA
     setImportModal(null);
   };
 
-  if (sistemaEditando) return <EditorSistema sistema={sistemaEditando} setSistema={setSistemaEditando} onGuardar={guardarSistema} onCancelar={() => setSistemaEditando(null)} />;
+  if (sistemaEditando) return <EditorSistema sistema={sistemaEditando} setSistema={setSistemaEditando} onGuardar={guardarSistema} onCancelar={() => setSistemaEditando(null)} categorias={dataGlobal?.categorias || []} />;
 
   return (
     <div className="space-y-5">
@@ -2431,7 +3410,7 @@ function ModalPlantillasSistemas({ sistemasActuales, onCerrar, onAgregar }) {
 }
 
 
-function EditorSistema({ sistema, setSistema, onGuardar, onCancelar }) {
+function EditorSistema({ sistema, setSistema, onGuardar, onCancelar, categorias = [] }) {
   const sumaPesos = sistema.tareas.reduce((a, t) => a + (parseFloat(t.peso) || 0), 0);
   const actTarea = (i, c, v) => { const n = [...sistema.tareas]; n[i] = { ...n[i], [c]: v }; setSistema({ ...sistema, tareas: n }); };
   const actMat = (i, c, v) => { const n = [...sistema.materiales]; n[i] = { ...n[i], [c]: v }; setSistema({ ...sistema, materiales: n }); };
@@ -2442,6 +3421,12 @@ function EditorSistema({ sistema, setSistema, onGuardar, onCancelar }) {
       <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
         <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Información básica</div>
         <Campo label="Nombre"><Input value={sistema.nombre} onChange={v => setSistema({ ...sistema, nombre: v })} /></Campo>
+        <Campo label="Categoría (v8.9.23)">
+          <select value={sistema.categoriaId || ''} onChange={e => setSistema({ ...sistema, categoriaId: e.target.value })} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-4 py-3 text-white">
+            <option value="">Sin categoría</option>
+            {categorias.map(c => <option key={c.id} value={c.id}>{c.icono} {c.nombre}</option>)}
+          </select>
+        </Campo>
         <div className="grid grid-cols-2 gap-3"><Campo label="Precio venta/m²"><Input type="number" value={sistema.precio_m2} onChange={v => setSistema({ ...sistema, precio_m2: v })} /></Campo><Campo label="Costo mano obra/m²"><Input type="number" value={sistema.costo_mo_m2} onChange={v => setSistema({ ...sistema, costo_mo_m2: v })} /></Campo></div>
         <Campo label="Keywords cotización"><Input value={Array.isArray(sistema.keywords_cotizacion) ? sistema.keywords_cotizacion.join(', ') : sistema.keywords_cotizacion} onChange={v => setSistema({ ...sistema, keywords_cotizacion: v })} /></Campo>
       </div>
@@ -2487,6 +3472,7 @@ function GestionPersonal({ personal, onVolver, onActualizar, onAbrirPerfil, data
   const [editando, setEditando] = useState(null);
   const [form, setForm] = useState(null);
   const [experienciaDe, setExperienciaDe] = useState(null); // v8.9.19
+  const [capacidadesDe, setCapacidadesDe] = useState(null); // v8.9.23
 
   const guardar = () => {
     if (!form.nombre) return;
@@ -2579,6 +3565,7 @@ function GestionPersonal({ personal, onVolver, onActualizar, onAbrirPerfil, data
                     <button onClick={() => { setEditando(p.id); setForm({ ...p, roles: [...(p.roles || [])] }); }} className="text-zinc-500 hover:text-white p-1" title="Editar básico"><Edit2 className="w-3 h-3" /></button>
                     <button onClick={() => onAbrirPerfil(p)} className="text-zinc-500 hover:text-red-500 p-1" title="Ver perfil"><UserIcon className="w-3 h-3" /></button>
                     {data && <button onClick={() => setExperienciaDe(p)} className="text-zinc-500 hover:text-green-400 p-1" title="Ver experiencia"><TrendingUp className="w-3 h-3" /></button>}
+                    {data && <button onClick={() => setCapacidadesDe(p)} className="text-zinc-500 hover:text-blue-400 p-1" title="Capacidades técnicas">🧰</button>}
                     <button onClick={() => { if (confirm('¿Eliminar?')) onActualizar(personal.filter(x => x.id !== p.id)); }} className="text-zinc-500 hover:text-red-400 p-1"><Trash2 className="w-3 h-3" /></button>
                   </div>
                 );
@@ -2597,6 +3584,81 @@ function GestionPersonal({ personal, onVolver, onActualizar, onAbrirPerfil, data
           onVerProyecto={(p) => { setExperienciaDe(null); if (onVerProyecto) onVerProyecto(p); }}
         />
       )}
+
+      {/* v8.9.23: Modal de capacidades técnicas */}
+      {capacidadesDe && data && (
+        <ModalCapacidadesPersona
+          persona={capacidadesDe}
+          data={data}
+          onCerrar={() => setCapacidadesDe(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function ModalCapacidadesPersona({ persona, data, onCerrar }) {
+  const categorias = data.categorias || [];
+  const capacidades = data.capacidades || [];
+  const [capActuales, setCapActuales] = useState(
+    new Set(capacidades.filter(c => c.personaId === persona.id).map(c => c.categoriaId))
+  );
+  const [guardando, setGuardando] = useState(false);
+
+  const toggle = async (catId) => {
+    setGuardando(true);
+    const nueva = new Set(capActuales);
+    try {
+      if (nueva.has(catId)) {
+        await db.quitarCapacidad(persona.id, catId);
+        nueva.delete(catId);
+      } else {
+        await db.asignarCapacidad(persona.id, catId);
+        nueva.add(catId);
+      }
+      setCapActuales(nueva);
+    } catch (e) { alert('Error: ' + e.message); }
+    setGuardando(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
+      <div className="bg-zinc-900 border-2 border-blue-600 max-w-md w-full p-5 space-y-3" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-start">
+          <div>
+            <div className="text-[10px] tracking-widest uppercase text-blue-500 font-bold">🧰 Capacidades técnicas</div>
+            <h2 className="text-xl font-black">{persona.nombre}</h2>
+            <div className="text-[10px] text-zinc-500 uppercase">{(persona.roles || []).join(' · ')}</div>
+          </div>
+          <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
+        </div>
+
+        <div className="text-xs text-zinc-400">
+          Marca las categorías de sistemas que esta persona puede ejecutar. Al asignar proyectos, el sistema validará estas capacidades automáticamente.
+        </div>
+
+        {categorias.length === 0 ? (
+          <div className="bg-yellow-900/20 border border-yellow-700 p-3 text-xs text-yellow-300">
+            ⚠️ No hay categorías creadas. Ve a Configuración → Categorías primero.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {categorias.map(c => {
+              const activa = capActuales.has(c.id);
+              return (
+                <label key={c.id} className={`flex items-center gap-2 bg-zinc-950 border p-3 cursor-pointer ${activa ? 'border-blue-600' : 'border-zinc-800'}`}>
+                  <input type="checkbox" checked={activa} onChange={() => toggle(c.id)} disabled={guardando} className="w-4 h-4 accent-blue-600" />
+                  <span className="text-xl">{c.icono}</span>
+                  <div className="flex-1">
+                    <div className="font-bold text-sm">{c.nombre}</div>
+                  </div>
+                  {activa && <span className="text-[10px] text-blue-400 font-bold">✓ DOMINA</span>}
+                </label>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -4370,6 +5432,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
         {(esAdmin || proyecto.cronogramaVisibleMaestro !== false) && <TabBtn active={tab === 'cronograma'} onClick={() => setTab('cronograma')}><Calendar className="w-3 h-3 inline mr-1" />Cronograma</TabBtn>}
         {proyecto.tipoAvance === 'unidades' && <TabBtn active={tab === 'unidades'} onClick={() => setTab('unidades')}><Briefcase className="w-3 h-3 inline mr-1" />Unidades</TabBtn>}
         {!tieneRol(usuario, 'maestro') && <TabBtn active={tab === 'materiales'} onClick={() => setTab('materiales')}><Package className="w-3 h-3 inline mr-1" />Materiales</TabBtn>}
+        {esAdmin && <TabBtn active={tab === 'areas'} onClick={() => setTab('areas')}>🗺️ Áreas</TabBtn>}
         {!esSupervisor && <TabBtn active={tab === 'productos'} onClick={() => setTab('productos')}><Sparkles className="w-3 h-3 inline mr-1" />Productos</TabBtn>}
         {!esSupervisor && <TabBtn active={tab === 'costo'} onClick={() => setTab('costo')}><DollarSign className="w-3 h-3 inline mr-1" />Costo</TabBtn>}
         {!esSupervisor && proyecto.dieta?.habilitada && <TabBtn active={tab === 'dieta'} onClick={() => setTab('dieta')}><Utensils className="w-3 h-3 inline mr-1" />Dieta</TabBtn>}
@@ -4384,6 +5447,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
       {tab === 'cronograma' && (esAdmin || proyecto.cronogramaVisibleMaestro !== false) && <TabCronograma proyecto={proyecto} porcentajeActual={porcentaje} onActualizarProyecto={onActualizarProyecto} esSupervisor={esSupervisor} reportes={data.reportes} sistema={sistema} sistemas={data.sistemas} />}
       {tab === 'unidades' && proyecto.tipoAvance === 'unidades' && <TabUnidades proyecto={proyecto} onActualizarProyecto={onActualizarProyecto} esAdmin={esAdmin} />}
       {tab === 'materiales' && !tieneRol(usuario, 'maestro') && <TabMateriales proyecto={proyecto} sistema={sistema} materiales={materiales} envios={data.envios.filter(e => e.proyectoId === proyecto.id)} reportes={data.reportes} sistemas={data.sistemas} onRegistrarEnvio={onRegistrarEnvio} onRegistrarEnviosLote={onRegistrarEnviosLote} esSupervisor={esSupervisor} onEliminarEnvio={onEliminarEnvio} onIrASistemas={onIrASistemas} />}
+      {tab === 'areas' && esAdmin && <TabAreas proyecto={proyecto} data={data} usuario={usuario} onRecargar={onRecargar} />}
       {tab === 'productos' && !esSupervisor && <TabProductosAdicionales proyecto={proyecto} onActualizarProyecto={onActualizarProyecto} esAdmin={esAdmin} />}
       {tab === 'costo' && !esSupervisor && <TabCosto proyecto={proyecto} sistema={sistema} reportes={data.reportes} envios={data.envios} config={data.config} />}
       {tab === 'dieta' && !esSupervisor && <TabDieta proyecto={proyecto} reportes={data.reportes} personal={data.personal} onActualizarProyecto={onActualizarProyecto} />}
@@ -6603,6 +7667,247 @@ function VistaCostosMateriales({ proyecto, envios, sistemas }) {
 
       <div className="text-[10px] text-zinc-600 bg-zinc-900/50 border border-zinc-800 p-3">
         💡 <strong>Tip:</strong> Edita el costo unitario de cualquier envío para reflejar el precio real pagado. El promedio ponderado y la desviación se recalculan automáticamente. Útil cuando el mismo material viene de distintos proveedores con precios diferentes.
+      </div>
+    </div>
+  );
+}
+
+
+// ============================================================
+// v8.9.24: TAB ÁREAS - estados por área + sugerencias de personal
+// ============================================================
+function TabAreas({ proyecto, data, usuario, onRecargar }) {
+  const [areaEditando, setAreaEditando] = useState(null);
+  const [sugerenciasPara, setSugerenciasPara] = useState(null);
+
+  const areas = proyecto.areas || [];
+  const estadosArea = data.estadosArea || [];
+  const sistemas = data.sistemas || {};
+
+  const getEstado = (areaId) => estadosArea.find(e => e.proyectoId === proyecto.id && e.areaId === areaId) || null;
+
+  const estadoConfig = {
+    bloqueada: { label: 'Bloqueada', color: 'text-red-400', bg: 'bg-red-900/20 border-red-700', icon: '🔴' },
+    disponible: { label: 'Disponible', color: 'text-green-400', bg: 'bg-green-900/20 border-green-700', icon: '🟢' },
+    en_ejecucion: { label: 'En ejecución', color: 'text-orange-400', bg: 'bg-orange-900/20 border-orange-700', icon: '🟠' },
+    completada: { label: 'Completada', color: 'text-cyan-400', bg: 'bg-cyan-900/20 border-cyan-700', icon: '✅' },
+  };
+
+  const guardarEstado = async (areaId, campos) => {
+    try {
+      await db.actualizarEstadoArea(proyecto.id, areaId, {
+        ...campos,
+        actualizadoPorId: usuario.id,
+      });
+      await onRecargar();
+    } catch (e) { alert('Error: ' + e.message); }
+  };
+
+  const abrirSugerencias = (area) => {
+    const estado = getEstado(area.id);
+    const fechaObj = estado?.fechaEstimadaDisponible || new Date().toISOString().split('T')[0];
+    const sugeridos = sugerirPersonalParaArea(proyecto, area.id, fechaObj, data);
+    setSugerenciasPara({ area, sugeridos, fecha: fechaObj });
+  };
+
+  const asignarMaestro = async (areaId, personaId) => {
+    await guardarEstado(areaId, {
+      estado: 'en_ejecucion',
+      maestroAsignadoId: personaId,
+      fechaInicioReal: new Date().toISOString().split('T')[0],
+    });
+    setSugerenciasPara(null);
+  };
+
+  if (areas.length === 0) {
+    return (
+      <div className="bg-zinc-900 border border-zinc-800 p-6 text-center">
+        <div className="text-sm text-zinc-400">Este proyecto no tiene áreas definidas</div>
+        <div className="text-xs text-zinc-500 mt-1">Agrega áreas desde el editor del proyecto</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="text-xs text-zinc-400 bg-zinc-900 border border-zinc-800 p-3">
+        💡 Cada área tiene su propio estado. Marca como "Disponible" cuando el cliente libere el área y el sistema te sugerirá maestros aptos según capacidades, credenciales y disponibilidad.
+      </div>
+
+      {areas.map(area => {
+        const estado = getEstado(area.id);
+        const estadoActual = estado?.estado || 'bloqueada';
+        const conf = estadoConfig[estadoActual] || estadoConfig.bloqueada;
+        const sistema = sistemas[area.sistemaId || proyecto.sistema];
+        const maestro = (data.personal || []).find(p => p.id === estado?.maestroAsignadoId);
+        const esEdicion = areaEditando === area.id;
+
+        return (
+          <div key={area.id} className={`border p-4 ${conf.bg}`}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-2xl">{conf.icon}</span>
+                  <div>
+                    <div className="font-black text-lg">{area.nombre}</div>
+                    <div className="text-[10px] text-zinc-400">{sistema?.nombre || '?'} · {area.m2 || 0} m²</div>
+                  </div>
+                </div>
+                <div className={`text-[10px] font-black uppercase tracking-widest ${conf.color}`}>{conf.label}</div>
+                {estado?.fechaEstimadaDisponible && estadoActual === 'bloqueada' && (
+                  <div className="text-[10px] text-zinc-400 mt-1">⏳ Estimado disponible: {formatFecha(estado.fechaEstimadaDisponible)}</div>
+                )}
+                {maestro && (
+                  <div className="text-[10px] text-zinc-300 mt-1">👷 {maestro.nombre}</div>
+                )}
+                {estado?.fechaInicioReal && (
+                  <div className="text-[10px] text-zinc-400">Inicio: {formatFecha(estado.fechaInicioReal)}{estado.fechaFinEstimada && ` → estimado fin: ${formatFecha(estado.fechaFinEstimada)}`}</div>
+                )}
+                {estado?.notasCliente && (
+                  <div className="text-[10px] text-yellow-300 mt-1 bg-yellow-900/20 border border-yellow-800 p-2">💬 {estado.notasCliente}</div>
+                )}
+              </div>
+              <div className="flex flex-col gap-1">
+                <button onClick={() => setAreaEditando(esEdicion ? null : area.id)} className="text-zinc-500 hover:text-white p-1" title="Editar estado"><Edit2 className="w-3 h-3" /></button>
+                {estadoActual === 'disponible' && (
+                  <button onClick={() => abrirSugerencias(area)} className="bg-green-600 text-white text-[9px] font-black uppercase px-2 py-1" title="Sugerir personal">
+                    👥 Sugerir
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {esEdicion && (
+              <div className="mt-3 bg-zinc-950 border border-zinc-800 p-3 space-y-2">
+                <div className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">Cambiar estado</div>
+                <div className="grid grid-cols-4 gap-1">
+                  {Object.entries(estadoConfig).map(([k, v]) => (
+                    <button
+                      key={k}
+                      onClick={() => guardarEstado(area.id, {
+                        ...estado,
+                        estado: k,
+                        ...(k === 'en_ejecucion' && !estado?.fechaInicioReal ? { fechaInicioReal: new Date().toISOString().split('T')[0] } : {}),
+                      })}
+                      className={`text-[10px] py-2 border ${estadoActual === k ? 'bg-red-600 border-red-600 text-white' : 'bg-zinc-900 border-zinc-800 text-zinc-400'}`}
+                    >
+                      {v.icon} {v.label}
+                    </button>
+                  ))}
+                </div>
+
+                {(estadoActual === 'bloqueada' || estadoActual === 'disponible') && (
+                  <div>
+                    <div className="text-[10px] uppercase tracking-widest text-zinc-500 mb-1">Fecha estimada disponible (cliente)</div>
+                    <input
+                      type="date"
+                      value={estado?.fechaEstimadaDisponible || ''}
+                      onChange={e => guardarEstado(area.id, { ...estado, estado: estadoActual, fechaEstimadaDisponible: e.target.value })}
+                      className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm"
+                    />
+                  </div>
+                )}
+
+                {estadoActual === 'en_ejecucion' && (
+                  <div>
+                    <div className="text-[10px] uppercase tracking-widest text-zinc-500 mb-1">Fecha fin estimada</div>
+                    <input
+                      type="date"
+                      value={estado?.fechaFinEstimada || ''}
+                      onChange={e => guardarEstado(area.id, { ...estado, estado: estadoActual, fechaFinEstimada: e.target.value })}
+                      className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm"
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <div className="text-[10px] uppercase tracking-widest text-zinc-500 mb-1">Notas del cliente</div>
+                  <textarea
+                    placeholder="Ej: El cliente aún está haciendo taller hasta el 15 de mayo"
+                    value={estado?.notasCliente || ''}
+                    onChange={e => guardarEstado(area.id, { ...estado, estado: estadoActual, notasCliente: e.target.value })}
+                    className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm"
+                    rows={2}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Modal sugerencias de personal */}
+      {sugerenciasPara && (
+        <ModalSugerenciasPersonal
+          area={sugerenciasPara.area}
+          sugeridos={sugerenciasPara.sugeridos}
+          proyecto={proyecto}
+          data={data}
+          fecha={sugerenciasPara.fecha}
+          onCerrar={() => setSugerenciasPara(null)}
+          onAsignar={asignarMaestro}
+        />
+      )}
+    </div>
+  );
+}
+
+function ModalSugerenciasPersonal({ area, sugeridos, proyecto, data, fecha, onCerrar, onAsignar }) {
+  const sistema = data.sistemas[area.sistemaId || proyecto.sistema];
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
+      <div className="bg-zinc-900 border-2 border-green-600 max-w-lg w-full p-5 space-y-3 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-start">
+          <div>
+            <div className="text-[10px] tracking-widest uppercase text-green-500 font-bold">👥 Sugerencias de personal</div>
+            <h2 className="text-lg font-black">{area.nombre}</h2>
+            <div className="text-[10px] text-zinc-400">
+              {sistema?.nombre || '?'} · {area.m2} m² · Disponible {formatFecha(fecha)}
+            </div>
+          </div>
+          <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
+        </div>
+
+        <div className="text-[10px] text-zinc-500 bg-zinc-950 border border-zinc-800 p-2">
+          💡 Filtros aplicados: capacidades técnicas + ausencias + credenciales requeridas + brigada preferente
+        </div>
+
+        <div className="space-y-1">
+          {sugeridos.length === 0 ? (
+            <div className="text-center text-zinc-500 text-sm py-6">No hay personal para sugerir</div>
+          ) : sugeridos.map(s => (
+            <div key={s.persona.id} className={`border p-3 ${s.elegible ? 'bg-green-900/10 border-green-700' : 'bg-zinc-950 border-zinc-800 opacity-60'}`}>
+              <div className="flex items-center gap-2">
+                {s.persona.foto2x2 ? (
+                  <img src={s.persona.foto2x2} alt="" className="w-10 h-10 object-cover border border-zinc-700" />
+                ) : (
+                  <UserCircle className="w-10 h-10 text-zinc-500" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1">
+                    {s.esPreferente && <span title="Brigada preferente">⭐</span>}
+                    <div className="font-bold text-sm truncate">{s.persona.nombre}</div>
+                  </div>
+                  <div className="text-[10px] text-zinc-500 uppercase">{(s.persona.roles || []).join(' · ')}</div>
+                  {!s.elegible && s.razones.length > 0 && (
+                    <div className="text-[10px] text-red-400 mt-1">❌ {s.razones.join(' · ')}</div>
+                  )}
+                  {s.ausente && <div className="text-[10px] text-yellow-400">⚠️ Ausente ese día</div>}
+                  {s.elegible && <div className="text-[10px] text-green-400">✓ Apto</div>}
+                </div>
+                {s.elegible && (
+                  <button
+                    onClick={() => onAsignar(area.id, s.persona.id)}
+                    className="bg-green-600 hover:bg-green-700 text-white text-[10px] font-black uppercase px-3 py-2"
+                  >
+                    Asignar
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

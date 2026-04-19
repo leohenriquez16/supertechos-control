@@ -10,7 +10,7 @@ import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps }
 // ============================================================
 // HELPERS
 // ============================================================
-const APP_VERSION = '8.9.25';
+const APP_VERSION = '8.9.26';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
@@ -858,8 +858,8 @@ export default function App() {
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
       {/* Sidebar */}
-      <aside className={`fixed top-0 left-0 h-full w-60 bg-black border-r-2 border-red-600 z-50 transform transition-transform md:translate-x-0 ${sidebarAbierta ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="p-4 border-b-2 border-red-600/30">
+      <aside className={`fixed top-0 left-0 h-[100dvh] w-60 bg-black border-r-2 border-red-600 z-50 transform transition-transform md:translate-x-0 flex flex-col ${sidebarAbierta ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="p-4 border-b-2 border-red-600/30 flex-shrink-0">
           <button onClick={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); setSidebarAbierta(false); }} className="flex items-center gap-2">
             <div className="w-9 h-9 bg-red-600 flex items-center justify-center font-black text-white text-lg" style={{ transform: 'skewX(-12deg)' }}><span style={{ transform: 'skewX(12deg)' }}>ST</span></div>
             <div className="text-left">
@@ -868,7 +868,7 @@ export default function App() {
             </div>
           </button>
         </div>
-        <nav className="flex-1 overflow-y-auto py-4" style={{ height: 'calc(100vh - 140px)' }}>
+        <nav className="flex-1 overflow-y-auto py-4 min-h-0">
           {itemsMenu.map(grupo => (
             <div key={grupo.seccion} className="mb-4">
               <div className="px-4 text-[9px] tracking-widest text-zinc-600 font-bold mb-1">{grupo.seccion}</div>
@@ -902,7 +902,7 @@ export default function App() {
             </div>
           ))}
         </nav>
-        <div className="border-t border-zinc-800 p-3 absolute bottom-0 left-0 right-0 bg-black">
+        <div className="border-t border-zinc-800 p-3 bg-black flex-shrink-0">
           <button onClick={() => { setVista('miPerfil'); setSidebarAbierta(false); }} className="w-full flex items-center gap-2 text-left text-xs p-2 hover:bg-zinc-900">
             {usuario.foto2x2 ? <img src={usuario.foto2x2} alt="" className="w-7 h-7 object-cover" /> : <UserCircle className="w-7 h-7 text-zinc-500" />}
             <div className="flex-1 min-w-0">

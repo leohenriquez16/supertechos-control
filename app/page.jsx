@@ -10,7 +10,7 @@ import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps }
 // ============================================================
 // HELPERS
 // ============================================================
-const APP_VERSION = '8.9.16';
+const APP_VERSION = '8.9.17';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
@@ -7012,11 +7012,12 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto }) {
   const [reportesSemana, setReportesSemana] = useState([]);
   const [cargando, setCargando] = useState(false);
   const [vistaModo, setVistaModo] = useState('personal'); // 'personal' | 'proyecto'
-  const [filtroRol, setFiltroRol] = useState('maestro'); // default: solo maestros
+  // v8.9.17: Maestros ven a todo su equipo por defecto (filtro vacío)
+  const [filtroRol, setFiltroRol] = useState(esAdmin ? 'maestro' : '');
   const [filtroProyecto, setFiltroProyecto] = useState('');
   const [soloConProyecto, setSoloConProyecto] = useState(true); // v8.7 default
-  const [celdaSeleccionada, setCeldaSeleccionada] = useState(null); // { personaId, proyectoId, fecha } o null
-  const [modalAsignar, setModalAsignar] = useState(null); // { personaId, fecha } cuando se asigna desde celda vacía
+  const [celdaSeleccionada, setCeldaSeleccionada] = useState(null);
+  const [modalAsignar, setModalAsignar] = useState(null);
 
   // Días de la semana (lunes a domingo)
   const dias = React.useMemo(() => {
@@ -7267,7 +7268,7 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto }) {
           <option value="">Todos los proyectos</option>
           {proyectosVisibles.map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo ? p.referenciaOdoo + ' · ' : ''}{p.cliente}</option>)}
         </select>
-        {(filtroRol || filtroProyecto || !soloConProyecto) && <button onClick={() => { setFiltroRol('maestro'); setFiltroProyecto(''); setSoloConProyecto(true); }} className="text-xs text-zinc-500 hover:text-red-500">Restablecer</button>}
+        {(filtroRol || filtroProyecto || !soloConProyecto) && <button onClick={() => { setFiltroRol(esAdmin ? 'maestro' : ''); setFiltroProyecto(''); setSoloConProyecto(true); }} className="text-xs text-zinc-500 hover:text-red-500">Restablecer</button>}
         {vistaModo === 'proyecto' && diasSinReporte > 0 && (
           <div className="ml-auto bg-yellow-900/30 border border-yellow-700 text-yellow-400 px-3 py-1.5 text-xs">
             ⚠️ {diasSinReporte} día{diasSinReporte !== 1 ? 's' : ''} con jornada sin reporte de m²

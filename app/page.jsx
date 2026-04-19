@@ -10,7 +10,7 @@ import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps }
 // ============================================================
 // HELPERS
 // ============================================================
-const APP_VERSION = '8.9.11';
+const APP_VERSION = '8.9.12';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
@@ -817,6 +817,10 @@ export default function App() {
             onIrAReportar={() => setVista('reportar')}
             onIrASistemas={esAdmin ? () => setVista('sistemas') : undefined}
             onArchivarProyecto={async (id) => withSync(async () => { await db.archivarProyecto(id, usuario.id); if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); })}
+            onEliminarProyecto={esAdmin ? async (id) => withSync(async () => {
+              await db.eliminarProyecto(id);
+              setVista('dashboard');
+            }) : undefined}
             onEliminarReporte={async (id) => { if (confirm('¿Eliminar este reporte? Los m² asociados volverán al pendiente.')) withSync(() => db.eliminarReporte(id)); }}
             onEliminarEnvio={async (id) => { if (confirm('¿Eliminar este envío de material?')) withSync(() => db.eliminarEnvio(id)); }}
             onEliminarJornada={async (id) => { if (confirm('¿Eliminar esta jornada?')) withSync(() => db.eliminarJornada(id)); }}
@@ -2752,7 +2756,7 @@ function VistaMapa({ proyectos, data, onVerProyecto }) {
 // ============================================================
 // MODAL EDITAR PROYECTO (v8.1) — admin cambia equipo, ubicación, modo pago, etc.
 // ============================================================
-function ModalEditarProyecto({ proyecto, data, usuario, onCerrar, onGuardar, onArchivar }) {
+function ModalEditarProyecto({ proyecto, data, usuario, onCerrar, onGuardar, onArchivar, onEliminar }) {
   const [form, setForm] = useState({
     supervisorId: proyecto.supervisorId || '',
     maestroId: proyecto.maestroId || '',
@@ -2846,6 +2850,24 @@ function ModalEditarProyecto({ proyecto, data, usuario, onCerrar, onGuardar, onA
     await onArchivar(proyecto.id);
     setGuardando(false);
     onCerrar();
+  };
+
+  // v8.9.12: Eliminar permanentemente
+  const eliminar = async () => {
+    const nombreConfirmacion = proyecto.referenciaOdoo || proyecto.cliente || proyecto.nombre;
+    const texto = prompt(`⚠️ ELIMINACIÓN PERMANENTE ⚠️\n\nEsto borrará el proyecto "${nombreConfirmacion}" junto con TODOS sus datos:\n• Reportes de avance\n• Envíos de materiales\n• Jornadas\n• Fotos\n• Nóminas\n• Comentarios\n\nEsta acción NO SE PUEDE DESHACER.\n\nPara confirmar, escribe exactamente el nombre o referencia:\n${nombreConfirmacion}`);
+    if (!texto || texto.trim() !== nombreConfirmacion.trim()) {
+      if (texto !== null) alert('El nombre no coincide. Operación cancelada.');
+      return;
+    }
+    setGuardando(true);
+    try {
+      if (onEliminar) await onEliminar(proyecto.id);
+      onCerrar();
+    } catch (e) {
+      alert('Error al eliminar: ' + (e.message || e));
+      setGuardando(false);
+    }
   };
 
   const setPrecio = (tareaId, precio) => {
@@ -3109,7 +3131,19 @@ function ModalEditarProyecto({ proyecto, data, usuario, onCerrar, onGuardar, onA
             <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button>
             <button onClick={guardar} disabled={guardando} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-3 flex items-center justify-center gap-1">{guardando ? <Loader2 className="w-3 h-3 animate-spin" /> : <><Save className="w-3 h-3" /> Guardar</>}</button>
           </div>
-          <button onClick={archivar} className="w-full bg-zinc-950 border border-zinc-700 text-red-400 hover:border-red-500 text-[10px] font-bold uppercase py-2 flex items-center justify-center gap-1"><Trash2 className="w-3 h-3" /> Archivar proyecto</button>
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={archivar} className="bg-zinc-950 border border-zinc-700 text-zinc-400 hover:border-yellow-500 hover:text-yellow-400 text-[10px] font-bold uppercase py-2 flex items-center justify-center gap-1">
+              <Trash2 className="w-3 h-3" /> Archivar
+            </button>
+            {onEliminar && (
+              <button onClick={eliminar} className="bg-zinc-950 border border-red-900 text-red-500 hover:border-red-500 hover:bg-red-900/20 text-[10px] font-bold uppercase py-2 flex items-center justify-center gap-1">
+                <AlertTriangle className="w-3 h-3" /> Eliminar permanente
+              </button>
+            )}
+          </div>
+          <div className="text-[9px] text-zinc-600 text-center italic">
+            Archivar = esconder (reversible) · Eliminar = borrar todo (permanente)
+          </div>
         </div>
       </div>
     </div>
@@ -3120,7 +3154,7 @@ function ModalEditarProyecto({ proyecto, data, usuario, onCerrar, onGuardar, onA
 // ============================================================
 // DETALLE DE PROYECTO
 // ============================================================
-function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onActualizarProyecto, onRegistrarEnvio, onRegistrarEnviosLote, esSupervisor, onIrAReportar, onIrASistemas, onCambiarEstado, onArchivarProyecto, onEliminarReporte, onEliminarEnvio, onEliminarJornada }) {
+function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onActualizarProyecto, onRegistrarEnvio, onRegistrarEnviosLote, esSupervisor, onIrAReportar, onIrASistemas, onCambiarEstado, onArchivarProyecto, onEliminarProyecto, onEliminarReporte, onEliminarEnvio, onEliminarJornada }) {
   const sistema = data.sistemas[proyecto.sistema];
   if (!sistema) return <div className="text-zinc-500">Sistema no encontrado.</div>;
   const { porcentaje, produccionRD, valorContrato } = calcAvanceProyecto(proyecto, data.reportes, sistema, data.sistemas);
@@ -3152,7 +3186,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
       </div>
 
       {modalEstado && <ModalCambiarEstado proyecto={proyecto} usuario={usuario} personal={data.personal} onCerrar={() => setModalEstado(false)} onConfirmar={async (estadoNuevo, nota, datosExtra) => { await onCambiarEstado(proyecto.id, estadoNuevo, nota, datosExtra); setModalEstado(false); }} />}
-      {modalEditar && <ModalEditarProyecto proyecto={proyecto} data={data} usuario={usuario} onCerrar={() => setModalEditar(false)} onGuardar={onActualizarProyecto} onArchivar={onArchivarProyecto} />}
+      {modalEditar && <ModalEditarProyecto proyecto={proyecto} data={data} usuario={usuario} onCerrar={() => setModalEditar(false)} onGuardar={onActualizarProyecto} onArchivar={onArchivarProyecto} onEliminar={onEliminarProyecto} />}
       {modalReporte && <ModalReporteAvancePDF proyecto={proyecto} sistema={sistema} data={data} usuario={usuario} onCerrar={() => setModalReporte(false)} />}
 
       {!esSupervisor && <div className="grid grid-cols-3 gap-2"><div className="bg-zinc-900 border border-zinc-800 p-3"><div className="text-[10px] text-zinc-500 uppercase tracking-wider">Avance</div><div className="text-2xl font-black">{porcentaje.toFixed(1)}%</div></div><div className="bg-zinc-900 border border-zinc-800 p-3"><div className="text-[10px] text-zinc-500 uppercase tracking-wider">Producido</div><div className="text-2xl font-black text-green-400">{formatRD(produccionRD)}</div></div><div className="bg-zinc-900 border border-zinc-800 p-3"><div className="text-[10px] text-zinc-500 uppercase tracking-wider">Contrato</div><div className="text-2xl font-black">{formatRD(valorContrato)}</div></div></div>}

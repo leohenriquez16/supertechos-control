@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed } from 'lucide-react';
+import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed, Building2, Star, MessageCircle } from 'lucide-react';
 import * as db from '../lib/db';
 import { leerArchivo, parseMateriales, parseSistemas, descargarPlantilla, comprimirImagen } from '../lib/imports';
 import { obtenerUbicacion, distanciaMetros, formatDistancia, abrirEnMapa } from '../lib/geo';
@@ -10,7 +10,7 @@ import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps }
 // ============================================================
 // HELPERS
 // ============================================================
-const APP_VERSION = '8.9.8';
+const APP_VERSION = '8.9.10';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
@@ -67,54 +67,26 @@ const sistemasDelProyecto = (proyecto) => {
   return [...set];
 };
 
-// v8.9.8: Componente reutilizable para teléfono con botones Llamar + WhatsApp
-function BotonesTelefono({ numero, mensaje = '', tamano = 'md', mostrarNumero = true }) {
-  if (!numero) return null;
-  const numeroLimpio = String(numero).replace(/\D/g, '');
-  if (!numeroLimpio) return null;
+// v8.9.10: Derivar cliente de un proyecto (por clienteId o por nombre)
+const clienteDelProyecto = (proyecto, clientes) => {
+  if (!proyecto || !clientes) return null;
+  if (proyecto.clienteId) return clientes.find(c => c.id === proyecto.clienteId) || null;
+  const nom = (proyecto.cliente || '').trim().toLowerCase();
+  if (!nom) return null;
+  return clientes.find(c => c.nombre.trim().toLowerCase() === nom) || null;
+};
 
-  // Agregar código de país RD (1) si no lo tiene (10 dígitos = número local)
-  const numeroWS = numeroLimpio.length === 10 ? `1${numeroLimpio}` : numeroLimpio;
-  const linkWhatsApp = `https://wa.me/${numeroWS}${mensaje ? `?text=${encodeURIComponent(mensaje)}` : ''}`;
-
-  const isSmall = tamano === 'sm';
-  const padding = isSmall ? 'px-2 py-1' : 'px-3 py-2';
-  const textSize = isSmall ? 'text-[10px]' : 'text-xs';
-  const iconSize = isSmall ? 'w-3 h-3' : 'w-3.5 h-3.5';
-
-  return (
-    <div className="flex flex-col gap-1.5">
-      {mostrarNumero && (
-        <div className="flex items-center gap-2">
-          <Phone className="w-3.5 h-3.5 text-zinc-500" />
-          <span className="text-sm font-mono text-zinc-200">{numero}</span>
-        </div>
-      )}
-      <div className="flex gap-1.5">
-        <a
-          href={`tel:${numero}`}
-          className={`flex-1 ${padding} ${textSize} font-bold uppercase text-center bg-zinc-800 hover:bg-zinc-700 text-zinc-200 flex items-center justify-center gap-1.5 transition-colors`}
-          title={`Llamar a ${numero}`}
-        >
-          <Phone className={iconSize} />
-          Llamar
-        </a>
-        <a
-          href={linkWhatsApp}
-          target="_blank"
-          rel="noreferrer"
-          className={`flex-1 ${padding} ${textSize} font-bold uppercase text-center bg-green-600 hover:bg-green-700 text-white flex items-center justify-center gap-1.5 transition-colors`}
-          title={`WhatsApp a ${numero}`}
-        >
-          <svg className={iconSize} viewBox="0 0 24 24" fill="currentColor">
-            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
-          </svg>
-          WhatsApp
-        </a>
-      </div>
-    </div>
-  );
-}
+// v8.9.10: Derivar contacto principal del proyecto
+const contactoDelProyecto = (proyecto, contactos) => {
+  if (!proyecto || !contactos) return null;
+  if (proyecto.contactoPrincipalId) return contactos.find(ct => ct.id === proyecto.contactoPrincipalId) || null;
+  // Fallback: contacto principal del cliente
+  if (proyecto.clienteId) {
+    const cts = contactos.filter(ct => ct.clienteId === proyecto.clienteId);
+    return cts.find(ct => ct.esPrincipal) || cts[0] || null;
+  }
+  return null;
+};
 
 // ============================================================
 // v8.1: Estados simplificados (6)
@@ -563,6 +535,7 @@ export default function App() {
     ]},
     { seccion: 'CONFIGURACIÓN', items: [
       { id: 'sistemas', label: 'Sistemas', icon: Settings, vista: 'sistemas' },
+      { id: 'clientes', label: 'Clientes', icon: Building2, vista: 'clientes' },
       { id: 'personal', label: 'Personal', icon: UserIcon, vista: 'personal' },
     ]},
   ] : [
@@ -720,7 +693,59 @@ export default function App() {
         {esAdmin && vista === 'personal' && <GestionPersonal personal={data.personal} onVolver={() => setVista('dashboard')} onActualizar={(p) => withSync(() => db.reemplazarPersonal(p))} onAbrirPerfil={(p) => { setPerfilViendo(p); setVista('perfilPersona'); }} />}
         {vista === 'perfilPersona' && perfilViendo && <MiPerfil usuario={usuario} persona={perfilViendo} soloLectura={false} onVolver={() => setVista('personal')} onGuardar={(campos) => withSync(async () => { await db.guardarPerfil(perfilViendo.id, campos); const d = await db.loadAllData(); const actualizada = d.personal.find(p => p.id === perfilViendo.id); if (actualizada) setPerfilViendo(actualizada); })} />}
         {esAdmin && vista === 'sistemas' && <GestionSistemas sistemas={data.sistemas} config={data.config} onVolver={() => setVista('dashboard')} onActualizarSistemas={(s) => withSync(() => db.guardarSistemas(s))} onActualizarConfig={(c) => withSync(() => db.guardarConfig(c))} />}
-        {esAdmin && vista === 'nuevoProyecto' && <NuevoProyecto personal={data.personal} sistemas={data.sistemas} onCancelar={() => setVista('dashboard')} onCrear={(proy) => withSync(async () => {
+        {esAdmin && vista === 'clientes' && <GestionClientes clientes={data.clientes || []} contactos={data.contactos || []} proyectos={data.proyectos || []} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
+        {esAdmin && vista === 'nuevoProyecto' && <NuevoProyecto personal={data.personal} sistemas={data.sistemas} clientes={data.clientes || []} contactos={data.contactos || []} onCancelar={() => setVista('dashboard')} onCrear={(proy) => withSync(async () => {
+          // v8.9.10: Si no hay clienteId pero hay nombre o RNC, matchear o crear
+          if (!proy.clienteId && (proy.cliente || proy.rncCliente)) {
+            let existente = null;
+            // Primero match por RNC (más confiable)
+            if (proy.rncCliente) {
+              existente = (data.clientes || []).find(c => (c.rnc || '').trim() === proy.rncCliente.trim());
+            }
+            // Luego match por nombre
+            if (!existente && proy.cliente) {
+              const nombreBuscado = proy.cliente.trim().toLowerCase();
+              existente = (data.clientes || []).find(c => c.nombre.trim().toLowerCase() === nombreBuscado);
+            }
+            if (existente) {
+              proy.clienteId = existente.id;
+              // Si el cliente existente tiene contacto principal, usarlo
+              const contactoPrinc = (data.contactos || []).find(ct => ct.clienteId === existente.id && ct.esPrincipal);
+              if (contactoPrinc && !proy.contactoPrincipalId) {
+                proy.contactoPrincipalId = contactoPrinc.id;
+              }
+            } else if (proy.cliente && proy.cliente.trim()) {
+              // Crear nuevo cliente básico
+              const nuevoClienteId = 'cli_' + Date.now() + Math.random().toString(36).slice(2, 7);
+              try {
+                await db.crearCliente({
+                  id: nuevoClienteId,
+                  nombre: proy.cliente.trim(),
+                  rnc: proy.rncCliente || null,
+                  tipo: 'empresa',
+                  direccion: proy.direccionCliente || null,
+                  telefonoPrincipal: proy.contactoClienteTelefono || null,
+                  emailPrincipal: proy.contactoClienteEmail || null,
+                });
+                proy.clienteId = nuevoClienteId;
+                // Si hay datos de contacto, crear contacto principal
+                if (proy.contactoClienteNombre || proy.contactoClienteTelefono) {
+                  const nuevoContId = 'con_' + Date.now() + Math.random().toString(36).slice(2, 7);
+                  try {
+                    await db.crearContacto({
+                      id: nuevoContId,
+                      clienteId: nuevoClienteId,
+                      nombre: proy.contactoClienteNombre || 'Contacto principal',
+                      telefono: proy.contactoClienteTelefono || null,
+                      email: proy.contactoClienteEmail || null,
+                      esPrincipal: true,
+                    });
+                    proy.contactoPrincipalId = nuevoContId;
+                  } catch (e) { console.warn('Error creando contacto:', e); }
+                }
+              } catch (e) { console.warn('Error creando cliente:', e); }
+            }
+          }
           // v8.6 ext: si tiene sistema ad-hoc, crearlo primero
           if (proy.sistemaAdHoc) {
             const nuevoSistema = {
@@ -958,6 +983,369 @@ function Login({ personal, onLogin }) {
 // ============================================================
 // GESTIÓN SISTEMAS (con importadores)
 // ============================================================
+// ============================================================
+// v8.9.9: GESTIÓN DE CLIENTES + CONTACTOS
+// ============================================================
+function GestionClientes({ clientes, contactos, proyectos, onVolver, onRecargar }) {
+  const [busqueda, setBusqueda] = useState('');
+  const [clienteSeleccionado, setClienteSeleccionado] = useState(null);
+  const [modalCliente, setModalCliente] = useState(null); // null | 'nuevo' | { ...cliente }
+  const [modalContacto, setModalContacto] = useState(null); // null | { clienteId } | { ...contacto }
+  const [guardando, setGuardando] = useState(false);
+
+  const clientesFiltrados = React.useMemo(() => {
+    const q = busqueda.toLowerCase().trim();
+    if (!q) return clientes;
+    return clientes.filter(c =>
+      c.nombre.toLowerCase().includes(q) ||
+      (c.rnc || '').toLowerCase().includes(q) ||
+      contactos.some(ct => ct.clienteId === c.id && (
+        ct.nombre.toLowerCase().includes(q) ||
+        (ct.telefono || '').includes(q)
+      ))
+    );
+  }, [clientes, contactos, busqueda]);
+
+  const contactosDelCliente = (clienteId) => contactos.filter(ct => ct.clienteId === clienteId);
+  const proyectosDelCliente = (cliente) => proyectos.filter(p => !p.archivado && (p.clienteId === cliente.id || (p.cliente || '').toLowerCase().trim() === cliente.nombre.toLowerCase().trim()));
+
+  const guardarCliente = async (formData) => {
+    setGuardando(true);
+    try {
+      if (formData.id && clientes.some(c => c.id === formData.id)) {
+        await db.actualizarCliente(formData);
+      } else {
+        await db.crearCliente({ ...formData, id: formData.id || ('cli_' + Date.now() + Math.random().toString(36).slice(2, 7)) });
+      }
+      await onRecargar();
+      setModalCliente(null);
+    } catch (e) {
+      alert('Error: ' + (e.message || e));
+    }
+    setGuardando(false);
+  };
+
+  const guardarContacto = async (formData) => {
+    setGuardando(true);
+    try {
+      if (formData.id && contactos.some(ct => ct.id === formData.id)) {
+        await db.actualizarContacto(formData);
+      } else {
+        await db.crearContacto({ ...formData, id: formData.id || ('con_' + Date.now() + Math.random().toString(36).slice(2, 7)) });
+      }
+      await onRecargar();
+      setModalContacto(null);
+    } catch (e) {
+      alert('Error: ' + (e.message || e));
+    }
+    setGuardando(false);
+  };
+
+  const eliminarContacto = async (id) => {
+    if (!confirm('¿Eliminar este contacto?')) return;
+    try {
+      await db.eliminarContacto(id);
+      await onRecargar();
+    } catch (e) {
+      alert('Error: ' + (e.message || e));
+    }
+  };
+
+  const archivarCliente = async (id) => {
+    if (!confirm('¿Archivar este cliente? Sus proyectos seguirán visibles.')) return;
+    try {
+      await db.archivarCliente(id);
+      await onRecargar();
+      setClienteSeleccionado(null);
+    } catch (e) {
+      alert('Error: ' + (e.message || e));
+    }
+  };
+
+  // Vista detalle de un cliente
+  if (clienteSeleccionado) {
+    const cliente = clientes.find(c => c.id === clienteSeleccionado.id) || clienteSeleccionado;
+    const misContactos = contactosDelCliente(cliente.id);
+    const misProyectos = proyectosDelCliente(cliente);
+    return (
+      <div className="max-w-3xl mx-auto space-y-5">
+        <button onClick={() => setClienteSeleccionado(null)} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm"><ArrowLeft className="w-4 h-4" /> Volver a clientes</button>
+
+        <div className="bg-zinc-900 border border-zinc-800 p-5">
+          <div className="flex justify-between items-start mb-3">
+            <div>
+              <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">{cliente.tipo === 'persona' ? 'Persona' : 'Empresa'}</div>
+              <h1 className="text-2xl font-black">{cliente.nombre}</h1>
+              {cliente.rnc && <div className="text-xs text-zinc-400 mt-1">RNC: <span className="font-mono">{cliente.rnc}</span></div>}
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setModalCliente({ ...cliente })} className="text-xs bg-zinc-800 hover:bg-zinc-700 text-white px-3 py-2 font-bold uppercase">Editar</button>
+              <button onClick={() => archivarCliente(cliente.id)} className="text-xs bg-zinc-800 hover:bg-red-900 text-zinc-400 hover:text-white px-3 py-2 font-bold uppercase">Archivar</button>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            {cliente.direccion && <div><div className="text-[10px] text-zinc-500 uppercase">Dirección</div><div>{cliente.direccion}</div></div>}
+            {cliente.telefonoPrincipal && <div><div className="text-[10px] text-zinc-500 uppercase">Teléfono principal</div><a href={`tel:${cliente.telefonoPrincipal}`} className="text-green-400 hover:underline">{cliente.telefonoPrincipal}</a></div>}
+            {cliente.emailPrincipal && <div><div className="text-[10px] text-zinc-500 uppercase">Email principal</div><a href={`mailto:${cliente.emailPrincipal}`} className="text-blue-400 hover:underline">{cliente.emailPrincipal}</a></div>}
+          </div>
+          {cliente.nota && <div className="mt-3 text-xs bg-zinc-950 border border-zinc-800 p-2 text-zinc-400 italic">{cliente.nota}</div>}
+        </div>
+
+        {/* Contactos */}
+        <div className="bg-zinc-900 border border-zinc-800">
+          <div className="flex justify-between items-center p-4 border-b border-zinc-800">
+            <div className="text-xs tracking-widest uppercase text-zinc-400 font-bold">Contactos ({misContactos.length})</div>
+            <button onClick={() => setModalContacto({ clienteId: cliente.id })} className="text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 font-bold uppercase flex items-center gap-1">
+              <Plus className="w-3 h-3" /> Agregar
+            </button>
+          </div>
+          {misContactos.length === 0 ? (
+            <div className="p-6 text-center text-sm text-zinc-500">
+              Sin contactos registrados. Click en "Agregar" para crear el primero.
+            </div>
+          ) : (
+            <div className="divide-y divide-zinc-800">
+              {misContactos.map(ct => (
+                <div key={ct.id} className="p-4">
+                  <div className="flex justify-between items-start">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        {ct.esPrincipal && <Star className="w-3.5 h-3.5 text-yellow-500" />}
+                        <div className="font-bold">{ct.nombre}</div>
+                        {ct.cargo && <span className="text-[10px] text-zinc-500 uppercase tracking-wider">· {ct.cargo}</span>}
+                      </div>
+                      <div className="space-y-1 text-xs">
+                        {ct.telefono && (
+                          <div className="flex items-center gap-2">
+                            <a href={`tel:${ct.telefono}`} className="flex items-center gap-1 text-green-400 hover:underline">
+                              <Phone className="w-3 h-3" /> {ct.telefono}
+                            </a>
+                            <a href={`https://wa.me/${(ct.whatsapp || ct.telefono).replace(/\D/g, '').replace(/^(?!1)(8[024]9)/, '1$1')}`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-green-400 hover:underline">
+                              <MessageCircle className="w-3 h-3" /> WhatsApp
+                            </a>
+                          </div>
+                        )}
+                        {ct.email && (
+                          <a href={`mailto:${ct.email}`} className="flex items-center gap-1 text-blue-400 hover:underline">
+                            <Mail className="w-3 h-3" /> {ct.email}
+                          </a>
+                        )}
+                      </div>
+                      {ct.nota && <div className="mt-2 text-[10px] text-zinc-500 italic">{ct.nota}</div>}
+                    </div>
+                    <div className="flex gap-1">
+                      <button onClick={() => setModalContacto({ ...ct })} className="text-zinc-500 hover:text-white p-1" title="Editar"><Edit2 className="w-3.5 h-3.5" /></button>
+                      <button onClick={() => eliminarContacto(ct.id)} className="text-zinc-500 hover:text-red-400 p-1" title="Eliminar"><Trash2 className="w-3.5 h-3.5" /></button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Proyectos */}
+        {misProyectos.length > 0 && (
+          <div className="bg-zinc-900 border border-zinc-800">
+            <div className="p-4 border-b border-zinc-800">
+              <div className="text-xs tracking-widest uppercase text-zinc-400 font-bold">Proyectos de este cliente ({misProyectos.length})</div>
+            </div>
+            <div className="divide-y divide-zinc-800">
+              {misProyectos.map(p => (
+                <div key={p.id} className="p-3 text-sm">
+                  <div className="font-bold">{p.referenciaOdoo ? `${p.referenciaOdoo} · ` : ''}{p.referenciaProyecto || p.nombre}</div>
+                  <div className="text-[10px] text-zinc-500 uppercase">{p.estado || 'sin estado'}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {modalCliente && <ModalEditarCliente cliente={modalCliente} onCerrar={() => setModalCliente(null)} onGuardar={guardarCliente} guardando={guardando} />}
+        {modalContacto && <ModalEditarContacto contacto={modalContacto} onCerrar={() => setModalContacto(null)} onGuardar={guardarContacto} guardando={guardando} />}
+      </div>
+    );
+  }
+
+  // Vista lista de clientes
+  return (
+    <div className="max-w-3xl mx-auto space-y-4">
+      <button onClick={onVolver} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button>
+
+      <div className="flex justify-between items-center">
+        <h1 className="text-3xl font-black tracking-tight">Clientes</h1>
+        <button onClick={() => setModalCliente('nuevo')} className="bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase px-4 py-2 flex items-center gap-1">
+          <Plus className="w-4 h-4" /> Nuevo Cliente
+        </button>
+      </div>
+
+      <div className="relative">
+        <input
+          type="text"
+          value={busqueda}
+          onChange={e => setBusqueda(e.target.value)}
+          placeholder="🔍 Buscar por nombre, RNC o contacto..."
+          className="w-full bg-zinc-900 border-2 border-zinc-800 focus:border-red-600 outline-none px-4 py-3 text-white"
+        />
+      </div>
+
+      <div className="space-y-2">
+        {clientesFiltrados.map(c => {
+          const contsCliente = contactosDelCliente(c.id);
+          const contactoPrincipal = contsCliente.find(ct => ct.esPrincipal) || contsCliente[0];
+          const projs = proyectosDelCliente(c);
+          return (
+            <button
+              key={c.id}
+              onClick={() => setClienteSeleccionado(c)}
+              className="w-full bg-zinc-900 border border-zinc-800 hover:border-red-600 p-4 text-left"
+            >
+              <div className="flex justify-between items-start">
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold">{c.nombre}</div>
+                  <div className="text-[10px] text-zinc-500 uppercase tracking-wider mt-1">
+                    {c.rnc && <span>RNC: {c.rnc} · </span>}
+                    {contsCliente.length} contacto{contsCliente.length !== 1 ? 's' : ''}
+                    {projs.length > 0 && ` · ${projs.length} proyecto${projs.length !== 1 ? 's' : ''}`}
+                  </div>
+                  {contactoPrincipal && (
+                    <div className="text-xs text-zinc-400 mt-2">
+                      {contactoPrincipal.esPrincipal && <Star className="w-3 h-3 inline text-yellow-500 mr-1" />}
+                      <span className="font-bold">{contactoPrincipal.nombre}</span>
+                      {contactoPrincipal.telefono && <span className="text-zinc-500"> · {contactoPrincipal.telefono}</span>}
+                    </div>
+                  )}
+                </div>
+                <ChevronRight className="w-4 h-4 text-zinc-600 flex-shrink-0" />
+              </div>
+            </button>
+          );
+        })}
+        {clientesFiltrados.length === 0 && (
+          <div className="bg-zinc-900 border border-zinc-800 p-8 text-center">
+            <Building2 className="w-12 h-12 text-zinc-600 mx-auto mb-3" />
+            {busqueda ? (
+              <div className="text-sm text-zinc-500">Sin resultados para "{busqueda}"</div>
+            ) : (
+              <div>
+                <div className="font-bold text-sm">No hay clientes registrados</div>
+                <div className="text-xs text-zinc-500 mt-1">Click en "+ Nuevo Cliente" para empezar</div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {modalCliente && <ModalEditarCliente cliente={modalCliente === 'nuevo' ? {} : modalCliente} onCerrar={() => setModalCliente(null)} onGuardar={guardarCliente} guardando={guardando} />}
+    </div>
+  );
+}
+
+function ModalEditarCliente({ cliente, onCerrar, onGuardar, guardando }) {
+  const [form, setForm] = useState({
+    id: cliente.id || '',
+    nombre: cliente.nombre || '',
+    rnc: cliente.rnc || '',
+    tipo: cliente.tipo || 'empresa',
+    direccion: cliente.direccion || '',
+    telefonoPrincipal: cliente.telefonoPrincipal || '',
+    emailPrincipal: cliente.emailPrincipal || '',
+    nota: cliente.nota || '',
+  });
+
+  const guardar = () => {
+    if (!form.nombre.trim()) { alert('Nombre requerido'); return; }
+    onGuardar(form);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
+      <div className="bg-zinc-900 border border-zinc-700 max-w-lg w-full p-5 space-y-3 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center">
+          <h2 className="text-xl font-black">{form.id ? 'Editar Cliente' : 'Nuevo Cliente'}</h2>
+          <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
+        </div>
+        <Campo label="Tipo">
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={() => setForm({ ...form, tipo: 'empresa' })} className={`py-2 text-xs font-bold uppercase border-2 ${form.tipo === 'empresa' ? 'border-red-600 bg-red-600/10 text-red-400' : 'border-zinc-700 text-zinc-400'}`}>🏢 Empresa</button>
+            <button onClick={() => setForm({ ...form, tipo: 'persona' })} className={`py-2 text-xs font-bold uppercase border-2 ${form.tipo === 'persona' ? 'border-red-600 bg-red-600/10 text-red-400' : 'border-zinc-700 text-zinc-400'}`}>👤 Persona</button>
+          </div>
+        </Campo>
+        <Campo label={form.tipo === 'empresa' ? 'Razón Social *' : 'Nombre completo *'}>
+          <Input value={form.nombre} onChange={v => setForm({ ...form, nombre: v })} />
+        </Campo>
+        <Campo label={form.tipo === 'empresa' ? 'RNC' : 'Cédula'}>
+          <Input value={form.rnc} onChange={v => setForm({ ...form, rnc: v })} placeholder="130319898" />
+        </Campo>
+        <Campo label="Dirección"><Input value={form.direccion} onChange={v => setForm({ ...form, direccion: v })} /></Campo>
+        <div className="grid grid-cols-2 gap-3">
+          <Campo label="Teléfono"><Input value={form.telefonoPrincipal} onChange={v => setForm({ ...form, telefonoPrincipal: v })} placeholder="809-XXX-XXXX" /></Campo>
+          <Campo label="Email"><Input type="email" value={form.emailPrincipal} onChange={v => setForm({ ...form, emailPrincipal: v })} /></Campo>
+        </div>
+        <Campo label="Nota"><textarea value={form.nota} onChange={e => setForm({ ...form, nota: e.target.value })} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm" rows={2} /></Campo>
+        <div className="flex gap-2 pt-2">
+          <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button>
+          <button onClick={guardar} disabled={guardando} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-700 text-white text-xs font-black uppercase py-3">
+            {guardando ? 'Guardando...' : (form.id ? 'Guardar cambios' : 'Crear cliente')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ModalEditarContacto({ contacto, onCerrar, onGuardar, guardando }) {
+  const [form, setForm] = useState({
+    id: contacto.id || '',
+    clienteId: contacto.clienteId,
+    nombre: contacto.nombre || '',
+    cargo: contacto.cargo || '',
+    telefono: contacto.telefono || '',
+    whatsapp: contacto.whatsapp || '',
+    email: contacto.email || '',
+    esPrincipal: !!contacto.esPrincipal,
+    nota: contacto.nota || '',
+  });
+
+  const guardar = () => {
+    if (!form.nombre.trim()) { alert('Nombre requerido'); return; }
+    onGuardar(form);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
+      <div className="bg-zinc-900 border border-zinc-700 max-w-lg w-full p-5 space-y-3 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center">
+          <h2 className="text-xl font-black">{form.id ? 'Editar Contacto' : 'Nuevo Contacto'}</h2>
+          <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
+        </div>
+        <Campo label="Nombre *"><Input value={form.nombre} onChange={v => setForm({ ...form, nombre: v })} /></Campo>
+        <Campo label="Cargo"><Input value={form.cargo} onChange={v => setForm({ ...form, cargo: v })} placeholder="Ej: Administrador, Ing. de obra" /></Campo>
+        <div className="grid grid-cols-2 gap-3">
+          <Campo label="Teléfono"><Input value={form.telefono} onChange={v => setForm({ ...form, telefono: v })} placeholder="809-XXX-XXXX" /></Campo>
+          <Campo label="WhatsApp (si es distinto)"><Input value={form.whatsapp} onChange={v => setForm({ ...form, whatsapp: v })} placeholder="(opcional)" /></Campo>
+        </div>
+        <Campo label="Email"><Input type="email" value={form.email} onChange={v => setForm({ ...form, email: v })} /></Campo>
+        <label className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 p-3 cursor-pointer">
+          <input type="checkbox" checked={form.esPrincipal} onChange={e => setForm({ ...form, esPrincipal: e.target.checked })} className="w-4 h-4 accent-red-600" />
+          <div>
+            <div className="text-xs font-bold flex items-center gap-1"><Star className="w-3 h-3 text-yellow-500" /> Marcar como contacto principal</div>
+            <div className="text-[10px] text-zinc-500">Se usará por defecto en los proyectos de este cliente</div>
+          </div>
+        </label>
+        <Campo label="Nota"><textarea value={form.nota} onChange={e => setForm({ ...form, nota: e.target.value })} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm" rows={2} /></Campo>
+        <div className="flex gap-2 pt-2">
+          <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button>
+          <button onClick={guardar} disabled={guardando} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-700 text-white text-xs font-black uppercase py-3">
+            {guardando ? 'Guardando...' : (form.id ? 'Guardar cambios' : 'Crear contacto')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 function GestionSistemas({ sistemas, config, onVolver, onActualizarSistemas, onActualizarConfig }) {
   const [sistemaEditando, setSistemaEditando] = useState(null);
   const [configEditada, setConfigEditada] = useState(config);
@@ -1466,7 +1854,7 @@ function RolToggle({ active, onClick, children }) {
 // ============================================================
 // NUEVO PROYECTO
 // ============================================================
-function NuevoProyecto({ personal, sistemas, onCancelar, onCrear }) {
+function NuevoProyecto({ personal, sistemas, clientes = [], contactos = [], onCancelar, onCrear }) {
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState('');
   const [extraido, setExtraido] = useState(null);
@@ -1474,11 +1862,13 @@ function NuevoProyecto({ personal, sistemas, onCancelar, onCrear }) {
   const sistemasArray = Object.values(sistemas);
   const [form, setForm] = useState({
     nombre: '', cliente: '', referenciaProyecto: '',
+    clienteId: '', contactoPrincipalId: null, // v8.9.10
     supervisorId: '', maestroId: '', ayudantesIds: [],
     sistema: sistemasArray[0]?.id || '',
     fecha_inicio: '', fecha_entrega: '', referenciaOdoo: '',
     areas: [{ nombre: '', m2: '' }],
     dieta: { habilitada: false, tarifa_dia_persona: 800, dias_hombre_presupuestados: 0, personasIds: [] },
+    contactoClienteNombre: '', contactoClienteTelefono: '', contactoClienteEmail: '',
   });
   const supervisores = getSupervisores(personal);
   const maestros = getMaestros(personal);
@@ -1597,6 +1987,12 @@ function NuevoProyecto({ personal, sistemas, onCancelar, onCrear }) {
       // v8.9.1: lista de sistemas nuevos a crear + productos adicionales extraídos
       sistemasNuevosAutoCrear: sistemasNuevos,
       productosAdicionales: form.productosAdicionalesAutoCrear || [],
+      // v8.9.10: relación con clientes
+      clienteId: form.clienteId || null,
+      contactoPrincipalId: form.contactoPrincipalId || null,
+      contactoClienteNombre: form.contactoClienteNombre || '',
+      contactoClienteTelefono: form.contactoClienteTelefono || '',
+      contactoClienteEmail: form.contactoClienteEmail || '',
     };
     onCrear(payload);
   };
@@ -1705,7 +2101,64 @@ function NuevoProyecto({ personal, sistemas, onCancelar, onCrear }) {
           {form.sistemaAdHoc && <option value={form.sistemaAdHoc.id}>✨ {form.sistemaAdHoc.nombre} (nuevo)</option>}
           <option value="__crear__">+ Crear nuevo sistema...</option>
         </select></Campo></div>
-        <Campo label="Cliente"><Input value={form.cliente} onChange={v => setForm({ ...form, cliente: v })} /></Campo>
+        {/* v8.9.10: Selector de cliente */}
+        <Campo label="Cliente">
+          <div className="space-y-2">
+            <select
+              value={form.clienteId || ''}
+              onChange={e => {
+                const cliId = e.target.value;
+                if (cliId) {
+                  const cli = clientes.find(c => c.id === cliId);
+                  const contsCliente = contactos.filter(ct => ct.clienteId === cliId);
+                  const contPrincipal = contsCliente.find(ct => ct.esPrincipal) || contsCliente[0];
+                  setForm({
+                    ...form,
+                    clienteId: cliId,
+                    cliente: cli?.nombre || form.cliente,
+                    contactoPrincipalId: contPrincipal?.id || null,
+                    contactoClienteNombre: contPrincipal?.nombre || form.contactoClienteNombre,
+                    contactoClienteTelefono: contPrincipal?.telefono || form.contactoClienteTelefono,
+                    contactoClienteEmail: contPrincipal?.email || form.contactoClienteEmail,
+                  });
+                } else {
+                  setForm({ ...form, clienteId: '', contactoPrincipalId: null });
+                }
+              }}
+              className="w-full bg-zinc-900 border-2 border-zinc-800 focus:border-red-600 outline-none px-4 py-3 text-white"
+            >
+              <option value="">— Seleccionar cliente o escribir abajo —</option>
+              {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}{c.rnc ? ` · RNC ${c.rnc}` : ''}</option>)}
+            </select>
+            <Input value={form.cliente} onChange={v => setForm({ ...form, cliente: v })} placeholder="O escribe nombre del cliente (se creará al guardar si no existe)" />
+            {form.clienteId && (() => {
+              const contsCliente = contactos.filter(ct => ct.clienteId === form.clienteId);
+              if (contsCliente.length > 1) {
+                return (
+                  <select
+                    value={form.contactoPrincipalId || ''}
+                    onChange={e => {
+                      const contId = e.target.value;
+                      const cont = contactos.find(ct => ct.id === contId);
+                      setForm({
+                        ...form,
+                        contactoPrincipalId: contId || null,
+                        contactoClienteNombre: cont?.nombre || '',
+                        contactoClienteTelefono: cont?.telefono || '',
+                        contactoClienteEmail: cont?.email || '',
+                      });
+                    }}
+                    className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-white text-xs"
+                  >
+                    <option value="">— Seleccionar contacto —</option>
+                    {contsCliente.map(ct => <option key={ct.id} value={ct.id}>{ct.esPrincipal ? '⭐ ' : ''}{ct.nombre}{ct.cargo ? ` · ${ct.cargo}` : ''}{ct.telefono ? ` · ${ct.telefono}` : ''}</option>)}
+                  </select>
+                );
+              }
+              return null;
+            })()}
+          </div>
+        </Campo>
         <Campo label="Referencia del proyecto"><Input value={form.referenciaProyecto} onChange={v => setForm({ ...form, referenciaProyecto: v })} /></Campo>
         <Campo label="Nombre interno"><Input value={form.nombre} onChange={v => setForm({ ...form, nombre: v })} /></Campo>
         <div className="grid grid-cols-2 gap-3"><Campo label="Inicio (opcional — déjalo vacío si está por definir)"><Input type="date" value={form.fecha_inicio} onChange={v => setForm({ ...form, fecha_inicio: v })} /></Campo><Campo label="Entrega"><Input type="date" value={form.fecha_entrega} onChange={v => setForm({ ...form, fecha_entrega: v })} /></Campo></div>
@@ -2236,6 +2689,8 @@ function ModalEditarProyecto({ proyecto, data, usuario, onCerrar, onGuardar, onA
     maestroId: proyecto.maestroId || '',
     ayudantesIds: proyecto.ayudantesIds || [],
     cliente: proyecto.cliente || '',
+    clienteId: proyecto.clienteId || '', // v8.9.10
+    contactoPrincipalId: proyecto.contactoPrincipalId || null, // v8.9.10
     referenciaProyecto: proyecto.referenciaProyecto || '',
     referenciaOdoo: proyecto.referenciaOdoo || '',
     contactoClienteNombre: proyecto.contactoClienteNombre || '',
@@ -2251,11 +2706,11 @@ function ModalEditarProyecto({ proyecto, data, usuario, onCerrar, onGuardar, onA
     preciosTareasM2: proyecto.preciosTareasM2 || {},
     preciosManoObraTareas: proyecto.preciosManoObraTareas || {},
     precioM2FijoMaestro: proyecto.precioM2FijoMaestro || 0,
-    tipoAvance: proyecto.tipoAvance || 'tradicional', // v8.6 ext: 'tradicional' | 'unidades'
+    tipoAvance: proyecto.tipoAvance || 'tradicional',
     estructuraUnidades: proyecto.estructuraUnidades || [],
     areas: proyecto.areas ? proyecto.areas.map(a => ({ ...a })) : [],
-    sistema: proyecto.sistema || '', // v8.9: sistema default del proyecto
-    cronogramaVisibleMaestro: proyecto.cronogramaVisibleMaestro !== false, // default true
+    sistema: proyecto.sistema || '',
+    cronogramaVisibleMaestro: proyecto.cronogramaVisibleMaestro !== false,
   });
   const [guardando, setGuardando] = useState(false);
   const [costosDia, setCostosDia] = useState([]);
@@ -2337,7 +2792,64 @@ function ModalEditarProyecto({ proyecto, data, usuario, onCerrar, onGuardar, onA
 
         <div className="space-y-3">
           <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Información</div>
-          <Campo label="Cliente"><Input value={form.cliente} onChange={v => setForm({ ...form, cliente: v })} /></Campo>
+          {/* v8.9.10: Selector de cliente */}
+          <Campo label="Cliente">
+            <div className="space-y-2">
+              <select
+                value={form.clienteId || ''}
+                onChange={e => {
+                  const cliId = e.target.value;
+                  if (cliId) {
+                    const cli = (data.clientes || []).find(c => c.id === cliId);
+                    const contsCliente = (data.contactos || []).filter(ct => ct.clienteId === cliId);
+                    const contPrincipal = contsCliente.find(ct => ct.esPrincipal) || contsCliente[0];
+                    setForm({
+                      ...form,
+                      clienteId: cliId,
+                      cliente: cli?.nombre || form.cliente,
+                      contactoPrincipalId: contPrincipal?.id || null,
+                      contactoClienteNombre: contPrincipal?.nombre || form.contactoClienteNombre,
+                      contactoClienteTelefono: contPrincipal?.telefono || form.contactoClienteTelefono,
+                      contactoClienteEmail: contPrincipal?.email || form.contactoClienteEmail,
+                    });
+                  } else {
+                    setForm({ ...form, clienteId: '', contactoPrincipalId: null });
+                  }
+                }}
+                className="w-full bg-zinc-900 border-2 border-zinc-800 focus:border-red-600 outline-none px-4 py-2 text-white text-sm"
+              >
+                <option value="">— Seleccionar cliente registrado —</option>
+                {(data.clientes || []).map(c => <option key={c.id} value={c.id}>{c.nombre}{c.rnc ? ` · RNC ${c.rnc}` : ''}</option>)}
+              </select>
+              <Input value={form.cliente} onChange={v => setForm({ ...form, cliente: v })} placeholder="Nombre del cliente" />
+              {form.clienteId && (() => {
+                const contsCliente = (data.contactos || []).filter(ct => ct.clienteId === form.clienteId);
+                if (contsCliente.length > 1) {
+                  return (
+                    <select
+                      value={form.contactoPrincipalId || ''}
+                      onChange={e => {
+                        const contId = e.target.value;
+                        const cont = (data.contactos || []).find(ct => ct.id === contId);
+                        setForm({
+                          ...form,
+                          contactoPrincipalId: contId || null,
+                          contactoClienteNombre: cont?.nombre || form.contactoClienteNombre,
+                          contactoClienteTelefono: cont?.telefono || form.contactoClienteTelefono,
+                          contactoClienteEmail: cont?.email || form.contactoClienteEmail,
+                        });
+                      }}
+                      className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-white text-xs"
+                    >
+                      <option value="">— Contacto principal —</option>
+                      {contsCliente.map(ct => <option key={ct.id} value={ct.id}>{ct.esPrincipal ? '⭐ ' : ''}{ct.nombre}{ct.cargo ? ` · ${ct.cargo}` : ''}</option>)}
+                    </select>
+                  );
+                }
+                return null;
+              })()}
+            </div>
+          </Campo>
           <div className="grid grid-cols-2 gap-3"><Campo label="Ref. Odoo *"><Input value={form.referenciaOdoo} onChange={v => setForm({ ...form, referenciaOdoo: v })} placeholder="Ej: ST-C5437" /></Campo><Campo label="Ref. Proyecto"><Input value={form.referenciaProyecto} onChange={v => setForm({ ...form, referenciaProyecto: v })} /></Campo></div>
           <div className="grid grid-cols-2 gap-3"><Campo label="Fecha inicio"><Input type="date" value={form.fecha_inicio} onChange={v => setForm({ ...form, fecha_inicio: v })} /></Campo><Campo label="Fecha entrega"><Input type="date" value={form.fecha_entrega} onChange={v => setForm({ ...form, fecha_entrega: v })} /></Campo></div>
         </div>
@@ -2594,7 +3106,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
       </div>
 
       {tab === 'avance' && <TabAvance proyecto={proyecto} reportes={data.reportes} sistema={sistema} sistemas={data.sistemas} esSupervisor={esSupervisor} onEliminarReporte={onEliminarReporte} />}
-      {tab === 'info' && <TabInfo proyecto={proyecto} />}
+      {tab === 'info' && <TabInfo proyecto={proyecto} clientes={data.clientes || []} contactos={data.contactos || []} />}
       {tab === 'jornada' && <TabJornada usuario={usuario} proyecto={proyecto} personal={data.personal} onActualizarUbicacion={(lat, lng, dir) => onActualizarProyecto({ ...proyecto, ubicacionLat: lat, ubicacionLng: lng, ubicacionDireccion: dir })} onEliminarJornada={onEliminarJornada} />}
       {tab === 'equipo' && <TabEquipoProyecto proyecto={proyecto} data={data} sistema={sistema} />}
       {tab === 'fotos' && <TabFotos usuario={usuario} proyecto={proyecto} />}
@@ -2611,9 +3123,13 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
 // ============================================================
 // TAB INFO (v8.2) - ubicación + contacto cliente
 // ============================================================
-function TabInfo({ proyecto }) {
+function TabInfo({ proyecto, clientes = [], contactos = [] }) {
   const hayUbicacion = proyecto.ubicacionLat != null && proyecto.ubicacionLng != null;
   const mapSrc = hayUbicacion ? `https://www.google.com/maps?q=${proyecto.ubicacionLat},${proyecto.ubicacionLng}&z=17&output=embed` : null;
+  // v8.9.10: cliente y contactos derivados
+  const cliente = clienteDelProyecto(proyecto, clientes);
+  const contactosCliente = cliente ? contactos.filter(ct => ct.clienteId === cliente.id) : [];
+  const contactoPrincipal = contactoDelProyecto(proyecto, contactos);
   return (
     <div className="space-y-4">
       {/* Ubicación */}
@@ -2636,28 +3152,72 @@ function TabInfo({ proyecto }) {
         )}
       </div>
 
-      {/* Contacto cliente */}
-      <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-2">
-        <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold flex items-center gap-1"><UserCircle className="w-3 h-3" /> Contacto del cliente</div>
-        {proyecto.contactoClienteNombre || proyecto.contactoClienteTelefono || proyecto.contactoClienteEmail ? (
-          <div className="space-y-3 pt-1">
-            {proyecto.contactoClienteNombre && <div className="text-sm font-bold">{proyecto.contactoClienteNombre}</div>}
-            {proyecto.contactoClienteTelefono && (
-              <BotonesTelefono
-                numero={proyecto.contactoClienteTelefono}
-                mensaje={`Hola ${proyecto.contactoClienteNombre || ''}, le escribo de Super Techos.`.trim()}
-              />
-            )}
-            {proyecto.contactoClienteEmail && (
-              <a href={`mailto:${proyecto.contactoClienteEmail}`} className="flex items-center gap-2 text-sm text-blue-400 hover:underline">
-                <Mail className="w-4 h-4" /> {proyecto.contactoClienteEmail}
-              </a>
-            )}
+      {/* v8.9.10: Info del cliente vinculado */}
+      {cliente && (
+        <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-2">
+          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold flex items-center gap-1"><Building2 className="w-3 h-3" /> Cliente</div>
+          <div className="pt-1">
+            <div className="text-sm font-bold">{cliente.nombre}</div>
+            {cliente.rnc && <div className="text-[10px] text-zinc-500 uppercase">RNC: <span className="font-mono">{cliente.rnc}</span></div>}
+            {cliente.direccion && <div className="text-xs text-zinc-400 mt-1">{cliente.direccion}</div>}
           </div>
-        ) : (
-          <div className="text-xs text-zinc-500 py-2">Sin contacto registrado. Admin puede agregarlo desde Editar → Contacto del cliente.</div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {/* Contactos del cliente vinculado */}
+      {cliente && contactosCliente.length > 0 ? (
+        <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold flex items-center gap-1"><UserCircle className="w-3 h-3" /> Contactos ({contactosCliente.length})</div>
+          </div>
+          <div className="space-y-2">
+            {contactosCliente.map(ct => {
+              const esPrincipal = contactoPrincipal?.id === ct.id;
+              const wa = (ct.whatsapp || ct.telefono || '').replace(/\D/g, '').replace(/^(?!1)(8[024]9)/, '1$1');
+              return (
+                <div key={ct.id} className={`border p-2 ${esPrincipal ? 'border-yellow-600 bg-yellow-900/10' : 'border-zinc-800 bg-zinc-950'}`}>
+                  <div className="flex items-center gap-1 mb-1">
+                    {esPrincipal && <Star className="w-3 h-3 text-yellow-500" />}
+                    <div className="text-sm font-bold">{ct.nombre}</div>
+                    {ct.cargo && <span className="text-[9px] text-zinc-500 uppercase">· {ct.cargo}</span>}
+                  </div>
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
+                    {ct.telefono && (
+                      <>
+                        <a href={`tel:${ct.telefono}`} className="flex items-center gap-1 text-green-400 hover:underline"><Phone className="w-3 h-3" /> {ct.telefono}</a>
+                        {wa && <a href={`https://wa.me/${wa}`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-green-400 hover:underline"><MessageCircle className="w-3 h-3" /> WhatsApp</a>}
+                      </>
+                    )}
+                    {ct.email && <a href={`mailto:${ct.email}`} className="flex items-center gap-1 text-blue-400 hover:underline"><Mail className="w-3 h-3" /> {ct.email}</a>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        /* Fallback: contacto en texto libre del proyecto (retrocompatibilidad) */
+        (proyecto.contactoClienteNombre || proyecto.contactoClienteTelefono || proyecto.contactoClienteEmail) && (
+          <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-2">
+            <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold flex items-center gap-1"><UserCircle className="w-3 h-3" /> Contacto del cliente</div>
+            <div className="space-y-2 pt-1">
+              {proyecto.contactoClienteNombre && <div className="text-sm font-bold">{proyecto.contactoClienteNombre}</div>}
+              {proyecto.contactoClienteTelefono && (() => {
+                const wa = proyecto.contactoClienteTelefono.replace(/\D/g, '').replace(/^(?!1)(8[024]9)/, '1$1');
+                return (
+                  <div className="flex flex-wrap gap-3 text-sm">
+                    <a href={`tel:${proyecto.contactoClienteTelefono}`} className="flex items-center gap-1 text-green-400 hover:underline"><Phone className="w-4 h-4" /> {proyecto.contactoClienteTelefono}</a>
+                    {wa && <a href={`https://wa.me/${wa}`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-green-400 hover:underline"><MessageCircle className="w-4 h-4" /> WhatsApp</a>}
+                  </div>
+                );
+              })()}
+              {proyecto.contactoClienteEmail && (
+                <a href={`mailto:${proyecto.contactoClienteEmail}`} className="flex items-center gap-2 text-sm text-blue-400 hover:underline"><Mail className="w-4 h-4" /> {proyecto.contactoClienteEmail}</a>
+              )}
+            </div>
+          </div>
+        )
+      )}
 
       {/* Datos adicionales del proyecto */}
       <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-2">
@@ -3327,20 +3887,12 @@ function TabEquipoProyecto({ proyecto, data, sistema }) {
         {miembros.map(({ persona, rol }) => {
           const m = calcMetricasPersona(persona.id);
           return (
-            <div key={persona.id} className="bg-zinc-900 border border-zinc-800 p-3 flex items-start gap-3">
+            <div key={persona.id} className="bg-zinc-900 border border-zinc-800 p-3 flex items-center gap-3">
               {persona.foto2x2 ? <img src={persona.foto2x2} className="w-10 h-10 object-cover border border-zinc-700" alt="" /> : <UserCircle className="w-10 h-10 text-zinc-500" />}
-              <div className="flex-1 min-w-0 space-y-1.5">
-                <div>
-                  <div className="font-bold text-sm">{persona.nombre}</div>
-                  <div className="text-[10px] text-red-400 font-bold uppercase tracking-wider">{rol}</div>
-                </div>
-                {persona.telefono && (
-                  <BotonesTelefono
-                    numero={persona.telefono}
-                    mensaje={`Hola ${persona.nombre}`}
-                    tamano="sm"
-                  />
-                )}
+              <div className="flex-1 min-w-0">
+                <div className="font-bold text-sm">{persona.nombre}</div>
+                <div className="text-[10px] text-red-400 font-bold uppercase tracking-wider">{rol}</div>
+                {persona.telefono && <div className="text-[10px] text-zinc-500">📞 {persona.telefono}</div>}
               </div>
               <div className="text-right text-[10px]">
                 <div className="text-zinc-500 uppercase">Días</div><div className="font-bold text-sm">{m.dias}</div>

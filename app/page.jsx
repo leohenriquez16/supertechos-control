@@ -10,7 +10,7 @@ import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps }
 // ============================================================
 // HELPERS
 // ============================================================
-const APP_VERSION = '8.9.10';
+const APP_VERSION = '8.9.11';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
@@ -440,6 +440,7 @@ export default function App() {
   const [jornadasHoy, setJornadasHoy] = useState([]);
   const [sidebarAbierta, setSidebarAbierta] = useState(false);
   const [proyectosExpandidos, setProyectosExpandidos] = useState(true);
+  const [modoReporte, setModoReporte] = useState(null); // v8.9.11: 'rapido' | 'manual' | null (chooser)
 
   const recargar = async () => {
     try {
@@ -872,7 +873,69 @@ export default function App() {
           />
         )}
         {!esAdmin && vista === 'misProyectos' && <MisProyectos usuario={usuario} data={data} onIrAReportar={(p) => { setProyectoActivo(p); setVista('reportar'); }} onVerDetalle={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
-        {vista === 'reportar' && proyectoActivo && <FormReporte usuario={usuario} proyecto={proyectoActivo} reportes={data.reportes} sistema={data.sistemas[proyectoActivo.sistema]} sistemas={data.sistemas} onCancelar={() => { if (esAdmin) { setVista('proyecto'); setTab('avance'); } else setVista('misProyectos'); }} onTerminar={() => { if (esAdmin) { setVista('proyecto'); setTab('avance'); } else setVista('misProyectos'); }} onGuardar={async (r, fotos) => withSync(async () => {
+        {vista === 'reportar' && proyectoActivo && (() => {
+          // v8.9.11: Bifurcación rápido vs manual según flag de persona
+          const audioHabilitado = !!usuario?.reporteAudioHabilitado;
+          const showChooser = audioHabilitado && !modoReporte;
+          const useRapido = audioHabilitado && modoReporte === 'rapido';
+          const salir = () => { setModoReporte(null); if (esAdmin) { setVista('proyecto'); setTab('avance'); } else setVista('misProyectos'); };
+
+          if (showChooser) {
+            return (
+              <div className="max-w-md mx-auto space-y-4">
+                <button onClick={salir} className="flex items-center gap-1 text-zinc-400 text-sm">
+                  <ArrowLeft className="w-4 h-4" /> Cancelar
+                </button>
+                <div className="bg-zinc-900 border border-zinc-800 p-5">
+                  <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">📋 Reportar avance</div>
+                  <h1 className="text-xl font-black mt-1">{proyectoActivo.nombre}</h1>
+                  <div className="text-xs text-zinc-400 mt-1">¿Cómo quieres reportar hoy?</div>
+                </div>
+                <div className="grid grid-cols-1 gap-3">
+                  <button onClick={() => setModoReporte('rapido')} className="bg-zinc-900 border-2 border-zinc-700 hover:border-red-600 p-5 text-left transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className="w-14 h-14 rounded-full bg-red-600 flex items-center justify-center flex-shrink-0">
+                        <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-black uppercase tracking-wider text-sm flex items-center gap-1">🎤 Rápido con audio <Sparkles className="w-3 h-3 text-red-500" /></div>
+                        <div className="text-[10px] text-zinc-500 mt-0.5">Habla natural · IA extrae datos · ~30 seg</div>
+                      </div>
+                    </div>
+                  </button>
+                  <button onClick={() => setModoReporte('manual')} className="bg-zinc-900 border-2 border-zinc-700 hover:border-red-600 p-5 text-left transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className="w-14 h-14 rounded-full bg-zinc-700 flex items-center justify-center flex-shrink-0">
+                        <FileText className="w-7 h-7 text-white" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-black uppercase tracking-wider text-sm">📝 Manual detallado</div>
+                        <div className="text-[10px] text-zinc-500 mt-0.5">Formulario tradicional · preciso</div>
+                      </div>
+                    </div>
+                  </button>
+                </div>
+              </div>
+            );
+          }
+
+          if (useRapido) {
+            return <FormReporteRapidoAudio
+              usuario={usuario}
+              proyecto={proyectoActivo}
+              sistema={data.sistemas[proyectoActivo.sistema]}
+              sistemas={data.sistemas}
+              personal={data.personal}
+              onCancelar={salir}
+              onSwitchManual={() => setModoReporte('manual')}
+              onGuardar={async (r) => withSync(async () => {
+                await db.crearReporte(r);
+              }).then(() => { setModoReporte(null); salir(); })}
+            />;
+          }
+
+          // Modo manual (flujo original)
+          return <FormReporte usuario={usuario} proyecto={proyectoActivo} reportes={data.reportes} sistema={data.sistemas[proyectoActivo.sistema]} sistemas={data.sistemas} onCancelar={salir} onTerminar={salir} onGuardar={async (r, fotos) => withSync(async () => {
           const reporteId = 'r_' + Date.now() + Math.random();
           await db.crearReporte({ ...r, id: reporteId });
           if (fotos && fotos.length) {
@@ -902,18 +965,13 @@ export default function App() {
             if (dedup.length) {
               const detalle = r.rollos ? `${r.rollos} rollos` : r.m2 ? `${r.m2} m²` : '';
               const fotosTxt = fotos?.length ? `<p><strong>📷 ${fotos.length} foto${fotos.length !== 1 ? 's' : ''} adjunta${fotos.length !== 1 ? 's' : ''}</strong></p>` : '';
-              const nota = r.nota ? `<p><em>"${r.nota}"</em></p>` : '';
-              const html = `
-                <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;">
-                  <div style="background:#CC0000;color:white;padding:16px;"><h2 style="margin:0;">Super Techos - Nuevo reporte</h2></div>
-                  <div style="padding:20px;background:#f5f5f5;">
-                    <p><strong>Proyecto:</strong> ${proy.cliente}<br>
-                    <strong>Ref:</strong> ${proy.referenciaOdoo || ''}<br>
-                    <strong>Reportado por:</strong> ${usuario.nombre}<br>
-                    <strong>Fecha:</strong> ${r.fecha}</p>
-                    <hr>
-                    <p><strong>${area?.nombre || ''}</strong> · ${tarea?.nombre || ''}<br>
-                    ${detalle}${r.cubetas ? ` · ${r.cubetas} cubetas` : ''}</p>
+              const nota = r.nota ? `<p style="font-style:italic;color:#666;">"${r.nota}"</p>` : '';
+              const html = `<div style="font-family:sans-serif;max-width:500px;">
+                  <h2 style="color:#CC0000;">${proy.referenciaOdoo || ''} · ${proy.cliente || proy.nombre}</h2>
+                  <div style="background:#f5f5f5;padding:15px;border-left:4px solid #CC0000;">
+                    <p><strong>${usuario.nombre}</strong> reportó:</p>
+                    <p>📍 ${area?.nombre || '?'} · 🔨 ${tarea?.nombre || '?'}</p>
+                    <p style="font-size:18px;"><strong>${detalle}</strong> · ${formatFecha(r.fecha)}</p>
                     ${nota}
                     ${fotosTxt}
                   </div>
@@ -922,7 +980,8 @@ export default function App() {
               db.enviarCorreoReporte(dedup, `[${proy.referenciaOdoo || proy.cliente}] Reporte de ${usuario.nombre.split(' ')[0]}`, html);
             }
           } catch (err) { console.warn('Email fallo:', err); }
-        })} />}
+        })} />;
+        })()}
       </main>
     </div>
   );
@@ -1804,6 +1863,16 @@ function GestionPersonal({ personal, onVolver, onActualizar, onAbrirPerfil }) {
           {(form.roles.includes('supervisor') || form.roles.includes('maestro') || form.roles.includes('admin')) && <Campo label="PIN"><Input value={form.pin || ''} onChange={v => setForm({ ...form, pin: v })} /></Campo>}
           {form.roles.length === 1 && form.roles[0] === 'ayudante' && (
             <Campo label="Maestro"><select value={form.maestroId || ''} onChange={e => setForm({ ...form, maestroId: e.target.value })} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-4 py-3 text-white"><option value="">Seleccionar...</option>{maestros.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select></Campo>
+          )}
+          {/* v8.9.11: Toggle reporte con audio IA */}
+          {(form.roles.includes('maestro') || form.roles.includes('supervisor') || form.roles.includes('admin')) && (
+            <label className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 p-3 cursor-pointer">
+              <input type="checkbox" checked={!!form.reporteAudioHabilitado} onChange={e => setForm({ ...form, reporteAudioHabilitado: e.target.checked })} className="w-4 h-4 accent-red-600" />
+              <div className="flex-1">
+                <div className="text-xs font-bold flex items-center gap-1">🎤 Reporte con audio IA <Sparkles className="w-3 h-3 text-red-500" /></div>
+                <div className="text-[10px] text-zinc-500">Esta persona podrá reportar avance por nota de voz (Claude extrae datos)</div>
+              </div>
+            </label>
           )}
           <div className="flex gap-2 pt-2"><button onClick={() => { setEditando(null); setForm(null); }} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button><button onClick={guardar} disabled={!form.nombre} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-3 flex items-center justify-center gap-1"><Save className="w-3 h-3" /> Guardar</button></div>
         </div>
@@ -4963,6 +5032,471 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
 // ============================================================
 // FORM REPORTE (SIN RD$ para supervisor/maestro + FOTOS opcionales)
 // ============================================================
+// ============================================================
+// v8.9.11: FORMULARIO DE REPORTE RÁPIDO CON AUDIO IA
+// Solo disponible para maestros con reporte_audio_habilitado = true
+// ============================================================
+function FormReporteRapidoAudio({ usuario, proyecto, sistema, sistemas, personal, onGuardar, onCancelar, onSwitchManual }) {
+  const [paso, setPaso] = useState('grabar'); // grabar | procesando | revisar | guardando
+  const [audioBlob, setAudioBlob] = useState(null);
+  const [audioUrl, setAudioUrl] = useState(null);
+  const [transcripcion, setTranscripcion] = useState('');
+  const [datosIA, setDatosIA] = useState(null);
+  const [error, setError] = useState('');
+  const [grabando, setGrabando] = useState(false);
+  const [duracion, setDuracion] = useState(0);
+  const mediaRecorderRef = React.useRef(null);
+  const chunksRef = React.useRef([]);
+  const timerRef = React.useRef(null);
+  const recognitionRef = React.useRef(null);
+  const fechaHoy = new Date().toISOString().split('T')[0];
+
+  // Editables después de que la IA extrae
+  const [avancesEdit, setAvancesEdit] = useState([]);
+  const [materialesEdit, setMaterialesEdit] = useState([]);
+  const [bloqueosEdit, setBloqueosEdit] = useState([]);
+  const [personalAusenteEdit, setPersonalAusenteEdit] = useState([]);
+  const [notaEdit, setNotaEdit] = useState('');
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch {}
+      }
+    };
+  }, []);
+
+  const iniciarGrabacion = async () => {
+    setError('');
+    setAudioBlob(null);
+    setTranscripcion('');
+    setDatosIA(null);
+    chunksRef.current = [];
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      mediaRecorderRef.current = mediaRecorder;
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+        setAudioBlob(blob);
+        setAudioUrl(URL.createObjectURL(blob));
+        stream.getTracks().forEach(t => t.stop());
+      };
+
+      mediaRecorder.start();
+      setGrabando(true);
+      setDuracion(0);
+      timerRef.current = setInterval(() => setDuracion(d => d + 1), 1000);
+
+      // Web Speech API para transcripción en vivo (español)
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        const recognition = new SpeechRecognition();
+        recognition.lang = 'es-DO';
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        let finalText = '';
+        recognition.onresult = (event) => {
+          let interim = '';
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) finalText += transcript + ' ';
+            else interim += transcript;
+          }
+          setTranscripcion(finalText + interim);
+        };
+        recognition.onerror = (e) => console.warn('Speech error:', e.error);
+        recognitionRef.current = recognition;
+        try { recognition.start(); } catch (e) { console.warn('No se pudo iniciar reconocimiento:', e); }
+      } else {
+        setError('Tu navegador no soporta reconocimiento de voz. Usa Chrome o Edge.');
+      }
+    } catch (e) {
+      setError('No se pudo acceder al micrófono: ' + e.message);
+      setGrabando(false);
+    }
+  };
+
+  const detenerGrabacion = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch {}
+    }
+    if (timerRef.current) clearInterval(timerRef.current);
+    setGrabando(false);
+  };
+
+  const procesarConIA = async () => {
+    if (!transcripcion.trim()) {
+      setError('No se detectó voz. Vuelve a grabar.');
+      return;
+    }
+    setPaso('procesando');
+    setError('');
+    try {
+      const res = await fetch('/api/procesar-reporte-audio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transcripcion,
+          proyecto,
+          sistemas,
+          personal: personal.filter(p => p.id === usuario.id || proyecto.ayudantesIds?.includes(p.id)),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Error procesando con IA');
+      }
+      setDatosIA(data.data);
+      // Inicializar editables
+      setAvancesEdit(data.data.avances || []);
+      setMaterialesEdit(data.data.materialesUsados || []);
+      setBloqueosEdit(data.data.bloqueos || []);
+      setPersonalAusenteEdit(data.data.personalAusente || []);
+      setNotaEdit(data.data.resumen || '');
+      setPaso('revisar');
+    } catch (e) {
+      setError(e.message);
+      setPaso('grabar');
+    }
+  };
+
+  const guardarReportes = async () => {
+    if (avancesEdit.length === 0) {
+      setError('Debe haber al menos un avance para guardar.');
+      return;
+    }
+    setPaso('guardando');
+    setError('');
+    try {
+      let audioUrlSubido = null;
+      const reporteIdBase = 'r_' + Date.now();
+
+      // Subir audio si hay blob
+      if (audioBlob) {
+        try {
+          audioUrlSubido = await db.subirAudioReporte(audioBlob, proyecto.id, reporteIdBase);
+        } catch (e) {
+          console.warn('No se pudo subir audio:', e);
+          // Continúa igual sin el audio
+        }
+      }
+
+      // Construir datosIA enriquecidos
+      const datosGuardar = {
+        materialesUsados: materialesEdit,
+        bloqueos: bloqueosEdit,
+        personalAusente: personalAusenteEdit,
+        personalPresente: datosIA?.personalPresente || [],
+        clima: datosIA?.clima || 'normal',
+        horaInicio: datosIA?.horaInicio,
+        horaFin: datosIA?.horaFin,
+        notasCalidad: datosIA?.notasCalidad,
+        tareasAdicionales: datosIA?.tareasAdicionales,
+        necesitaMaterial: datosIA?.necesitaMaterial || [],
+      };
+
+      // Crear un reporte por cada avance detectado
+      for (let i = 0; i < avancesEdit.length; i++) {
+        const av = avancesEdit[i];
+        const reporteId = reporteIdBase + '_' + i;
+        // Buscar areaId y tareaId si no vienen resueltos
+        let areaId = av.areaId;
+        if (!areaId && av.areaNombre) {
+          const area = proyecto.areas.find(a => a.nombre.trim().toLowerCase() === av.areaNombre.trim().toLowerCase());
+          if (area) areaId = area.id;
+        }
+        let tareaId = av.tareaId;
+        if (!tareaId && av.tareaNombre) {
+          const sisId = proyecto.areas.find(a => a.id === areaId)?.sistemaId || proyecto.sistema;
+          const sis = sistemas[sisId];
+          const tarea = sis?.tareas?.find(t => t.nombre.trim().toLowerCase() === av.tareaNombre.trim().toLowerCase());
+          if (tarea) tareaId = tarea.id;
+        }
+        if (!areaId || !tareaId) continue; // saltar si no tiene área/tarea válida
+
+        const reporte = {
+          id: reporteId,
+          proyectoId: proyecto.id,
+          areaId,
+          tareaId,
+          fecha: fechaHoy,
+          m2: av.m2 || null,
+          nota: av.notaEspecifica || notaEdit,
+          supervisor: usuario.nombre,
+          supervisorId: usuario.id,
+          audioUrl: i === 0 ? audioUrlSubido : null, // el audio solo se asocia al primer reporte
+          transcripcion: i === 0 ? transcripcion : null,
+          datosIA: i === 0 ? datosGuardar : {},
+        };
+        await onGuardar(reporte);
+      }
+    } catch (e) {
+      setError(e.message);
+      setPaso('revisar');
+    }
+  };
+
+  const fmtDuracion = (s) => {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m}:${sec.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <div className="max-w-2xl mx-auto space-y-4">
+      <div className="flex items-center justify-between">
+        <button onClick={onCancelar} className="flex items-center gap-1 text-zinc-400 text-sm">
+          <ArrowLeft className="w-4 h-4" /> Cancelar
+        </button>
+        <button onClick={onSwitchManual} className="text-[10px] bg-zinc-800 hover:bg-zinc-700 text-zinc-400 px-3 py-1 uppercase font-bold">
+          📝 Prefiero manual
+        </button>
+      </div>
+
+      <div className="bg-zinc-900 border border-zinc-800 p-4">
+        <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">🎤 Reporte rápido con IA</div>
+        <h1 className="text-xl font-black mt-1">{proyecto.nombre}</h1>
+        <div className="text-xs text-zinc-400 mt-1">{formatFecha(fechaHoy)}</div>
+      </div>
+
+      {error && (
+        <div className="bg-red-900/20 border border-red-700 text-red-300 p-3 text-xs">
+          ⚠️ {error}
+        </div>
+      )}
+
+      {paso === 'grabar' && (
+        <div className="space-y-4">
+          <div className="bg-zinc-900 border border-zinc-800 p-6 text-center space-y-4">
+            {!grabando && !audioBlob && (
+              <>
+                <div className="text-sm text-zinc-400">
+                  Pulsa para grabar tu reporte. Di:<br />
+                  <span className="text-zinc-500 text-xs">
+                    qué área avanzaste, cuántos m², qué materiales usaste, si hubo problemas, quién trabajó.
+                  </span>
+                </div>
+                <button
+                  onClick={iniciarGrabacion}
+                  className="w-24 h-24 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center mx-auto shadow-lg"
+                >
+                  <div className="w-8 h-8 rounded-full bg-white" />
+                </button>
+                <div className="text-xs text-zinc-500">Pulsa para iniciar</div>
+              </>
+            )}
+
+            {grabando && (
+              <>
+                <div className="text-red-500 text-4xl font-mono">{fmtDuracion(duracion)}</div>
+                <div className="flex items-center gap-2 justify-center text-xs text-red-400">
+                  <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                  Grabando...
+                </div>
+                <button
+                  onClick={detenerGrabacion}
+                  className="w-24 h-24 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center mx-auto"
+                >
+                  <div className="w-8 h-8 bg-white" />
+                </button>
+                <div className="text-xs text-zinc-500">Pulsa para detener</div>
+                {transcripcion && (
+                  <div className="bg-zinc-950 border border-zinc-800 p-3 text-xs text-zinc-300 text-left max-h-32 overflow-auto">
+                    {transcripcion}
+                  </div>
+                )}
+              </>
+            )}
+
+            {!grabando && audioBlob && (
+              <>
+                <div className="text-sm font-bold">✓ Audio grabado · {fmtDuracion(duracion)}</div>
+                <audio src={audioUrl} controls className="mx-auto" />
+                {transcripcion && (
+                  <div className="bg-zinc-950 border border-zinc-800 p-3 text-xs text-zinc-300 text-left max-h-40 overflow-auto">
+                    <div className="text-[10px] text-zinc-500 uppercase mb-1">Transcripción</div>
+                    <textarea
+                      value={transcripcion}
+                      onChange={e => setTranscripcion(e.target.value)}
+                      className="w-full bg-transparent text-zinc-300 text-xs outline-none resize-none"
+                      rows={4}
+                    />
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <button onClick={iniciarGrabacion} className="flex-1 bg-zinc-800 text-zinc-400 py-3 text-xs font-bold uppercase">🔄 Volver a grabar</button>
+                  <button onClick={procesarConIA} className="flex-1 bg-red-600 hover:bg-red-700 text-white py-3 text-xs font-bold uppercase flex items-center justify-center gap-1">
+                    <Sparkles className="w-3 h-3" /> Procesar con IA
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {paso === 'procesando' && (
+        <div className="bg-zinc-900 border border-zinc-800 p-8 text-center space-y-3">
+          <Loader2 className="w-12 h-12 text-red-600 animate-spin mx-auto" />
+          <div className="font-bold">Procesando con IA...</div>
+          <div className="text-xs text-zinc-500">Claude está extrayendo los datos de tu reporte</div>
+        </div>
+      )}
+
+      {paso === 'revisar' && datosIA && (
+        <div className="space-y-4">
+          <div className="bg-yellow-900/10 border border-yellow-700 p-3 text-xs text-yellow-300">
+            ✏️ Revisa los datos extraídos por la IA y corrige si es necesario antes de guardar.
+          </div>
+
+          {/* Avances */}
+          <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-2">
+            <div className="flex justify-between items-center">
+              <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">🎯 Avances detectados ({avancesEdit.length})</div>
+              <button onClick={() => setAvancesEdit([...avancesEdit, { areaNombre: '', tareaNombre: '', m2: 0, notaEspecifica: '' }])} className="text-[10px] bg-zinc-800 px-2 py-1 uppercase font-bold text-zinc-400">+ Agregar</button>
+            </div>
+            {avancesEdit.map((av, i) => (
+              <div key={i} className="bg-zinc-950 border border-zinc-800 p-3 space-y-2">
+                <div className="flex justify-between">
+                  <div className="text-[10px] text-zinc-500 uppercase">Avance #{i + 1}</div>
+                  <button onClick={() => setAvancesEdit(avancesEdit.filter((_, idx) => idx !== i))} className="text-zinc-500 hover:text-red-400"><X className="w-3 h-3" /></button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <div className="text-[10px] text-zinc-500">Área</div>
+                    <select value={av.areaId || ''} onChange={e => {
+                      const area = proyecto.areas.find(a => a.id === e.target.value);
+                      const nuevos = [...avancesEdit];
+                      nuevos[i] = { ...av, areaId: e.target.value, areaNombre: area?.nombre || av.areaNombre };
+                      setAvancesEdit(nuevos);
+                    }} className="w-full bg-zinc-900 border border-zinc-800 px-2 py-1 text-white text-xs">
+                      <option value="">— Seleccionar —</option>
+                      {proyecto.areas.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+                    </select>
+                    {!av.areaId && av.areaNombre && <div className="text-[9px] text-yellow-500 mt-0.5">IA detectó: "{av.areaNombre}"</div>}
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-zinc-500">Tarea</div>
+                    <select value={av.tareaId || ''} onChange={e => {
+                      const sisId = proyecto.areas.find(a => a.id === av.areaId)?.sistemaId || proyecto.sistema;
+                      const sis = sistemas[sisId];
+                      const tarea = sis?.tareas?.find(t => t.id === e.target.value);
+                      const nuevos = [...avancesEdit];
+                      nuevos[i] = { ...av, tareaId: e.target.value, tareaNombre: tarea?.nombre || av.tareaNombre };
+                      setAvancesEdit(nuevos);
+                    }} className="w-full bg-zinc-900 border border-zinc-800 px-2 py-1 text-white text-xs">
+                      <option value="">— Seleccionar —</option>
+                      {(() => {
+                        const sisId = proyecto.areas.find(a => a.id === av.areaId)?.sistemaId || proyecto.sistema;
+                        const sis = sistemas[sisId];
+                        return (sis?.tareas || []).map(t => <option key={t.id} value={t.id}>{t.nombre}</option>);
+                      })()}
+                    </select>
+                    {!av.tareaId && av.tareaNombre && <div className="text-[9px] text-yellow-500 mt-0.5">IA detectó: "{av.tareaNombre}"</div>}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-zinc-500">m² avanzados</div>
+                  <input type="number" value={av.m2 || ''} onChange={e => {
+                    const nuevos = [...avancesEdit];
+                    nuevos[i] = { ...av, m2: parseFloat(e.target.value) || 0 };
+                    setAvancesEdit(nuevos);
+                  }} className="w-full bg-zinc-900 border border-zinc-800 px-2 py-1 text-white text-sm" />
+                </div>
+                {av.notaEspecifica && <div className="text-[10px] text-zinc-500 italic">Nota: {av.notaEspecifica}</div>}
+              </div>
+            ))}
+            {avancesEdit.length === 0 && <div className="text-xs text-zinc-500 py-2 text-center">Sin avances detectados. Agrega manualmente arriba.</div>}
+          </div>
+
+          {/* Materiales usados */}
+          {materialesEdit.length > 0 && (
+            <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-2">
+              <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">📦 Materiales usados</div>
+              {materialesEdit.map((m, i) => (
+                <div key={i} className="bg-zinc-950 border border-zinc-800 p-2 flex items-center gap-2 text-xs">
+                  <div className="flex-1">{m.nombre} · {m.cantidad} {m.unidad}</div>
+                  <button onClick={() => setMaterialesEdit(materialesEdit.filter((_, idx) => idx !== i))} className="text-zinc-500"><X className="w-3 h-3" /></button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Bloqueos */}
+          {bloqueosEdit.length > 0 && (
+            <div className="bg-yellow-900/10 border border-yellow-700 p-4 space-y-2">
+              <div className="text-[11px] tracking-widest uppercase text-yellow-400 font-bold">⚠️ Problemas / Bloqueos</div>
+              {bloqueosEdit.map((b, i) => (
+                <div key={i} className="bg-zinc-950 border border-zinc-800 p-2 flex items-center gap-2 text-xs text-yellow-300">
+                  <div className="flex-1">{b}</div>
+                  <button onClick={() => setBloqueosEdit(bloqueosEdit.filter((_, idx) => idx !== i))} className="text-zinc-500"><X className="w-3 h-3" /></button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Personal ausente */}
+          {personalAusenteEdit.length > 0 && (
+            <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-2">
+              <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">👥 Personal ausente</div>
+              <div className="flex flex-wrap gap-1">
+                {personalAusenteEdit.map((p, i) => (
+                  <span key={i} className="bg-zinc-950 border border-zinc-800 px-2 py-1 text-[10px] flex items-center gap-1">
+                    {p}
+                    <button onClick={() => setPersonalAusenteEdit(personalAusenteEdit.filter((_, idx) => idx !== i))} className="text-zinc-500"><X className="w-2.5 h-2.5" /></button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Otros datos */}
+          {(datosIA.clima !== 'normal' || datosIA.horaInicio || datosIA.horaFin || datosIA.notasCalidad || datosIA.tareasAdicionales || (datosIA.necesitaMaterial || []).length > 0) && (
+            <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-2">
+              <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">📋 Otros datos detectados</div>
+              <div className="space-y-1 text-xs">
+                {datosIA.clima && datosIA.clima !== 'normal' && <div>Clima: <span className="text-yellow-400">{datosIA.clima}</span></div>}
+                {datosIA.horaInicio && <div>Hora inicio: {datosIA.horaInicio}</div>}
+                {datosIA.horaFin && <div>Hora fin: {datosIA.horaFin}</div>}
+                {datosIA.notasCalidad && <div>Calidad: {datosIA.notasCalidad}</div>}
+                {datosIA.tareasAdicionales && <div>Adicional: {datosIA.tareasAdicionales}</div>}
+                {(datosIA.necesitaMaterial || []).length > 0 && <div>Necesita: {datosIA.necesitaMaterial.join(', ')}</div>}
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <button onClick={() => setPaso('grabar')} className="flex-1 bg-zinc-800 text-zinc-400 py-3 text-xs font-bold uppercase">🔄 Regrabar</button>
+            <button onClick={guardarReportes} className="flex-1 bg-red-600 hover:bg-red-700 text-white py-3 text-xs font-black uppercase">✓ Guardar reporte</button>
+          </div>
+        </div>
+      )}
+
+      {paso === 'guardando' && (
+        <div className="bg-zinc-900 border border-zinc-800 p-8 text-center space-y-3">
+          <Loader2 className="w-12 h-12 text-green-500 animate-spin mx-auto" />
+          <div className="font-bold">Guardando reporte...</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 function FormReporte({ usuario, proyecto, reportes, sistema, sistemas, onGuardar, onCancelar, onTerminar }) {
   const [paso, setPaso] = useState(1);
   const [form, setForm] = useState({ areaId: '', tareaId: '', m2: '', rollos: '', cubetas: '', fecha: new Date().toISOString().split('T')[0], nota: '' });

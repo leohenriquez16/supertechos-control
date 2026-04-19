@@ -10,7 +10,7 @@ import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps }
 // ============================================================
 // HELPERS
 // ============================================================
-const APP_VERSION = '8.9.17';
+const APP_VERSION = '8.9.18';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
@@ -571,6 +571,8 @@ export default function App() {
     { seccion: 'MIS PROYECTOS', items: [
       { id: 'misProyectos', label: 'Proyectos', icon: Briefcase, vista: 'misProyectos' },
       ...(puede(usuario, data.permisos, 'planificacion', 'ver') ? [{ id: 'planificacion', label: 'Planificación', icon: Calendar, vista: 'planificacion' }] : []),
+      // v8.9.18: Maestros ven su producción de la quincena
+      ...(tieneRol(usuario, 'maestro') ? [{ id: 'miProduccion', label: 'Mi Producción', icon: Wallet, vista: 'miProduccion' }] : []),
       ...(tareas.filter(t => t.asignadaAId === usuario.id).length > 0 ? [{ id: 'tareas', label: 'Tareas', icon: ClipboardList, vista: 'tareas', badge: tareas.filter(t => t.asignadaAId === usuario.id).length }] : []),
     ]},
   ];
@@ -718,6 +720,7 @@ export default function App() {
         {esAdmin && vista === 'galeria' && <GaleriaGlobal usuario={usuario} data={data} onVolver={() => setVista('dashboard')} />}
         {esAdmin && vista === 'equipoGlobal' && <VistaEquipoGlobal data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'planificacion' && puede(usuario, data.permisos, 'planificacion', 'ver') && <VistaPlanificacion usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
+        {vista === 'miProduccion' && tieneRol(usuario, 'maestro') && <VistaMiProduccion usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'miPerfil' && <MiPerfil usuario={usuario} persona={usuario} soloLectura={false} onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }} onGuardar={(campos) => withSync(() => db.guardarPerfil(usuario.id, campos))} />}
         {esAdmin && vista === 'personal' && <GestionPersonal personal={data.personal} onVolver={() => setVista('dashboard')} onActualizar={(p) => withSync(() => db.reemplazarPersonal(p))} onAbrirPerfil={(p) => { setPerfilViendo(p); setVista('perfilPersona'); }} />}
         {vista === 'perfilPersona' && perfilViendo && <MiPerfil usuario={usuario} persona={perfilViendo} soloLectura={false} onVolver={() => setVista('personal')} onGuardar={(campos) => withSync(async () => { await db.guardarPerfil(perfilViendo.id, campos); const d = await db.loadAllData(); const actualizada = d.personal.find(p => p.id === perfilViendo.id); if (actualizada) setPerfilViendo(actualizada); })} />}
@@ -7000,6 +7003,301 @@ function FotoThumbGlobal({ foto, onClick }) {
 // VISTA PLANIFICACIÓN (v8.7) - Grid semanal interactivo
 // Por Personal / Por Proyecto + popup + asignación directa + días sin reporte
 // ============================================================
+// ============================================================
+// v8.9.18: VISTA MI PRODUCCIÓN (para maestros)
+// Muestra al maestro lo que lleva producido en la quincena actual
+// basado en los reportes de avance registrados
+// ============================================================
+function VistaMiProduccion({ usuario, data, onVolver, onVerProyecto }) {
+  const hoyStr = new Date().toISOString().split('T')[0];
+  const [quincenaRef, setQuincenaRef] = useState(hoyStr);
+  const [expandido, setExpandido] = useState(new Set()); // proyectos con detalle diario expandido
+
+  // Calcular la quincena (1-15 o 16-fin del mes)
+  const rangoQuincena = React.useMemo(() => {
+    const d = new Date(quincenaRef + 'T12:00:00');
+    const y = d.getFullYear();
+    const m = d.getMonth();
+    const dia = d.getDate();
+    let desde, hasta, label;
+    if (dia <= 15) {
+      desde = `${y}-${String(m + 1).padStart(2, '0')}-01`;
+      hasta = `${y}-${String(m + 1).padStart(2, '0')}-15`;
+      label = `1 - 15 ${['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'][m]} ${y}`;
+    } else {
+      const ult = new Date(y, m + 1, 0).getDate();
+      desde = `${y}-${String(m + 1).padStart(2, '0')}-16`;
+      hasta = `${y}-${String(m + 1).padStart(2, '0')}-${String(ult).padStart(2, '0')}`;
+      label = `16 - ${ult} ${['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'][m]} ${y}`;
+    }
+    return { desde, hasta, label };
+  }, [quincenaRef]);
+
+  // Proyectos donde el usuario es maestro
+  const misProyectos = React.useMemo(() => {
+    return (data.proyectos || []).filter(p => !p.archivado && p.maestroId === usuario.id);
+  }, [data.proyectos, usuario.id]);
+
+  // Reportes del maestro en la quincena
+  const misReportesQuincena = React.useMemo(() => {
+    return (data.reportes || []).filter(r =>
+      r.personaId === usuario.id &&
+      r.fecha >= rangoQuincena.desde &&
+      r.fecha <= rangoQuincena.hasta
+    );
+  }, [data.reportes, usuario.id, rangoQuincena]);
+
+  // Agrupar por proyecto
+  const produccionPorProyecto = React.useMemo(() => {
+    const grupos = {};
+    misReportesQuincena.forEach(r => {
+      const proy = misProyectos.find(p => p.id === r.proyectoId);
+      if (!proy) return;
+      if (!grupos[proy.id]) {
+        grupos[proy.id] = {
+          proyecto: proy,
+          m2Total: 0,
+          montoEstimado: 0,
+          reportes: [],
+          modoPago: proy.modoPagoManoObra || 'm2_fijo',
+          precioM2: proy.precioM2FijoMaestro || 0,
+          noCalculable: false,
+        };
+      }
+      const m2 = parseFloat(r.m2) || 0;
+      grupos[proy.id].m2Total += m2;
+      grupos[proy.id].reportes.push(r);
+
+      // Calcular según modo de pago
+      if (proy.modoPagoManoObra === 'm2_fijo' || !proy.modoPagoManoObra) {
+        grupos[proy.id].montoEstimado += m2 * (proy.precioM2FijoMaestro || 0);
+      } else if (proy.modoPagoManoObra === 'm2') {
+        const precios = proy.preciosTareasM2 || {};
+        grupos[proy.id].montoEstimado += m2 * (precios[r.tareaId] || 0);
+      } else if (proy.modoPagoManoObra === 'tarea') {
+        const preciosMO = proy.preciosManoObraTareas || {};
+        grupos[proy.id].montoEstimado += m2 * (preciosMO[r.tareaId] || 0);
+      } else {
+        grupos[proy.id].noCalculable = true;
+      }
+    });
+    return Object.values(grupos).sort((a, b) => b.montoEstimado - a.montoEstimado);
+  }, [misReportesQuincena, misProyectos]);
+
+  const totalM2 = produccionPorProyecto.reduce((s, g) => s + g.m2Total, 0);
+  const totalMonto = produccionPorProyecto.reduce((s, g) => s + g.montoEstimado, 0);
+
+  // Días restantes de la quincena
+  const diasRestantes = React.useMemo(() => {
+    const hoy = new Date();
+    const fin = new Date(rangoQuincena.hasta + 'T23:59:59');
+    if (hoy > fin) return 0;
+    return Math.ceil((fin - hoy) / (1000 * 60 * 60 * 24));
+  }, [rangoQuincena]);
+
+  // Navegación entre quincenas
+  const cambiarQuincena = (delta) => {
+    const d = new Date(quincenaRef + 'T12:00:00');
+    const dia = d.getDate();
+    if (delta > 0) {
+      // Siguiente
+      if (dia <= 15) {
+        d.setDate(16);
+      } else {
+        d.setMonth(d.getMonth() + 1);
+        d.setDate(1);
+      }
+    } else {
+      // Anterior
+      if (dia <= 15) {
+        d.setMonth(d.getMonth() - 1);
+        d.setDate(16);
+      } else {
+        d.setDate(1);
+      }
+    }
+    setQuincenaRef(d.toISOString().split('T')[0]);
+  };
+
+  const esQuincenaActual = rangoQuincena.desde <= hoyStr && rangoQuincena.hasta >= hoyStr;
+
+  const toggleExpandido = (pid) => {
+    const n = new Set(expandido);
+    if (n.has(pid)) n.delete(pid); else n.add(pid);
+    setExpandido(n);
+  };
+
+  // Reportes agrupados por fecha (para el detalle de cada proyecto)
+  const reportesPorFecha = (reportes) => {
+    const grupos = {};
+    reportes.forEach(r => {
+      if (!grupos[r.fecha]) grupos[r.fecha] = { fecha: r.fecha, m2: 0, reportes: [] };
+      grupos[r.fecha].m2 += parseFloat(r.m2) || 0;
+      grupos[r.fecha].reportes.push(r);
+    });
+    return Object.values(grupos).sort((a, b) => b.fecha.localeCompare(a.fecha));
+  };
+
+  return (
+    <div className="space-y-6">
+      <button onClick={onVolver} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm">
+        <ArrowLeft className="w-4 h-4" /> Volver
+      </button>
+
+      <div>
+        <div className="text-xs tracking-widest uppercase text-red-500 font-bold">MI PRODUCCIÓN</div>
+        <h1 className="text-3xl font-black tracking-tight">Quincena</h1>
+      </div>
+
+      {/* Selector quincena */}
+      <div className="flex items-center justify-between bg-zinc-900 border border-zinc-800 p-3">
+        <button onClick={() => cambiarQuincena(-1)} className="text-zinc-400 hover:text-white p-2">
+          <ChevronLeft className="w-5 h-5" />
+        </button>
+        <div className="text-center">
+          <div className="text-lg font-black uppercase tracking-wide">{rangoQuincena.label}</div>
+          {esQuincenaActual && (
+            <div className="text-[10px] text-red-400 font-bold uppercase tracking-widest mt-0.5">
+              Quincena actual · {diasRestantes > 0 ? `${diasRestantes} días restantes` : 'Último día'}
+            </div>
+          )}
+        </div>
+        <button onClick={() => cambiarQuincena(1)} className="text-zinc-400 hover:text-white p-2">
+          <ChevronRight className="w-5 h-5" />
+        </button>
+      </div>
+
+      {/* Hero: total producido */}
+      <div className="bg-gradient-to-br from-red-600 to-red-800 p-6 text-white">
+        <div className="text-[11px] tracking-widest uppercase text-red-200 font-bold">
+          {esQuincenaActual ? 'Llevas ganado' : 'Producción del periodo'}
+        </div>
+        <div className="text-4xl sm:text-5xl font-black mt-2">
+          RD$ {formatNum(totalMonto, 2)}
+        </div>
+        <div className="text-sm text-red-100 mt-1">
+          {formatNum(totalM2, 1)} m² producidos · {produccionPorProyecto.length} proyecto{produccionPorProyecto.length !== 1 ? 's' : ''}
+        </div>
+      </div>
+
+      {/* Desglose por proyecto */}
+      {produccionPorProyecto.length === 0 ? (
+        <div className="bg-zinc-900 border border-zinc-800 p-6 text-center">
+          <div className="text-4xl mb-2">📊</div>
+          <div className="text-sm font-bold">Sin producción en esta quincena</div>
+          <div className="text-xs text-zinc-500 mt-1">
+            {esQuincenaActual
+              ? 'Registra reportes de avance en tus proyectos para ver tu producción aquí'
+              : 'No se encontraron reportes en este periodo'}
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">
+            📂 Por proyecto
+          </div>
+          {produccionPorProyecto.map(g => {
+            const isExp = expandido.has(g.proyecto.id);
+            const porFecha = reportesPorFecha(g.reportes);
+            return (
+              <div key={g.proyecto.id} className="bg-zinc-900 border border-zinc-800">
+                <button
+                  onClick={() => toggleExpandido(g.proyecto.id)}
+                  className="w-full p-3 flex items-start gap-2 text-left hover:bg-zinc-800/50"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono text-zinc-500">{g.proyecto.referenciaOdoo}</span>
+                    </div>
+                    <div className="font-bold text-sm mt-0.5 truncate">
+                      {g.proyecto.cliente || g.proyecto.nombre}
+                    </div>
+                    <div className="text-[10px] text-zinc-500 mt-0.5">
+                      {g.proyecto.referenciaProyecto}
+                    </div>
+                    <div className="text-xs mt-2 flex items-center gap-3">
+                      <span className="text-zinc-400">
+                        <strong className="text-white">{formatNum(g.m2Total, 1)}</strong> m²
+                      </span>
+                      {g.modoPago === 'm2_fijo' && g.precioM2 > 0 && (
+                        <span className="text-zinc-500">× RD${formatNum(g.precioM2, 0)}/m²</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    {g.noCalculable ? (
+                      <div className="text-[10px] text-yellow-400 italic">Cálculo no disponible</div>
+                    ) : (
+                      <div className="text-lg font-black text-green-400">
+                        RD${formatNum(g.montoEstimado, 0)}
+                      </div>
+                    )}
+                    <ChevronDown className={`w-4 h-4 text-zinc-500 inline-block transition-transform ${isExp ? 'rotate-180' : ''}`} />
+                  </div>
+                </button>
+
+                {isExp && (
+                  <div className="border-t border-zinc-800 p-3 space-y-1 bg-zinc-950">
+                    <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold mb-2">
+                      Detalle por día ({porFecha.length} días reportados)
+                    </div>
+                    {porFecha.map(d => (
+                      <div key={d.fecha} className="flex justify-between items-center text-xs border-b border-zinc-900 py-1.5">
+                        <div>
+                          <div className="font-bold">{formatFecha(d.fecha)}</div>
+                          <div className="text-[10px] text-zinc-500">{d.reportes.length} reporte{d.reportes.length !== 1 ? 's' : ''}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-bold">{formatNum(d.m2, 1)} m²</div>
+                          {g.modoPago === 'm2_fijo' && (
+                            <div className="text-[10px] text-green-400">
+                              RD${formatNum(d.m2 * g.precioM2, 0)}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onVerProyecto(g.proyecto); }}
+                      className="mt-2 w-full bg-zinc-900 border border-zinc-800 hover:border-red-600 py-2 text-[10px] font-bold uppercase text-zinc-400 hover:text-red-400"
+                    >
+                      Abrir proyecto →
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Nota aclaratoria */}
+      <div className="bg-yellow-900/10 border border-yellow-800/50 p-3 text-xs text-yellow-200/80 flex items-start gap-2">
+        <div className="text-yellow-500 text-lg flex-shrink-0">ℹ️</div>
+        <div>
+          <strong>Esta es tu producción estimada.</strong> El monto del corte quincenal puede
+          ajustarse en el cierre según dieta, adelantos, apoyos u otros conceptos definidos
+          por la administración.
+        </div>
+      </div>
+
+      {/* Consejos para subir la producción */}
+      {esQuincenaActual && diasRestantes > 0 && (
+        <div className="bg-zinc-900 border border-zinc-800 p-3 space-y-1">
+          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">
+            💡 Consejo
+          </div>
+          <div className="text-xs text-zinc-400">
+            Reporta tu avance todos los días. Mientras más reportes subas, más clara y justa
+            será tu producción al cierre de la quincena.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto }) {
   const esAdmin = tieneRol(usuario, 'admin');
   const puedeAsignar = esAdmin || puede(usuario, data.permisos, 'planificacion', 'asignar_personal');

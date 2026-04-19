@@ -10,7 +10,7 @@ import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps }
 // ============================================================
 // HELPERS
 // ============================================================
-const APP_VERSION = '8.9.24';
+const APP_VERSION = '8.9.25';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
@@ -753,6 +753,7 @@ export default function App() {
             const u = d.personal.find(p => p.id === usuarioId);
             if (u) {
               setUsuario(u);
+              db.setAuditContext({ usuarioId: u.id, usuarioNombre: u.nombre });
               setVista(tieneRol(u, 'admin') ? 'dashboard' : 'misProyectos');
             }
           }
@@ -790,7 +791,7 @@ export default function App() {
   if (loading) return <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center gap-3"><Loader2 className="w-8 h-8 text-red-600 animate-spin" /><div className="text-xs text-zinc-500 uppercase tracking-widest">Conectando a base de datos...</div></div>;
   if (error) return <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center px-4"><AlertTriangle className="w-10 h-10 text-red-500 mb-3" /><div className="text-lg font-bold text-white mb-1">Error de conexión</div><div className="text-xs text-zinc-400 text-center max-w-md mb-4">{error}</div><button onClick={() => window.location.reload()} className="bg-red-600 text-white font-bold uppercase px-6 py-3">Reintentar</button></div>;
   if (!data) return null;
-  if (!usuario) return <Login personal={getPersonasConLogin(data.personal)} onLogin={(u) => { setUsuario(u); setVista(tieneRol(u, 'admin') ? 'dashboard' : 'misProyectos'); try { localStorage.setItem('supertechos_usuario_id', u.id); } catch {} }} />;
+  if (!usuario) return <Login personal={getPersonasConLogin(data.personal)} onLogin={(u) => { setUsuario(u); db.setAuditContext({ usuarioId: u.id, usuarioNombre: u.nombre }); db.registrarAudit({ usuarioId: u.id, usuarioNombre: u.nombre, accion: 'login.exitoso', severidad: 'info' }); setVista(tieneRol(u, 'admin') ? 'dashboard' : 'misProyectos'); try { localStorage.setItem('supertechos_usuario_id', u.id); } catch {} }} />;
 
   const esAdmin = tieneRol(usuario, 'admin');
 
@@ -820,6 +821,9 @@ export default function App() {
       { id: 'credenciales', label: 'Credenciales', icon: Settings, vista: 'credenciales' },
       { id: 'autorizaciones', label: 'Autorizaciones', icon: Settings, vista: 'autorizaciones' },
       { id: 'brigadas', label: 'Brigadas', icon: UserIcon, vista: 'brigadas' },
+    ]},
+    { seccion: 'SEGURIDAD', items: [
+      { id: 'auditLog', label: 'Registro de actividad', icon: ClipboardList, vista: 'auditLog' },
     ]},
   ] : [
     { seccion: 'MIS PROYECTOS', items: [
@@ -958,6 +962,7 @@ export default function App() {
         {vista === 'credenciales' && esAdmin && <VistaCredenciales data={data} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
         {vista === 'autorizaciones' && esAdmin && <VistaAutorizaciones usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
         {vista === 'brigadas' && esAdmin && <VistaBrigadas data={data} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
+        {vista === 'auditLog' && esAdmin && <VistaAuditLog data={data} onVolver={() => setVista('dashboard')} />}
         {vista === 'miPerfil' && <MiPerfil usuario={usuario} persona={usuario} soloLectura={false} onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }} onGuardar={(campos) => withSync(() => db.guardarPerfil(usuario.id, campos))} />}
         {esAdmin && vista === 'personal' && <GestionPersonal personal={data.personal} data={data} onVolver={() => setVista('dashboard')} onActualizar={(p) => withSync(() => db.reemplazarPersonal(p))} onAbrirPerfil={(p) => { setPerfilViendo(p); setVista('perfilPersona'); }} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'perfilPersona' && perfilViendo && <MiPerfil usuario={usuario} persona={perfilViendo} soloLectura={false} onVolver={() => setVista('personal')} onGuardar={(campos) => withSync(async () => { await db.guardarPerfil(perfilViendo.id, campos); const d = await db.loadAllData(); const actualizada = d.personal.find(p => p.id === perfilViendo.id); if (actualizada) setPerfilViendo(actualizada); })} />}
@@ -2461,6 +2466,297 @@ function VistaBrigadas({ data, onVolver, onRecargar }) {
         })}
         {brigadas.length === 0 && <div className="text-center text-zinc-500 text-sm py-8">Sin brigadas preferentes</div>}
       </div>
+    </div>
+  );
+}
+
+
+// ============================================================
+// v8.9.25: VISTA AUDIT LOG - Registro de actividad
+// ============================================================
+function VistaAuditLog({ data, onVolver }) {
+  const [logs, setLogs] = useState([]);
+  const [cargando, setCargando] = useState(false);
+  const [detalle, setDetalle] = useState(null);
+
+  // Filtros
+  const hoy = new Date().toISOString().split('T')[0];
+  const hace7 = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
+  const [fDesde, setFDesde] = useState(hace7);
+  const [fHasta, setFHasta] = useState(hoy);
+  const [fUsuario, setFUsuario] = useState('');
+  const [fAccion, setFAccion] = useState('');
+  const [fSeveridad, setFSeveridad] = useState('');
+  const [acciones, setAcciones] = useState([]);
+
+  const personal = (data.personal || []);
+  const getPersonaNombre = (id) => personal.find(p => p.id === id)?.nombre || id;
+
+  useEffect(() => {
+    cargar();
+    db.listarAccionesAudit().then(setAcciones);
+  }, []);
+
+  const cargar = async () => {
+    setCargando(true);
+    try {
+      const filtros = { limite: 300 };
+      if (fDesde) filtros.desde = fDesde + 'T00:00:00';
+      if (fHasta) filtros.hasta = fHasta + 'T23:59:59';
+      if (fUsuario) filtros.usuarioId = fUsuario;
+      if (fAccion) filtros.accion = fAccion;
+      if (fSeveridad) filtros.severidad = fSeveridad;
+      const data = await db.consultarAuditLogs(filtros);
+      setLogs(data);
+    } catch (e) { console.warn('Error cargando logs:', e); }
+    setCargando(false);
+  };
+
+  const severidadConfig = {
+    info:     { icon: '🔵', color: 'text-blue-400', bg: 'bg-blue-900/10 border-blue-900/40', label: 'Info' },
+    warning:  { icon: '🟡', color: 'text-yellow-400', bg: 'bg-yellow-900/10 border-yellow-800/50', label: 'Advertencia' },
+    critical: { icon: '🔴', color: 'text-red-400', bg: 'bg-red-900/20 border-red-700', label: 'Crítico' },
+  };
+
+  // Traducciones amigables de acciones
+  const traducirAccion = (accion) => {
+    const t = {
+      'login.exitoso':          'inició sesión',
+      'login.fallido':          'intento fallido de login',
+      'proyecto.creado':        'creó el proyecto',
+      'proyecto.editado':       'editó el proyecto',
+      'proyecto.eliminado':     'ELIMINÓ el proyecto',
+      'proyecto.estado_cambiado': 'cambió el estado del proyecto',
+      'persona.creada':         'creó el usuario',
+      'persona.editada':        'editó el usuario',
+      'persona.eliminada':      'ELIMINÓ el usuario',
+      'persona.perfil_editado': 'editó perfil de',
+      'reporte.creado':         'creó reporte de avance',
+      'reporte.editado':        'editó reporte',
+      'reporte.eliminado':      'ELIMINÓ reporte',
+      'tarea.creada':           'creó tarea',
+      'tarea.completada':       'completó tarea',
+      'tarea.eliminada':        'eliminó tarea',
+      'ausencia.creada':        'registró ausencia',
+      'ausencia.eliminada':     'eliminó ausencia',
+      'credencial.registrada':  'registró credencial',
+      'credencial.editada':     'editó credencial',
+      'credencial.revocada':    'REVOCÓ credencial',
+      'area.estado_cambiado':   'cambió estado de área',
+    };
+    return t[accion] || accion.replace(/\./g, ' › ');
+  };
+
+  // Agrupar por día
+  const logsPorDia = {};
+  logs.forEach(l => {
+    const fecha = l.timestamp.split('T')[0];
+    if (!logsPorDia[fecha]) logsPorDia[fecha] = [];
+    logsPorDia[fecha].push(l);
+  });
+  const diasOrdenados = Object.keys(logsPorDia).sort().reverse();
+
+  const formatHora = (iso) => new Date(iso).toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' });
+  const formatDiaCompleto = (fecha) => {
+    const hoy = new Date().toISOString().split('T')[0];
+    const ayer = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+    if (fecha === hoy) return 'HOY';
+    if (fecha === ayer) return 'AYER';
+    return new Date(fecha + 'T12:00:00').toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase();
+  };
+
+  // Stats
+  const stats = {
+    total: logs.length,
+    criticos: logs.filter(l => l.severidad === 'critical').length,
+    warnings: logs.filter(l => l.severidad === 'warning').length,
+    usuariosUnicos: new Set(logs.map(l => l.usuarioId).filter(Boolean)).size,
+  };
+
+  return (
+    <div className="space-y-4">
+      <button onClick={onVolver} className="flex items-center gap-2 text-zinc-400 text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button>
+
+      <div>
+        <div className="text-xs tracking-widest uppercase text-red-500 font-bold">SEGURIDAD</div>
+        <h1 className="text-3xl font-black">Registro de Actividad</h1>
+        <div className="text-sm text-zinc-400 mt-1">Toda la actividad importante del ERP queda registrada aquí</div>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <div className="bg-zinc-900 border border-zinc-800 p-3">
+          <div className="text-[10px] tracking-widest uppercase text-zinc-500">Total eventos</div>
+          <div className="text-2xl font-black">{stats.total}</div>
+        </div>
+        <div className="bg-zinc-900 border border-red-900 p-3">
+          <div className="text-[10px] tracking-widest uppercase text-zinc-500">🔴 Críticos</div>
+          <div className="text-2xl font-black text-red-400">{stats.criticos}</div>
+        </div>
+        <div className="bg-zinc-900 border border-yellow-900 p-3">
+          <div className="text-[10px] tracking-widest uppercase text-zinc-500">🟡 Advertencias</div>
+          <div className="text-2xl font-black text-yellow-400">{stats.warnings}</div>
+        </div>
+        <div className="bg-zinc-900 border border-zinc-800 p-3">
+          <div className="text-[10px] tracking-widest uppercase text-zinc-500">Usuarios</div>
+          <div className="text-2xl font-black">{stats.usuariosUnicos}</div>
+        </div>
+      </div>
+
+      {/* Filtros */}
+      <div className="bg-zinc-900 border border-zinc-800 p-3 space-y-2">
+        <div className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">Filtros</div>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+          <div>
+            <label className="text-[9px] text-zinc-500 uppercase">Desde</label>
+            <input type="date" value={fDesde} onChange={e => setFDesde(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 px-2 py-1.5 text-xs" />
+          </div>
+          <div>
+            <label className="text-[9px] text-zinc-500 uppercase">Hasta</label>
+            <input type="date" value={fHasta} onChange={e => setFHasta(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 px-2 py-1.5 text-xs" />
+          </div>
+          <div>
+            <label className="text-[9px] text-zinc-500 uppercase">Usuario</label>
+            <select value={fUsuario} onChange={e => setFUsuario(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 px-2 py-1.5 text-xs">
+              <option value="">Todos</option>
+              {personal.filter(p => !p.archivado).map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-[9px] text-zinc-500 uppercase">Acción</label>
+            <select value={fAccion} onChange={e => setFAccion(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 px-2 py-1.5 text-xs">
+              <option value="">Todas</option>
+              {acciones.map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-[9px] text-zinc-500 uppercase">Severidad</label>
+            <select value={fSeveridad} onChange={e => setFSeveridad(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 px-2 py-1.5 text-xs">
+              <option value="">Todas</option>
+              <option value="info">Info</option>
+              <option value="warning">Advertencia</option>
+              <option value="critical">Crítico</option>
+            </select>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={cargar} disabled={cargando} className="bg-red-600 text-white px-4 py-1.5 text-xs font-black uppercase">{cargando ? 'Cargando...' : 'Aplicar'}</button>
+          <button onClick={() => { setFDesde(hace7); setFHasta(hoy); setFUsuario(''); setFAccion(''); setFSeveridad(''); setTimeout(cargar, 50); }} className="bg-zinc-800 text-zinc-400 px-4 py-1.5 text-xs font-bold uppercase">Limpiar</button>
+        </div>
+      </div>
+
+      {/* Timeline */}
+      {logs.length === 0 ? (
+        <div className="bg-zinc-900 border border-zinc-800 p-6 text-center text-zinc-500">
+          {cargando ? 'Cargando...' : 'No hay eventos registrados en este rango'}
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {diasOrdenados.map(dia => (
+            <div key={dia}>
+              <div className="text-[10px] tracking-widest uppercase font-bold text-zinc-500 mb-2 sticky top-0 bg-black py-1">
+                {formatDiaCompleto(dia)} · {logsPorDia[dia].length} evento{logsPorDia[dia].length !== 1 ? 's' : ''}
+              </div>
+              <div className="space-y-1">
+                {logsPorDia[dia].map(l => {
+                  const conf = severidadConfig[l.severidad] || severidadConfig.info;
+                  return (
+                    <button
+                      key={l.id}
+                      onClick={() => setDetalle(l)}
+                      className={`w-full border p-2 text-left hover:border-zinc-600 ${conf.bg}`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">{conf.icon}</span>
+                        <div className="text-[11px] text-zinc-500 font-mono w-12">{formatHora(l.timestamp)}</div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs">
+                            <strong className="text-white">{l.usuarioNombre || 'Sistema'}</strong>
+                            <span className="text-zinc-400"> · {traducirAccion(l.accion)}</span>
+                            {l.recursoNombre && <span className="text-zinc-300"> "{l.recursoNombre}"</span>}
+                          </div>
+                        </div>
+                        <ChevronRight className="w-3 h-3 text-zinc-600 flex-shrink-0" />
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Modal detalle */}
+      {detalle && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={() => setDetalle(null)}>
+          <div className="bg-zinc-900 border-2 border-red-600 max-w-lg w-full p-5 space-y-3 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-start">
+              <div>
+                <div className="text-[10px] tracking-widest uppercase text-red-500 font-bold">Detalle del evento</div>
+                <h2 className="text-lg font-black">{traducirAccion(detalle.accion)}</h2>
+                {detalle.recursoNombre && <div className="text-sm text-zinc-300">"{detalle.recursoNombre}"</div>}
+              </div>
+              <button onClick={() => setDetalle(null)} className="text-zinc-500"><X className="w-4 h-4" /></button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="bg-zinc-950 border border-zinc-800 p-2">
+                <div className="text-[9px] uppercase text-zinc-500">Usuario</div>
+                <div className="font-bold">{detalle.usuarioNombre || 'Sistema'}</div>
+              </div>
+              <div className="bg-zinc-950 border border-zinc-800 p-2">
+                <div className="text-[9px] uppercase text-zinc-500">Fecha/hora</div>
+                <div>{new Date(detalle.timestamp).toLocaleString('es-DO')}</div>
+              </div>
+              <div className="bg-zinc-950 border border-zinc-800 p-2">
+                <div className="text-[9px] uppercase text-zinc-500">Acción</div>
+                <div className="font-mono text-[10px]">{detalle.accion}</div>
+              </div>
+              <div className="bg-zinc-950 border border-zinc-800 p-2">
+                <div className="text-[9px] uppercase text-zinc-500">Severidad</div>
+                <div className={severidadConfig[detalle.severidad]?.color}>
+                  {severidadConfig[detalle.severidad]?.icon} {severidadConfig[detalle.severidad]?.label}
+                </div>
+              </div>
+            </div>
+
+            {detalle.recursoTipo && (
+              <div className="bg-zinc-950 border border-zinc-800 p-2 text-xs">
+                <div className="text-[9px] uppercase text-zinc-500">Recurso</div>
+                <div><strong>{detalle.recursoTipo}</strong> · <span className="font-mono text-[10px] text-zinc-400">{detalle.recursoId}</span></div>
+              </div>
+            )}
+
+            {detalle.datosAntes && (
+              <div>
+                <div className="text-[10px] uppercase tracking-widest text-red-400 font-bold mb-1">Datos antes del cambio</div>
+                <pre className="bg-red-900/10 border border-red-900/40 p-2 text-[10px] text-red-200 overflow-auto max-h-40">
+{JSON.stringify(detalle.datosAntes, null, 2)}
+                </pre>
+              </div>
+            )}
+
+            {detalle.datosDespues && (
+              <div>
+                <div className="text-[10px] uppercase tracking-widest text-green-400 font-bold mb-1">Datos después del cambio</div>
+                <pre className="bg-green-900/10 border border-green-900/40 p-2 text-[10px] text-green-200 overflow-auto max-h-40">
+{JSON.stringify(detalle.datosDespues, null, 2)}
+                </pre>
+              </div>
+            )}
+
+            {detalle.metadata && (
+              <div>
+                <div className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold mb-1">Metadata</div>
+                <pre className="bg-zinc-950 border border-zinc-800 p-2 text-[10px] text-zinc-400 overflow-auto max-h-32">
+{JSON.stringify(detalle.metadata, null, 2)}
+                </pre>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

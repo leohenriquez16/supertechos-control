@@ -10,7 +10,7 @@ import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps }
 // ============================================================
 // HELPERS
 // ============================================================
-const APP_VERSION = '8.9.13';
+const APP_VERSION = '8.9.14';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
@@ -963,6 +963,12 @@ export default function App() {
               onSwitchManual={() => setModoReporte('manual')}
               onGuardar={async (r) => withSync(async () => {
                 await db.crearReporte(r);
+                // v8.9.14: auto-mover a 'en_ejecucion' si está en 'aprobado'
+                if (proyectoActivo.estado === 'aprobado') {
+                  try {
+                    await db.cambiarEstadoProyecto(proyectoActivo.id, 'en_ejecucion', usuario, 'Auto: primer reporte de avance (audio IA)');
+                  } catch (e) { console.warn('No se pudo auto-cambiar estado:', e); }
+                }
               }).then(() => { setModoReporte(null); salir(); })}
             />;
           }
@@ -971,6 +977,12 @@ export default function App() {
           return <FormReporte usuario={usuario} proyecto={proyectoActivo} reportes={data.reportes} sistema={data.sistemas[proyectoActivo.sistema]} sistemas={data.sistemas} onCancelar={salir} onTerminar={salir} onGuardar={async (r, fotos) => withSync(async () => {
           const reporteId = 'r_' + Date.now() + Math.random();
           await db.crearReporte({ ...r, id: reporteId });
+          // v8.9.14: auto-mover a 'en_ejecucion' si está en 'aprobado'
+          if (proyectoActivo.estado === 'aprobado') {
+            try {
+              await db.cambiarEstadoProyecto(proyectoActivo.id, 'en_ejecucion', usuario, 'Auto: primer reporte de avance registrado');
+            } catch (e) { console.warn('No se pudo auto-cambiar estado:', e); }
+          }
           if (fotos && fotos.length) {
             const fotosData = fotos.map(dataUrl => ({
               id: 'f_' + Date.now() + Math.random(),
@@ -1971,6 +1983,7 @@ function NuevoProyecto({ personal, sistemas, clientes = [], contactos = [], onCa
     areas: [{ nombre: '', m2: '' }],
     dieta: { habilitada: false, tarifa_dia_persona: 800, dias_hombre_presupuestados: 0, personasIds: [] },
     contactoClienteNombre: '', contactoClienteTelefono: '', contactoClienteEmail: '',
+    estadoInicial: 'aprobado', // v8.9.14
   });
   const supervisores = getSupervisores(personal);
   const maestros = getMaestros(personal);
@@ -2095,6 +2108,8 @@ function NuevoProyecto({ personal, sistemas, clientes = [], contactos = [], onCa
       contactoClienteNombre: form.contactoClienteNombre || '',
       contactoClienteTelefono: form.contactoClienteTelefono || '',
       contactoClienteEmail: form.contactoClienteEmail || '',
+      // v8.9.14: estado inicial del proyecto
+      estado: form.estadoInicial || 'aprobado',
     };
     onCrear(payload);
   };
@@ -2264,6 +2279,33 @@ function NuevoProyecto({ personal, sistemas, clientes = [], contactos = [], onCa
         <Campo label="Referencia del proyecto"><Input value={form.referenciaProyecto} onChange={v => setForm({ ...form, referenciaProyecto: v })} /></Campo>
         <Campo label="Nombre interno"><Input value={form.nombre} onChange={v => setForm({ ...form, nombre: v })} /></Campo>
         <div className="grid grid-cols-2 gap-3"><Campo label="Inicio (opcional — déjalo vacío si está por definir)"><Input type="date" value={form.fecha_inicio} onChange={v => setForm({ ...form, fecha_inicio: v })} /></Campo><Campo label="Entrega"><Input type="date" value={form.fecha_entrega} onChange={v => setForm({ ...form, fecha_entrega: v })} /></Campo></div>
+
+        {/* v8.9.14: Estado inicial del proyecto */}
+        <Campo label="¿Cuál es el estado actual del proyecto?">
+          <div className="grid grid-cols-3 gap-2">
+            <button
+              type="button"
+              onClick={() => setForm({ ...form, estadoInicial: 'aprobado' })}
+              className={`py-2 px-2 text-[10px] font-bold uppercase border-2 ${form.estadoInicial === 'aprobado' ? 'border-cyan-600 bg-cyan-600/10 text-cyan-400' : 'border-zinc-700 text-zinc-400'}`}
+            >
+              📋 Aprobado<br /><span className="text-[9px] opacity-70 normal-case">Todavía no arranca</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setForm({ ...form, estadoInicial: 'en_ejecucion' })}
+              className={`py-2 px-2 text-[10px] font-bold uppercase border-2 ${form.estadoInicial === 'en_ejecucion' ? 'border-red-600 bg-red-600/10 text-red-400' : 'border-zinc-700 text-zinc-400'}`}
+            >
+              🔨 En ejecución<br /><span className="text-[9px] opacity-70 normal-case">Ya empezamos</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setForm({ ...form, estadoInicial: 'parado' })}
+              className={`py-2 px-2 text-[10px] font-bold uppercase border-2 ${form.estadoInicial === 'parado' ? 'border-yellow-600 bg-yellow-600/10 text-yellow-400' : 'border-zinc-700 text-zinc-400'}`}
+            >
+              ⏸️ Parado<br /><span className="text-[9px] opacity-70 normal-case">Esperando algo</span>
+            </button>
+          </div>
+        </Campo>
         <Campo label="Supervisor"><select value={form.supervisorId} onChange={e => setForm({ ...form, supervisorId: e.target.value })} className="w-full bg-zinc-900 border-2 border-zinc-800 focus:border-red-600 outline-none px-4 py-3 text-white"><option value="">Seleccionar...</option>{supervisores.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select></Campo>
         <Campo label="Maestro"><select value={form.maestroId} onChange={e => setForm({ ...form, maestroId: e.target.value, ayudantesIds: [] })} className="w-full bg-zinc-900 border-2 border-zinc-800 focus:border-red-600 outline-none px-4 py-3 text-white"><option value="">Seleccionar...</option>{maestros.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select></Campo>
         {form.maestroId && ayudantesDisp.length > 0 && <Campo label="Ayudantes"><div className="space-y-1">{ayudantesDisp.map(a => <label key={a.id} className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 p-2 cursor-pointer hover:border-red-600"><input type="checkbox" checked={form.ayudantesIds.includes(a.id)} onChange={e => { const n = e.target.checked ? [...form.ayudantesIds, a.id] : form.ayudantesIds.filter(x => x !== a.id); setForm({ ...form, ayudantesIds: n }); }} className="w-4 h-4 accent-red-600" /><span className="text-sm">{a.nombre}</span></label>)}</div></Campo>}
@@ -2500,8 +2542,69 @@ function Dashboard({ data, onVerProyecto, onNuevoProyecto, tareas, onCompletarTa
 
   const tareasPendientes = (tareas || []).filter(t => !t.completada).slice(0, 5);
 
+  // v8.9.14: Proyectos aprobados hace más de 7 días sin moverse a 'en_ejecucion'
+  const proyectosAprobadosAtrasados = React.useMemo(() => {
+    const ahora = new Date();
+    return (data.proyectos || []).filter(p => {
+      if (p.archivado) return false;
+      if (p.estado !== 'aprobado') return false;
+      // Calcular días desde creación o fecha_inicio (lo que sea menor)
+      const fechaReferencia = p.fecha_inicio || p.createdAt;
+      if (!fechaReferencia) return false;
+      const fref = new Date(fechaReferencia);
+      const dias = Math.floor((ahora - fref) / (1000 * 60 * 60 * 24));
+      return dias > 7;
+    }).map(p => {
+      const fechaReferencia = p.fecha_inicio || p.createdAt;
+      const fref = new Date(fechaReferencia);
+      const dias = Math.floor((ahora - fref) / (1000 * 60 * 60 * 24));
+      return { ...p, diasAtascado: dias };
+    }).sort((a, b) => b.diasAtascado - a.diasAtascado);
+  }, [data.proyectos]);
+
   return (
     <div className="space-y-6">
+      {/* v8.9.14: Alerta de proyectos aprobados atascados */}
+      {proyectosAprobadosAtrasados.length > 0 && (
+        <div className="bg-yellow-900/20 border-2 border-yellow-700 p-4 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-yellow-400" />
+              <div>
+                <div className="text-sm font-black uppercase text-yellow-300">
+                  {proyectosAprobadosAtrasados.length} proyecto{proyectosAprobadosAtrasados.length !== 1 ? 's' : ''} en Aprobado hace más de 7 días
+                </div>
+                <div className="text-[10px] text-yellow-200">¿Ya arrancaron? Muévelos a "En ejecución" o "Parado" según corresponda.</div>
+              </div>
+            </div>
+          </div>
+          <div className="space-y-1">
+            {proyectosAprobadosAtrasados.slice(0, 5).map(p => (
+              <button
+                key={p.id}
+                onClick={() => onVerProyecto(p)}
+                className="w-full bg-zinc-950 border border-zinc-800 hover:border-yellow-600 p-2 flex items-center justify-between text-left"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-bold truncate">
+                    {p.referenciaOdoo && <span className="text-zinc-500 mr-2">{p.referenciaOdoo}</span>}
+                    {p.cliente || p.nombre}
+                  </div>
+                  <div className="text-[10px] text-zinc-500">{p.referenciaProyecto || ''}</div>
+                </div>
+                <div className="text-xs font-black text-yellow-400 whitespace-nowrap ml-2">
+                  {p.diasAtascado} días
+                </div>
+              </button>
+            ))}
+            {proyectosAprobadosAtrasados.length > 5 && (
+              <div className="text-[10px] text-zinc-500 text-center pt-1">
+                + {proyectosAprobadosAtrasados.length - 5} más en el Kanban
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       {/* SELECTOR DE PERIODO */}
       <div className="bg-zinc-900 border border-zinc-800 p-3 space-y-2">
         <div className="flex flex-wrap gap-1">
@@ -3548,6 +3651,12 @@ function TabAsistencia({ usuario, proyecto, personal, checkins, esAdmin, onActua
         ubicacionLng: lng,
         ubicacionDistanciaM: dist,
       });
+      // v8.9.14: auto-mover a 'en_ejecucion' si está en 'aprobado'
+      if (proyecto.estado === 'aprobado') {
+        try {
+          await db.cambiarEstadoProyecto(proyecto.id, 'en_ejecucion', usuario, 'Auto: primer check-in registrado');
+        } catch (e) { console.warn('No se pudo auto-cambiar estado:', e); }
+      }
       await onRecargar();
     } catch (e) {
       setError(e.message || 'Error registrando check-in');

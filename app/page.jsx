@@ -10,7 +10,7 @@ import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps }
 // ============================================================
 // HELPERS
 // ============================================================
-const APP_VERSION = '8.9.18';
+const APP_VERSION = '8.9.19';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
@@ -115,6 +115,104 @@ const diasDePausaEnRango = (proyecto, fechaInicioStr, fechaFinStr) => {
 
 const checkinsDelProyecto = (proyecto, todosLosCheckins) =>
   (todosLosCheckins || []).filter(c => c.proyectoId === proyecto.id);
+
+// ============================================================
+// v8.9.19: Helper - Estadísticas de experiencia de una persona
+// ============================================================
+const calcEstadisticasPersona = (personaId, reportes, proyectos, sistemas) => {
+  const repsPersona = (reportes || []).filter(r => r.personaId === personaId);
+  const proyectosIds = new Set(repsPersona.map(r => r.proyectoId));
+  const m2Total = repsPersona.reduce((s, r) => s + (parseFloat(r.m2) || 0), 0);
+
+  // Por sistema
+  const porSistema = {};
+  // Por producto/tarea
+  const porTarea = {};
+  // Proyectos participados con su m²
+  const proyectosMap = {};
+  // Fechas
+  let primeraFecha = null;
+  let ultimaFecha = null;
+
+  repsPersona.forEach(r => {
+    const proy = (proyectos || []).find(p => p.id === r.proyectoId);
+    if (!proy) return;
+    const m2 = parseFloat(r.m2) || 0;
+
+    // Por sistema - usar el sistema del área si hay, sino el del proyecto
+    let sistemaId = proy.sistema;
+    if (r.areaId) {
+      const area = (proy.areas || []).find(a => a.id === r.areaId);
+      if (area && area.sistemaId) sistemaId = area.sistemaId;
+    }
+    const sistema = sistemas?.[sistemaId];
+    const sistemaNombre = sistema?.nombre || sistemaId || 'Desconocido';
+    if (!porSistema[sistemaNombre]) porSistema[sistemaNombre] = 0;
+    porSistema[sistemaNombre] += m2;
+
+    // Por tarea (producto dentro del sistema)
+    if (sistema && r.tareaId) {
+      const tarea = (sistema.tareas || []).find(t => t.id === r.tareaId);
+      if (tarea) {
+        const tareaNombre = tarea.nombre;
+        const key = `${tareaNombre} (${sistemaNombre})`;
+        if (!porTarea[key]) porTarea[key] = 0;
+        porTarea[key] += m2;
+      }
+    }
+
+    // Proyecto
+    if (!proyectosMap[proy.id]) {
+      proyectosMap[proy.id] = {
+        proyecto: proy,
+        m2: 0,
+        dias: new Set(),
+        primerReporte: r.fecha,
+        ultimoReporte: r.fecha,
+      };
+    }
+    proyectosMap[proy.id].m2 += m2;
+    proyectosMap[proy.id].dias.add(r.fecha);
+    if (r.fecha < proyectosMap[proy.id].primerReporte) proyectosMap[proy.id].primerReporte = r.fecha;
+    if (r.fecha > proyectosMap[proy.id].ultimoReporte) proyectosMap[proy.id].ultimoReporte = r.fecha;
+
+    // Fechas globales
+    if (!primeraFecha || r.fecha < primeraFecha) primeraFecha = r.fecha;
+    if (!ultimaFecha || r.fecha > ultimaFecha) ultimaFecha = r.fecha;
+  });
+
+  // Convertir a arrays ordenados
+  const sistemasOrdenados = Object.entries(porSistema)
+    .map(([nombre, m2]) => ({ nombre, m2, porcentaje: m2Total > 0 ? (m2 / m2Total) * 100 : 0 }))
+    .sort((a, b) => b.m2 - a.m2);
+  const tareasOrdenadas = Object.entries(porTarea)
+    .map(([nombre, m2]) => ({ nombre, m2 }))
+    .sort((a, b) => b.m2 - a.m2);
+  const proyectosOrdenados = Object.values(proyectosMap)
+    .map(p => ({ ...p, dias: p.dias.size }))
+    .sort((a, b) => b.m2 - a.m2);
+
+  // Meses activos
+  let mesesActivo = 0;
+  if (primeraFecha && ultimaFecha) {
+    const fi = new Date(primeraFecha + 'T12:00:00');
+    const ff = new Date(ultimaFecha + 'T12:00:00');
+    mesesActivo = Math.max(1, Math.round((ff - fi) / (1000 * 60 * 60 * 24 * 30)));
+  }
+
+  return {
+    cantidadProyectos: proyectosIds.size,
+    m2Total,
+    porSistema: sistemasOrdenados,
+    porTarea: tareasOrdenadas,
+    proyectos: proyectosOrdenados,
+    primeraFecha,
+    ultimaFecha,
+    mesesActivo,
+    promedioM2Mes: mesesActivo > 0 ? m2Total / mesesActivo : 0,
+    sistemaPrincipal: sistemasOrdenados[0]?.nombre || null,
+  };
+};
 
 // ============================================================
 // v8.1: Estados simplificados (6)
@@ -566,6 +664,7 @@ export default function App() {
       { id: 'sistemas', label: 'Sistemas', icon: Settings, vista: 'sistemas' },
       { id: 'clientes', label: 'Clientes', icon: Building2, vista: 'clientes' },
       { id: 'personal', label: 'Personal', icon: UserIcon, vista: 'personal' },
+      { id: 'estadisticasPersonal', label: 'Estadísticas', icon: TrendingUp, vista: 'estadisticasPersonal' },
     ]},
   ] : [
     { seccion: 'MIS PROYECTOS', items: [
@@ -721,8 +820,9 @@ export default function App() {
         {esAdmin && vista === 'equipoGlobal' && <VistaEquipoGlobal data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'planificacion' && puede(usuario, data.permisos, 'planificacion', 'ver') && <VistaPlanificacion usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'miProduccion' && tieneRol(usuario, 'maestro') && <VistaMiProduccion usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
+        {vista === 'estadisticasPersonal' && esAdmin && <VistaEstadisticasPersonal data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'miPerfil' && <MiPerfil usuario={usuario} persona={usuario} soloLectura={false} onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }} onGuardar={(campos) => withSync(() => db.guardarPerfil(usuario.id, campos))} />}
-        {esAdmin && vista === 'personal' && <GestionPersonal personal={data.personal} onVolver={() => setVista('dashboard')} onActualizar={(p) => withSync(() => db.reemplazarPersonal(p))} onAbrirPerfil={(p) => { setPerfilViendo(p); setVista('perfilPersona'); }} />}
+        {esAdmin && vista === 'personal' && <GestionPersonal personal={data.personal} data={data} onVolver={() => setVista('dashboard')} onActualizar={(p) => withSync(() => db.reemplazarPersonal(p))} onAbrirPerfil={(p) => { setPerfilViendo(p); setVista('perfilPersona'); }} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'perfilPersona' && perfilViendo && <MiPerfil usuario={usuario} persona={perfilViendo} soloLectura={false} onVolver={() => setVista('personal')} onGuardar={(campos) => withSync(async () => { await db.guardarPerfil(perfilViendo.id, campos); const d = await db.loadAllData(); const actualizada = d.personal.find(p => p.id === perfilViendo.id); if (actualizada) setPerfilViendo(actualizada); })} />}
         {esAdmin && vista === 'sistemas' && <GestionSistemas sistemas={data.sistemas} config={data.config} onVolver={() => setVista('dashboard')} onActualizarSistemas={(s) => withSync(() => db.guardarSistemas(s))} onActualizarConfig={(c) => withSync(() => db.guardarConfig(c))} />}
         {esAdmin && vista === 'clientes' && <GestionClientes clientes={data.clientes || []} contactos={data.contactos || []} proyectos={data.proyectos || []} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
@@ -1858,9 +1958,10 @@ function EditorSistema({ sistema, setSistema, onGuardar, onCancelar }) {
 // ============================================================
 // GESTIÓN PERSONAL (con admin como rol seleccionable)
 // ============================================================
-function GestionPersonal({ personal, onVolver, onActualizar, onAbrirPerfil }) {
+function GestionPersonal({ personal, onVolver, onActualizar, onAbrirPerfil, data, onVerProyecto }) {
   const [editando, setEditando] = useState(null);
   const [form, setForm] = useState(null);
+  const [experienciaDe, setExperienciaDe] = useState(null); // v8.9.19
 
   const guardar = () => {
     if (!form.nombre) return;
@@ -1952,6 +2053,7 @@ function GestionPersonal({ personal, onVolver, onActualizar, onAbrirPerfil }) {
                     </div>
                     <button onClick={() => { setEditando(p.id); setForm({ ...p, roles: [...(p.roles || [])] }); }} className="text-zinc-500 hover:text-white p-1" title="Editar básico"><Edit2 className="w-3 h-3" /></button>
                     <button onClick={() => onAbrirPerfil(p)} className="text-zinc-500 hover:text-red-500 p-1" title="Ver perfil"><UserIcon className="w-3 h-3" /></button>
+                    {data && <button onClick={() => setExperienciaDe(p)} className="text-zinc-500 hover:text-green-400 p-1" title="Ver experiencia"><TrendingUp className="w-3 h-3" /></button>}
                     <button onClick={() => { if (confirm('¿Eliminar?')) onActualizar(personal.filter(x => x.id !== p.id)); }} className="text-zinc-500 hover:text-red-400 p-1"><Trash2 className="w-3 h-3" /></button>
                   </div>
                 );
@@ -1960,6 +2062,16 @@ function GestionPersonal({ personal, onVolver, onActualizar, onAbrirPerfil }) {
           </div>
         );
       })}
+
+      {/* v8.9.19: Modal de experiencia de persona */}
+      {experienciaDe && data && (
+        <ModalExperienciaPersona
+          persona={experienciaDe}
+          data={data}
+          onCerrar={() => setExperienciaDe(null)}
+          onVerProyecto={(p) => { setExperienciaDe(null); if (onVerProyecto) onVerProyecto(p); }}
+        />
+      )}
     </div>
   );
 }
@@ -7008,6 +7120,279 @@ function FotoThumbGlobal({ foto, onClick }) {
 // Muestra al maestro lo que lleva producido en la quincena actual
 // basado en los reportes de avance registrados
 // ============================================================
+// ============================================================
+// v8.9.19: VISTA ESTADÍSTICAS DE PERSONAL (admin)
+// Muestra un resumen de experiencia de todos los maestros y ayudantes
+// ============================================================
+function VistaEstadisticasPersonal({ data, onVolver, onVerProyecto }) {
+  const [filtroRol, setFiltroRol] = useState('maestro');
+  const [orden, setOrden] = useState('m2'); // 'm2' | 'proyectos' | 'nombre'
+  const [personaDetalle, setPersonaDetalle] = useState(null);
+
+  const personal = React.useMemo(() => {
+    let ps = (data.personal || []).filter(p => !p.archivado);
+    if (filtroRol) ps = ps.filter(p => (p.roles || []).includes(filtroRol));
+    return ps;
+  }, [data.personal, filtroRol]);
+
+  const estadisticas = React.useMemo(() => {
+    return personal.map(p => ({
+      persona: p,
+      stats: calcEstadisticasPersona(p.id, data.reportes, data.proyectos, data.sistemas),
+    }));
+  }, [personal, data.reportes, data.proyectos, data.sistemas]);
+
+  const estadisticasOrdenadas = React.useMemo(() => {
+    const arr = [...estadisticas];
+    if (orden === 'm2') arr.sort((a, b) => b.stats.m2Total - a.stats.m2Total);
+    else if (orden === 'proyectos') arr.sort((a, b) => b.stats.cantidadProyectos - a.stats.cantidadProyectos);
+    else arr.sort((a, b) => a.persona.nombre.localeCompare(b.persona.nombre));
+    return arr;
+  }, [estadisticas, orden]);
+
+  // Totales globales para el hero
+  const totalM2Global = estadisticasOrdenadas.reduce((s, e) => s + e.stats.m2Total, 0);
+  const personasActivas = estadisticasOrdenadas.filter(e => e.stats.cantidadProyectos > 0).length;
+
+  return (
+    <div className="space-y-6">
+      <button onClick={onVolver} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm">
+        <ArrowLeft className="w-4 h-4" /> Volver
+      </button>
+
+      <div>
+        <div className="text-xs tracking-widest uppercase text-red-500 font-bold">EQUIPO</div>
+        <h1 className="text-3xl font-black tracking-tight">Estadísticas de Personal</h1>
+        <div className="text-sm text-zinc-400 mt-1">Experiencia acumulada de cada miembro del equipo</div>
+      </div>
+
+      {/* Hero global */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+        <div className="bg-gradient-to-br from-red-600 to-red-800 p-4">
+          <div className="text-[10px] tracking-widest uppercase text-red-200">Total m² instalados</div>
+          <div className="text-3xl font-black mt-1">{formatNum(totalM2Global, 0)}</div>
+          <div className="text-[10px] text-red-200">entre todo el equipo</div>
+        </div>
+        <div className="bg-zinc-900 border border-zinc-800 p-4">
+          <div className="text-[10px] tracking-widest uppercase text-zinc-500">Personas activas</div>
+          <div className="text-3xl font-black mt-1">{personasActivas}</div>
+          <div className="text-[10px] text-zinc-500">con reportes registrados</div>
+        </div>
+        <div className="bg-zinc-900 border border-zinc-800 p-4">
+          <div className="text-[10px] tracking-widest uppercase text-zinc-500">Total registros</div>
+          <div className="text-3xl font-black mt-1">{formatNum((data.reportes || []).length, 0)}</div>
+          <div className="text-[10px] text-zinc-500">reportes de avance</div>
+        </div>
+      </div>
+
+      {/* Filtros */}
+      <div className="flex gap-2 flex-wrap items-center">
+        <select value={filtroRol} onChange={e => setFiltroRol(e.target.value)} className="bg-zinc-900 border border-zinc-800 px-3 py-1.5 text-xs text-white">
+          <option value="">Todos</option>
+          <option value="maestro">Maestros</option>
+          <option value="ayudante">Ayudantes</option>
+          <option value="supervisor">Supervisores</option>
+        </select>
+        <select value={orden} onChange={e => setOrden(e.target.value)} className="bg-zinc-900 border border-zinc-800 px-3 py-1.5 text-xs text-white">
+          <option value="m2">Orden: Más m²</option>
+          <option value="proyectos">Orden: Más proyectos</option>
+          <option value="nombre">Orden: Nombre A-Z</option>
+        </select>
+      </div>
+
+      {/* Lista de personas con stats */}
+      {estadisticasOrdenadas.length === 0 ? (
+        <div className="bg-zinc-900 border border-zinc-800 p-6 text-center text-sm text-zinc-500">
+          No hay personas que coincidan con el filtro
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {estadisticasOrdenadas.map((e, idx) => {
+            const s = e.stats;
+            const p = e.persona;
+            const medalla = idx === 0 && orden === 'm2' ? '🥇' : idx === 1 && orden === 'm2' ? '🥈' : idx === 2 && orden === 'm2' ? '🥉' : null;
+            return (
+              <button
+                key={p.id}
+                onClick={() => setPersonaDetalle(p)}
+                className="w-full bg-zinc-900 border border-zinc-800 hover:border-red-600 p-3 text-left flex items-center gap-3"
+              >
+                <div className="flex-shrink-0">
+                  {p.foto2x2 ? (
+                    <img src={p.foto2x2} alt="" className="w-12 h-12 object-cover border border-zinc-700" />
+                  ) : (
+                    <UserCircle className="w-12 h-12 text-zinc-500" />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    {medalla && <span className="text-lg">{medalla}</span>}
+                    <div className="font-bold truncate">{p.nombre}</div>
+                  </div>
+                  <div className="text-[10px] text-zinc-500 uppercase">
+                    {(p.roles || []).join(' · ') || 'Sin rol'}
+                  </div>
+                  {s.cantidadProyectos > 0 ? (
+                    <div className="text-xs text-zinc-400 mt-1">
+                      📊 <strong className="text-white">{s.cantidadProyectos}</strong> proyecto{s.cantidadProyectos !== 1 ? 's' : ''} ·
+                      <strong className="text-white"> {formatNum(s.m2Total, 0)}</strong> m²
+                      {s.sistemaPrincipal && <span className="text-zinc-500"> · Principal: {s.sistemaPrincipal}</span>}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-zinc-500 italic mt-1">Sin reportes registrados</div>
+                  )}
+                </div>
+                <ChevronRight className="w-4 h-4 text-zinc-500 flex-shrink-0" />
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Modal detalle de persona */}
+      {personaDetalle && (
+        <ModalExperienciaPersona
+          persona={personaDetalle}
+          data={data}
+          onCerrar={() => setPersonaDetalle(null)}
+          onVerProyecto={(p) => { setPersonaDetalle(null); onVerProyecto(p); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Modal con experiencia detallada de una persona (reutilizable)
+function ModalExperienciaPersona({ persona, data, onCerrar, onVerProyecto }) {
+  const s = React.useMemo(
+    () => calcEstadisticasPersona(persona.id, data.reportes, data.proyectos, data.sistemas),
+    [persona.id, data.reportes, data.proyectos, data.sistemas]
+  );
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
+      <div className="bg-zinc-900 border border-zinc-700 max-w-2xl w-full p-5 space-y-4 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-start sticky top-0 bg-zinc-900 pb-2 border-b border-zinc-800">
+          <div className="flex items-center gap-3">
+            {persona.foto2x2 ? (
+              <img src={persona.foto2x2} alt="" className="w-14 h-14 object-cover border border-zinc-700" />
+            ) : (
+              <UserCircle className="w-14 h-14 text-zinc-500" />
+            )}
+            <div>
+              <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">Experiencia</div>
+              <h2 className="text-xl font-black">{persona.nombre}</h2>
+              <div className="text-[10px] text-zinc-500 uppercase">{(persona.roles || []).join(' · ')}</div>
+            </div>
+          </div>
+          <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
+        </div>
+
+        {s.cantidadProyectos === 0 ? (
+          <div className="bg-zinc-950 border border-zinc-800 p-6 text-center text-sm text-zinc-500">
+            Esta persona aún no tiene reportes registrados en el sistema.
+          </div>
+        ) : (
+          <>
+            {/* Resumen */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              <div className="bg-zinc-950 border border-zinc-800 p-3">
+                <div className="text-[10px] text-zinc-500 uppercase">Proyectos</div>
+                <div className="text-2xl font-black text-red-400">{s.cantidadProyectos}</div>
+              </div>
+              <div className="bg-zinc-950 border border-zinc-800 p-3">
+                <div className="text-[10px] text-zinc-500 uppercase">m² instalados</div>
+                <div className="text-2xl font-black text-green-400">{formatNum(s.m2Total, 0)}</div>
+              </div>
+              <div className="bg-zinc-950 border border-zinc-800 p-3">
+                <div className="text-[10px] text-zinc-500 uppercase">Meses activo</div>
+                <div className="text-2xl font-black">{s.mesesActivo}</div>
+              </div>
+              <div className="bg-zinc-950 border border-zinc-800 p-3">
+                <div className="text-[10px] text-zinc-500 uppercase">Prom. m²/mes</div>
+                <div className="text-2xl font-black">{formatNum(s.promedioM2Mes, 0)}</div>
+              </div>
+            </div>
+
+            {s.primeraFecha && (
+              <div className="text-xs text-zinc-400">
+                Activo desde <strong className="text-white">{formatFecha(s.primeraFecha)}</strong>
+                {s.ultimaFecha !== s.primeraFecha && <> · último reporte <strong className="text-white">{formatFecha(s.ultimaFecha)}</strong></>}
+              </div>
+            )}
+
+            {/* Por sistema */}
+            {s.porSistema.length > 0 && (
+              <div>
+                <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2">🏗️ m² por Sistema</div>
+                <div className="space-y-2">
+                  {s.porSistema.map(sis => (
+                    <div key={sis.nombre} className="bg-zinc-950 border border-zinc-800 p-3">
+                      <div className="flex justify-between items-center mb-1">
+                        <div className="text-sm font-bold">{sis.nombre}</div>
+                        <div className="text-sm">
+                          <strong>{formatNum(sis.m2, 1)}</strong> m²
+                          <span className="text-zinc-500 ml-2">({sis.porcentaje.toFixed(0)}%)</span>
+                        </div>
+                      </div>
+                      <div className="h-2 bg-zinc-900 overflow-hidden">
+                        <div className="h-full bg-red-600" style={{ width: `${sis.porcentaje}%` }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Por tarea/producto */}
+            {s.porTarea.length > 0 && (
+              <div>
+                <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2">🎨 m² por Producto</div>
+                <div className="space-y-1">
+                  {s.porTarea.map(t => (
+                    <div key={t.nombre} className="flex justify-between items-center bg-zinc-950 border border-zinc-800 p-2 text-xs">
+                      <div className="flex-1 truncate">{t.nombre}</div>
+                      <div className="font-bold ml-2 flex-shrink-0">{formatNum(t.m2, 1)} m²</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Proyectos */}
+            <div>
+              <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2">📋 Proyectos participados ({s.proyectos.length})</div>
+              <div className="space-y-1">
+                {s.proyectos.map(pi => (
+                  <button
+                    key={pi.proyecto.id}
+                    onClick={() => onVerProyecto(pi.proyecto)}
+                    className="w-full bg-zinc-950 border border-zinc-800 hover:border-red-600 p-2 flex items-center justify-between text-left"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-mono text-zinc-500">{pi.proyecto.referenciaOdoo}</div>
+                      <div className="text-sm font-bold truncate">{pi.proyecto.cliente || pi.proyecto.nombre}</div>
+                      <div className="text-[10px] text-zinc-500">
+                        {formatFecha(pi.primerReporte)}
+                        {pi.ultimoReporte !== pi.primerReporte && ` → ${formatFecha(pi.ultimoReporte)}`}
+                        {' · '}{pi.dias} día{pi.dias !== 1 ? 's' : ''}
+                      </div>
+                    </div>
+                    <div className="text-sm font-bold text-right ml-2">
+                      {formatNum(pi.m2, 1)} m²
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
 function VistaMiProduccion({ usuario, data, onVolver, onVerProyecto }) {
   const hoyStr = new Date().toISOString().split('T')[0];
   const [quincenaRef, setQuincenaRef] = useState(hoyStr);

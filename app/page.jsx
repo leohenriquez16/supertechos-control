@@ -3385,7 +3385,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
         <TabBtn active={tab === 'fotos'} onClick={() => setTab('fotos')}><ImageIcon className="w-3 h-3 inline mr-1" />Fotos</TabBtn>
         {(esAdmin || proyecto.cronogramaVisibleMaestro !== false) && <TabBtn active={tab === 'cronograma'} onClick={() => setTab('cronograma')}><Calendar className="w-3 h-3 inline mr-1" />Cronograma</TabBtn>}
         {proyecto.tipoAvance === 'unidades' && <TabBtn active={tab === 'unidades'} onClick={() => setTab('unidades')}><Briefcase className="w-3 h-3 inline mr-1" />Unidades</TabBtn>}
-        <TabBtn active={tab === 'materiales'} onClick={() => setTab('materiales')}><Package className="w-3 h-3 inline mr-1" />Materiales</TabBtn>
+        {!tieneRol(usuario, 'maestro') && <TabBtn active={tab === 'materiales'} onClick={() => setTab('materiales')}><Package className="w-3 h-3 inline mr-1" />Materiales</TabBtn>}
         {!esSupervisor && <TabBtn active={tab === 'productos'} onClick={() => setTab('productos')}><Sparkles className="w-3 h-3 inline mr-1" />Productos</TabBtn>}
         {!esSupervisor && <TabBtn active={tab === 'costo'} onClick={() => setTab('costo')}><DollarSign className="w-3 h-3 inline mr-1" />Costo</TabBtn>}
         {!esSupervisor && proyecto.dieta?.habilitada && <TabBtn active={tab === 'dieta'} onClick={() => setTab('dieta')}><Utensils className="w-3 h-3 inline mr-1" />Dieta</TabBtn>}
@@ -3399,7 +3399,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
       {tab === 'fotos' && <TabFotos usuario={usuario} proyecto={proyecto} />}
       {tab === 'cronograma' && (esAdmin || proyecto.cronogramaVisibleMaestro !== false) && <TabCronograma proyecto={proyecto} porcentajeActual={porcentaje} onActualizarProyecto={onActualizarProyecto} esSupervisor={esSupervisor} reportes={data.reportes} sistema={sistema} sistemas={data.sistemas} />}
       {tab === 'unidades' && proyecto.tipoAvance === 'unidades' && <TabUnidades proyecto={proyecto} onActualizarProyecto={onActualizarProyecto} esAdmin={esAdmin} />}
-      {tab === 'materiales' && <TabMateriales proyecto={proyecto} sistema={sistema} materiales={materiales} envios={data.envios.filter(e => e.proyectoId === proyecto.id)} reportes={data.reportes} sistemas={data.sistemas} onRegistrarEnvio={onRegistrarEnvio} onRegistrarEnviosLote={onRegistrarEnviosLote} esSupervisor={esSupervisor} onEliminarEnvio={onEliminarEnvio} onIrASistemas={onIrASistemas} />}
+      {tab === 'materiales' && !tieneRol(usuario, 'maestro') && <TabMateriales proyecto={proyecto} sistema={sistema} materiales={materiales} envios={data.envios.filter(e => e.proyectoId === proyecto.id)} reportes={data.reportes} sistemas={data.sistemas} onRegistrarEnvio={onRegistrarEnvio} onRegistrarEnviosLote={onRegistrarEnviosLote} esSupervisor={esSupervisor} onEliminarEnvio={onEliminarEnvio} onIrASistemas={onIrASistemas} />}
       {tab === 'productos' && !esSupervisor && <TabProductosAdicionales proyecto={proyecto} onActualizarProyecto={onActualizarProyecto} esAdmin={esAdmin} />}
       {tab === 'costo' && !esSupervisor && <TabCosto proyecto={proyecto} sistema={sistema} reportes={data.reportes} envios={data.envios} config={data.config} />}
       {tab === 'dieta' && !esSupervisor && <TabDieta proyecto={proyecto} reportes={data.reportes} personal={data.personal} onActualizarProyecto={onActualizarProyecto} />}

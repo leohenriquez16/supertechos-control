@@ -10,7 +10,7 @@ import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps }
 // ============================================================
 // HELPERS
 // ============================================================
-const APP_VERSION = '8.9.15';
+const APP_VERSION = '8.9.16';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
@@ -3379,7 +3379,6 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
       <div className="flex gap-1 border-b-2 border-zinc-800 overflow-x-auto">
         <TabBtn active={tab === 'avance'} onClick={() => setTab('avance')}><TrendingUp className="w-3 h-3 inline mr-1" />Avance</TabBtn>
         <TabBtn active={tab === 'info'} onClick={() => setTab('info')}><MapPin className="w-3 h-3 inline mr-1" />Info</TabBtn>
-        <TabBtn active={tab === 'jornada'} onClick={() => setTab('jornada')}><Clock className="w-3 h-3 inline mr-1" />Jornada</TabBtn>
         <TabBtn active={tab === 'asistencia'} onClick={() => setTab('asistencia')}><CheckCircle2 className="w-3 h-3 inline mr-1" />Asistencia</TabBtn>
         <TabBtn active={tab === 'equipo'} onClick={() => setTab('equipo')}><Users className="w-3 h-3 inline mr-1" />Equipo</TabBtn>
         <TabBtn active={tab === 'fotos'} onClick={() => setTab('fotos')}><ImageIcon className="w-3 h-3 inline mr-1" />Fotos</TabBtn>
@@ -3393,8 +3392,8 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
 
       {tab === 'avance' && <TabAvance proyecto={proyecto} reportes={data.reportes} sistema={sistema} sistemas={data.sistemas} esSupervisor={esSupervisor} onEliminarReporte={onEliminarReporte} />}
       {tab === 'info' && <TabInfo proyecto={proyecto} clientes={data.clientes || []} contactos={data.contactos || []} documentos={data.documentos || []} usuario={usuario} personal={data.personal} esAdmin={esAdmin} esSupervisor={esSupervisor} onRecargar={onRecargar} />}
-      {tab === 'jornada' && <TabJornada usuario={usuario} proyecto={proyecto} personal={data.personal} onActualizarUbicacion={(lat, lng, dir) => onActualizarProyecto({ ...proyecto, ubicacionLat: lat, ubicacionLng: lng, ubicacionDireccion: dir })} onEliminarJornada={onEliminarJornada} />}
-      {tab === 'asistencia' && <TabAsistencia usuario={usuario} proyecto={proyecto} personal={data.personal} checkins={data.checkins || []} esAdmin={esAdmin} onActualizarProyecto={onActualizarProyecto} onRecargar={onRecargar} />}
+      {tab === 'jornada' && <TabAsistencia usuario={usuario} proyecto={proyecto} personal={data.personal} checkins={data.checkins || []} esAdmin={esAdmin} onActualizarProyecto={onActualizarProyecto} onRecargar={onRecargar} onEliminarJornada={onEliminarJornada} />}
+      {tab === 'asistencia' && <TabAsistencia usuario={usuario} proyecto={proyecto} personal={data.personal} checkins={data.checkins || []} esAdmin={esAdmin} onActualizarProyecto={onActualizarProyecto} onRecargar={onRecargar} onEliminarJornada={onEliminarJornada} />}
       {tab === 'equipo' && <TabEquipoProyecto proyecto={proyecto} data={data} sistema={sistema} />}
       {tab === 'fotos' && <TabFotos usuario={usuario} proyecto={proyecto} />}
       {tab === 'cronograma' && (esAdmin || proyecto.cronogramaVisibleMaestro !== false) && <TabCronograma proyecto={proyecto} porcentajeActual={porcentaje} onActualizarProyecto={onActualizarProyecto} esSupervisor={esSupervisor} reportes={data.reportes} sistema={sistema} sistemas={data.sistemas} />}
@@ -4188,7 +4187,7 @@ function ModalPausarProyecto({ proyecto, onCerrar, onConfirmar }) {
 // ============================================================
 // v8.9.13: TAB ASISTENCIA - check-in diario + calendario
 // ============================================================
-function TabAsistencia({ usuario, proyecto, personal, checkins, esAdmin, onActualizarProyecto, onRecargar }) {
+function TabAsistencia({ usuario, proyecto, personal, checkins, esAdmin, onActualizarProyecto, onRecargar, onEliminarJornada }) {
   const [vistaRango, setVistaRango] = useState('mes'); // 'dia' | 'mes' | 'año'
   const [fechaRef, setFechaRef] = useState(new Date());
   const [cargando, setCargando] = useState(false);
@@ -4336,8 +4335,21 @@ function TabAsistencia({ usuario, proyecto, personal, checkins, esAdmin, onActua
         </div>
       )}
 
+      {/* v8.9.16: Jornada grupal embebida */}
+      <div className="border-t-2 border-zinc-800 pt-4">
+        <div className="text-[11px] tracking-widest uppercase text-zinc-500 font-bold mb-3">📋 Jornada grupal del día</div>
+        <TabJornada
+          usuario={usuario}
+          proyecto={proyecto}
+          personal={personal}
+          onActualizarUbicacion={(lat, lng, dir) => onActualizarProyecto({ ...proyecto, ubicacionLat: lat, ubicacionLng: lng, ubicacionDireccion: dir })}
+          onEliminarJornada={onEliminarJornada}
+        />
+      </div>
+
       {/* Selector de vista */}
-      <div className="flex border-b border-zinc-800">
+      <div className="flex border-b border-zinc-800 mt-6">
+        <div className="text-[10px] text-zinc-500 uppercase tracking-widest px-4 py-2 mr-2">Historial:</div>
         {['dia', 'mes', 'año'].map(v => (
           <button
             key={v}

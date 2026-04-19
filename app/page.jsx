@@ -10,7 +10,7 @@ import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps }
 // ============================================================
 // HELPERS
 // ============================================================
-const APP_VERSION = '8.9.21';
+const APP_VERSION = '8.9.22';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
@@ -1519,10 +1519,153 @@ function IconBtn({ onClick, title, children }) {
 // ============================================================
 // LOGIN
 // ============================================================
+// ============================================================
+// v8.9.22: WebAuthn helpers (Face ID / Touch ID / Huella)
+// ============================================================
+
+// Convierte base64url a ArrayBuffer
+const base64urlToBuffer = (base64url) => {
+  const padding = '='.repeat((4 - base64url.length % 4) % 4);
+  const base64 = (base64url + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = window.atob(base64);
+  const buffer = new ArrayBuffer(raw.length);
+  const view = new Uint8Array(buffer);
+  for (let i = 0; i < raw.length; i++) view[i] = raw.charCodeAt(i);
+  return buffer;
+};
+
+// Convierte ArrayBuffer a base64url
+const bufferToBase64url = (buffer) => {
+  const bytes = new Uint8Array(buffer);
+  let str = '';
+  for (const byte of bytes) str += String.fromCharCode(byte);
+  return window.btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+};
+
+const detectarDispositivo = () => {
+  const ua = navigator.userAgent || '';
+  if (/iPhone|iPad|iPod/.test(ua)) return { tipo: 'iphone', nombre: 'iPhone' };
+  if (/Mac OS/.test(ua)) return { tipo: 'mac', nombre: 'Mac' };
+  if (/Android/.test(ua)) return { tipo: 'android', nombre: 'Android' };
+  if (/Windows/.test(ua)) return { tipo: 'windows', nombre: 'Windows' };
+  return { tipo: 'other', nombre: 'Dispositivo' };
+};
+
+const registrarBiometria = async (personaId, personaNombre) => {
+  if (!window.PublicKeyCredential) throw new Error('Este dispositivo no soporta biometría');
+
+  const beginRes = await fetch('/api/webauthn/register-begin', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ personaId, personaNombre }),
+  });
+  const { options, challenge } = await beginRes.json();
+  if (!options) throw new Error('No se pudo iniciar el registro');
+
+  // Convertir challenge y userId a ArrayBuffer
+  const publicKey = {
+    ...options,
+    challenge: base64urlToBuffer(options.challenge),
+    user: {
+      ...options.user,
+      id: base64urlToBuffer(options.user.id),
+    },
+  };
+
+  const credential = await navigator.credentials.create({ publicKey });
+  if (!credential) throw new Error('No se pudo crear la credencial');
+
+  const credData = {
+    id: credential.id,
+    rawId: bufferToBase64url(credential.rawId),
+    type: credential.type,
+    response: {
+      clientDataJSON: bufferToBase64url(credential.response.clientDataJSON),
+      attestationObject: bufferToBase64url(credential.response.attestationObject),
+      publicKey: credential.response.getPublicKey ? bufferToBase64url(credential.response.getPublicKey()) : null,
+      transports: credential.response.getTransports ? credential.response.getTransports() : [],
+    },
+  };
+
+  const device = detectarDispositivo();
+  const finishRes = await fetch('/api/webauthn/register-finish', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      personaId,
+      credential: credData,
+      deviceName: device.nombre,
+      deviceType: device.tipo,
+      challenge,
+    }),
+  });
+  const res = await finishRes.json();
+  if (!res.success) throw new Error(res.error || 'Registro falló');
+  return true;
+};
+
+const loginConBiometria = async (personaId = null) => {
+  if (!window.PublicKeyCredential) throw new Error('Este dispositivo no soporta biometría');
+
+  const beginRes = await fetch('/api/webauthn/login-begin', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ personaId }),
+  });
+  const beginData = await beginRes.json();
+  if (!beginData.options) throw new Error(beginData.error || 'Sin credenciales');
+
+  const publicKey = {
+    ...beginData.options,
+    challenge: base64urlToBuffer(beginData.options.challenge),
+    allowCredentials: beginData.options.allowCredentials.map(c => ({
+      ...c,
+      id: base64urlToBuffer(c.id),
+    })),
+  };
+
+  const credential = await navigator.credentials.get({ publicKey });
+  if (!credential) throw new Error('Autenticación cancelada');
+
+  const credData = {
+    id: credential.id,
+    rawId: bufferToBase64url(credential.rawId),
+    type: credential.type,
+    response: {
+      clientDataJSON: bufferToBase64url(credential.response.clientDataJSON),
+      authenticatorData: bufferToBase64url(credential.response.authenticatorData),
+      signature: bufferToBase64url(credential.response.signature),
+      userHandle: credential.response.userHandle ? bufferToBase64url(credential.response.userHandle) : null,
+    },
+  };
+
+  const finishRes = await fetch('/api/webauthn/login-finish', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ credential: credData }),
+  });
+  const res = await finishRes.json();
+  if (!res.persona) throw new Error(res.error || 'Login falló');
+  return res.persona;
+};
+
+
 function Login({ personal, onLogin }) {
   const [sel, setSel] = useState(null);
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
+  const [bioSoportado, setBioSoportado] = useState(false);
+  const [bioCargando, setBioCargando] = useState(false);
+
+  useEffect(() => {
+    // v8.9.22: Detectar si el dispositivo soporta biometría
+    if (window.PublicKeyCredential) {
+      PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable?.()
+        .then(available => setBioSoportado(!!available))
+        .catch(() => setBioSoportado(false));
+    }
+  }, []);
+
   const rolLabel = (p) => {
     if (tieneRol(p, 'admin')) return 'Administrador';
     const r = [];
@@ -1531,6 +1674,19 @@ function Login({ personal, onLogin }) {
     return r.join(' · ');
   };
   const intentar = () => { if (sel.pin === pin) onLogin(sel); else { setError('PIN incorrecto'); setPin(''); } };
+
+  // v8.9.22: Login con biometría
+  const loginBiometrico = async () => {
+    setBioCargando(true); setError('');
+    try {
+      const persona = await loginConBiometria();
+      onLogin(persona);
+    } catch (e) {
+      setError(e.message || 'Error con Face ID');
+    }
+    setBioCargando(false);
+  };
+
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col items-center justify-center px-4" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
       <div className="w-full max-w-sm">
@@ -1539,6 +1695,22 @@ function Login({ personal, onLogin }) {
           <div className="font-black tracking-tight text-2xl">SUPER TECHOS</div>
           <div className="text-[10px] text-zinc-500 tracking-widest uppercase">Control de Obras</div>
         </div>
+
+        {/* v8.9.22: Botón Face ID arriba (solo si dispositivo soporta) */}
+        {!sel && bioSoportado && (
+          <div className="mb-4">
+            <button
+              onClick={loginBiometrico}
+              disabled={bioCargando}
+              className="w-full bg-gradient-to-br from-red-600 to-red-800 hover:brightness-110 disabled:opacity-50 text-white font-black uppercase tracking-widest py-4 flex items-center justify-center gap-2"
+            >
+              {bioCargando ? <Loader2 className="w-5 h-5 animate-spin" /> : '🔐'}
+              {bioCargando ? 'Autenticando...' : 'Entrar con Face ID'}
+            </button>
+            <div className="text-[10px] text-zinc-500 text-center mt-2 tracking-widest uppercase">— o ingresa con PIN —</div>
+          </div>
+        )}
+
         {!sel ? (
           <div className="space-y-2">
             <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-3">Selecciona tu usuario</div>
@@ -1548,6 +1720,7 @@ function Login({ personal, onLogin }) {
                 <div><div className="font-bold">{p.nombre}</div><div className="text-xs text-zinc-500">{rolLabel(p)}</div></div>
               </button>
             ))}
+            {error && <div className="text-xs text-red-500 text-center mt-3">{error}</div>}
           </div>
         ) : (
           <div className="space-y-3">
@@ -11138,6 +11311,117 @@ function MiPerfil({ usuario, persona, onVolver, onGuardar }) {
           </div>
         </div>
       )}
+
+      {/* v8.9.22: Sección de biometría (solo si es propio perfil) */}
+      {esMio && <SeccionBiometria usuario={usuario} />}
+    </div>
+  );
+}
+
+// v8.9.22: Sección de Face ID / Biometría en Mi Perfil
+function SeccionBiometria({ usuario }) {
+  const [credenciales, setCredenciales] = useState([]);
+  const [cargando, setCargando] = useState(false);
+  const [error, setError] = useState('');
+  const [bioSoportado, setBioSoportado] = useState(false);
+
+  useEffect(() => {
+    if (window.PublicKeyCredential) {
+      PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable?.()
+        .then(available => setBioSoportado(!!available))
+        .catch(() => setBioSoportado(false));
+    }
+    recargar();
+  }, []);
+
+  const recargar = async () => {
+    try {
+      const lista = await db.listarCredencialesPersona(usuario.id);
+      setCredenciales(lista);
+    } catch (e) { console.warn(e); }
+  };
+
+  const registrar = async () => {
+    setCargando(true); setError('');
+    try {
+      await registrarBiometria(usuario.id, usuario.nombre);
+      await recargar();
+    } catch (e) {
+      setError(e.message || 'Error al registrar');
+    }
+    setCargando(false);
+  };
+
+  const revocar = async (id) => {
+    if (!confirm('¿Quitar este dispositivo? Ya no podrás entrar con Face ID desde él.')) return;
+    try {
+      await db.revocarCredencial(id);
+      await recargar();
+    } catch (e) { alert('Error: ' + (e.message || e)); }
+  };
+
+  const iconoDispositivo = (tipo) => {
+    if (tipo === 'iphone') return '📱';
+    if (tipo === 'android') return '📱';
+    if (tipo === 'mac') return '💻';
+    if (tipo === 'windows') return '💻';
+    return '🖥️';
+  };
+
+  return (
+    <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3 mt-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">🔐 Face ID / Biometría</div>
+          <div className="text-[10px] text-zinc-500 mt-0.5">Entra al ERP con tu cara/huella sin escribir PIN</div>
+        </div>
+      </div>
+
+      {!bioSoportado && (
+        <div className="bg-yellow-900/20 border border-yellow-700 p-2 text-[10px] text-yellow-300">
+          ⚠️ Tu dispositivo no soporta biometría o debe estar en HTTPS. En celular o Mac con Face/Touch ID sí funciona.
+        </div>
+      )}
+
+      {credenciales.length === 0 ? (
+        <div className="text-xs text-zinc-500 italic">Aún no has registrado ningún dispositivo.</div>
+      ) : (
+        <div className="space-y-1">
+          <div className="text-[10px] text-zinc-500 uppercase">Dispositivos registrados ({credenciales.length})</div>
+          {credenciales.map(c => (
+            <div key={c.id} className="bg-zinc-950 border border-zinc-800 p-2 flex items-center gap-2">
+              <div className="text-xl">{iconoDispositivo(c.deviceType)}</div>
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-bold">{c.deviceName}</div>
+                <div className="text-[10px] text-zinc-500">
+                  Registrado {formatFecha(c.createdAt?.split('T')[0])}
+                  {c.lastUsedAt && ` · último uso: ${formatFecha(c.lastUsedAt.split('T')[0])}`}
+                </div>
+              </div>
+              <button onClick={() => revocar(c.id)} className="text-zinc-500 hover:text-red-400 p-1" title="Quitar este dispositivo">
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {bioSoportado && (
+        <button
+          onClick={registrar}
+          disabled={cargando}
+          className="w-full bg-red-600 hover:bg-red-700 disabled:bg-zinc-700 text-white text-xs font-black uppercase py-3 flex items-center justify-center gap-2"
+        >
+          {cargando ? <Loader2 className="w-3 h-3 animate-spin" /> : '🔐'}
+          {cargando ? 'Registrando...' : credenciales.length === 0 ? 'Activar Face ID en este dispositivo' : 'Registrar otro dispositivo'}
+        </button>
+      )}
+
+      {error && <div className="bg-red-900/20 border border-red-700 p-2 text-[10px] text-red-300">{error}</div>}
+
+      <div className="text-[9px] text-zinc-600 italic">
+        La biometría se guarda en tu dispositivo, nunca viaja a nuestros servidores. Si cambias de celular, debes registrar el nuevo.
+      </div>
     </div>
   );
 }

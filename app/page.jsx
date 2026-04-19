@@ -10,7 +10,7 @@ import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps }
 // ============================================================
 // HELPERS
 // ============================================================
-const APP_VERSION = '8.9.14';
+const APP_VERSION = '8.9.15';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
@@ -3392,7 +3392,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
       </div>
 
       {tab === 'avance' && <TabAvance proyecto={proyecto} reportes={data.reportes} sistema={sistema} sistemas={data.sistemas} esSupervisor={esSupervisor} onEliminarReporte={onEliminarReporte} />}
-      {tab === 'info' && <TabInfo proyecto={proyecto} clientes={data.clientes || []} contactos={data.contactos || []} />}
+      {tab === 'info' && <TabInfo proyecto={proyecto} clientes={data.clientes || []} contactos={data.contactos || []} documentos={data.documentos || []} usuario={usuario} personal={data.personal} esAdmin={esAdmin} esSupervisor={esSupervisor} onRecargar={onRecargar} />}
       {tab === 'jornada' && <TabJornada usuario={usuario} proyecto={proyecto} personal={data.personal} onActualizarUbicacion={(lat, lng, dir) => onActualizarProyecto({ ...proyecto, ubicacionLat: lat, ubicacionLng: lng, ubicacionDireccion: dir })} onEliminarJornada={onEliminarJornada} />}
       {tab === 'asistencia' && <TabAsistencia usuario={usuario} proyecto={proyecto} personal={data.personal} checkins={data.checkins || []} esAdmin={esAdmin} onActualizarProyecto={onActualizarProyecto} onRecargar={onRecargar} />}
       {tab === 'equipo' && <TabEquipoProyecto proyecto={proyecto} data={data} sistema={sistema} />}
@@ -3410,7 +3410,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
 // ============================================================
 // TAB INFO (v8.2) - ubicación + contacto cliente
 // ============================================================
-function TabInfo({ proyecto, clientes = [], contactos = [] }) {
+function TabInfo({ proyecto, clientes = [], contactos = [], documentos = [], usuario, personal = [], esAdmin, esSupervisor, onRecargar }) {
   const hayUbicacion = proyecto.ubicacionLat != null && proyecto.ubicacionLng != null;
   const mapSrc = hayUbicacion ? `https://www.google.com/maps?q=${proyecto.ubicacionLat},${proyecto.ubicacionLng}&z=17&output=embed` : null;
   // v8.9.10: cliente y contactos derivados
@@ -3514,6 +3514,586 @@ function TabInfo({ proyecto, clientes = [], contactos = [] }) {
           <div><div className="text-zinc-500">Ref. Proyecto</div><div>{proyecto.referenciaProyecto || '—'}</div></div>
           <div><div className="text-zinc-500">Inicio</div><div>{proyecto.fecha_inicio ? formatFechaCorta(proyecto.fecha_inicio) : '—'}</div></div>
           <div><div className="text-zinc-500">Entrega</div><div>{proyecto.fecha_entrega ? formatFechaCorta(proyecto.fecha_entrega) : '—'}</div></div>
+        </div>
+      </div>
+
+      {/* v8.9.15: Documentos formales del proyecto */}
+      <SeccionDocumentos
+        proyecto={proyecto}
+        documentos={documentos}
+        clientes={clientes}
+        contactos={contactos}
+        personal={personal}
+        usuario={usuario}
+        esAdmin={esAdmin}
+        esSupervisor={esSupervisor}
+        onRecargar={onRecargar}
+      />
+    </div>
+  );
+}
+
+// v8.9.15: Sección de documentos del proyecto (Incidentes + Entregas)
+function SeccionDocumentos({ proyecto, documentos, clientes, contactos, personal, usuario, esAdmin, esSupervisor, onRecargar }) {
+  const [modalTipo, setModalTipo] = useState(null); // null | 'incidente' | 'entrega'
+  const [editando, setEditando] = useState(null); // documento a editar/ver
+  const [enviando, setEnviando] = useState(null); // documento a enviar por email
+  const docsProyecto = documentos.filter(d => d.proyectoId === proyecto.id);
+  const puedeEnviar = esAdmin || esSupervisor;
+  const puedeCrear = true; // todos pueden crear (incluso maestros)
+  const puedeEditar = esAdmin || esSupervisor;
+
+  const tipoLabel = (t) => {
+    if (t === 'incidente') return { txt: 'Incidente', color: 'text-red-400', bg: 'bg-red-900/20', border: 'border-red-700', icon: '⚠️' };
+    if (t === 'entrega_area') return { txt: 'Entrega parcial', color: 'text-blue-400', bg: 'bg-blue-900/20', border: 'border-blue-700', icon: '✅' };
+    if (t === 'entrega_total') return { txt: 'Entrega final', color: 'text-green-400', bg: 'bg-green-900/20', border: 'border-green-700', icon: '🏁' };
+    return { txt: t, color: '', bg: '', border: 'border-zinc-700', icon: '📄' };
+  };
+
+  return (
+    <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
+      <div className="flex justify-between items-center">
+        <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold flex items-center gap-1">📑 Documentos del proyecto ({docsProyecto.length})</div>
+      </div>
+
+      {puedeCrear && (
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            onClick={() => setModalTipo('incidente')}
+            className="bg-zinc-950 border-2 border-dashed border-zinc-700 hover:border-red-600 py-3 flex flex-col items-center gap-1 text-xs font-bold uppercase text-zinc-400 hover:text-red-400"
+          >
+            <AlertTriangle className="w-4 h-4" />
+            ⚠️ Reporte Incidente
+          </button>
+          <button
+            onClick={() => setModalTipo('entrega')}
+            className="bg-zinc-950 border-2 border-dashed border-zinc-700 hover:border-green-600 py-3 flex flex-col items-center gap-1 text-xs font-bold uppercase text-zinc-400 hover:text-green-400"
+          >
+            <CheckCircle2 className="w-4 h-4" />
+            ✅ Reporte Entrega
+          </button>
+        </div>
+      )}
+
+      {docsProyecto.length === 0 ? (
+        <div className="text-xs text-zinc-500 italic text-center py-4 border border-dashed border-zinc-800">
+          Sin documentos formales todavía
+        </div>
+      ) : (
+        <div className="space-y-1">
+          {docsProyecto.map(d => {
+            const lbl = tipoLabel(d.tipo);
+            const area = d.areaId ? proyecto.areas.find(a => a.id === d.areaId) : null;
+            return (
+              <button
+                key={d.id}
+                onClick={() => setEditando(d)}
+                className={`w-full ${lbl.bg} border ${lbl.border} p-2 text-left hover:border-white/30`}
+              >
+                <div className="flex justify-between items-start gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[10px] font-black uppercase ${lbl.color}`}>{lbl.icon} {lbl.txt}</span>
+                      <span className="text-[10px] text-zinc-500 font-mono">{d.codigo}</span>
+                    </div>
+                    <div className="text-xs font-bold mt-0.5 truncate">{d.titulo || '(sin título)'}</div>
+                    <div className="text-[10px] text-zinc-500">
+                      {formatFecha(d.fecha)} · {d.creadoPorNombre}
+                      {area && ` · ${area.nombre}`}
+                      {d.fotos && d.fotos.length > 0 && ` · 📷 ${d.fotos.length}`}
+                      {d.enviadoAlCliente && ' · ✉️ Enviado'}
+                    </div>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {modalTipo === 'incidente' && (
+        <ModalCrearDocumento
+          tipo="incidente"
+          proyecto={proyecto}
+          usuario={usuario}
+          onCerrar={() => setModalTipo(null)}
+          onGuardado={async () => { setModalTipo(null); if (onRecargar) await onRecargar(); }}
+        />
+      )}
+      {modalTipo === 'entrega' && (
+        <ModalCrearDocumento
+          tipo="entrega"
+          proyecto={proyecto}
+          usuario={usuario}
+          onCerrar={() => setModalTipo(null)}
+          onGuardado={async () => { setModalTipo(null); if (onRecargar) await onRecargar(); }}
+        />
+      )}
+      {editando && (
+        <ModalVerDocumento
+          documento={editando}
+          proyecto={proyecto}
+          clientes={clientes}
+          contactos={contactos}
+          personal={personal}
+          usuario={usuario}
+          puedeEnviar={puedeEnviar}
+          puedeEditar={puedeEditar}
+          onCerrar={() => setEditando(null)}
+          onEnviar={() => { setEnviando(editando); setEditando(null); }}
+          onActualizado={async () => { if (onRecargar) await onRecargar(); }}
+        />
+      )}
+      {enviando && (
+        <ModalEnviarDocumento
+          documento={enviando}
+          proyecto={proyecto}
+          clientes={clientes}
+          contactos={contactos}
+          personal={personal}
+          usuario={usuario}
+          onCerrar={() => setEnviando(null)}
+          onEnviado={async () => { setEnviando(null); if (onRecargar) await onRecargar(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Modal para crear un documento nuevo
+function ModalCrearDocumento({ tipo, proyecto, usuario, onCerrar, onGuardado }) {
+  const hoyStr = new Date().toISOString().split('T')[0];
+  const [subtipo, setSubtipo] = useState(tipo === 'entrega' ? 'entrega_area' : 'incidente');
+  const [areaId, setAreaId] = useState(proyecto.areas?.[0]?.id || '');
+  const [fecha, setFecha] = useState(hoyStr);
+  const [titulo, setTitulo] = useState('');
+  const [descripcion, setDescripcion] = useState('');
+  const [severidad, setSeveridad] = useState('media');
+  const [m2Entregados, setM2Entregados] = useState('');
+  const [porcentajeAvance, setPorcentajeAvance] = useState('100');
+  const [fotos, setFotos] = useState([]); // [{dataUrl, transcripcion, audioBlob, audioUrl, nota}]
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState('');
+
+  const esIncidente = subtipo === 'incidente';
+  const esEntregaArea = subtipo === 'entrega_area';
+  const esEntregaTotal = subtipo === 'entrega_total';
+
+  // Precargar m2 del área seleccionada para entrega parcial
+  useEffect(() => {
+    if (esEntregaArea && areaId) {
+      const area = proyecto.areas.find(a => a.id === areaId);
+      if (area) setM2Entregados(area.m2.toString());
+    } else if (esEntregaTotal) {
+      const total = (proyecto.areas || []).reduce((s, a) => s + (a.m2 || 0), 0);
+      setM2Entregados(total.toString());
+    }
+  }, [subtipo, areaId]);
+
+  const agregarFoto = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.capture = 'environment';
+    input.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      try {
+        const compressed = await comprimirImagen(file, 1200, 0.85);
+        setFotos(prev => [...prev, { dataUrl: compressed, transcripcion: '', audioBlob: null, nota: '' }]);
+      } catch (err) { setError('Error procesando foto: ' + err.message); }
+    };
+    input.click();
+  };
+
+  const eliminarFoto = (i) => {
+    setFotos(fotos.filter((_, idx) => idx !== i));
+  };
+
+  const actualizarFoto = (i, campos) => {
+    setFotos(fotos.map((f, idx) => idx === i ? { ...f, ...campos } : f));
+  };
+
+  const guardar = async () => {
+    if (!titulo.trim()) { setError('El título es requerido'); return; }
+    if (esEntregaArea && !areaId) { setError('Selecciona un área'); return; }
+    setGuardando(true); setError('');
+    try {
+      const consecutivo = await db.siguienteConsecutivoDocumento(proyecto.id, subtipo);
+      const refProy = proyecto.referenciaOdoo || proyecto.id.slice(0, 8);
+      let codigo;
+      if (subtipo === 'incidente') codigo = `RI-${refProy}-${String(consecutivo).padStart(3, '0')}`;
+      else if (subtipo === 'entrega_area') codigo = `RE-${refProy}-AREA-${String(consecutivo).padStart(3, '0')}`;
+      else codigo = `RE-${refProy}-FINAL`;
+
+      const docId = 'doc_' + Date.now() + Math.random().toString(36).slice(2, 5);
+
+      // Subir fotos (y audios si hay) a Storage
+      const fotosProcesadas = [];
+      for (let i = 0; i < fotos.length; i++) {
+        const f = fotos[i];
+        let fotoUrl = f.dataUrl;
+        let audioUrl = null;
+        try {
+          fotoUrl = await db.subirFotoDocumento(f.dataUrl, proyecto.id, docId, i);
+        } catch (e) { console.warn('Error subiendo foto, usa data URL:', e); }
+        if (f.audioBlob) {
+          try {
+            audioUrl = await db.subirAudioFotoDocumento(f.audioBlob, proyecto.id, docId, i);
+          } catch (e) { console.warn('Error subiendo audio:', e); }
+        }
+        fotosProcesadas.push({
+          id: 'f_' + i,
+          url: fotoUrl,
+          transcripcion: f.transcripcion || '',
+          audioUrl,
+          nota: f.nota || '',
+          ordenIndex: i,
+        });
+      }
+
+      await db.crearDocumentoProyecto({
+        id: docId,
+        proyectoId: proyecto.id,
+        tipo: subtipo,
+        codigo,
+        consecutivo,
+        fecha,
+        areaId: esEntregaArea || (esIncidente && areaId) ? areaId : null,
+        titulo: titulo.trim(),
+        descripcion: descripcion.trim(),
+        severidad: esIncidente ? severidad : null,
+        fotos: fotosProcesadas,
+        m2Entregados: (esEntregaArea || esEntregaTotal) && m2Entregados ? parseFloat(m2Entregados) : null,
+        porcentajeAvance: (esEntregaArea || esEntregaTotal) ? parseFloat(porcentajeAvance) || 100 : null,
+        creadoPorId: usuario.id,
+        creadoPorNombre: usuario.nombre,
+      });
+
+      await onGuardado();
+    } catch (e) {
+      setError(e.message || 'Error guardando');
+    }
+    setGuardando(false);
+  };
+
+  const titulosEntrega = esEntregaArea ? 'Reporte de Entrega Parcial' : esEntregaTotal ? 'Reporte de Entrega Final' : 'Reporte de Incidente';
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
+      <div className="bg-zinc-900 border-2 border-red-600 max-w-lg w-full p-5 space-y-4 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center sticky top-0 bg-zinc-900 pb-2 border-b border-zinc-800">
+          <div className="text-xs tracking-widest uppercase text-red-500 font-bold">{titulosEntrega}</div>
+          <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
+        </div>
+
+        {tipo === 'entrega' && (
+          <Campo label="Tipo de entrega">
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={() => setSubtipo('entrega_area')} className={`py-2 px-3 text-xs font-bold uppercase border-2 ${subtipo === 'entrega_area' ? 'border-blue-600 bg-blue-600/10 text-blue-400' : 'border-zinc-700 text-zinc-400'}`}>Por área</button>
+              <button onClick={() => setSubtipo('entrega_total')} className={`py-2 px-3 text-xs font-bold uppercase border-2 ${subtipo === 'entrega_total' ? 'border-green-600 bg-green-600/10 text-green-400' : 'border-zinc-700 text-zinc-400'}`}>Total del proyecto</button>
+            </div>
+          </Campo>
+        )}
+
+        <Campo label="Fecha">
+          <Input type="date" value={fecha} onChange={v => setFecha(v)} />
+        </Campo>
+
+        {(esIncidente || esEntregaArea) && (
+          <Campo label="Área">
+            <select value={areaId} onChange={e => setAreaId(e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm">
+              {!esEntregaArea && <option value="">(General - sin área específica)</option>}
+              {proyecto.areas.map(a => <option key={a.id} value={a.id}>{a.nombre}{a.m2 ? ` · ${a.m2} m²` : ''}</option>)}
+            </select>
+          </Campo>
+        )}
+
+        <Campo label="Título *">
+          <Input value={titulo} onChange={v => setTitulo(v)} placeholder={esIncidente ? 'Ej: Rotura de membrana por tránsito pesado' : 'Ej: Entrega área Techo Tipo A'} />
+        </Campo>
+
+        <Campo label="Descripción">
+          <textarea value={descripcion} onChange={e => setDescripcion(e.target.value)} rows={3} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm" placeholder="Detalle de lo ocurrido o condiciones de la entrega..." />
+        </Campo>
+
+        {esIncidente && (
+          <Campo label="Severidad">
+            <div className="grid grid-cols-3 gap-2">
+              {['leve', 'media', 'grave'].map(s => (
+                <button key={s} onClick={() => setSeveridad(s)} className={`py-2 text-[10px] font-bold uppercase border-2 ${severidad === s ? (s === 'grave' ? 'border-red-600 bg-red-600/20 text-red-400' : s === 'media' ? 'border-yellow-600 bg-yellow-600/20 text-yellow-400' : 'border-blue-600 bg-blue-600/20 text-blue-400') : 'border-zinc-700 text-zinc-500'}`}>
+                  {s}
+                </button>
+              ))}
+            </div>
+          </Campo>
+        )}
+
+        {(esEntregaArea || esEntregaTotal) && (
+          <div className="grid grid-cols-2 gap-3">
+            <Campo label="m² entregados"><Input type="number" value={m2Entregados} onChange={v => setM2Entregados(v)} /></Campo>
+            <Campo label="% avance"><Input type="number" value={porcentajeAvance} onChange={v => setPorcentajeAvance(v)} /></Campo>
+          </div>
+        )}
+
+        {/* Fotos */}
+        <Campo label={`📷 Fotos ${fotos.length > 0 ? `(${fotos.length})` : ''}`}>
+          <div className="space-y-2">
+            {fotos.map((f, i) => (
+              <div key={i} className="bg-zinc-950 border border-zinc-800 p-2 space-y-2">
+                <div className="flex gap-2">
+                  <img src={f.dataUrl} alt="" className="w-20 h-20 object-cover border border-zinc-700 flex-shrink-0" />
+                  <div className="flex-1 space-y-1">
+                    <input
+                      value={f.nota}
+                      onChange={e => actualizarFoto(i, { nota: e.target.value })}
+                      placeholder="Nota/descripción de esta foto..."
+                      className="w-full bg-zinc-900 border border-zinc-800 px-2 py-1 text-xs text-white"
+                    />
+                    <button onClick={() => eliminarFoto(i)} className="text-[10px] text-red-400 hover:text-red-300">🗑️ Eliminar foto</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+            <button onClick={agregarFoto} className="w-full bg-zinc-950 border-2 border-dashed border-zinc-700 hover:border-red-600 py-3 text-xs font-bold uppercase text-zinc-400">
+              📷 Agregar foto
+            </button>
+          </div>
+        </Campo>
+
+        {error && <div className="bg-red-900/20 border border-red-700 p-2 text-xs text-red-300">{error}</div>}
+
+        <div className="flex gap-2 pt-2 sticky bottom-0 bg-zinc-900 border-t border-zinc-800">
+          <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button>
+          <button onClick={guardar} disabled={guardando || !titulo.trim()} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-700 text-white text-xs font-black uppercase py-3">
+            {guardando ? 'Guardando...' : '💾 Guardar reporte'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Modal para ver un documento existente
+function ModalVerDocumento({ documento, proyecto, clientes, contactos, personal, usuario, puedeEnviar, puedeEditar, onCerrar, onEnviar, onActualizado }) {
+  const d = documento;
+  const area = d.areaId ? proyecto.areas.find(a => a.id === d.areaId) : null;
+  const creador = personal.find(p => p.id === d.creadoPorId);
+
+  const eliminar = async () => {
+    if (!confirm(`¿Eliminar el documento ${d.codigo}? No se puede deshacer.`)) return;
+    try {
+      await db.eliminarDocumentoProyecto(d.id);
+      if (onActualizado) await onActualizado();
+      onCerrar();
+    } catch (e) { alert('Error: ' + (e.message || e)); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
+      <div className="bg-zinc-900 border border-zinc-700 max-w-2xl w-full p-5 space-y-4 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center sticky top-0 bg-zinc-900 pb-2 border-b border-zinc-800">
+          <div>
+            <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">{d.tipo === 'incidente' ? '⚠️ Incidente' : d.tipo === 'entrega_total' ? '🏁 Entrega Final' : '✅ Entrega Parcial'}</div>
+            <div className="font-black font-mono">{d.codigo}</div>
+          </div>
+          <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
+        </div>
+
+        <div>
+          <h2 className="text-lg font-black">{d.titulo}</h2>
+          <div className="text-xs text-zinc-400">
+            {formatFecha(d.fecha)} · {d.creadoPorNombre}
+            {area && ` · ${area.nombre}`}
+            {d.severidad && ` · severidad: ${d.severidad}`}
+          </div>
+        </div>
+
+        {d.descripcion && (
+          <div className="bg-zinc-950 border border-zinc-800 p-3 text-sm whitespace-pre-wrap">{d.descripcion}</div>
+        )}
+
+        {d.m2Entregados != null && (
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="bg-zinc-950 border border-zinc-800 p-2"><div className="text-[10px] text-zinc-500">m² entregados</div><div className="font-bold">{formatNum(d.m2Entregados)}</div></div>
+            <div className="bg-zinc-950 border border-zinc-800 p-2"><div className="text-[10px] text-zinc-500">% avance</div><div className="font-bold">{d.porcentajeAvance || 100}%</div></div>
+          </div>
+        )}
+
+        {d.fotos && d.fotos.length > 0 && (
+          <div>
+            <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2">📷 Fotos ({d.fotos.length})</div>
+            <div className="grid grid-cols-2 gap-2">
+              {d.fotos.map((f, i) => (
+                <div key={i} className="bg-zinc-950 border border-zinc-800 p-2 space-y-1">
+                  <img src={f.url} alt="" className="w-full aspect-square object-cover border border-zinc-700" />
+                  {f.nota && <div className="text-[10px] text-zinc-400">{f.nota}</div>}
+                  {f.audioUrl && <audio src={f.audioUrl} controls className="w-full" />}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {d.enviadoAlCliente && (
+          <div className="bg-green-900/20 border border-green-700 p-2 text-xs text-green-300">
+            ✉️ Enviado al cliente el {d.enviadoAt ? formatFecha(d.enviadoAt.split('T')[0]) : '?'}
+            {d.enviadoAEmails && ` a ${d.enviadoAEmails}`}
+          </div>
+        )}
+
+        <div className="flex gap-2 pt-2 border-t border-zinc-800 sticky bottom-0 bg-zinc-900">
+          {puedeEditar && (
+            <button onClick={eliminar} className="px-3 bg-zinc-800 text-red-400 hover:bg-red-900/20 text-[10px] font-bold uppercase py-3">🗑️ Eliminar</button>
+          )}
+          <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cerrar</button>
+          {puedeEnviar && (
+            <button onClick={onEnviar} className="flex-1 bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase py-3 flex items-center justify-center gap-1">
+              <Mail className="w-3 h-3" /> Enviar al cliente
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Modal para enviar documento por correo al cliente
+function ModalEnviarDocumento({ documento, proyecto, clientes, contactos, personal, usuario, onCerrar, onEnviado }) {
+  const d = documento;
+  const cliente = clienteDelProyecto(proyecto, clientes);
+  const contactosCliente = cliente ? contactos.filter(ct => ct.clienteId === cliente.id) : [];
+  const emailsDisponibles = [
+    ...(contactosCliente.filter(c => c.email).map(c => ({ email: c.email, label: `${c.nombre}${c.cargo ? ` (${c.cargo})` : ''}` }))),
+    ...(cliente?.emailPrincipal ? [{ email: cliente.emailPrincipal, label: `${cliente.nombre} (principal)` }] : []),
+    ...(proyecto.contactoClienteEmail ? [{ email: proyecto.contactoClienteEmail, label: 'Contacto del proyecto (texto libre)' }] : []),
+  ];
+  const [emailsSel, setEmailsSel] = useState(new Set(emailsDisponibles.slice(0, 1).map(e => e.email)));
+  const [emailExtra, setEmailExtra] = useState('');
+  const [asunto, setAsunto] = useState(`${d.codigo} · ${d.titulo}`);
+  const [mensajePersonalizado, setMensajePersonalizado] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const [error, setError] = useState('');
+
+  const toggleEmail = (em) => {
+    const s = new Set(emailsSel);
+    if (s.has(em)) s.delete(em); else s.add(em);
+    setEmailsSel(s);
+  };
+
+  const enviar = async () => {
+    const destinos = [...emailsSel];
+    if (emailExtra.trim()) destinos.push(emailExtra.trim());
+    if (destinos.length === 0) { setError('Selecciona al menos un destinatario'); return; }
+
+    setEnviando(true); setError('');
+    try {
+      const tipoLbl = d.tipo === 'incidente' ? 'Reporte de Incidente' : d.tipo === 'entrega_total' ? 'Reporte de Entrega Final' : 'Reporte de Entrega Parcial';
+      const area = d.areaId ? proyecto.areas.find(a => a.id === d.areaId) : null;
+      const fotosHtml = (d.fotos || []).map((f, i) => `
+        <div style="margin:16px 0;page-break-inside:avoid;">
+          <img src="${f.url}" style="max-width:100%;max-height:400px;border:1px solid #ccc;" />
+          ${f.nota ? `<p style="font-size:11px;color:#555;margin-top:4px;"><strong>Foto ${i+1}:</strong> ${f.nota}</p>` : ''}
+        </div>
+      `).join('');
+
+      const html = `
+        <div style="font-family:Arial,sans-serif;max-width:640px;margin:auto;">
+          <div style="background:#CC0000;color:white;padding:20px;">
+            <h1 style="margin:0;font-size:20px;">SUPER TECHOS SRL</h1>
+            <div style="font-size:11px;margin-top:4px;">C/ Arena #1, Mar Azul, Santo Domingo R.D. · Tel. 809-535-9293 · RNC 130-77433-1</div>
+          </div>
+          <div style="padding:20px;background:#f8f8f8;">
+            <h2 style="color:#CC0000;margin-top:0;">${tipoLbl}</h2>
+            <table style="width:100%;font-size:12px;">
+              <tr><td style="padding:4px 0;"><strong>Código:</strong></td><td>${d.codigo}</td></tr>
+              <tr><td style="padding:4px 0;"><strong>Proyecto:</strong></td><td>${proyecto.referenciaProyecto || proyecto.nombre}${proyecto.referenciaOdoo ? ` (${proyecto.referenciaOdoo})` : ''}</td></tr>
+              <tr><td style="padding:4px 0;"><strong>Cliente:</strong></td><td>${proyecto.cliente || (cliente?.nombre || '')}</td></tr>
+              <tr><td style="padding:4px 0;"><strong>Fecha:</strong></td><td>${formatFecha(d.fecha)}</td></tr>
+              ${area ? `<tr><td style="padding:4px 0;"><strong>Área:</strong></td><td>${area.nombre}${area.m2 ? ` (${area.m2} m²)` : ''}</td></tr>` : ''}
+              ${d.severidad ? `<tr><td style="padding:4px 0;"><strong>Severidad:</strong></td><td style="text-transform:capitalize;">${d.severidad}</td></tr>` : ''}
+              ${d.m2Entregados != null ? `<tr><td style="padding:4px 0;"><strong>m² entregados:</strong></td><td>${formatNum(d.m2Entregados)}</td></tr>` : ''}
+              <tr><td style="padding:4px 0;"><strong>Reportado por:</strong></td><td>${d.creadoPorNombre}</td></tr>
+            </table>
+            ${mensajePersonalizado ? `<div style="background:#fff;border-left:4px solid #CC0000;padding:12px;margin-top:16px;font-size:12px;">${mensajePersonalizado.replace(/\n/g, '<br>')}</div>` : ''}
+            ${d.descripcion ? `<div style="margin-top:16px;"><h3 style="font-size:13px;color:#CC0000;">Descripción</h3><p style="font-size:12px;white-space:pre-wrap;">${d.descripcion}</p></div>` : ''}
+            ${d.fotos && d.fotos.length > 0 ? `<div style="margin-top:16px;"><h3 style="font-size:13px;color:#CC0000;">Evidencia fotográfica</h3>${fotosHtml}</div>` : ''}
+          </div>
+          <div style="padding:16px;background:#222;color:#999;font-size:10px;text-align:center;">
+            Super Techos SRL · www.supertechos.com.do · Este reporte fue generado automáticamente desde nuestro sistema de control de obras.
+          </div>
+        </div>
+      `;
+
+      const res = await fetch('/api/enviar-reporte', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          destinatarios: destinos,
+          asunto,
+          html,
+        }),
+      });
+      const result = await res.json();
+      if (!result.enviado) throw new Error(result.motivo || 'Error enviando correo');
+
+      await db.marcarDocumentoEnviado(d.id, usuario.id, destinos.join(', '));
+      await onEnviado();
+    } catch (e) {
+      setError(e.message || 'Error enviando');
+    }
+    setEnviando(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
+      <div className="bg-zinc-900 border-2 border-red-600 max-w-lg w-full p-5 space-y-4 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center sticky top-0 bg-zinc-900 pb-2 border-b border-zinc-800">
+          <div className="text-xs tracking-widest uppercase text-red-500 font-bold flex items-center gap-1">
+            <Mail className="w-3 h-3" /> Enviar al cliente
+          </div>
+          <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
+        </div>
+
+        <div className="bg-zinc-950 border border-zinc-800 p-2 text-xs">
+          <div className="text-[10px] text-zinc-500 uppercase">Documento</div>
+          <div className="font-bold">{d.codigo} · {d.titulo}</div>
+        </div>
+
+        <Campo label="Destinatarios">
+          <div className="space-y-1">
+            {emailsDisponibles.length === 0 && (
+              <div className="text-xs text-zinc-500 italic">No hay emails en contactos. Escribe uno abajo.</div>
+            )}
+            {emailsDisponibles.map(em => (
+              <label key={em.email} className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 p-2 cursor-pointer">
+                <input type="checkbox" checked={emailsSel.has(em.email)} onChange={() => toggleEmail(em.email)} className="w-4 h-4 accent-red-600" />
+                <div className="flex-1">
+                  <div className="text-xs font-bold">{em.email}</div>
+                  <div className="text-[10px] text-zinc-500">{em.label}</div>
+                </div>
+              </label>
+            ))}
+            <Input value={emailExtra} onChange={v => setEmailExtra(v)} placeholder="+ Otro email (opcional)" />
+          </div>
+        </Campo>
+
+        <Campo label="Asunto">
+          <Input value={asunto} onChange={v => setAsunto(v)} />
+        </Campo>
+
+        <Campo label="Mensaje adicional (opcional)">
+          <textarea value={mensajePersonalizado} onChange={e => setMensajePersonalizado(e.target.value)} rows={3} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm" placeholder="Ej: Estimado cliente, favor revisar el reporte adjunto..." />
+        </Campo>
+
+        {error && <div className="bg-red-900/20 border border-red-700 p-2 text-xs text-red-300">{error}</div>}
+
+        <div className="flex gap-2 pt-2 sticky bottom-0 bg-zinc-900 border-t border-zinc-800">
+          <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button>
+          <button onClick={enviar} disabled={enviando || emailsSel.size === 0 && !emailExtra.trim()} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-700 text-white text-xs font-black uppercase py-3 flex items-center justify-center gap-1">
+            {enviando ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
+            {enviando ? 'Enviando...' : 'Enviar'}
+          </button>
         </div>
       </div>
     </div>

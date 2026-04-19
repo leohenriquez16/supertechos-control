@@ -10,7 +10,7 @@ import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps }
 // ============================================================
 // HELPERS
 // ============================================================
-const APP_VERSION = '8.9.19';
+const APP_VERSION = '8.9.20';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
@@ -1130,10 +1130,387 @@ export default function App() {
           } catch (err) { console.warn('Email fallo:', err); }
         })} />;
         })()}
+
+        {/* v8.9.20: Asistente IA para admin */}
+        {esAdmin && <AsistenteIA usuario={usuario} data={data} />}
       </main>
     </div>
   );
 }
+
+// ============================================================
+// v8.9.20: ASISTENTE IA - botón flotante + chat con voz
+// ============================================================
+function AsistenteIA({ usuario, data }) {
+  const [abierto, setAbierto] = useState(false);
+  const [mensajes, setMensajes] = useState([]); // [{role, content}]
+  const [pregunta, setPregunta] = useState('');
+  const [cargando, setCargando] = useState(false);
+  const [grabando, setGrabando] = useState(false);
+  const [error, setError] = useState('');
+  const [hablarRespuesta, setHablarRespuesta] = useState(false);
+  const recognitionRef = React.useRef(null);
+  const mensajesRef = React.useRef(null);
+
+  // Auto-scroll al último mensaje
+  useEffect(() => {
+    if (mensajesRef.current) {
+      mensajesRef.current.scrollTop = mensajesRef.current.scrollHeight;
+    }
+  }, [mensajes]);
+
+  // Construir contexto del ERP para enviar a Claude
+  const construirContexto = () => {
+    const hoy = new Date().toISOString().split('T')[0];
+    const mesActual = hoy.slice(0, 7);
+    const ahora = new Date();
+
+    // Proyectos activos (no archivados, no facturados)
+    const proyectosActivos = (data.proyectos || []).filter(p => !p.archivado && p.estado !== 'facturado');
+    const proyectosPorEstado = {};
+    proyectosActivos.forEach(p => {
+      proyectosPorEstado[p.estado] = (proyectosPorEstado[p.estado] || 0) + 1;
+    });
+
+    // Reportes de los últimos 30 días
+    const hace30Dias = new Date(ahora);
+    hace30Dias.setDate(hace30Dias.getDate() - 30);
+    const hace30Str = hace30Dias.toISOString().split('T')[0];
+    const reportesRecientes = (data.reportes || []).filter(r => r.fecha >= hace30Str);
+
+    const m2Mes = reportesRecientes.filter(r => r.fecha.startsWith(mesActual))
+      .reduce((s, r) => s + (parseFloat(r.m2) || 0), 0);
+
+    // Personal activo
+    const personalActivo = (data.personal || []).filter(p => !p.archivado);
+    const maestros = personalActivo.filter(p => (p.roles || []).includes('maestro'));
+
+    // Proyectos sin reportes recientes (posible problema)
+    const proyectosSinActividad = proyectosActivos.filter(p => {
+      if (p.estado !== 'en_ejecucion') return false;
+      const ultimoReporte = (data.reportes || [])
+        .filter(r => r.proyectoId === p.id)
+        .sort((a, b) => b.fecha.localeCompare(a.fecha))[0];
+      if (!ultimoReporte) return true;
+      const dias = Math.floor((ahora - new Date(ultimoReporte.fecha)) / (1000 * 60 * 60 * 24));
+      return dias > 7;
+    });
+
+    // Check-ins de hoy
+    const checkinsHoy = (data.checkins || []).filter(c => c.fecha === hoy);
+
+    // Documentos pendientes de envío
+    const incidentesSinEnviar = (data.documentos || []).filter(d => d.tipo === 'incidente' && !d.enviadoAlCliente);
+
+    // Construir contexto en texto plano
+    let ctx = `FECHA: ${ahora.toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}\n\n`;
+
+    ctx += `PROYECTOS ACTIVOS (${proyectosActivos.length} total):\n`;
+    Object.entries(proyectosPorEstado).forEach(([est, cnt]) => {
+      ctx += `- ${est}: ${cnt}\n`;
+    });
+    ctx += '\nDETALLE PROYECTOS:\n';
+    proyectosActivos.slice(0, 20).forEach(p => {
+      const cliente = p.cliente || 'Sin cliente';
+      const ref = p.referenciaOdoo || '';
+      const reps = (data.reportes || []).filter(r => r.proyectoId === p.id);
+      const m2 = reps.reduce((s, r) => s + (parseFloat(r.m2) || 0), 0);
+      const m2Total = (p.areas || []).reduce((s, a) => s + (a.m2 || 0), 0);
+      const pct = m2Total > 0 ? Math.round((m2 / m2Total) * 100) : 0;
+      const maestro = personalActivo.find(pr => pr.id === p.maestroId);
+      ctx += `- ${ref} "${cliente}" · estado=${p.estado} · ${pct}% (${m2.toFixed(0)}/${m2Total.toFixed(0)}m²) · maestro=${maestro?.nombre || 'sin asignar'}\n`;
+    });
+
+    if (proyectosSinActividad.length > 0) {
+      ctx += `\n⚠️ PROYECTOS EN EJECUCIÓN SIN REPORTES >7 DÍAS:\n`;
+      proyectosSinActividad.forEach(p => {
+        ctx += `- ${p.referenciaOdoo} ${p.cliente}\n`;
+      });
+    }
+
+    ctx += `\nPRODUCCIÓN DEL MES (${mesActual}):\n`;
+    ctx += `- Total m²: ${m2Mes.toFixed(0)}\n`;
+    ctx += `- Reportes: ${reportesRecientes.filter(r => r.fecha.startsWith(mesActual)).length}\n`;
+
+    ctx += `\nPERSONAL (${personalActivo.length} total):\n`;
+    ctx += `- Maestros: ${maestros.length}\n`;
+    ctx += `- Supervisores: ${personalActivo.filter(p => (p.roles || []).includes('supervisor')).length}\n`;
+    ctx += `- Ayudantes: ${personalActivo.filter(p => (p.roles || []).includes('ayudante')).length}\n`;
+
+    // Top maestros del mes
+    const m2PorMaestro = {};
+    reportesRecientes.filter(r => r.fecha.startsWith(mesActual)).forEach(r => {
+      const p = personalActivo.find(pr => pr.id === r.personaId);
+      if (!p || !(p.roles || []).includes('maestro')) return;
+      if (!m2PorMaestro[p.nombre]) m2PorMaestro[p.nombre] = 0;
+      m2PorMaestro[p.nombre] += parseFloat(r.m2) || 0;
+    });
+    const topMaestros = Object.entries(m2PorMaestro).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    if (topMaestros.length > 0) {
+      ctx += `\nTOP MAESTROS DEL MES:\n`;
+      topMaestros.forEach(([nom, m2]) => {
+        ctx += `- ${nom}: ${m2.toFixed(0)} m²\n`;
+      });
+    }
+
+    ctx += `\nACTIVIDAD HOY:\n`;
+    ctx += `- Check-ins: ${checkinsHoy.length}\n`;
+    ctx += `- Reportes: ${(data.reportes || []).filter(r => r.fecha === hoy).length}\n`;
+
+    if (incidentesSinEnviar.length > 0) {
+      ctx += `\n📋 INCIDENTES PENDIENTES DE ENVIAR AL CLIENTE:\n`;
+      incidentesSinEnviar.slice(0, 5).forEach(d => {
+        const proy = proyectosActivos.find(p => p.id === d.proyectoId);
+        ctx += `- ${d.codigo} "${d.titulo}" · ${proy?.cliente || '?'}\n`;
+      });
+    }
+
+    // Clientes top
+    const clientes = data.clientes || [];
+    if (clientes.length > 0) {
+      ctx += `\nCLIENTES REGISTRADOS: ${clientes.length}\n`;
+    }
+
+    return ctx;
+  };
+
+  const enviar = async (textoPregunta) => {
+    const p = (textoPregunta || pregunta).trim();
+    if (!p || cargando) return;
+    setError('');
+    setCargando(true);
+
+    // Agregar pregunta del usuario
+    const nuevoMensajes = [...mensajes, { role: 'user', content: p }];
+    setMensajes(nuevoMensajes);
+    setPregunta('');
+
+    try {
+      const contexto = construirContexto();
+      const res = await fetch('/api/asistente', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pregunta: p,
+          contexto,
+          historial: mensajes,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Error desconocido' }));
+        throw new Error(err.error || 'Error del asistente');
+      }
+
+      const data = await res.json();
+      const respuesta = data.respuesta || 'No pude generar respuesta.';
+      setMensajes([...nuevoMensajes, { role: 'assistant', content: respuesta }]);
+
+      // Leer en voz alta si está activado
+      if (hablarRespuesta && 'speechSynthesis' in window) {
+        const utter = new SpeechSynthesisUtterance(respuesta);
+        utter.lang = 'es-DO';
+        utter.rate = 1.05;
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(utter);
+      }
+    } catch (e) {
+      setError(e.message || 'Error de conexión');
+    }
+    setCargando(false);
+  };
+
+  const iniciarGrabacion = () => {
+    if (grabando) {
+      // Detener
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+      setGrabando(false);
+      return;
+    }
+
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+      setError('Tu navegador no soporta reconocimiento de voz. Usa Chrome.');
+      return;
+    }
+
+    const rec = new SR();
+    rec.lang = 'es-DO';
+    rec.continuous = false;
+    rec.interimResults = true;
+    recognitionRef.current = rec;
+
+    let finalText = '';
+    rec.onresult = (event) => {
+      let interim = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) finalText += event.results[i][0].transcript;
+        else interim += event.results[i][0].transcript;
+      }
+      setPregunta(finalText + interim);
+    };
+    rec.onend = () => {
+      setGrabando(false);
+      if (finalText.trim()) {
+        enviar(finalText.trim());
+      }
+    };
+    rec.onerror = (e) => {
+      setError('Error de voz: ' + e.error);
+      setGrabando(false);
+    };
+
+    setGrabando(true);
+    rec.start();
+  };
+
+  const preguntasSugeridas = [
+    '¿Cómo va todo?',
+    '¿Qué proyectos están atrasados?',
+    '¿Cuál es mi top del mes?',
+    '¿Hay incidentes sin enviar?',
+  ];
+
+  return (
+    <>
+      {/* Botón flotante */}
+      {!abierto && (
+        <button
+          onClick={() => setAbierto(true)}
+          className="fixed bottom-6 right-6 z-40 bg-red-600 hover:bg-red-700 text-white rounded-full shadow-2xl w-14 h-14 flex items-center justify-center transition-transform hover:scale-110"
+          title="Asistente IA"
+        >
+          <Sparkles className="w-6 h-6" />
+        </button>
+      )}
+
+      {/* Panel chat */}
+      {abierto && (
+        <div className="fixed bottom-0 right-0 sm:bottom-6 sm:right-6 z-50 bg-zinc-900 border-2 border-red-600 w-full sm:w-96 sm:max-w-[calc(100vw-48px)] h-[70vh] sm:h-[600px] flex flex-col shadow-2xl">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-red-600 to-red-800 p-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-white" />
+              <div>
+                <div className="text-xs font-black uppercase tracking-widest text-white">Asistente</div>
+                <div className="text-[9px] text-red-200">Super Techos · IA</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setHablarRespuesta(!hablarRespuesta)}
+                className={`text-white/80 hover:text-white p-1 ${hablarRespuesta ? 'bg-white/20' : ''}`}
+                title="Leer respuestas en voz alta"
+              >
+                {hablarRespuesta ? '🔊' : '🔇'}
+              </button>
+              <button
+                onClick={() => { setMensajes([]); setError(''); }}
+                className="text-white/80 hover:text-white p-1"
+                title="Limpiar conversación"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+              <button onClick={() => setAbierto(false)} className="text-white/80 hover:text-white p-1">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Mensajes */}
+          <div ref={mensajesRef} className="flex-1 overflow-y-auto p-3 space-y-3">
+            {mensajes.length === 0 && (
+              <div className="text-center space-y-3 py-4">
+                <div className="text-4xl">👋</div>
+                <div className="text-sm text-zinc-400">
+                  Hola Leo, pregúntame lo que necesites sobre tu negocio.
+                </div>
+                <div className="space-y-1 mt-4">
+                  <div className="text-[10px] text-zinc-500 uppercase tracking-widest">Sugerencias</div>
+                  {preguntasSugeridas.map(s => (
+                    <button
+                      key={s}
+                      onClick={() => enviar(s)}
+                      className="block w-full bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 hover:border-red-600 p-2 text-xs text-left text-zinc-300"
+                    >
+                      💬 {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {mensajes.map((m, i) => (
+              <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div
+                  className={`max-w-[85%] p-2 text-sm whitespace-pre-wrap ${
+                    m.role === 'user'
+                      ? 'bg-red-600 text-white'
+                      : 'bg-zinc-800 text-zinc-100 border border-zinc-700'
+                  }`}
+                >
+                  {m.content}
+                </div>
+              </div>
+            ))}
+            {cargando && (
+              <div className="flex justify-start">
+                <div className="bg-zinc-800 border border-zinc-700 p-2 text-sm flex items-center gap-2">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  <span className="text-zinc-400">Pensando...</span>
+                </div>
+              </div>
+            )}
+            {error && (
+              <div className="bg-red-900/20 border border-red-700 p-2 text-xs text-red-300">
+                {error}
+              </div>
+            )}
+          </div>
+
+          {/* Input */}
+          <div className="border-t border-zinc-800 p-2 space-y-2">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={pregunta}
+                onChange={(e) => setPregunta(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') enviar(); }}
+                placeholder={grabando ? 'Escuchando...' : 'Pregunta algo...'}
+                disabled={cargando || grabando}
+                className="flex-1 bg-zinc-950 border border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm"
+              />
+              <button
+                onClick={iniciarGrabacion}
+                disabled={cargando}
+                className={`px-3 flex items-center justify-center ${
+                  grabando
+                    ? 'bg-red-600 text-white animate-pulse'
+                    : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700'
+                }`}
+                title={grabando ? 'Detener grabación' : 'Hablar'}
+              >
+                🎤
+              </button>
+              <button
+                onClick={() => enviar()}
+                disabled={cargando || !pregunta.trim()}
+                className="bg-red-600 hover:bg-red-700 disabled:bg-zinc-700 text-white px-3 flex items-center"
+              >
+                <ArrowLeft className="w-4 h-4 rotate-180" />
+              </button>
+            </div>
+            <div className="text-[9px] text-zinc-600 text-center">
+              Toca 🎤 para hablar · Toca 🔊 para escuchar respuestas
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 
 function IconBtn({ onClick, title, children }) {
   return <button onClick={onClick} title={title} className="flex items-center gap-1 text-xs text-zinc-400 hover:text-white bg-zinc-900 border border-zinc-800 px-2 py-1.5">{children}</button>;

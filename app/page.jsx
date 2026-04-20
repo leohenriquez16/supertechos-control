@@ -6052,6 +6052,31 @@ function ModalEditarProyecto({ proyecto, data, usuario, onCerrar, onGuardar, onA
                   </select>
                   {sistemaAreaObj && <span className="text-[9px] text-green-500 shrink-0">RD${sistemaAreaObj.precio_m2 || 0}/m²</span>}
                 </div>
+                {/* v8.9.27: precio venta custom por área - solo admin */}
+                {tieneRol(usuario, 'admin') && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <span className="text-[9px] tracking-widest uppercase text-zinc-500 font-bold shrink-0">Precio venta/m²:</span>
+                    <input
+                      type="number"
+                      value={area.precioVentaM2 ?? ''}
+                      onChange={e => {
+                        const v = e.target.value;
+                        const n = [...form.areas];
+                        n[i] = { ...area, precioVentaM2: v === '' ? null : v };
+                        setForm({ ...form, areas: n });
+                      }}
+                      placeholder={`${sistemaAreaObj?.precio_m2 || 0}`}
+                      className="w-24 bg-zinc-900 border border-zinc-800 px-2 py-1 text-white text-[10px] text-right"
+                    />
+                    <span className="text-[9px] text-zinc-500 shrink-0">
+                      {area.precioVentaM2 !== undefined && area.precioVentaM2 !== null && area.precioVentaM2 !== '' ? (
+                        <span className="text-yellow-400">✏️ custom · {formatRD((area.m2 || 0) * Number(area.precioVentaM2))}</span>
+                      ) : (
+                        <span>usa el del sistema · {formatRD((area.m2 || 0) * (sistemaAreaObj?.precio_m2 || 0))}</span>
+                      )}
+                    </span>
+                  </div>
+                )}
                 <select value={area.maestroAreaId || ''} onChange={e => { const n = [...form.areas]; n[i] = { ...area, maestroAreaId: e.target.value || null }; setForm({ ...form, areas: n }); }} className="w-full bg-zinc-900 border border-zinc-800 px-2 py-1.5 text-white text-[10px]">
                   <option value="">Usar maestro principal del proyecto</option>
                   {maestros.map(m => <option key={m.id} value={m.id}>🔨 {m.nombre}</option>)}

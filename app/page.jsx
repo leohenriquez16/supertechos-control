@@ -521,7 +521,7 @@ const calcAvanceArea = (proyecto, areaId, reportes, sistema) => {
   });
   const produccionRD = sistema.tareas.reduce((acc, t) => {
     const m2 = Math.min(m2PorTarea[t.id] || 0, area.m2);
-    return acc + m2 * sistema.precio_m2 * (t.peso / 100);
+    return acc + m2 * getPrecioVentaArea(area, sistema) * (t.peso / 100);
   }, 0);
   return { porcentaje: avancePonderado, produccionRD, m2PorTarea };
 };
@@ -535,7 +535,7 @@ const calcAvanceProyecto = (proyecto, reportes, sistema, sistemas) => {
     const sistemaIdArea = area.sistemaId || proyecto.sistema;
     const sistemaArea = (sistemas && sistemas[sistemaIdArea]) || sistema;
     if (!sistemaArea) return;
-    valorContrato += area.m2 * sistemaArea.precio_m2;
+    valorContrato += area.m2 * getPrecioVentaArea(area, sistemaArea);
     const { porcentaje, produccionRD } = calcAvanceArea(proyecto, area.id, reportes, sistemaArea);
     if (m2Total > 0) avanceTotal += (area.m2 / m2Total) * porcentaje;
     produccionTotal += produccionRD;
@@ -643,7 +643,8 @@ const calcDieta = (proyecto, reportes) => {
 
 const calcAnalisisCosto = (proyecto, reportes, envios, sistema, config) => {
   const m2Total = proyecto.areas.reduce((a, ar) => a + ar.m2, 0);
-  const valorContrato = m2Total * sistema.precio_m2;
+  // v8.9.27: respetar precio custom por área si existe
+  const valorContrato = proyecto.areas.reduce((acc, ar) => acc + ar.m2 * getPrecioVentaArea(ar, sistema), 0);
   const costoMaterialesTeorico = sistema.materiales.reduce((acc, mat) => acc + (m2Total / mat.rinde_m2) * (mat.costo_unidad || 0), 0);
   const enviosProy = envios.filter(e => e.proyectoId === proyecto.id);
   const costoMaterialesReal = sistema.materiales.reduce((acc, mat) => {
@@ -672,17 +673,29 @@ const produccionPorDia = (reportes, proyectos, sistemas) => {
   reportes.forEach(r => {
     const proy = proyectos.find(p => p.id === r.proyectoId);
     if (!proy) return;
-    const sistema = sistemas[proy.sistema];
+    // v8.9.27: buscar área y usar su sistema/precio si aplica
+    const area = (proy.areas || []).find(a => a.id === r.areaId);
+    const sistemaIdUsado = (area && area.sistemaId) || proy.sistema;
+    const sistema = sistemas[sistemaIdUsado];
     if (!sistema) return;
     const tarea = sistema.tareas.find(t => t.id === r.tareaId);
     if (!tarea) return;
     const m2 = getM2Reporte(r, sistema);
-    porDia[r.fecha] = (porDia[r.fecha] || 0) + m2 * sistema.precio_m2 * (tarea.peso / 100);
+    const precio = getPrecioVentaArea(area, sistema);
+    porDia[r.fecha] = (porDia[r.fecha] || 0) + m2 * precio * (tarea.peso / 100);
   });
   return porDia;
 };
 
 const formatRD = (n) => `RD$${Math.round(n).toLocaleString('es-DO')}`;
+// v8.9.27: precio de venta por m² de un área — usa el override del área si existe, si no el del sistema
+const getPrecioVentaArea = (area, sistema) => {
+  if (area && area.precioVentaM2 !== undefined && area.precioVentaM2 !== null && area.precioVentaM2 !== '') {
+    const n = Number(area.precioVentaM2);
+    if (!isNaN(n) && n > 0) return n;
+  }
+  return Number(sistema?.precio_m2) || 0;
+};
 const formatNum = (n, dec = 1) => Number(n).toFixed(dec).replace(/\.0+$/, '');
 const formatFecha = (iso) => new Date(iso + 'T12:00:00').toLocaleDateString('es-DO', { day: '2-digit', month: 'short' });
 const formatFechaCorta = (iso) => new Date(iso + 'T12:00:00').toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: '2-digit' });
@@ -4841,6 +4854,31 @@ function NuevoProyecto({ personal, sistemas, clientes = [], contactos = [], onCa
                   </select>
                   {sistemaLabel && <span className="text-[10px] text-green-400">RD${sistemaPrecio}/m²</span>}
                 </div>
+                {/* v8.9.27: precio venta custom por área - solo admin */}
+                {tieneRol(usuario, 'admin') && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">Precio venta/m²:</span>
+                    <div className="w-32">
+                      <Input
+                        type="number"
+                        value={area.precioVentaM2 ?? ''}
+                        onChange={v => {
+                          const n = [...form.areas];
+                          n[i] = { ...n[i], precioVentaM2: v === '' ? null : v };
+                          setForm({ ...form, areas: n });
+                        }}
+                        placeholder={`${sistemaPrecio}`}
+                      />
+                    </div>
+                    <span className="text-[10px] text-zinc-500">
+                      {area.precioVentaM2 !== undefined && area.precioVentaM2 !== null && area.precioVentaM2 !== '' ? (
+                        <span className="text-yellow-400">✏️ custom · {formatRD(area.m2 * Number(area.precioVentaM2))}</span>
+                      ) : (
+                        <span>usa el del sistema · {formatRD((area.m2 || 0) * sistemaPrecio)}</span>
+                      )}
+                    </span>
+                  </div>
+                )}
               </div>
             );
           })}</div>
@@ -4977,11 +5015,14 @@ function Dashboard({ data, onVerProyecto, onNuevoProyecto, tareas, onCompletarTa
       if (r.fecha < desde || r.fecha > hasta) return;
       const proy = data.proyectos.find(p => p.id === r.proyectoId);
       if (!proy) return;
-      const sistema = data.sistemas[proy.sistema];
+      // v8.9.27: resolver área y su sistema/precio
+      const area = (proy.areas || []).find(a => a.id === r.areaId);
+      const sistemaIdUsado = (area && area.sistemaId) || proy.sistema;
+      const sistema = data.sistemas[sistemaIdUsado];
       if (!sistema) return;
       const m2 = getM2Reporte(r, sistema);
       const tarea = sistema.tareas.find(t => t.id === r.tareaId);
-      if (tarea) total += m2 * sistema.precio_m2 * (tarea.peso / 100);
+      if (tarea) total += m2 * getPrecioVentaArea(area, sistema) * (tarea.peso / 100);
     });
     return total;
   };
@@ -5014,10 +5055,14 @@ function Dashboard({ data, onVerProyecto, onNuevoProyecto, tareas, onCompletarTa
     return f >= rango.desde && f <= rango.hasta;
   });
   const montoAprobadosPeriodo = aprobadosPeriodo.reduce((s, p) => {
-    const sistema = data.sistemas[p.sistema];
-    if (!sistema) return s;
-    const m2 = (p.areas || []).reduce((t, a) => t + a.m2, 0);
-    return s + m2 * (sistema.precio_m2 || 0);
+    const sistemaDef = data.sistemas[p.sistema];
+    // v8.9.27: sumar por área respetando precio custom y sistema por área
+    const aporte = (p.areas || []).reduce((acc, a) => {
+      const sisArea = data.sistemas[a.sistemaId] || sistemaDef;
+      if (!sisArea) return acc;
+      return acc + (a.m2 || 0) * getPrecioVentaArea(a, sisArea);
+    }, 0);
+    return s + aporte;
   }, 0);
 
   // Proyectos activos y personas en obra HOY (siempre)
@@ -5818,6 +5863,33 @@ function ModalEditarProyecto({ proyecto, data, usuario, onCerrar, onGuardar, onA
       return;
     }
     setGuardando(true);
+    // v8.9.27: audit log de cambios de precio custom por área
+    try {
+      const areasAntes = proyecto.areas || [];
+      const areasDespues = form.areas || [];
+      const mapAntes = {};
+      areasAntes.forEach(a => { mapAntes[a.id] = a; });
+      areasDespues.forEach(aNew => {
+        const aOld = mapAntes[aNew.id];
+        const precioOld = aOld?.precioVentaM2 ?? null;
+        const precioNew = (aNew.precioVentaM2 === '' || aNew.precioVentaM2 === undefined) ? null : aNew.precioVentaM2;
+        const oldNum = precioOld === null ? null : Number(precioOld);
+        const newNum = precioNew === null ? null : Number(precioNew);
+        if (oldNum !== newNum) {
+          db.registrarAudit({
+            usuarioId: usuario?.id,
+            usuarioNombre: usuario?.nombre,
+            accion: 'proyecto.precio_area_editado',
+            recursoTipo: 'proyecto',
+            recursoId: proyecto.id,
+            recursoNombre: `${proyecto.referenciaOdoo || ''} ${proyecto.cliente || proyecto.nombre || ''}`.trim(),
+            datosAntes: { areaId: aNew.id, areaNombre: aNew.nombre, precioVentaM2: oldNum },
+            datosDespues: { areaId: aNew.id, areaNombre: aNew.nombre, precioVentaM2: newNum },
+            severidad: 'warning',
+          });
+        }
+      });
+    } catch (e) { console.warn('Audit de precio no registrado:', e?.message); }
     await onGuardar({ ...proyecto, ...form });
     setGuardando(false);
     onCerrar();
@@ -6192,6 +6264,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
           {esAdmin && !pausaActiv && <button onClick={() => setModalPausa(true)} className="text-xs text-zinc-400 hover:text-yellow-500 flex items-center gap-1">⏸️ Pausar</button>}
           {esAdmin && <button onClick={() => setModalEditar(true)} className="text-xs text-zinc-400 hover:text-red-500 flex items-center gap-1"><Edit2 className="w-3 h-3" /> Editar</button>}
         </div>
+        <div className="text-xs tracking-widest uppercase text-red-500 font-bold mb-1">{sistema.nombre}</div>
         <div className="text-xs font-mono text-zinc-500 mb-1">{proyecto.referenciaOdoo}</div>
         <h1 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight">{proyecto.cliente}</h1>
         <div className="text-sm text-zinc-400 mt-0.5">{proyecto.referenciaProyecto || proyecto.nombre}</div>
@@ -8275,7 +8348,7 @@ function TabAvance({ proyecto, reportes, sistema, sistemas, esSupervisor, onElim
               <div className="flex justify-between items-start mb-2">
                 <div>
                   <div className="font-bold">{area.nombre}</div>
-                  <div className="text-xs text-zinc-500">{area.m2} m² · <span className="text-red-400">{sistemaArea.nombre}</span>{!esSupervisor && ` · ${formatRD(area.m2 * sistemaArea.precio_m2)}`}</div>
+                  <div className="text-xs text-zinc-500">{area.m2} m² · <span className="text-red-400">{sistemaArea.nombre}</span>{!esSupervisor && ` · ${formatRD(area.m2 * getPrecioVentaArea(area, sistemaArea))}`}</div>
                 </div>
                 <div className="text-right">
                   <div className="text-xl font-black">{porcentaje.toFixed(1)}%</div>
@@ -8301,7 +8374,7 @@ function TabAvance({ proyecto, reportes, sistema, sistemas, esSupervisor, onElim
         const tarea = sistemaR.tareas.find(t => t.id === r.tareaId);
         if (!tarea) return null;
         const m2 = getM2Reporte(r, sistemaR);
-        const prod = m2 * sistemaR.precio_m2 * (tarea.peso / 100);
+        const prod = m2 * getPrecioVentaArea(area, sistemaR) * (tarea.peso / 100);
         let det = `${m2.toFixed(0)} m²`;
         if (r.rollos) det = `${r.rollos} rollos (${m2.toFixed(0)} m²)`;
         if (r.cubetas) det += ` · ${r.cubetas} cubetas`;
@@ -9344,8 +9417,9 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
                   </div>
                 </div>
                 {grupo.sistema && <div className="text-right">
-                  <div className="text-[10px] text-zinc-500 uppercase">Precio venta</div>
+                  <div className="text-[10px] text-zinc-500 uppercase">Precio venta base</div>
                   <div className="text-sm font-bold text-green-400">RD${formatNum(grupo.sistema.precio_m2 || 0)}/m²</div>
+                  <div className="text-[9px] text-zinc-500">(algunas áreas pueden tener precio custom)</div>
                 </div>}
               </div>
               {/* Lista de áreas incluidas */}
@@ -10034,7 +10108,7 @@ function FormReporte({ usuario, proyecto, reportes, sistema, sistemas, onGuardar
         </div>
 
         {/* Solo admins ven producción estimada */}
-        {esAdmin && m2Rep > 0 && tarea && <div className="bg-green-600/20 border border-green-600 p-3"><div className="text-[10px] text-green-300 uppercase">Estimado</div><div className="text-2xl font-black text-green-400">{formatRD(m2Rep * sistema.precio_m2 * (tarea.peso / 100))}</div></div>}
+        {esAdmin && m2Rep > 0 && tarea && <div className="bg-green-600/20 border border-green-600 p-3"><div className="text-[10px] text-green-300 uppercase">Estimado</div><div className="text-2xl font-black text-green-400">{formatRD(m2Rep * getPrecioVentaArea(area, sistemaAreaActual || sistema) * (tarea.peso / 100))}</div></div>}
 
         <div className="flex gap-2"><BotonSecundario onClick={() => setPaso(2)}>← Atrás</BotonSecundario><BotonPrincipal disabled={(tarea.reporta === 'rollos' ? !form.rollos : !form.m2) || guardando} onClick={submit}>{guardando ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Guardar'}</BotonPrincipal></div>
       </div>}

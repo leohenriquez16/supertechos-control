@@ -508,6 +508,15 @@ const getM2Reporte = (reporte, sistema) => {
   return 0;
 };
 
+// v8.9.27: precio de venta por m² de un área — usa el override del área si existe, si no el del sistema
+const getPrecioVentaArea = (area, sistema) => {
+  if (area && area.precioVentaM2 !== undefined && area.precioVentaM2 !== null && area.precioVentaM2 !== '') {
+    const n = Number(area.precioVentaM2);
+    if (!isNaN(n) && n > 0) return n;
+  }
+  return Number(sistema?.precio_m2) || 0;
+};
+
 const calcAvanceArea = (proyecto, areaId, reportes, sistema) => {
   const area = proyecto.areas.find(a => a.id === areaId);
   const reportesArea = reportes.filter(r => r.proyectoId === proyecto.id && r.areaId === areaId);
@@ -688,14 +697,6 @@ const produccionPorDia = (reportes, proyectos, sistemas) => {
 };
 
 const formatRD = (n) => `RD$${Math.round(n).toLocaleString('es-DO')}`;
-// v8.9.27: precio de venta por m² de un área — usa el override del área si existe, si no el del sistema
-const getPrecioVentaArea = (area, sistema) => {
-  if (area && area.precioVentaM2 !== undefined && area.precioVentaM2 !== null && area.precioVentaM2 !== '') {
-    const n = Number(area.precioVentaM2);
-    if (!isNaN(n) && n > 0) return n;
-  }
-  return Number(sistema?.precio_m2) || 0;
-};
 const formatNum = (n, dec = 1) => Number(n).toFixed(dec).replace(/\.0+$/, '');
 const formatFecha = (iso) => new Date(iso + 'T12:00:00').toLocaleDateString('es-DO', { day: '2-digit', month: 'short' });
 const formatFechaCorta = (iso) => new Date(iso + 'T12:00:00').toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: '2-digit' });
@@ -4854,31 +4855,29 @@ function NuevoProyecto({ personal, sistemas, clientes = [], contactos = [], onCa
                   </select>
                   {sistemaLabel && <span className="text-[10px] text-green-400">RD${sistemaPrecio}/m²</span>}
                 </div>
-                {/* v8.9.27: precio venta custom por área - solo admin */}
-                {tieneRol(usuario, 'admin') && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">Precio venta/m²:</span>
-                    <div className="w-32">
-                      <Input
-                        type="number"
-                        value={area.precioVentaM2 ?? ''}
-                        onChange={v => {
-                          const n = [...form.areas];
-                          n[i] = { ...n[i], precioVentaM2: v === '' ? null : v };
-                          setForm({ ...form, areas: n });
-                        }}
-                        placeholder={`${sistemaPrecio}`}
-                      />
-                    </div>
-                    <span className="text-[10px] text-zinc-500">
-                      {area.precioVentaM2 !== undefined && area.precioVentaM2 !== null && area.precioVentaM2 !== '' ? (
-                        <span className="text-yellow-400">✏️ custom · {formatRD(area.m2 * Number(area.precioVentaM2))}</span>
-                      ) : (
-                        <span>usa el del sistema · {formatRD((area.m2 || 0) * sistemaPrecio)}</span>
-                      )}
-                    </span>
+                {/* v8.9.27: precio venta custom por área (NuevoProyecto ya es solo-admin por vista) */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">Precio venta/m²:</span>
+                  <div className="w-32">
+                    <Input
+                      type="number"
+                      value={area.precioVentaM2 ?? ''}
+                      onChange={v => {
+                        const n = [...form.areas];
+                        n[i] = { ...n[i], precioVentaM2: v === '' ? null : v };
+                        setForm({ ...form, areas: n });
+                      }}
+                      placeholder={`${sistemaPrecio}`}
+                    />
                   </div>
-                )}
+                  <span className="text-[10px] text-zinc-500">
+                    {area.precioVentaM2 !== undefined && area.precioVentaM2 !== null && area.precioVentaM2 !== '' ? (
+                      <span className="text-yellow-400">✏️ custom · {formatRD(area.m2 * Number(area.precioVentaM2))}</span>
+                    ) : (
+                      <span>usa el del sistema · {formatRD((area.m2 || 0) * sistemaPrecio)}</span>
+                    )}
+                  </span>
+                </div>
               </div>
             );
           })}</div>

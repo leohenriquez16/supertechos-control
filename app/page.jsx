@@ -10041,7 +10041,8 @@ function FormReporte({ usuario, proyecto, reportes, sistema, sistemas, onGuardar
     setComprimiendo(true);
     try {
       const nuevas = [];
-      for (const f of files) { nuevas.push(await comprimirImagen(f)); }
+      // v8.9.28: compresión optimizada - 1600px @ 75% calidad para balance tamaño/calidad en PDF
+      for (const f of files) { nuevas.push(await comprimirImagen(f, 1600, 0.75)); }
       setFotos([...fotos, ...nuevas]);
     } catch (e) { alert('Error con foto: ' + e.message); }
     setComprimiendo(false);
@@ -12087,6 +12088,9 @@ function ModalReporteAvancePDF({ proyecto, sistema, data, usuario, onCerrar }) {
   const [incluirBitacora, setIncluirBitacora] = useState(true);
   const [incluirFinanciero, setIncluirFinanciero] = useState(true);
   const [preview, setPreview] = useState(false);
+  // v8.9.28: fotos reales cargadas para el PDF
+  const [fotosCargadas, setFotosCargadas] = useState([]);
+  const [cargandoFotos, setCargandoFotos] = useState(false);
 
   // Calcular automáticamente según tipo
   useEffect(() => {
@@ -12104,6 +12108,46 @@ function ModalReporteAvancePDF({ proyecto, sistema, data, usuario, onCerrar }) {
       setFechaFin(h.toISOString().split('T')[0]);
     }
   }, [tipo]);
+
+  // v8.9.28: cargar fotos del periodo para el PDF
+  useEffect(() => {
+    if (!incluirFotos) { setFotosCargadas([]); return; }
+    let cancelado = false;
+    (async () => {
+      setCargandoFotos(true);
+      try {
+        // Cantidades segun tipo: diario 4, semanal 10, quincenal 12, custom hasta 12
+        const maxFotos = tipo === 'diario' ? 4 : tipo === 'semanal' ? 10 : 12;
+        const todasFotos = await db.listarFotosProyecto(proyecto.id);
+        // Filtrar por rango de fechas (usa created_at o fecha si existe)
+        const enRango = (todasFotos || []).filter(f => {
+          const fecha = (f.fecha || f.created_at || '').slice(0, 10);
+          return fecha >= fechaInicio && fecha <= fechaFin;
+        });
+        // Orden cronologico antiguas primero
+        enRango.sort((a, b) => {
+          const fa = (a.fecha || a.created_at || '');
+          const fb = (b.fecha || b.created_at || '');
+          return fa.localeCompare(fb);
+        });
+        // Limitar cantidad
+        const seleccionadas = enRango.slice(0, maxFotos);
+        // Cargar base64 en paralelo
+        const conDatos = await Promise.all(seleccionadas.map(async f => {
+          try {
+            const dataUrl = await db.obtenerFoto(f.id);
+            return { ...f, dataUrl };
+          } catch { return null; }
+        }));
+        if (!cancelado) setFotosCargadas(conDatos.filter(Boolean));
+      } catch (e) {
+        console.error('Error cargando fotos para PDF:', e);
+        if (!cancelado) setFotosCargadas([]);
+      }
+      if (!cancelado) setCargandoFotos(false);
+    })();
+    return () => { cancelado = true; };
+  }, [proyecto.id, fechaInicio, fechaFin, incluirFotos, tipo]);
 
   const reportesPeriodo = (data.reportes || [])
     .filter(r => r.proyectoId === proyecto.id && r.fecha >= fechaInicio && r.fecha <= fechaFin)
@@ -12223,6 +12267,7 @@ function ModalReporteAvancePDF({ proyecto, sistema, data, usuario, onCerrar }) {
               <div>• {diasTrabajados} {diasTrabajados === 1 ? 'día' : 'días'} trabajados · {totalM2Periodo.toFixed(2)} m² ejecutados</div>
               <div>• {areasConAvance.length} áreas del proyecto</div>
               <div>• {reportesPeriodo.length} reportes en el periodo</div>
+              <div>• {cargandoFotos ? 'Cargando fotos...' : `${fotosCargadas.length} foto${fotosCargadas.length !== 1 ? 's' : ''} incluida${fotosCargadas.length !== 1 ? 's' : ''} en el PDF`}</div>
             </div>
           </div>
         )}
@@ -12249,6 +12294,8 @@ function ModalReporteAvancePDF({ proyecto, sistema, data, usuario, onCerrar }) {
             areasConAvance={areasConAvance}
             diasTrabajados={diasTrabajados}
             reportesPeriodo={reportesPeriodo}
+            fotosCargadas={fotosCargadas}
+            cargandoFotos={cargandoFotos}
           />
         )}
       </div>
@@ -12256,7 +12303,7 @@ function ModalReporteAvancePDF({ proyecto, sistema, data, usuario, onCerrar }) {
   );
 }
 
-function ReportePDFContenido({ proyecto, sistema, data, tipo, fechaInicio, fechaFin, proximosPasos, incluirFotos, incluirBitacora, incluirFinanciero, porcentaje, produccionRD, valorContrato, porTarea, totalM2Periodo, bitacora, areasConAvance, diasTrabajados, reportesPeriodo }) {
+function ReportePDFContenido({ proyecto, sistema, data, tipo, fechaInicio, fechaFin, proximosPasos, incluirFotos, incluirBitacora, incluirFinanciero, porcentaje, produccionRD, valorContrato, porTarea, totalM2Periodo, bitacora, areasConAvance, diasTrabajados, reportesPeriodo, fotosCargadas, cargandoFotos }) {
   const supervisor = getPersona(data.personal, proyecto.supervisorId);
   const maestro = getPersona(data.personal, proyecto.maestroId);
   const tipoLabel = { diario: 'Diario', semanal: 'Semanal', quincenal: 'Quincenal', custom: 'Personalizado' }[tipo] || 'Avance';
@@ -12426,20 +12473,38 @@ function ReportePDFContenido({ proyecto, sistema, data, tipo, fechaInicio, fecha
           </div>
         )}
 
-        {/* Fotos placeholder */}
+        {/* v8.9.28: Fotos reales del proyecto en el periodo */}
         {incluirFotos && (
           <div style={{ padding: '0 36px 22px' }}>
-            <div style={{ color: '#71717a', fontSize: '10px', letterSpacing: '1.5px', marginBottom: '12px' }}>FOTOS DE LA OBRA</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
-              {[1,2,3,4].map(i => (
-                <div key={i} style={{ aspectRatio: '1', background: '#f4f4f5', border: '1px solid #e4e4e7', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#a1a1aa', fontSize: '10px' }}>
-                  Foto {i}
-                </div>
-              ))}
+            <div style={{ color: '#71717a', fontSize: '10px', letterSpacing: '1.5px', marginBottom: '12px' }}>
+              FOTOS DE LA OBRA {fotosCargadas && fotosCargadas.length > 0 && <span style={{ color: '#a1a1aa' }}>· {fotosCargadas.length}</span>}
             </div>
-            <div style={{ fontSize: '10px', color: '#a1a1aa', marginTop: '6px', fontStyle: 'italic' }}>
-              Nota: las fotos desde la app no se imprimen automáticamente en esta versión. Adjuntar manualmente según sea necesario.
-            </div>
+            {cargandoFotos ? (
+              <div style={{ padding: '24px', textAlign: 'center', background: '#fafafa', border: '1px solid #e4e4e7', color: '#a1a1aa', fontSize: '11px' }}>
+                Cargando fotos del periodo...
+              </div>
+            ) : fotosCargadas && fotosCargadas.length > 0 ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
+                {fotosCargadas.map((f, i) => {
+                  const fechaStr = (f.fecha || f.created_at || '').slice(0, 10);
+                  const fechaMostrar = fechaStr ? formatFechaCorta(fechaStr) : '';
+                  return (
+                    <div key={f.id || i} style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <div style={{ aspectRatio: '1', background: '#f4f4f5', border: '1px solid #e4e4e7', overflow: 'hidden' }}>
+                        <img src={f.dataUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                      </div>
+                      {fechaMostrar && (
+                        <div style={{ fontSize: '9px', color: '#71717a', textAlign: 'center' }}>{fechaMostrar}</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div style={{ padding: '20px', textAlign: 'center', background: '#fafafa', border: '1px solid #e4e4e7', color: '#a1a1aa', fontSize: '11px', fontStyle: 'italic' }}>
+                Sin fotos registradas en el periodo seleccionado
+              </div>
+            )}
           </div>
         )}
 

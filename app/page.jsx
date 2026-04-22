@@ -12189,7 +12189,86 @@ function ModalReporteAvancePDF({ proyecto, sistema, data, usuario, onCerrar }) {
     return { ...area, m2Ejecutado, m2Historico, pct: Math.min(100, pct) };
   });
 
-  const imprimir = () => window.print();
+  // v8.9.28: Descargar PDF real usando jsPDF + html2canvas cargados desde CDN
+  const [descargandoPDF, setDescargandoPDF] = useState(false);
+  const cargarScriptCDN = (src) => new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error(`No se pudo cargar ${src}`));
+    document.head.appendChild(s);
+  });
+
+  const descargarPDF = async () => {
+    try {
+      setDescargandoPDF(true);
+      // Cargar librerías desde CDN (primera vez ~200KB, luego cache)
+      await cargarScriptCDN('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+      await cargarScriptCDN('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+      const html2canvas = window.html2canvas;
+      const { jsPDF } = window.jspdf;
+      if (!html2canvas || !jsPDF) throw new Error('Librerías PDF no disponibles');
+
+      const el = document.getElementById('reporte-pdf');
+      if (!el) throw new Error('No se encontró el reporte');
+
+      // Renderizar el HTML a canvas con alta calidad
+      const canvas = await html2canvas(el, {
+        scale: 2, // mejor calidad
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+        windowWidth: el.scrollWidth,
+        windowHeight: el.scrollHeight,
+      });
+
+      // Dimensiones A4 en mm (210 x 297)
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const pageWidth = 210;
+      const pageHeight = 297;
+      const imgWidth = pageWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      // Si cabe en una sola página
+      if (imgHeight <= pageHeight) {
+        pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, imgWidth, imgHeight);
+      } else {
+        // Multi-página: dividir el canvas en páginas A4
+        let remainingHeight = canvas.height;
+        let srcY = 0;
+        const pageHeightPx = (pageHeight * canvas.width) / pageWidth;
+        while (remainingHeight > 0) {
+          const sliceHeight = Math.min(pageHeightPx, remainingHeight);
+          // Crear un canvas temporal para el slice
+          const sliceCanvas = document.createElement('canvas');
+          sliceCanvas.width = canvas.width;
+          sliceCanvas.height = sliceHeight;
+          const ctx = sliceCanvas.getContext('2d');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+          ctx.drawImage(canvas, 0, srcY, canvas.width, sliceHeight, 0, 0, canvas.width, sliceHeight);
+          const sliceImgHeight = (sliceHeight * imgWidth) / canvas.width;
+          if (srcY > 0) pdf.addPage();
+          pdf.addImage(sliceCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, imgWidth, sliceImgHeight);
+          srcY += sliceHeight;
+          remainingHeight -= sliceHeight;
+        }
+      }
+
+      // Nombre del archivo: Reporte_[Cliente]_[Fecha].pdf
+      const clienteSafe = (proyecto.cliente || proyecto.nombre || 'proyecto')
+        .replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30);
+      const fecha = new Date().toISOString().split('T')[0];
+      const nombreArchivo = `Reporte_${clienteSafe}_${fecha}.pdf`;
+      pdf.save(nombreArchivo);
+    } catch (e) {
+      console.error('Error generando PDF:', e);
+      alert('Error al generar PDF: ' + (e?.message || 'revisa tu conexión'));
+    } finally {
+      setDescargandoPDF(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-0 md:p-4 print:bg-white print:static print:p-0">
@@ -12203,8 +12282,10 @@ function ModalReporteAvancePDF({ proyecto, sistema, data, usuario, onCerrar }) {
           <div className="flex gap-2">
             {preview ? (
               <>
-                <button onClick={() => setPreview(false)} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2">Editar</button>
-                <button onClick={imprimir} className="bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase px-4 py-2 flex items-center gap-1"><Download className="w-3 h-3" /> Descargar / Imprimir PDF</button>
+                <button onClick={() => setPreview(false)} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2" disabled={descargandoPDF}>Editar</button>
+                <button onClick={descargarPDF} disabled={descargandoPDF} className="bg-red-600 hover:bg-red-700 disabled:bg-zinc-700 text-white text-xs font-black uppercase px-4 py-2 flex items-center gap-1">
+                  {descargandoPDF ? <><Loader2 className="w-3 h-3 animate-spin" /> Generando PDF...</> : <><Download className="w-3 h-3" /> Descargar PDF</>}
+                </button>
               </>
             ) : (
               <>

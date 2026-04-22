@@ -12455,18 +12455,41 @@ function ModalReporteAvancePDF({ proyecto, sistema, data, usuario, onCerrar }) {
 
   const diasTrabajados = bitacora.length;
 
-  // Avance por área — v8.9.28: usar sistema correcto por área
+  // Avance por área — v8.9.29: desglose por tarea, sin sumar m² entre tareas distintas
   const areasConAvance = (proyecto.areas || []).map(area => {
     const sisIdA = area.sistemaId || proyecto.sistema;
     const sisA = (data.sistemas && data.sistemas[sisIdA]) || sistema;
-    const m2Ejecutado = reportesPeriodo
-      .filter(r => r.areaId === area.id)
-      .reduce((s, r) => s + getM2Reporte(r, sisA), 0);
-    const m2Historico = (data.reportes || [])
-      .filter(r => r.proyectoId === proyecto.id && r.areaId === area.id)
-      .reduce((s, r) => s + getM2Reporte(r, sisA), 0);
-    const pct = area.m2 > 0 ? (m2Historico / area.m2) * 100 : 0;
-    return { ...area, m2Ejecutado, m2Historico, pct: Math.min(100, pct) };
+    const tareasDef = sisA?.tareas || [];
+
+    // Calcular m² ejecutado POR TAREA (histórico y del período)
+    const tareasConAvance = tareasDef.map(t => {
+      const m2HistTarea = (data.reportes || [])
+        .filter(r => r.proyectoId === proyecto.id && r.areaId === area.id && r.tareaId === t.id)
+        .reduce((s, r) => s + getM2Reporte(r, sisA), 0);
+      const m2PeriodoTarea = reportesPeriodo
+        .filter(r => r.areaId === area.id && r.tareaId === t.id)
+        .reduce((s, r) => s + getM2Reporte(r, sisA), 0);
+      const m2Cap = Math.min(m2HistTarea, area.m2 || 0);
+      const pctTarea = area.m2 > 0 ? (m2Cap / area.m2) * 100 : 0;
+      return {
+        id: t.id,
+        nombre: t.nombre,
+        peso: t.peso || 0,
+        m2Historico: m2HistTarea,
+        m2Periodo: m2PeriodoTarea,
+        pct: Math.min(100, pctTarea),
+      };
+    });
+
+    // Avance ponderado del área (correcto: cada tarea aporta su peso proporcional)
+    const pctArea = tareasConAvance.reduce((acc, t) => acc + (t.pct / 100) * t.peso, 0);
+
+    return {
+      ...area,
+      tareas: tareasConAvance,
+      pct: Math.min(100, pctArea),
+      sistemaNombre: sisA?.nombre || '',
+    };
   });
 
   // v8.9.28: Descargar PDF real usando jsPDF + html2canvas cargados desde CDN
@@ -12755,63 +12778,54 @@ function ReportePDFContenido({ proyecto, sistema, data, tipo, fechaInicio, fecha
           </div>
         </div>
 
-        {/* Avance por tarea */}
-        {Object.keys(porTarea).length > 0 && (
-          <div style={{ padding: '0 36px 22px' }}>
-            <div style={{ color: '#71717a', fontSize: '10px', letterSpacing: '1.5px', marginBottom: '4px' }}>M² EJECUTADOS POR TAREA (NO SUMABLE)</div>
-            <div style={{ color: '#a1a1aa', fontSize: '9px', marginBottom: '12px', fontStyle: 'italic' }}>
-              Una misma superficie recibe múltiples tareas/capas. Los m² por tarea no se suman entre sí.
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {Object.values(porTarea).map((t, idx) => {
-                const pct = t.m2Total > 0 ? Math.min(100, (t.m2Ejecutado / t.m2Total) * 100) : 0;
-                return (
-                  <div key={idx} style={{ background: '#fafafa', border: '1px solid #e4e4e7', padding: '10px 12px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '6px' }}>
-                      <div style={{ fontSize: '11px', color: '#27272a', fontWeight: 600 }}>
-                        {t.nombre}
-                        {t.peso > 0 && <span style={{ color: '#a1a1aa', fontWeight: 400, marginLeft: '8px', fontSize: '9px' }}>peso {t.peso}%</span>}
-                      </div>
-                      <div style={{ fontSize: '11px', color: '#16a34a', fontWeight: 600 }}>
-                        {t.m2Ejecutado.toFixed(1)} / {t.m2Total.toFixed(0)} m²
-                        <span style={{ color: '#71717a', fontWeight: 500, marginLeft: '6px' }}>({pct.toFixed(0)}%)</span>
-                      </div>
-                    </div>
-                    <div style={{ height: '8px', background: '#e4e4e7', borderRadius: '2px', overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${pct}%`, background: '#16a34a', borderRadius: '2px' }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Avance por área */}
+        {/* v8.9.29: Avance por área con desglose de tareas — reemplaza las 2 secciones anteriores */}
         {areasConAvance.length > 0 && (
           <div style={{ padding: '0 36px 22px' }}>
-            <div style={{ color: '#71717a', fontSize: '10px', letterSpacing: '1.5px', marginBottom: '12px' }}>AVANCE GENERAL POR ÁREA</div>
-            <div style={{ border: '1px solid #e4e4e7' }}>
-              <table style={{ width: '100%', fontSize: '11px', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ background: '#fafafa', color: '#71717a', fontSize: '9px', letterSpacing: '1.5px' }}>
-                    <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, borderBottom: '1px solid #e4e4e7' }}>ÁREA</th>
-                    <th style={{ textAlign: 'center', padding: '10px 14px', fontWeight: 500, borderBottom: '1px solid #e4e4e7' }}>TOTAL</th>
-                    <th style={{ textAlign: 'center', padding: '10px 14px', fontWeight: 500, borderBottom: '1px solid #e4e4e7' }}>EJECUTADO</th>
-                    <th style={{ textAlign: 'right', padding: '10px 14px', fontWeight: 500, borderBottom: '1px solid #e4e4e7', width: '80px' }}>AVANCE</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {areasConAvance.map(a => (
-                    <tr key={a.id} style={{ borderTop: '1px solid #f4f4f5' }}>
-                      <td style={{ padding: '10px 14px', color: '#27272a', fontWeight: 500 }}>{a.nombre}</td>
-                      <td style={{ textAlign: 'center', padding: '10px 14px', color: '#52525b' }}>{a.m2} m²</td>
-                      <td style={{ textAlign: 'center', padding: '10px 14px', color: a.pct >= 100 ? '#16a34a' : a.pct > 0 ? '#d97706' : '#71717a' }}>{a.m2Historico.toFixed(1)} m²</td>
-                      <td style={{ textAlign: 'right', padding: '10px 14px', color: a.pct >= 100 ? '#16a34a' : a.pct > 0 ? '#d97706' : '#71717a', fontWeight: 600 }}>{a.pct.toFixed(0)}%</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div style={{ color: '#71717a', fontSize: '10px', letterSpacing: '1.5px', marginBottom: '4px' }}>AVANCE POR ÁREA Y TAREA</div>
+            <div style={{ color: '#a1a1aa', fontSize: '9px', marginBottom: '12px', fontStyle: 'italic' }}>
+              Cada tarea es una capa sobre la misma superficie. El avance del área combina todas sus tareas ponderadas por peso.
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {areasConAvance.map(area => (
+                <div key={area.id} style={{ border: '1px solid #e4e4e7', background: '#ffffff' }}>
+                  {/* Header del área */}
+                  <div style={{ background: '#fafafa', padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', borderBottom: '1px solid #e4e4e7' }}>
+                    <div>
+                      <div style={{ fontSize: '13px', color: '#18181b', fontWeight: 600 }}>{area.nombre}</div>
+                      <div style={{ fontSize: '10px', color: '#71717a', marginTop: '2px' }}>
+                        {area.m2} m²{area.sistemaNombre && ` · ${area.sistemaNombre}`}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: '18px', fontWeight: 700, color: area.pct >= 100 ? '#16a34a' : area.pct > 0 ? '#d97706' : '#71717a', lineHeight: 1 }}>
+                        {area.pct.toFixed(0)}%
+                      </div>
+                      <div style={{ fontSize: '9px', color: '#a1a1aa', marginTop: '2px' }}>avance</div>
+                    </div>
+                  </div>
+                  {/* Tareas del área con sus barras */}
+                  <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {area.tareas.length === 0 ? (
+                      <div style={{ fontSize: '10px', color: '#a1a1aa', fontStyle: 'italic' }}>Sin tareas definidas en el sistema</div>
+                    ) : area.tareas.map(t => (
+                      <div key={t.id}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '4px' }}>
+                          <div style={{ fontSize: '11px', color: '#27272a' }}>
+                            <span style={{ fontWeight: 500 }}>{t.nombre}</span>
+                            {t.peso > 0 && <span style={{ color: '#a1a1aa', marginLeft: '6px', fontSize: '9px' }}>peso {t.peso}%</span>}
+                          </div>
+                          <div style={{ fontSize: '10px', color: t.pct >= 100 ? '#16a34a' : t.pct > 0 ? '#d97706' : '#71717a', fontWeight: 600 }}>
+                            {t.m2Historico.toFixed(0)} / {area.m2} m² <span style={{ color: '#a1a1aa', fontWeight: 500 }}>({t.pct.toFixed(0)}%)</span>
+                          </div>
+                        </div>
+                        <div style={{ height: '6px', background: '#f4f4f5', borderRadius: '2px', overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${t.pct}%`, background: t.pct >= 100 ? '#16a34a' : '#16a34a', borderRadius: '2px' }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}

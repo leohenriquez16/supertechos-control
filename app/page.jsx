@@ -10,7 +10,7 @@ import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps }
 // ============================================================
 // HELPERS
 // ============================================================
-const APP_VERSION = '8.9.30';
+const APP_VERSION = '8.9.31';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
@@ -5030,6 +5030,19 @@ function Dashboard({ data, onVerProyecto, onNuevoProyecto, tareas, onCompletarTa
   const hoy = new Date().toISOString().split('T')[0];
   const [periodo, setPeriodo] = useState('dia');
   const [fechaRef, setFechaRef] = useState(hoy);
+  // v8.9.30: cargar jornadas directamente aquí (como VistaEquipoGlobal que sí funciona)
+  const [jornadasLocal, setJornadasLocal] = useState(jornadasHoy || []);
+  useEffect(() => {
+    let cancelado = false;
+    (async () => {
+      try {
+        const proms = data.proyectos.map(p => db.obtenerJornadaHoy(p.id, hoy));
+        const res = (await Promise.all(proms)).filter(Boolean);
+        if (!cancelado) setJornadasLocal(res);
+      } catch (e) { console.warn('Dashboard jornadas:', e); }
+    })();
+    return () => { cancelado = true; };
+  }, [data.proyectos.length, hoy]);
 
   // Calcular rango [desde, hasta] según periodo y fecha de referencia
   const calcRango = (p, fref) => {
@@ -5132,8 +5145,8 @@ function Dashboard({ data, onVerProyecto, onNuevoProyecto, tareas, onCompletarTa
 
   // Proyectos activos y personas en obra HOY — v8.9.29: reemplaza concepto anterior
   const proyectosEjecutando = data.proyectos.filter(p => p.estado === 'en_ejecucion');
-  // Jornadas abiertas = check-in hecho, check-out aún no
-  const jornadasAbiertas = (jornadasHoy || []).filter(j => j && j.horaInicio && !j.horaFin);
+  // Jornadas abiertas = check-in hecho, check-out aún no — v8.9.30: usar jornadasLocal (cargado directo aquí)
+  const jornadasAbiertas = (jornadasLocal || []).filter(j => j && j.horaInicio && !j.horaFin);
   // Personal en obra AHORA = personas en jornadas abiertas
   const personalEnObraAhora = new Set();
   jornadasAbiertas.forEach(j => { (j.personasPresentesIds || []).forEach(id => personalEnObraAhora.add(id)); });
@@ -5308,7 +5321,7 @@ function Dashboard({ data, onVerProyecto, onNuevoProyecto, tareas, onCompletarTa
       )}
 
       {/* v8.9.21: Modales del dashboard */}
-      {modalDetalle === 'enEjecucion' && <ModalDetalleEnEjecucion proyectos={proyectosEjecutando} data={data} jornadasHoy={jornadasHoy} onCerrar={() => setModalDetalle(null)} onVerProyecto={(p) => { setModalDetalle(null); onVerProyecto(p); }} />}
+      {modalDetalle === 'enEjecucion' && <ModalDetalleEnEjecucion proyectos={proyectosEjecutando} data={data} jornadasHoy={jornadasLocal} onCerrar={() => setModalDetalle(null)} onVerProyecto={(p) => { setModalDetalle(null); onVerProyecto(p); }} />}
       {modalDetalle === 'personalAhora' && <ModalDetallePersonalAhora personalPorProyecto={personalPorProyecto} totalPersonas={personalEnObraAhora.size} onCerrar={() => setModalDetalle(null)} onVerProyecto={(p) => { setModalDetalle(null); onVerProyecto(p); }} />}
       {modalDetalle === 'produccion' && <ModalDetalleProduccion data={data} rango={rango} prodPeriodo={prodPeriodo} onCerrar={() => setModalDetalle(null)} onVerProyecto={(p) => { setModalDetalle(null); onVerProyecto(p); }} />}
       {modalDetalle === 'aprobados' && <ModalDetalleAprobados aprobadosPeriodo={aprobadosPeriodo} montoTotal={montoAprobadosPeriodo} onCerrar={() => setModalDetalle(null)} onVerProyecto={(p) => { setModalDetalle(null); onVerProyecto(p); }} />}

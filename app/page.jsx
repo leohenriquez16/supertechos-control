@@ -10,7 +10,7 @@ import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps }
 // ============================================================
 // HELPERS
 // ============================================================
-const APP_VERSION = '8.9.32';
+const APP_VERSION = '8.9.33';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
@@ -528,6 +528,63 @@ const getPrecioVentaArea = (area, sistema) => {
   return Number(sistema?.precio_m2) || 0;
 };
 
+// v8.9.33: SISTEMAS SUPLEMENTARIOS
+// Un área puede tener 0+ suplementos. Cada suplemento referencia un sistema y tiene su propio precio/m².
+// Comparte los m² del área (no los duplica en el total del proyecto).
+// Estructura: area.suplementos = [{ sistemaId, precioM2 }, ...]
+
+// Devuelve el array de suplementos de un área (siempre array, nunca null)
+const getSuplementosArea = (area) => {
+  if (!area || !Array.isArray(area.suplementos)) return [];
+  return area.suplementos.filter(s => s && s.sistemaId);
+};
+
+// Devuelve el precio/m² efectivo de un suplemento (su override o el del sistema)
+const getPrecioSuplemento = (suplemento, sistemas) => {
+  if (!suplemento) return 0;
+  if (suplemento.precioM2 !== undefined && suplemento.precioM2 !== null && suplemento.precioM2 !== '') {
+    const n = Number(suplemento.precioM2);
+    if (!isNaN(n) && n > 0) return n;
+  }
+  const sis = sistemas && sistemas[suplemento.sistemaId];
+  return Number(sis?.precio_m2) || 0;
+};
+
+// Devuelve la suma del precio/m² del principal + todos los suplementos de un área
+const getPrecioTotalM2Area = (area, sistemaPrincipal, sistemas) => {
+  const precioPrincipal = getPrecioVentaArea(area, sistemaPrincipal);
+  const suplementos = getSuplementosArea(area);
+  const sumaSuplementos = suplementos.reduce((acc, s) => acc + getPrecioSuplemento(s, sistemas), 0);
+  return precioPrincipal + sumaSuplementos;
+};
+
+// Devuelve array de TODOS los sistemas usados en un área: [{ sistemaId, precioM2, esPrincipal }]
+const getSistemasDeArea = (area, sistemaPrincipalId, sistemas) => {
+  const resultado = [];
+  const idPrincipal = area?.sistemaId || sistemaPrincipalId;
+  if (idPrincipal) {
+    const sis = sistemas && sistemas[idPrincipal];
+    resultado.push({
+      sistemaId: idPrincipal,
+      sistema: sis,
+      precioM2: getPrecioVentaArea(area, sis),
+      esPrincipal: true,
+    });
+  }
+  getSuplementosArea(area).forEach(s => {
+    const sis = sistemas && sistemas[s.sistemaId];
+    resultado.push({
+      sistemaId: s.sistemaId,
+      sistema: sis,
+      precioM2: getPrecioSuplemento(s, sistemas),
+      esPrincipal: false,
+      suplemento: s,
+    });
+  });
+  return resultado;
+};
+
+
 const calcAvanceArea = (proyecto, areaId, reportes, sistema) => {
   const area = proyecto.areas.find(a => a.id === areaId);
   const reportesArea = reportes.filter(r => r.proyectoId === proyecto.id && r.areaId === areaId);
@@ -555,7 +612,8 @@ const calcAvanceProyecto = (proyecto, reportes, sistema, sistemas) => {
     const sistemaIdArea = area.sistemaId || proyecto.sistema;
     const sistemaArea = (sistemas && sistemas[sistemaIdArea]) || sistema;
     if (!sistemaArea) return;
-    valorContrato += area.m2 * getPrecioVentaArea(area, sistemaArea);
+    // v8.9.33: valorContrato suma principal + suplementos (sin duplicar m²)
+    valorContrato += area.m2 * getPrecioTotalM2Area(area, sistemaArea, sistemas);
     const { porcentaje, produccionRD } = calcAvanceArea(proyecto, area.id, reportes, sistemaArea);
     if (m2Total > 0) avanceTotal += (area.m2 / m2Total) * porcentaje;
     produccionTotal += produccionRD;
@@ -661,10 +719,18 @@ const calcDieta = (proyecto, reportes) => {
   };
 };
 
-const calcAnalisisCosto = (proyecto, reportes, envios, sistema, config) => {
+const calcAnalisisCosto = (proyecto, reportes, envios, sistema, config, sistemas) => {
   const m2Total = proyecto.areas.reduce((a, ar) => a + ar.m2, 0);
   // v8.9.27: respetar precio custom por área si existe
-  const valorContrato = proyecto.areas.reduce((acc, ar) => acc + ar.m2 * getPrecioVentaArea(ar, sistema), 0);
+  // v8.9.33: incluir suplementos si sistemas está disponible
+  const valorContrato = proyecto.areas.reduce((acc, ar) => {
+    if (sistemas) {
+      const sistemaIdArea = ar.sistemaId || proyecto.sistema;
+      const sistemaArea = sistemas[sistemaIdArea] || sistema;
+      return acc + ar.m2 * getPrecioTotalM2Area(ar, sistemaArea, sistemas);
+    }
+    return acc + ar.m2 * getPrecioVentaArea(ar, sistema);
+  }, 0);
   const costoMaterialesTeorico = sistema.materiales.reduce((acc, mat) => acc + (m2Total / mat.rinde_m2) * (mat.costo_unidad || 0), 0);
   const enviosProy = envios.filter(e => e.proyectoId === proyecto.id);
   const costoMaterialesReal = sistema.materiales.reduce((acc, mat) => {
@@ -5192,10 +5258,11 @@ function Dashboard({ data, onVerProyecto, onNuevoProyecto, tareas, onCompletarTa
   const montoAprobadosPeriodo = aprobadosPeriodo.reduce((s, p) => {
     const sistemaDef = data.sistemas[p.sistema];
     // v8.9.27: sumar por área respetando precio custom y sistema por área
+    // v8.9.33: incluir suplementos
     const aporte = (p.areas || []).reduce((acc, a) => {
       const sisArea = data.sistemas[a.sistemaId] || sistemaDef;
       if (!sisArea) return acc;
-      return acc + (a.m2 || 0) * getPrecioVentaArea(a, sisArea);
+      return acc + (a.m2 || 0) * getPrecioTotalM2Area(a, sisArea, data.sistemas);
     }, 0);
     return s + aporte;
   }, 0);

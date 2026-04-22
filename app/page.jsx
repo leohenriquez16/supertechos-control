@@ -12155,21 +12155,48 @@ function ModalReporteAvancePDF({ proyecto, sistema, data, usuario, onCerrar }) {
 
   const { porcentaje, produccionRD, valorContrato } = calcAvanceProyecto(proyecto, data.reportes, sistema, data.sistemas);
 
-  // m² ejecutados en el periodo (por tarea)
+  // m² ejecutados en el periodo (por tarea) — v8.9.28: busca en todos los sistemas y guarda objeto completo
   const porTarea = {};
   reportesPeriodo.forEach(r => {
-    const m2 = getM2Reporte(r, sistema);
-    const tarea = sistema.tareas?.find(t => t.id === r.tareaId);
-    const key = tarea?.nombre || r.tareaId || 'Sin tarea';
-    porTarea[key] = (porTarea[key] || 0) + m2;
+    // Resolver sistema del área del reporte (puede ser distinto al del proyecto)
+    const areaRep = (proyecto.areas || []).find(a => a.id === r.areaId);
+    const sistemaIdR = areaRep?.sistemaId || proyecto.sistema;
+    const sistemaR = (data.sistemas && data.sistemas[sistemaIdR]) || sistema;
+    const m2 = getM2Reporte(r, sistemaR);
+    const tarea = sistemaR?.tareas?.find(t => t.id === r.tareaId);
+    const nombre = tarea?.nombre || 'Tarea sin nombre';
+    const key = tarea?.id || r.tareaId;
+    if (!porTarea[key]) {
+      porTarea[key] = {
+        nombre,
+        peso: tarea?.peso || 0,
+        m2Ejecutado: 0,
+        // m² totales posibles para esa tarea: suma de áreas que usen ese sistema/tarea
+        m2Total: 0,
+      };
+    }
+    porTarea[key].m2Ejecutado += m2;
   });
-  const totalM2Periodo = Object.values(porTarea).reduce((s, v) => s + v, 0);
+  // Calcular m² totales posibles para cada tarea (acumulado de áreas donde aplica)
+  Object.keys(porTarea).forEach(taskId => {
+    (proyecto.areas || []).forEach(a => {
+      const sisIdA = a.sistemaId || proyecto.sistema;
+      const sisA = (data.sistemas && data.sistemas[sisIdA]) || sistema;
+      const tieneTarea = sisA?.tareas?.some(t => t.id === taskId);
+      if (tieneTarea) porTarea[taskId].m2Total += (a.m2 || 0);
+    });
+  });
+  const totalM2Periodo = Object.values(porTarea).reduce((s, v) => s + v.m2Ejecutado, 0);
 
   // Bitácora por día con días de lluvia si aplica
   const bitacoraPorDia = {};
   reportesPeriodo.forEach(r => {
     if (!bitacoraPorDia[r.fecha]) bitacoraPorDia[r.fecha] = { m2: 0, notas: [] };
-    const m2 = getM2Reporte(r, sistema);
+    // v8.9.28: usar sistema del área del reporte
+    const areaR = (proyecto.areas || []).find(a => a.id === r.areaId);
+    const sisIdR = areaR?.sistemaId || proyecto.sistema;
+    const sisR = (data.sistemas && data.sistemas[sisIdR]) || sistema;
+    const m2 = getM2Reporte(r, sisR);
     bitacoraPorDia[r.fecha].m2 += m2;
     if (r.nota) bitacoraPorDia[r.fecha].notas.push(r.nota);
   });
@@ -12177,14 +12204,16 @@ function ModalReporteAvancePDF({ proyecto, sistema, data, usuario, onCerrar }) {
 
   const diasTrabajados = bitacora.length;
 
-  // Avance por área
+  // Avance por área — v8.9.28: usar sistema correcto por área
   const areasConAvance = (proyecto.areas || []).map(area => {
+    const sisIdA = area.sistemaId || proyecto.sistema;
+    const sisA = (data.sistemas && data.sistemas[sisIdA]) || sistema;
     const m2Ejecutado = reportesPeriodo
       .filter(r => r.areaId === area.id)
-      .reduce((s, r) => s + getM2Reporte(r, sistema), 0);
+      .reduce((s, r) => s + getM2Reporte(r, sisA), 0);
     const m2Historico = (data.reportes || [])
       .filter(r => r.proyectoId === proyecto.id && r.areaId === area.id)
-      .reduce((s, r) => s + getM2Reporte(r, sistema), 0);
+      .reduce((s, r) => s + getM2Reporte(r, sisA), 0);
     const pct = area.m2 > 0 ? (m2Historico / area.m2) * 100 : 0;
     return { ...area, m2Ejecutado, m2Historico, pct: Math.min(100, pct) };
   });
@@ -12483,24 +12512,31 @@ function ReportePDFContenido({ proyecto, sistema, data, tipo, fechaInicio, fecha
         {/* Avance por tarea */}
         {Object.keys(porTarea).length > 0 && (
           <div style={{ padding: '0 36px 22px' }}>
-            <div style={{ color: '#71717a', fontSize: '10px', letterSpacing: '1.5px', marginBottom: '12px' }}>M² EJECUTADOS EN EL PERIODO POR TAREA</div>
-            <div style={{ border: '1px solid #e4e4e7' }}>
-              <table style={{ width: '100%', fontSize: '11px', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ background: '#fafafa', color: '#71717a', fontSize: '9px', letterSpacing: '1.5px' }}>
-                    <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, borderBottom: '1px solid #e4e4e7' }}>TAREA</th>
-                    <th style={{ textAlign: 'right', padding: '10px 14px', fontWeight: 500, borderBottom: '1px solid #e4e4e7' }}>M² EJECUTADOS</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Object.entries(porTarea).map(([tarea, m2]) => (
-                    <tr key={tarea} style={{ borderTop: '1px solid #f4f4f5' }}>
-                      <td style={{ padding: '10px 14px', color: '#27272a', fontWeight: 500 }}>{tarea}</td>
-                      <td style={{ textAlign: 'right', padding: '10px 14px', color: '#16a34a', fontWeight: 600 }}>{m2.toFixed(2)} m²</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div style={{ color: '#71717a', fontSize: '10px', letterSpacing: '1.5px', marginBottom: '4px' }}>M² EJECUTADOS POR TAREA (NO SUMABLE)</div>
+            <div style={{ color: '#a1a1aa', fontSize: '9px', marginBottom: '12px', fontStyle: 'italic' }}>
+              Una misma superficie recibe múltiples tareas/capas. Los m² por tarea no se suman entre sí.
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {Object.values(porTarea).map((t, idx) => {
+                const pct = t.m2Total > 0 ? Math.min(100, (t.m2Ejecutado / t.m2Total) * 100) : 0;
+                return (
+                  <div key={idx} style={{ background: '#fafafa', border: '1px solid #e4e4e7', padding: '10px 12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '6px' }}>
+                      <div style={{ fontSize: '11px', color: '#27272a', fontWeight: 600 }}>
+                        {t.nombre}
+                        {t.peso > 0 && <span style={{ color: '#a1a1aa', fontWeight: 400, marginLeft: '8px', fontSize: '9px' }}>peso {t.peso}%</span>}
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#16a34a', fontWeight: 600 }}>
+                        {t.m2Ejecutado.toFixed(1)} / {t.m2Total.toFixed(0)} m²
+                        <span style={{ color: '#71717a', fontWeight: 500, marginLeft: '6px' }}>({pct.toFixed(0)}%)</span>
+                      </div>
+                    </div>
+                    <div style={{ height: '8px', background: '#e4e4e7', borderRadius: '2px', overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${pct}%`, background: '#16a34a', borderRadius: '2px' }} />
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -12546,10 +12582,6 @@ function ReportePDFContenido({ proyecto, sistema, data, tipo, fechaInicio, fecha
                   <div>{info.notas.length > 0 ? info.notas.join('. ') : 'Avance reportado'}</div>
                 </div>
               ))}
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderTop: '2px solid #e4e4e7', marginTop: '8px', fontSize: '11px', fontWeight: 600 }}>
-                <div style={{ color: '#27272a' }}>TOTAL PERIODO</div>
-                <div style={{ color: '#16a34a' }}>{totalM2Periodo.toFixed(2)} m² ejecutados</div>
-              </div>
             </div>
           </div>
         )}

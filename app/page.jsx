@@ -1136,7 +1136,58 @@ export default function App() {
               await db.eliminarProyecto(id);
               setVista('dashboard');
             }) : undefined}
-            onEliminarReporte={async (id) => { if (confirm('¿Eliminar este reporte? Los m² asociados volverán al pendiente.')) withSync(() => db.eliminarReporte(id)); }}
+            onEliminarReporte={esAdmin ? async (id) => {
+              const r = (data.reportes || []).find(x => x.id === id);
+              if (!r) return;
+              const motivo = prompt('Motivo para eliminar este reporte (obligatorio):');
+              if (!motivo || !motivo.trim()) {
+                alert('Debes indicar un motivo para eliminar el reporte.');
+                return;
+              }
+              if (!confirm(`¿Eliminar este reporte? Los m² asociados volverán al pendiente.\n\nMotivo: ${motivo}`)) return;
+              await withSync(async () => {
+                await db.eliminarReporte(id);
+                // v8.9.29: audit log
+                try {
+                  const proy = (data.proyectos || []).find(p => p.id === r.proyectoId);
+                  const area = (proy?.areas || []).find(a => a.id === r.areaId);
+                  await db.registrarAudit({
+                    usuarioId: usuario?.id,
+                    usuarioNombre: usuario?.nombre,
+                    accion: 'reporte.eliminado',
+                    recursoTipo: 'reporte',
+                    recursoId: id,
+                    recursoNombre: `${area?.nombre || ''} · ${r.fecha || ''}`,
+                    datosAntes: r,
+                    datosDespues: null,
+                    motivo: motivo.trim(),
+                    severidad: 'warning',
+                  });
+                } catch (e) { console.warn('Audit no registrado:', e?.message); }
+              });
+            } : async (id) => { if (confirm('¿Eliminar este reporte? Los m² asociados volverán al pendiente.')) withSync(() => db.eliminarReporte(id)); }}
+            onEditarReporte={esAdmin ? async (reporteActualizado, reporteOriginal, motivo) => {
+              await withSync(async () => {
+                await db.actualizarReporte(reporteActualizado);
+                // v8.9.29: audit log
+                try {
+                  const proy = (data.proyectos || []).find(p => p.id === reporteActualizado.proyectoId);
+                  const area = (proy?.areas || []).find(a => a.id === reporteActualizado.areaId);
+                  await db.registrarAudit({
+                    usuarioId: usuario?.id,
+                    usuarioNombre: usuario?.nombre,
+                    accion: 'reporte.editado',
+                    recursoTipo: 'reporte',
+                    recursoId: reporteActualizado.id,
+                    recursoNombre: `${area?.nombre || ''} · ${reporteActualizado.fecha || ''}`,
+                    datosAntes: reporteOriginal,
+                    datosDespues: reporteActualizado,
+                    motivo: motivo,
+                    severidad: 'warning',
+                  });
+                } catch (e) { console.warn('Audit no registrado:', e?.message); }
+              });
+            } : undefined}
             onEliminarEnvio={async (id) => { if (confirm('¿Eliminar este envío de material?')) withSync(() => db.eliminarEnvio(id)); }}
             onEliminarJornada={async (id) => { if (confirm('¿Eliminar esta jornada?')) withSync(() => db.eliminarJornada(id)); }}
             onCambiarEstado={(proyId, estadoNuevo, nota, extra) => withSync(async () => {
@@ -6229,7 +6280,7 @@ function ModalEditarProyecto({ proyecto, data, usuario, onCerrar, onGuardar, onA
 // ============================================================
 // DETALLE DE PROYECTO
 // ============================================================
-function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onActualizarProyecto, onRegistrarEnvio, onRegistrarEnviosLote, esSupervisor, onIrAReportar, onIrASistemas, onCambiarEstado, onArchivarProyecto, onEliminarProyecto, onEliminarReporte, onEliminarEnvio, onEliminarJornada, onRecargar }) {
+function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onActualizarProyecto, onRegistrarEnvio, onRegistrarEnviosLote, esSupervisor, onIrAReportar, onIrASistemas, onCambiarEstado, onArchivarProyecto, onEliminarProyecto, onEliminarReporte, onEditarReporte, onEliminarEnvio, onEliminarJornada, onRecargar }) {
   const sistema = data.sistemas[proyecto.sistema];
   if (!sistema) return <div className="text-zinc-500">Sistema no encontrado.</div>;
   const { porcentaje, produccionRD, valorContrato } = calcAvanceProyecto(proyecto, data.reportes, sistema, data.sistemas);
@@ -6334,7 +6385,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
         {!esSupervisor && proyecto.dieta?.habilitada && <TabBtn active={tab === 'dieta'} onClick={() => setTab('dieta')}><Utensils className="w-3 h-3 inline mr-1" />Dieta</TabBtn>}
       </div>
 
-      {tab === 'avance' && <TabAvance proyecto={proyecto} reportes={data.reportes} sistema={sistema} sistemas={data.sistemas} esSupervisor={esSupervisor} onEliminarReporte={onEliminarReporte} />}
+      {tab === 'avance' && <TabAvance proyecto={proyecto} reportes={data.reportes} sistema={sistema} sistemas={data.sistemas} esSupervisor={esSupervisor} onEliminarReporte={onEliminarReporte} onEditarReporte={onEditarReporte} data={data} usuario={usuario} />}
       {tab === 'info' && <TabInfo proyecto={proyecto} clientes={data.clientes || []} contactos={data.contactos || []} documentos={data.documentos || []} usuario={usuario} personal={data.personal} esAdmin={esAdmin} esSupervisor={esSupervisor} onRecargar={onRecargar} />}
       {tab === 'jornada' && <TabAsistencia usuario={usuario} proyecto={proyecto} personal={data.personal} checkins={data.checkins || []} esAdmin={esAdmin} onActualizarProyecto={onActualizarProyecto} onRecargar={onRecargar} onEliminarJornada={onEliminarJornada} />}
       {tab === 'asistencia' && <TabAsistencia usuario={usuario} proyecto={proyecto} personal={data.personal} checkins={data.checkins || []} esAdmin={esAdmin} onActualizarProyecto={onActualizarProyecto} onRecargar={onRecargar} onEliminarJornada={onEliminarJornada} />}
@@ -8347,7 +8398,8 @@ function TabCronograma({ proyecto, porcentajeActual, onActualizarProyecto, esSup
   );
 }
 
-function TabAvance({ proyecto, reportes, sistema, sistemas, esSupervisor, onEliminarReporte }) {
+function TabAvance({ proyecto, reportes, sistema, sistemas, esSupervisor, onEliminarReporte, onEditarReporte, data, usuario }) {
+  const [reporteEditando, setReporteEditando] = useState(null);
   const reportesProy = reportes.filter(r => r.proyectoId === proyecto.id).sort((a, b) => b.fecha.localeCompare(a.fecha));
   return (
     <div className="space-y-6">
@@ -8402,7 +8454,7 @@ function TabAvance({ proyecto, reportes, sistema, sistemas, esSupervisor, onElim
         let det = `${m2.toFixed(0)} m²`;
         if (r.rollos) det = `${r.rollos} rollos (${m2.toFixed(0)} m²)`;
         if (r.cubetas) det += ` · ${r.cubetas} cubetas`;
-        return <div key={r.id} className="bg-zinc-900 border-l-2 border-red-600 p-3 flex justify-between items-center text-sm gap-2"><div className="flex-1 min-w-0"><div className="font-bold">{area?.nombre} · {tarea?.nombre}</div><div className="text-xs text-zinc-500">{formatFecha(r.fecha)} · {r.supervisor} · {det}</div></div>{!esSupervisor && <div className="text-green-400 font-bold text-xs">{formatRD(prod)}</div>}{!esSupervisor && onEliminarReporte && <button onClick={() => onEliminarReporte(r.id)} className="text-zinc-500 hover:text-red-400 p-1" title="Eliminar"><Trash2 className="w-3 h-3" /></button>}</div>;
+        return <div key={r.id} className="bg-zinc-900 border-l-2 border-red-600 p-3 flex justify-between items-center text-sm gap-2"><div className="flex-1 min-w-0"><div className="font-bold">{area?.nombre} · {tarea?.nombre}</div><div className="text-xs text-zinc-500">{formatFecha(r.fecha)} · {r.supervisor} · {det}</div></div>{!esSupervisor && <div className="text-green-400 font-bold text-xs">{formatRD(prod)}</div>}{!esSupervisor && onEditarReporte && <button onClick={() => setReporteEditando(r)} className="text-zinc-500 hover:text-blue-400 p-1" title="Editar"><Edit2 className="w-3 h-3" /></button>}{!esSupervisor && onEliminarReporte && <button onClick={() => onEliminarReporte(r.id)} className="text-zinc-500 hover:text-red-400 p-1" title="Eliminar"><Trash2 className="w-3 h-3" /></button>}</div>;
       })}</div></div>}
     </div>
   );
@@ -8886,6 +8938,193 @@ function ModalSugerenciasPersonal({ area, sugeridos, proyecto, data, fecha, onCe
               </div>
             </div>
           ))}
+        </div>
+      </div>
+    {/* v8.9.29: Modal editar reporte (solo admin) */}
+    {reporteEditando && (
+      <ModalEditarReporte
+        reporte={reporteEditando}
+        proyecto={proyecto}
+        data={data}
+        sistema={sistema}
+        sistemas={sistemas}
+        onCerrar={() => setReporteEditando(null)}
+        onGuardar={async (reporteActualizado, motivo) => {
+          await onEditarReporte(reporteActualizado, reporteEditando, motivo);
+          setReporteEditando(null);
+        }}
+      />
+    )}
+    </div>
+  );
+}
+
+
+// v8.9.29: Modal para editar un reporte existente (solo admin)
+function ModalEditarReporte({ reporte, proyecto, data, sistema, sistemas, onCerrar, onGuardar }) {
+  // Resolver sistema del área actual del reporte
+  const areaActual = (proyecto.areas || []).find(a => a.id === reporte.areaId);
+  const sistemaIdArea = areaActual?.sistemaId || proyecto.sistema;
+  const sistemaArea = (sistemas && sistemas[sistemaIdArea]) || sistema;
+
+  const [form, setForm] = useState({
+    areaId: reporte.areaId || '',
+    tareaId: reporte.tareaId || '',
+    fecha: reporte.fecha || '',
+    m2: reporte.m2 ?? '',
+    rollos: reporte.rollos ?? '',
+    cubetas: reporte.cubetas ?? '',
+    nota: reporte.nota || '',
+    supervisor: reporte.supervisor || '',
+    supervisorId: reporte.supervisorId || '',
+  });
+  const [motivo, setMotivo] = useState('');
+  const [guardando, setGuardando] = useState(false);
+
+  // Recalcular sistemaArea cuando cambia el área
+  const areaElegida = (proyecto.areas || []).find(a => a.id === form.areaId);
+  const sistemaIdAreaElegida = areaElegida?.sistemaId || proyecto.sistema;
+  const sistemaAreaElegida = (sistemas && sistemas[sistemaIdAreaElegida]) || sistema;
+
+  // Lista de personal con login que podrían aparecer como "supervisor" del reporte
+  const personalPosible = (data?.personal || []).filter(p => p.nombre);
+
+  const guardar = async () => {
+    if (!motivo || !motivo.trim()) {
+      alert('Debes escribir un motivo para el cambio.');
+      return;
+    }
+    if (!form.areaId || !form.tareaId || !form.fecha) {
+      alert('Área, tarea y fecha son obligatorios.');
+      return;
+    }
+    // Construir reporte actualizado, preservando campos no editables
+    const actualizado = {
+      ...reporte,
+      areaId: form.areaId,
+      tareaId: form.tareaId,
+      fecha: form.fecha,
+      nota: form.nota,
+      supervisor: form.supervisor,
+      supervisorId: form.supervisorId,
+    };
+    // m2, rollos, cubetas según qué tenga valor
+    const m2Val = form.m2 === '' ? null : parseFloat(form.m2);
+    const rollosVal = form.rollos === '' ? null : parseFloat(form.rollos);
+    const cubetasVal = form.cubetas === '' ? null : parseFloat(form.cubetas);
+    if (m2Val !== null) actualizado.m2 = m2Val;
+    else delete actualizado.m2;
+    if (rollosVal !== null) actualizado.rollos = rollosVal;
+    else delete actualizado.rollos;
+    if (cubetasVal !== null) actualizado.cubetas = cubetasVal;
+    else delete actualizado.cubetas;
+
+    setGuardando(true);
+    try {
+      await onGuardar(actualizado, motivo.trim());
+    } catch (e) {
+      console.error(e);
+      alert('Error al guardar: ' + (e?.message || 'intenta de nuevo'));
+      setGuardando(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+      <div className="bg-zinc-900 border-2 border-red-600 max-w-xl w-full max-h-[90vh] overflow-auto">
+        <div className="sticky top-0 bg-zinc-900 border-b border-zinc-800 p-4 flex justify-between items-center">
+          <div>
+            <div className="text-xs tracking-widest uppercase text-red-500 font-bold">Editar reporte</div>
+            <div className="text-[10px] text-zinc-500 mt-0.5">⚠️ Estás modificando un reporte registrado · Se pedirá motivo</div>
+          </div>
+          <button onClick={onCerrar} className="text-zinc-500 hover:text-red-400"><X className="w-4 h-4" /></button>
+        </div>
+
+        <div className="p-4 space-y-3">
+          <Campo label="Fecha">
+            <Input type="date" value={form.fecha} onChange={v => setForm({ ...form, fecha: v })} />
+          </Campo>
+
+          <Campo label="Área">
+            <select
+              value={form.areaId}
+              onChange={e => setForm({ ...form, areaId: e.target.value, tareaId: '' })}
+              className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-4 py-3 text-white"
+            >
+              <option value="">Seleccionar área...</option>
+              {(proyecto.areas || []).map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+            </select>
+          </Campo>
+
+          <Campo label="Tarea">
+            <select
+              value={form.tareaId}
+              onChange={e => setForm({ ...form, tareaId: e.target.value })}
+              disabled={!form.areaId || !sistemaAreaElegida}
+              className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-4 py-3 text-white disabled:opacity-50"
+            >
+              <option value="">Seleccionar tarea...</option>
+              {(sistemaAreaElegida?.tareas || []).map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}
+            </select>
+          </Campo>
+
+          <div className="grid grid-cols-3 gap-2">
+            <Campo label="m²">
+              <Input type="number" value={form.m2} onChange={v => setForm({ ...form, m2: v })} />
+            </Campo>
+            <Campo label="Rollos">
+              <Input type="number" value={form.rollos} onChange={v => setForm({ ...form, rollos: v })} />
+            </Campo>
+            <Campo label="Cubetas">
+              <Input type="number" value={form.cubetas} onChange={v => setForm({ ...form, cubetas: v })} />
+            </Campo>
+          </div>
+
+          <Campo label="Persona que reportó">
+            <select
+              value={form.supervisorId}
+              onChange={e => {
+                const p = personalPosible.find(x => x.id === e.target.value);
+                setForm({ ...form, supervisorId: e.target.value, supervisor: p?.nombre || form.supervisor });
+              }}
+              className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-4 py-3 text-white"
+            >
+              <option value="">— mantener: {form.supervisor || 'sin nombre'} —</option>
+              {personalPosible.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+            </select>
+          </Campo>
+
+          <Campo label="Nota">
+            <textarea
+              value={form.nota}
+              onChange={e => setForm({ ...form, nota: e.target.value })}
+              rows={2}
+              className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-4 py-3 text-white"
+            />
+          </Campo>
+
+          <div className="border-t border-zinc-800 pt-3">
+            <Campo label="Motivo del cambio (obligatorio)">
+              <textarea
+                value={motivo}
+                onChange={e => setMotivo(e.target.value)}
+                rows={2}
+                placeholder="Ej: Maestro reportó mal, en realidad fueron 380 m²"
+                className="w-full bg-zinc-950 border-2 border-yellow-700 focus:border-yellow-500 outline-none px-4 py-3 text-white"
+              />
+            </Campo>
+          </div>
+        </div>
+
+        <div className="sticky bottom-0 bg-zinc-900 border-t border-zinc-800 p-4 flex gap-2">
+          <button onClick={onCerrar} disabled={guardando} className="px-6 bg-zinc-800 text-zinc-400 font-bold uppercase py-3 text-xs">Cancelar</button>
+          <button
+            onClick={guardar}
+            disabled={guardando || !motivo.trim() || !form.areaId || !form.tareaId || !form.fecha}
+            className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-700 text-white font-black uppercase py-3 text-xs flex items-center justify-center gap-1"
+          >
+            {guardando ? <><Loader2 className="w-4 h-4 animate-spin" /> Guardando...</> : <><Save className="w-4 h-4" /> Guardar cambios</>}
+          </button>
         </div>
       </div>
     </div>
@@ -12375,11 +12614,11 @@ function ModalReporteAvancePDF({ proyecto, sistema, data, usuario, onCerrar }) {
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" checked={incluirFotos} onChange={e => setIncluirFotos(e.target.checked)} className="w-4 h-4 accent-red-600" />
-                  <span className="text-xs">Espacio para 4 fotos principales</span>
+                  <span className="text-xs">Fotos del periodo</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" checked={incluirFinanciero} onChange={e => setIncluirFinanciero(e.target.checked)} className="w-4 h-4 accent-red-600" />
-                  <span className="text-xs">Resumen financiero</span>
+                  <span className="text-xs">Información financiera (monto aprobado y resumen)</span>
                 </label>
               </div>
             </div>

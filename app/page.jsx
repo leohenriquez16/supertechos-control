@@ -10,7 +10,7 @@ import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps }
 // ============================================================
 // HELPERS
 // ============================================================
-const APP_VERSION = '8.9.31';
+const APP_VERSION = '8.9.32';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
@@ -460,7 +460,18 @@ Responde ÚNICAMENTE con un objeto JSON válido, sin texto adicional, sin markdo
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ base64Data, prompt: prompts[tipo] }),
   });
-  if (!response.ok) throw new Error('Error en la API');
+  if (!response.ok) {
+    // v8.9.31: mostrar detalle real del error en lugar de texto genérico
+    let detalle = `HTTP ${response.status}`;
+    try {
+      const errData = await response.json();
+      detalle = errData.error || detalle;
+      if (errData.details) detalle += ` · ${String(errData.details).substring(0, 200)}`;
+    } catch {
+      try { detalle = await response.text(); } catch {}
+    }
+    throw new Error(detalle);
+  }
   const data = await response.json();
   return JSON.parse(data.text.replace(/```json|```/g, '').trim());
 };
@@ -708,6 +719,47 @@ const fileToBase64 = (file) => new Promise((res, rej) => {
   r.onerror = () => rej(new Error('Read failed'));
   r.readAsDataURL(file);
 });
+
+// v8.9.31: Cortar PDF a las primeras N páginas (por defecto 2)
+// Así evitamos mandar fichas técnicas, informes con fotos, anexos grandes a la API
+// que hacen fallar la extracción por tamaño/timeout/tokens.
+let _pdfLibLoaded = null;
+const cargarPdfLib = () => {
+  if (_pdfLibLoaded) return _pdfLibLoaded;
+  _pdfLibLoaded = new Promise((resolve, reject) => {
+    if (typeof window !== 'undefined' && window.PDFLib) return resolve(window.PDFLib);
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js';
+    script.onload = () => resolve(window.PDFLib);
+    script.onerror = () => reject(new Error('No se pudo cargar pdf-lib'));
+    document.head.appendChild(script);
+  });
+  return _pdfLibLoaded;
+};
+
+const cortarPDFaPrimerasPaginas = async (file, maxPaginas = 2) => {
+  try {
+    const PDFLib = await cargarPdfLib();
+    const arrayBuffer = await file.arrayBuffer();
+    const pdfOriginal = await PDFLib.PDFDocument.load(arrayBuffer);
+    const totalPaginas = pdfOriginal.getPageCount();
+    // Si tiene maxPaginas o menos, retornar el original
+    if (totalPaginas <= maxPaginas) {
+      return { file, totalPaginas, paginasUsadas: totalPaginas, cortado: false };
+    }
+    // Crear nuevo PDF solo con las primeras N páginas
+    const pdfNuevo = await PDFLib.PDFDocument.create();
+    const indices = Array.from({ length: maxPaginas }, (_, i) => i);
+    const paginas = await pdfNuevo.copyPages(pdfOriginal, indices);
+    paginas.forEach(p => pdfNuevo.addPage(p));
+    const bytes = await pdfNuevo.save();
+    const nuevoFile = new File([bytes], file.name, { type: 'application/pdf' });
+    return { file: nuevoFile, totalPaginas, paginasUsadas: maxPaginas, cortado: true };
+  } catch (e) {
+    console.warn('No se pudo cortar el PDF, usando original:', e);
+    return { file, totalPaginas: null, paginasUsadas: null, cortado: false, error: e.message };
+  }
+};
 
 // ============================================================
 // APP
@@ -4581,7 +4633,12 @@ function NuevoProyecto({ personal, sistemas, clientes = [], contactos = [], onCa
   const procesarPDF = async (file) => {
     setCargando(true); setError('');
     try {
-      const base64 = await fileToBase64(file);
+      // v8.9.31: cortar a las primeras 2 páginas (evita que fichas técnicas/anexos rompan la extracción)
+      const corte = await cortarPDFaPrimerasPaginas(file, 2);
+      if (corte.cortado) {
+        console.log(`[PDF] Cortado de ${corte.totalPaginas} a ${corte.paginasUsadas} páginas`);
+      }
+      const base64 = await fileToBase64(corte.file);
       const result = await extraerPDF(base64, 'cotizacion', sistemas);
       setExtraido(result);
 
@@ -9306,7 +9363,12 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
   const procesarPDFSalida = async (file) => {
     setCargando(true); setErrorPDF('');
     try {
-      const base64 = await fileToBase64(file);
+      // v8.9.31: cortar a las primeras 2 páginas
+      const corte = await cortarPDFaPrimerasPaginas(file, 2);
+      if (corte.cortado) {
+        console.log(`[PDF Salida] Cortado de ${corte.totalPaginas} a ${corte.paginasUsadas} páginas`);
+      }
+      const base64 = await fileToBase64(corte.file);
       const result = await extraerPDF(base64, 'salida', sistemas);
       setPdfExtraido(result);
       const rN = (result.ordenReferencia || '').replace(/[-\s]/g, '').toUpperCase();

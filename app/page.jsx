@@ -5119,6 +5119,9 @@ function Dashboard({ data, onVerProyecto, onNuevoProyecto, tareas, onCompletarTa
   const proyectosEjecutando = data.proyectos.filter(p => p.estado === 'en_ejecucion');
   const personasHoy = new Set();
   (jornadasHoy || []).forEach(j => { (j.personasPresentesIds || []).forEach(id => personasHoy.add(id)); });
+  // v8.9.29: proyectos con jornada real hoy (para tarjeta "Hoy en obra")
+  const proyectosHoyEnObra = new Set();
+  (jornadasHoy || []).forEach(j => { if ((j.personasPresentesIds || []).length > 0) proyectosHoyEnObra.add(j.proyectoId); });
 
   const labelRango = () => {
     if (periodo === 'dia') return formatFechaCorta(rango.desde);
@@ -5220,15 +5223,15 @@ function Dashboard({ data, onVerProyecto, onNuevoProyecto, tareas, onCompletarTa
         </div>
       </div>
 
-      {/* HERO: Métricas ejecutivas del periodo - v8.9.21: 3 de 4 clickeables */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+      {/* HERO: Métricas ejecutivas del periodo - v8.9.29: 3 tarjetas (Margen removido) */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
         <button onClick={() => setModalDetalle('hoy')} className="bg-gradient-to-br from-red-600 to-red-800 p-4 text-left hover:brightness-110 transition-all cursor-pointer">
           <div className="flex items-center justify-between">
             <div className="text-[10px] tracking-widest uppercase text-red-200">Hoy en obra</div>
             <ChevronRight className="w-3 h-3 text-red-200" />
           </div>
-          <div className="text-3xl font-black mt-1">{proyectosEjecutando.length}</div>
-          <div className="text-[10px] text-red-200">proyectos · {personasHoy.size} personas</div>
+          <div className="text-3xl font-black mt-1">{proyectosHoyEnObra.size}</div>
+          <div className="text-[10px] text-red-200">proyecto{proyectosHoyEnObra.size !== 1 ? 's' : ''} · {personasHoy.size} persona{personasHoy.size !== 1 ? 's' : ''}</div>
         </button>
         <button onClick={() => setModalDetalle('produccion')} className="bg-zinc-900 border border-zinc-800 hover:border-green-600 p-4 text-left cursor-pointer transition-all">
           <div className="flex items-center justify-between">
@@ -5247,11 +5250,6 @@ function Dashboard({ data, onVerProyecto, onNuevoProyecto, tareas, onCompletarTa
           <div className="text-2xl font-black text-cyan-400 mt-1">{formatRD(montoAprobadosPeriodo)}</div>
           <div className="text-[10px] text-zinc-600">{aprobadosPeriodo.length} proyecto{aprobadosPeriodo.length !== 1 ? 's' : ''}</div>
         </button>
-        <div className="bg-zinc-900 border border-zinc-800 p-4">
-          <div className="text-[10px] tracking-widest uppercase text-zinc-500">Margen</div>
-          <div className={`text-2xl font-black mt-1 ${margenPeriodo >= 0 ? 'text-green-400' : 'text-red-400'}`}>{formatRD(margenPeriodo)}</div>
-          <div className="text-[10px] text-zinc-600">-{formatRD(costoMatPeriodo)} mat.</div>
-        </div>
       </div>
 
       {/* TAREAS PENDIENTES */}

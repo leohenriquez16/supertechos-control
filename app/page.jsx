@@ -10,7 +10,7 @@ import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps }
 // ============================================================
 // HELPERS
 // ============================================================
-const APP_VERSION = '8.9.27';
+const APP_VERSION = '8.9.29';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
@@ -5115,13 +5115,26 @@ function Dashboard({ data, onVerProyecto, onNuevoProyecto, tareas, onCompletarTa
     return s + aporte;
   }, 0);
 
-  // Proyectos activos y personas en obra HOY (siempre)
+  // Proyectos activos y personas en obra HOY — v8.9.29: reemplaza concepto anterior
   const proyectosEjecutando = data.proyectos.filter(p => p.estado === 'en_ejecucion');
-  const personasHoy = new Set();
-  (jornadasHoy || []).forEach(j => { (j.personasPresentesIds || []).forEach(id => personasHoy.add(id)); });
-  // v8.9.29: proyectos con jornada real hoy (para tarjeta "Hoy en obra")
-  const proyectosHoyEnObra = new Set();
-  (jornadasHoy || []).forEach(j => { if ((j.personasPresentesIds || []).length > 0) proyectosHoyEnObra.add(j.proyectoId); });
+  // Jornadas abiertas = check-in hecho, check-out aún no
+  const jornadasAbiertas = (jornadasHoy || []).filter(j => j && j.horaInicio && !j.horaFin);
+  // Personal en obra AHORA = personas en jornadas abiertas
+  const personalEnObraAhora = new Set();
+  jornadasAbiertas.forEach(j => { (j.personasPresentesIds || []).forEach(id => personalEnObraAhora.add(id)); });
+  // Detalle de personal por proyecto para el modal
+  const personalPorProyecto = jornadasAbiertas
+    .map(j => {
+      const proy = data.proyectos.find(p => p.id === j.proyectoId);
+      if (!proy) return null;
+      const personas = (j.personasPresentesIds || [])
+        .map(id => (data.personal || []).find(p => p.id === id))
+        .filter(Boolean);
+      return { proyecto: proy, personas, jornada: j };
+    })
+    .filter(Boolean)
+    .filter(p => p.personas.length > 0)
+    .sort((a, b) => b.personas.length - a.personas.length);
 
   const labelRango = () => {
     if (periodo === 'dia') return formatFechaCorta(rango.desde);
@@ -5223,15 +5236,23 @@ function Dashboard({ data, onVerProyecto, onNuevoProyecto, tareas, onCompletarTa
         </div>
       </div>
 
-      {/* HERO: Métricas ejecutivas del periodo - v8.9.29: 3 tarjetas (Margen removido) */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-        <button onClick={() => setModalDetalle('hoy')} className="bg-gradient-to-br from-red-600 to-red-800 p-4 text-left hover:brightness-110 transition-all cursor-pointer">
+      {/* HERO: Métricas ejecutivas del periodo - v8.9.29: 4 tarjetas nuevas */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <button onClick={() => setModalDetalle('enEjecucion')} className="bg-gradient-to-br from-red-600 to-red-800 p-4 text-left hover:brightness-110 transition-all cursor-pointer">
           <div className="flex items-center justify-between">
-            <div className="text-[10px] tracking-widest uppercase text-red-200">Hoy en obra</div>
+            <div className="text-[10px] tracking-widest uppercase text-red-200">En Ejecución</div>
             <ChevronRight className="w-3 h-3 text-red-200" />
           </div>
-          <div className="text-3xl font-black mt-1">{proyectosHoyEnObra.size}</div>
-          <div className="text-[10px] text-red-200">proyecto{proyectosHoyEnObra.size !== 1 ? 's' : ''} · {personasHoy.size} persona{personasHoy.size !== 1 ? 's' : ''}</div>
+          <div className="text-3xl font-black mt-1">{proyectosEjecutando.length}</div>
+          <div className="text-[10px] text-red-200">proyecto{proyectosEjecutando.length !== 1 ? 's' : ''} activo{proyectosEjecutando.length !== 1 ? 's' : ''}</div>
+        </button>
+        <button onClick={() => setModalDetalle('personalAhora')} className="bg-gradient-to-br from-blue-600 to-blue-800 p-4 text-left hover:brightness-110 transition-all cursor-pointer">
+          <div className="flex items-center justify-between">
+            <div className="text-[10px] tracking-widest uppercase text-blue-200">Personal en Obra Ahora</div>
+            <ChevronRight className="w-3 h-3 text-blue-200" />
+          </div>
+          <div className="text-3xl font-black mt-1">{personalEnObraAhora.size}</div>
+          <div className="text-[10px] text-blue-200">persona{personalEnObraAhora.size !== 1 ? 's' : ''} · {personalPorProyecto.length} obra{personalPorProyecto.length !== 1 ? 's' : ''}</div>
         </button>
         <button onClick={() => setModalDetalle('produccion')} className="bg-zinc-900 border border-zinc-800 hover:border-green-600 p-4 text-left cursor-pointer transition-all">
           <div className="flex items-center justify-between">
@@ -5272,7 +5293,8 @@ function Dashboard({ data, onVerProyecto, onNuevoProyecto, tareas, onCompletarTa
       )}
 
       {/* v8.9.21: Modales del dashboard */}
-      {modalDetalle === 'hoy' && <ModalDetalleHoyEnObra data={data} jornadasHoy={jornadasHoy} onCerrar={() => setModalDetalle(null)} onVerProyecto={(p) => { setModalDetalle(null); onVerProyecto(p); }} />}
+      {modalDetalle === 'enEjecucion' && <ModalDetalleEnEjecucion proyectos={proyectosEjecutando} data={data} jornadasHoy={jornadasHoy} onCerrar={() => setModalDetalle(null)} onVerProyecto={(p) => { setModalDetalle(null); onVerProyecto(p); }} />}
+      {modalDetalle === 'personalAhora' && <ModalDetallePersonalAhora personalPorProyecto={personalPorProyecto} totalPersonas={personalEnObraAhora.size} onCerrar={() => setModalDetalle(null)} onVerProyecto={(p) => { setModalDetalle(null); onVerProyecto(p); }} />}
       {modalDetalle === 'produccion' && <ModalDetalleProduccion data={data} rango={rango} prodPeriodo={prodPeriodo} onCerrar={() => setModalDetalle(null)} onVerProyecto={(p) => { setModalDetalle(null); onVerProyecto(p); }} />}
       {modalDetalle === 'aprobados' && <ModalDetalleAprobados aprobadosPeriodo={aprobadosPeriodo} montoTotal={montoAprobadosPeriodo} onCerrar={() => setModalDetalle(null)} onVerProyecto={(p) => { setModalDetalle(null); onVerProyecto(p); }} />}
     </div>
@@ -5281,44 +5303,70 @@ function Dashboard({ data, onVerProyecto, onNuevoProyecto, tareas, onCompletarTa
 
 // ============================================================
 // v8.9.21: MODALES DEL DASHBOARD (tarjetas interactivas)
-// ============================================================
-function ModalDetalleHoyEnObra({ data, jornadasHoy, onCerrar, onVerProyecto }) {
-  const hoy = new Date().toISOString().split('T')[0];
-  const proyectosEjec = (data.proyectos || []).filter(p => !p.archivado && p.estado === 'en_ejecucion');
-  const checkinsHoy = (data.checkins || []).filter(c => c.fecha === hoy);
+// v8.9.29: Modal "Proyectos en Ejecución"
+function ModalDetalleEnEjecucion({ proyectos, data, jornadasHoy, onCerrar, onVerProyecto }) {
+  // Ordenar por avance (de menor a mayor)
+  const proyectosConAvance = proyectos.map(p => {
+    const sisIdP = p.sistema;
+    const sisP = data.sistemas && data.sistemas[sisIdP];
+    const avance = calcAvanceProyecto(p, data.reportes || [], sisP, data.sistemas || {});
+    const jornada = (jornadasHoy || []).find(j => j.proyectoId === p.id);
+    const personasHoy = (jornada && jornada.horaInicio && !jornada.horaFin) ? (jornada.personasPresentesIds || []).length : 0;
+    return { ...p, pctAvance: avance.porcentaje, personasHoy };
+  }).sort((a, b) => a.pctAvance - b.pctAvance);
 
-  // Construir mapa: proyecto → personas presentes hoy
-  const detallePorProyecto = proyectosEjec.map(proy => {
-    const checkinsProy = checkinsHoy.filter(c => c.proyectoId === proy.id);
-    const jornadaProy = (jornadasHoy || []).find(j => j.proyectoId === proy.id);
+  return (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
+      <div className="bg-zinc-900 border-2 border-red-600 max-w-xl w-full p-5 space-y-4 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center sticky top-0 bg-zinc-900 pb-2 border-b border-zinc-800">
+          <div>
+            <div className="text-[10px] tracking-widest uppercase text-red-500 font-bold">🏗️ Proyectos en Ejecución</div>
+            <h2 className="text-xl font-black">{proyectos.length} proyecto{proyectos.length !== 1 ? 's' : ''} activo{proyectos.length !== 1 ? 's' : ''}</h2>
+          </div>
+          <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
+        </div>
 
-    // Combinar: personas que hicieron check-in + personas marcadas en jornada
-    const idsPresentes = new Set();
-    checkinsProy.forEach(c => idsPresentes.add(c.personaId));
-    if (jornadaProy && Array.isArray(jornadaProy.personasIds)) {
-      jornadaProy.personasIds.forEach(id => idsPresentes.add(id));
-    }
+        {proyectos.length === 0 ? (
+          <div className="bg-zinc-950 border border-zinc-800 p-6 text-center text-sm text-zinc-500">
+            No hay proyectos en ejecución actualmente
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {proyectosConAvance.map(p => (
+              <button
+                key={p.id}
+                onClick={() => onVerProyecto(p)}
+                className="w-full bg-zinc-950 border border-zinc-800 hover:border-red-600 p-3 text-left flex items-start gap-2 transition-all"
+              >
+                <Briefcase className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-[10px] text-zinc-500 font-mono">{p.referenciaOdoo || '—'}</div>
+                  <div className="font-bold text-sm truncate">{p.cliente || p.nombre}</div>
+                  {p.referenciaProyecto && <div className="text-[11px] text-zinc-400 truncate">{p.referenciaProyecto}</div>}
+                  <div className="flex items-center gap-3 mt-1">
+                    <div className="text-[10px] text-zinc-400">
+                      <span className={p.pctAvance >= 80 ? 'text-green-400' : p.pctAvance >= 40 ? 'text-yellow-400' : 'text-red-400'}>
+                        {p.pctAvance.toFixed(0)}% avance
+                      </span>
+                    </div>
+                    {p.personasHoy > 0 && (
+                      <div className="text-[10px] text-blue-400">· 👷 {p.personasHoy} hoy</div>
+                    )}
+                  </div>
+                </div>
+                <ChevronRight className="w-3 h-3 text-zinc-500 flex-shrink-0 mt-1" />
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
-    const personas = [...idsPresentes].map(pid => {
-      const persona = (data.personal || []).find(p => p.id === pid);
-      const checkin = checkinsProy.find(c => c.personaId === pid);
-      return {
-        id: pid,
-        persona,
-        checkin,
-        enJornada: jornadaProy && Array.isArray(jornadaProy.personasIds) && jornadaProy.personasIds.includes(pid),
-      };
-    }).filter(x => x.persona);
 
-    return {
-      proyecto: proy,
-      personas,
-      jornada: jornadaProy,
-    };
-  }).filter(x => x.personas.length > 0 || x.jornada);
-
-  const totalPersonas = detallePorProyecto.reduce((s, x) => s + x.personas.length, 0);
-
+// v8.9.29: Modal "Personal en Obra Ahora"
+function ModalDetallePersonalAhora({ personalPorProyecto, totalPersonas, onCerrar, onVerProyecto }) {
   const rolLabel = (persona) => {
     if (!persona?.roles) return '—';
     if (persona.roles.includes('supervisor')) return '👔 Sup';
@@ -5327,49 +5375,44 @@ function ModalDetalleHoyEnObra({ data, jornadasHoy, onCerrar, onVerProyecto }) {
     return persona.roles[0];
   };
 
-  const formatHora = (isoString) => {
-    if (!isoString) return null;
-    return new Date(isoString).toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' });
-  };
-
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
-      <div className="bg-zinc-900 border-2 border-red-600 max-w-xl w-full p-5 space-y-4 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+      <div className="bg-zinc-900 border-2 border-blue-600 max-w-xl w-full p-5 space-y-4 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center sticky top-0 bg-zinc-900 pb-2 border-b border-zinc-800">
           <div>
-            <div className="text-[10px] tracking-widest uppercase text-red-500 font-bold">👥 Hoy en obra</div>
-            <h2 className="text-xl font-black capitalize">{new Date(hoy + 'T12:00:00').toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</h2>
-            <div className="text-xs text-zinc-400">{detallePorProyecto.length} proyecto{detallePorProyecto.length !== 1 ? 's' : ''} · {totalPersonas} persona{totalPersonas !== 1 ? 's' : ''}</div>
+            <div className="text-[10px] tracking-widest uppercase text-blue-500 font-bold">👷 Personal en Obra Ahora</div>
+            <h2 className="text-xl font-black">{totalPersonas} persona{totalPersonas !== 1 ? 's' : ''} · {personalPorProyecto.length} obra{personalPorProyecto.length !== 1 ? 's' : ''}</h2>
+            <div className="text-[10px] text-zinc-500 mt-0.5">Jornadas abiertas (check-in sin check-out)</div>
           </div>
           <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
         </div>
 
-        {detallePorProyecto.length === 0 ? (
+        {personalPorProyecto.length === 0 ? (
           <div className="bg-zinc-950 border border-zinc-800 p-6 text-center text-sm text-zinc-500">
-            Aún no hay actividad registrada hoy
+            No hay jornadas abiertas en este momento
           </div>
         ) : (
           <div className="space-y-3">
-            {detallePorProyecto.map(({ proyecto, personas, jornada }) => (
+            {personalPorProyecto.map(({ proyecto, personas, jornada }) => (
               <div key={proyecto.id} className="bg-zinc-950 border border-zinc-800 overflow-hidden">
                 <button
                   onClick={() => onVerProyecto(proyecto)}
                   className="w-full p-3 text-left hover:bg-zinc-900 flex items-start gap-2"
                 >
-                  <Briefcase className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+                  <Briefcase className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
-                    <div className="text-[10px] text-zinc-500 font-mono">{proyecto.referenciaOdoo}</div>
+                    <div className="text-[10px] text-zinc-500 font-mono">{proyecto.referenciaOdoo || '—'}</div>
                     <div className="font-bold text-sm truncate">{proyecto.cliente || proyecto.nombre}</div>
-                    <div className="text-[10px] text-zinc-400 mt-1">
+                    <div className="text-[10px] text-blue-400 mt-1">
                       {personas.length} persona{personas.length !== 1 ? 's' : ''} presente{personas.length !== 1 ? 's' : ''}
-                      {jornada && <span className="ml-2">· 🕐 {jornada.horaInicio || '—'}{jornada.horaFin ? ` → ${jornada.horaFin}` : ' · abierta'}</span>}
+                      {jornada && jornada.horaInicio && <span className="text-zinc-500"> · desde {jornada.horaInicio}</span>}
                     </div>
                   </div>
                   <ChevronRight className="w-3 h-3 text-zinc-500" />
                 </button>
 
                 <div className="border-t border-zinc-800 p-2 space-y-1">
-                  {personas.map(({ persona, checkin, enJornada }) => (
+                  {personas.map(persona => (
                     <div key={persona.id} className="flex items-center gap-2 bg-zinc-900 p-2 text-xs">
                       {persona.foto2x2 ? (
                         <img src={persona.foto2x2} alt="" className="w-7 h-7 object-cover border border-zinc-700 flex-shrink-0" />
@@ -5379,22 +5422,6 @@ function ModalDetalleHoyEnObra({ data, jornadasHoy, onCerrar, onVerProyecto }) {
                       <div className="flex-1 min-w-0">
                         <div className="font-bold truncate">{persona.nombre}</div>
                         <div className="text-[9px] text-zinc-500">{rolLabel(persona)}</div>
-                      </div>
-                      <div className="text-right flex-shrink-0">
-                        {checkin ? (
-                          <>
-                            <div className="text-[10px] text-green-400 font-bold">✓ {formatHora(checkin.hora)}</div>
-                            {checkin.ubicacionDistanciaM != null && (
-                              <div className={`text-[9px] ${checkin.ubicacionDistanciaM < 200 ? 'text-green-500' : 'text-yellow-400'}`}>
-                                {checkin.ubicacionDistanciaM}m
-                              </div>
-                            )}
-                          </>
-                        ) : enJornada ? (
-                          <div className="text-[10px] text-zinc-400">En jornada</div>
-                        ) : (
-                          <div className="text-[10px] text-zinc-600">—</div>
-                        )}
                       </div>
                     </div>
                   ))}
@@ -5407,6 +5434,7 @@ function ModalDetalleHoyEnObra({ data, jornadasHoy, onCerrar, onVerProyecto }) {
     </div>
   );
 }
+
 
 function ModalDetalleProduccion({ data, rango, prodPeriodo, onCerrar, onVerProyecto }) {
   // Calcular producción por proyecto en el rango

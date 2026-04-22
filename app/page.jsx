@@ -12188,10 +12188,10 @@ function ModalReporteAvancePDF({ proyecto, sistema, data, usuario, onCerrar }) {
   });
   const totalM2Periodo = Object.values(porTarea).reduce((s, v) => s + v.m2Ejecutado, 0);
 
-  // Bitácora por día con días de lluvia si aplica
+  // Bitácora por día con detalle de actividad por tarea — v8.9.28
   const bitacoraPorDia = {};
   reportesPeriodo.forEach(r => {
-    if (!bitacoraPorDia[r.fecha]) bitacoraPorDia[r.fecha] = { m2: 0, notas: [] };
+    if (!bitacoraPorDia[r.fecha]) bitacoraPorDia[r.fecha] = { m2: 0, notas: [], actividades: {} };
     // v8.9.28: usar sistema del área del reporte
     const areaR = (proyecto.areas || []).find(a => a.id === r.areaId);
     const sisIdR = areaR?.sistemaId || proyecto.sistema;
@@ -12199,6 +12199,18 @@ function ModalReporteAvancePDF({ proyecto, sistema, data, usuario, onCerrar }) {
     const m2 = getM2Reporte(r, sisR);
     bitacoraPorDia[r.fecha].m2 += m2;
     if (r.nota) bitacoraPorDia[r.fecha].notas.push(r.nota);
+    // v8.9.28: acumular m² por tarea por día para "Actividad por día"
+    const tareaR = sisR?.tareas?.find(t => t.id === r.tareaId);
+    const nombreTarea = tareaR?.nombre || 'Tarea sin nombre';
+    const keyAct = `${nombreTarea}__${areaR?.nombre || ''}`;
+    if (!bitacoraPorDia[r.fecha].actividades[keyAct]) {
+      bitacoraPorDia[r.fecha].actividades[keyAct] = {
+        tarea: nombreTarea,
+        area: areaR?.nombre || '',
+        m2: 0,
+      };
+    }
+    bitacoraPorDia[r.fecha].actividades[keyAct].m2 += m2;
   });
   const bitacora = Object.entries(bitacoraPorDia).sort((a,b) => a[0].localeCompare(b[0]));
 
@@ -12359,7 +12371,7 @@ function ModalReporteAvancePDF({ proyecto, sistema, data, usuario, onCerrar }) {
               <div className="space-y-1.5">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" checked={incluirBitacora} onChange={e => setIncluirBitacora(e.target.checked)} className="w-4 h-4 accent-red-600" />
-                  <span className="text-xs">Bitácora día por día</span>
+                  <span className="text-xs">Actividad día por día</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" checked={incluirFotos} onChange={e => setIncluirFotos(e.target.checked)} className="w-4 h-4 accent-red-600" />
@@ -12488,15 +12500,10 @@ function ReportePDFContenido({ proyecto, sistema, data, tipo, fechaInicio, fecha
         {/* Resumen de la semana */}
         <div style={{ padding: '22px 36px' }}>
           <div style={{ color: '#71717a', fontSize: '10px', letterSpacing: '1.5px', marginBottom: '12px' }}>RESUMEN DEL PERIODO</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '10px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
             <div style={{ border: '1px solid #e4e4e7', padding: '14px' }}>
               <div style={{ color: '#71717a', fontSize: '9px', letterSpacing: '1.5px' }}>AVANCE TOTAL</div>
               <div style={{ color: '#18181b', fontSize: '24px', fontWeight: 600, marginTop: '4px', lineHeight: 1 }}>{porcentaje.toFixed(1)}%</div>
-            </div>
-            <div style={{ border: '1px solid #e4e4e7', padding: '14px' }}>
-              <div style={{ color: '#71717a', fontSize: '9px', letterSpacing: '1.5px' }}>M² EJECUTADOS</div>
-              <div style={{ color: '#18181b', fontSize: '24px', fontWeight: 600, marginTop: '4px', lineHeight: 1 }}>{totalM2Periodo.toFixed(1)}</div>
-              <div style={{ color: '#71717a', fontSize: '10px', marginTop: '4px' }}>en el periodo</div>
             </div>
             <div style={{ border: '1px solid #e4e4e7', padding: '14px' }}>
               <div style={{ color: '#71717a', fontSize: '9px', letterSpacing: '1.5px' }}>DÍAS TRABAJADOS</div>
@@ -12570,18 +12577,37 @@ function ReportePDFContenido({ proyecto, sistema, data, tipo, fechaInicio, fecha
           </div>
         )}
 
-        {/* Bitácora */}
+        {/* v8.9.28: Actividad por día (reemplazo de Bitácora) */}
         {incluirBitacora && bitacora.length > 0 && (
           <div style={{ padding: '0 36px 22px' }}>
-            <div style={{ color: '#71717a', fontSize: '10px', letterSpacing: '1.5px', marginBottom: '12px' }}>BITÁCORA DEL PERIODO</div>
-            <div style={{ fontSize: '11px', color: '#27272a', lineHeight: 1.7 }}>
-              {bitacora.map(([fecha, info]) => (
-                <div key={fecha} style={{ display: 'grid', gridTemplateColumns: '100px 80px 1fr', gap: '12px', padding: '8px 0', borderBottom: '1px solid #f4f4f5' }}>
-                  <div style={{ color: '#71717a', fontWeight: 500 }}>{formatFechaCorta(fecha)}</div>
-                  <div style={{ color: '#16a34a', fontWeight: 600, textAlign: 'right' }}>{info.m2.toFixed(1)} m²</div>
-                  <div>{info.notas.length > 0 ? info.notas.join('. ') : 'Avance reportado'}</div>
-                </div>
-              ))}
+            <div style={{ color: '#71717a', fontSize: '10px', letterSpacing: '1.5px', marginBottom: '12px' }}>ACTIVIDAD POR DÍA</div>
+            <div style={{ fontSize: '11px', color: '#27272a', lineHeight: 1.6 }}>
+              {bitacora.map(([fecha, info]) => {
+                const actividades = Object.values(info.actividades || {});
+                return (
+                  <div key={fecha} style={{ padding: '10px 0', borderBottom: '1px solid #f4f4f5' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                      <div style={{ color: '#71717a', fontWeight: 600, fontSize: '10px', letterSpacing: '1px', textTransform: 'uppercase' }}>{formatFechaCorta(fecha)}</div>
+                      {info.notas.length > 0 && (
+                        <div style={{ color: '#a1a1aa', fontSize: '10px', fontStyle: 'italic', maxWidth: '60%', textAlign: 'right' }}>
+                          {info.notas.join(' · ')}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '2px' }}>
+                      {actividades.map((act, idx) => (
+                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
+                          <div style={{ color: '#27272a' }}>
+                            <span style={{ fontWeight: 500 }}>{act.tarea}</span>
+                            {act.area && <span style={{ color: '#a1a1aa' }}> · {act.area}</span>}
+                          </div>
+                          <div style={{ color: '#16a34a', fontWeight: 600 }}>{act.m2.toFixed(0)} m²</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}

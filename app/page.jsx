@@ -10,7 +10,7 @@ import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps }
 // ============================================================
 // HELPERS
 // ============================================================
-const APP_VERSION = '8.9.29';
+const APP_VERSION = '8.9.30';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
@@ -755,13 +755,28 @@ export default function App() {
         const t = await db.listarTareas({ completadas: false });
         setTareas(t);
       } catch (e) { console.warn('Tareas:', e); setTareas([]); }
-      // Jornadas de hoy
+      // Jornadas de hoy — v8.9.30: usar listarJornadasAbiertas (robusto, sin filtro de estado ni fecha)
       try {
-        const hoy = new Date().toISOString().split('T')[0];
-        const promesas = d.proyectos.filter(p => p.estado === 'en_ejecucion' || p.estado === 'por_entregar').map(p => db.obtenerJornadaHoy(p.id, hoy));
-        const lista = (await Promise.all(promesas)).filter(j => j && j.horaInicio && !j.horaFin);
-        setJornadasHoy(lista);
-      } catch (e) { console.warn('Jornadas hoy:', e); setJornadasHoy([]); }
+        // Si existe la nueva función, la usamos (no depende de filtros que pueden fallar)
+        if (typeof db.listarJornadasAbiertas === 'function') {
+          const lista = await db.listarJornadasAbiertas();
+          // Solo incluir jornadas de proyectos que aún existen
+          const proyectoIds = new Set(d.proyectos.map(p => p.id));
+          const filtradas = lista.filter(j => proyectoIds.has(j.proyectoId));
+          console.log('[v8.9.30] Jornadas abiertas:', filtradas.length);
+          setJornadasHoy(filtradas);
+        } else {
+          // Fallback al método anterior (con logs de debug)
+          const d0 = new Date();
+          const hoy = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, '0')}-${String(d0.getDate()).padStart(2, '0')}`;
+          console.log('[jornadasHoy] fallback: fecha local =', hoy);
+          const proyectosCandidatos = d.proyectos.filter(p => p.estado === 'en_ejecucion' || p.estado === 'por_entregar');
+          const promesas = proyectosCandidatos.map(p => db.obtenerJornadaHoy(p.id, hoy));
+          const resultadosRaw = await Promise.all(promesas);
+          const lista = resultadosRaw.filter(j => j && j.horaInicio && !j.horaFin);
+          setJornadasHoy(lista);
+        }
+      } catch (e) { console.warn('Jornadas hoy error:', e); setJornadasHoy([]); }
       setError(null);
     } catch (e) {
       console.error('Error recargando:', e);

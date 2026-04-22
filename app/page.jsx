@@ -12472,7 +12472,7 @@ function ReportePDFContenido({ proyecto, sistema, data, tipo, fechaInicio, fecha
                 {proyecto.fecha_inicio && ` · Inicio ${formatFechaCorta(proyecto.fecha_inicio)}`}
               </div>
             </div>
-            {valorContrato > 0 && (
+            {incluirFinanciero && valorContrato > 0 && (
               <div style={{ textAlign: 'right' }}>
                 <div style={{ color: '#71717a', fontSize: '9px', letterSpacing: '1.5px' }}>MONTO APROBADO</div>
                 <div style={{ color: '#27272a', fontSize: '18px', fontWeight: 600, marginTop: '3px' }}>{formatRD(valorContrato)}</div>

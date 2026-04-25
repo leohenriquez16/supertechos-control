@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, AlertTriangle, CircleDashed } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatRD, formatFechaCorta } from '../../lib/helpers/formato';
-import { getPrecioVentaArea, getPrecioTotalM2Area } from '../../lib/helpers/calculos';
+import { getM2Reporte, getPrecioVentaArea, getPrecioTotalM2Area } from '../../lib/helpers/calculos';
 import ModalDetalleEnEjecucion from './ModalDetalleEnEjecucion';
 import ModalDetallePersonalAhora from './ModalDetallePersonalAhora';
 import ModalDetalleProduccion from './ModalDetalleProduccion';

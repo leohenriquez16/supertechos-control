@@ -10056,7 +10056,39 @@ function FormReporteRapidoAudio({ usuario, proyecto, sistema, sistemas, personal
           }
           setTranscripcion(finalText + interim);
         };
-        recognition.onerror = (e) => console.warn('Speech error:', e.error);
+        // v8.9.33: mejor manejo de errores (Safari da "aborted" frecuentemente)
+        let reintentos = 0;
+        recognition.onerror = (e) => {
+          console.warn('Speech error:', e.error);
+          if (e.error === 'aborted' && reintentos < 3 && grabando) {
+            // Reintentar silenciosamente — Safari aborta el speech recognition aleatoriamente
+            reintentos++;
+            setTimeout(() => {
+              try { recognition.start(); } catch {}
+            }, 200);
+          } else if (e.error === 'not-allowed') {
+            setError('Permiso de micrófono denegado. Habilítalo en Ajustes del navegador.');
+          } else if (e.error === 'no-speech') {
+            // No es error real, solo silencio
+          } else if (e.error === 'network') {
+            setError('Error de red en reconocimiento de voz. Revisa tu conexión.');
+          } else if (e.error === 'audio-capture') {
+            setError('No se pudo capturar audio. Revisa el micrófono.');
+          } else if (reintentos >= 3) {
+            // Si Safari sigue abortando, sugerir Chrome
+            const esSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+            setError(esSafari
+              ? 'El reconocimiento de voz falló en Safari. Prueba con Google Chrome para mejor compatibilidad.'
+              : 'Error de reconocimiento de voz: ' + e.error
+            );
+          }
+        };
+        recognition.onend = () => {
+          // Si seguimos grabando pero el reconocimiento se cortó, reintentamos
+          if (grabando && reintentos < 3) {
+            try { recognition.start(); } catch {}
+          }
+        };
         recognitionRef.current = recognition;
         try { recognition.start(); } catch (e) { console.warn('No se pudo iniciar reconocimiento:', e); }
       } else {

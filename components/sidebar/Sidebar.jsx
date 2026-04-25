@@ -6,11 +6,9 @@ import { APP_VERSION } from '../../lib/constants';
 
 /**
  * Sidebar lateral del ERP.
- * v8.10.3: Extraído de page.jsx
+ * v8.10.4: Fix scroll y altura
  *
  * Recibe TODAS sus dependencias como props (no toca estado global).
- * El padre (page.jsx) sigue calculando itemsMenu, proyectosMenu, etc.
- * porque dependen de estado y permisos del usuario.
  */
 export default function Sidebar({
   usuario,
@@ -28,8 +26,17 @@ export default function Sidebar({
 }) {
   return (
     <>
-      <aside className={`fixed top-0 left-0 h-[100dvh] w-60 bg-black border-r-2 border-red-600 z-50 transform transition-transform md:translate-x-0 flex flex-col ${sidebarAbierta ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="p-4 border-b-2 border-red-600/30 flex-shrink-0">
+      <aside
+        className={`fixed top-0 left-0 w-60 bg-black border-r-2 border-red-600 z-50 transform transition-transform md:translate-x-0 ${sidebarAbierta ? 'translate-x-0' : '-translate-x-full'}`}
+        style={{
+          height: '100dvh',
+          maxHeight: '100dvh',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        {/* Header con logo */}
+        <div className="p-4 border-b-2 border-red-600/30" style={{ flexShrink: 0 }}>
           <button
             onClick={() => {
               if (esAdmin) setVista('dashboard');
@@ -48,7 +55,16 @@ export default function Sidebar({
           </button>
         </div>
 
-        <nav className="flex-1 overflow-y-auto py-4 min-h-0">
+        {/* Nav scrollable */}
+        <nav
+          className="py-4"
+          style={{
+            flex: '1 1 auto',
+            minHeight: 0,
+            overflowY: 'auto',
+            WebkitOverflowScrolling: 'touch',
+          }}
+        >
           {itemsMenu.map(grupo => {
             const estaColapsada = grupo.colapsable && seccionesColapsadas[grupo.seccion];
             return (
@@ -66,7 +82,6 @@ export default function Sidebar({
                 )}
                 {!estaColapsada && grupo.items.map(it => {
                   const Icon = it.icon;
-                  // v8.9.22: Proyectos como enlace simple (sin desplegar lista)
                   if (it.esProyectos) {
                     const activo = vista === 'proyectos';
                     return (
@@ -81,7 +96,6 @@ export default function Sidebar({
                       </button>
                     );
                   }
-                  // Ítem normal
                   const activo = vista === it.vista;
                   return (
                     <button
@@ -100,7 +114,11 @@ export default function Sidebar({
           })}
         </nav>
 
-        <div className="border-t border-zinc-800 p-3 bg-black flex-shrink-0">
+        {/* Footer fijo abajo */}
+        <div
+          className="border-t border-zinc-800 p-3 bg-black"
+          style={{ flexShrink: 0 }}
+        >
           <button
             onClick={() => { setVista('miPerfil'); setSidebarAbierta(false); }}
             className="w-full flex items-center gap-2 text-left text-xs p-2 hover:bg-zinc-900"

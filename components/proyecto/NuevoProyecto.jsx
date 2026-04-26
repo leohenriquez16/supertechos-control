@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { ArrowLeft, FileUp, Loader2, Plus, Sparkles, Utensils } from 'lucide-react';
+import { ArrowLeft, FileUp, Loader2, Plus, Sparkles, Utensils, X } from 'lucide-react';
 import { formatRD, formatNum } from '../../lib/helpers/formato';
 import { fileToBase64, cortarPDFaPrimerasPaginas } from '../../lib/helpers/pdf';
 import Campo from '../common/Campo';

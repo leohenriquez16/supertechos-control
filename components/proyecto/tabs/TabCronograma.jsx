@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { Edit2, Save } from 'lucide-react';
 import { formatFechaCorta } from '../../../lib/helpers/formato';
-import { getM2Reporte, calcAvanceArea, diasDePausaEnRango } from '../../../lib/helpers/calculos';
+import { getM2Reporte, calcAvanceArea, diasDePausaEnRango, pausaActiva } from '../../../lib/helpers/calculos';
 import Campo from '../../common/Campo';
 import Input from '../../common/Input';
 

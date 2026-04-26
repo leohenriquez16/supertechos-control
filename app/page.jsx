@@ -4507,37 +4507,75 @@ function VistaKanban({ proyectos, data, onVerProyecto, onCambiarEstadoRapido }) 
 }
 
 function VistaLista({ proyectos, data, onVerProyecto }) {
+  // v8.10.12: Agrupar por estado, colapsable, con totales
+  const [colapsados, setColapsados] = useState({});
+  const toggle = (estado) => setColapsados(c => ({ ...c, [estado]: !c[estado] }));
+
   if (proyectos.length === 0) return <div className="text-center py-10 text-zinc-500 text-sm">No hay proyectos con estos filtros.</div>;
+
+  // Calcular datos por proyecto una vez
+  const proyectosConDatos = proyectos.map(p => {
+    const sistema = data.sistemas[p.sistema];
+    const m2Total = (p.areas || []).reduce((a, ar) => a + ar.m2, 0);
+    const valor = m2Total * (sistema?.precio_m2 || 0);
+    const { porcentaje } = sistema ? calcAvanceProyecto(p, data.reportes, sistema, data.sistemas) : { porcentaje: 0 };
+    const supervisor = getPersona(data.personal, p.supervisorId);
+    const maestro = getPersona(data.personal, p.maestroId);
+    return { p, sistema, m2Total, valor, porcentaje, supervisor, maestro };
+  });
+
+  // Agrupar por estado, respetando ORDEN_ESTADOS
+  const grupos = ORDEN_ESTADOS.map(estado => {
+    const items = proyectosConDatos.filter(d => d.p.estado === estado);
+    const totalValor = items.reduce((s, d) => s + d.valor, 0);
+    const totalM2 = items.reduce((s, d) => s + d.m2Total, 0);
+    return { estado, items, totalValor, totalM2 };
+  }).filter(g => g.items.length > 0);
+
   return (
-    <div className="space-y-2">{proyectos.map(p => {
-      const sistema = data.sistemas[p.sistema];
-      const m2Total = (p.areas || []).reduce((a, ar) => a + ar.m2, 0);
-      const valor = m2Total * (sistema?.precio_m2 || 0);
-      const { porcentaje } = sistema ? calcAvanceProyecto(p, data.reportes, sistema, data.sistemas) : { porcentaje: 0 };
-      const supervisor = getPersona(data.personal, p.supervisorId);
-      const maestro = getPersona(data.personal, p.maestroId);
-      return (
-        <button key={p.id} onClick={() => onVerProyecto(p)} className="w-full bg-zinc-900 border border-zinc-800 hover:border-red-600 p-3 text-left flex items-center gap-3">
-          <div className={`w-1 self-stretch ${estadoColor(p.estado)}`} />
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className="text-[10px] font-mono text-zinc-500">{p.referenciaOdoo}</div>
-              <div className={`text-[9px] px-1.5 py-0.5 font-black uppercase text-white ${estadoColor(p.estado)}`}>{estadoLabel(p.estado)}</div>
-            </div>
-            <div className="font-bold text-sm truncate">{p.cliente}</div>
-            <div className="text-[10px] text-zinc-500 truncate">{p.referenciaProyecto || p.nombre} · {sistema?.nombre} · {formatNum(m2Total)} m²</div>
-            <div className="text-[9px] text-zinc-600 mt-0.5 flex flex-wrap gap-x-2">
-              {supervisor && <span>👔 {supervisor.nombre.split(' ')[0]}</span>}
-              {maestro && <span>🔨 {maestro.nombre.split(' ')[0]}</span>}
-            </div>
+    <div className="space-y-3">
+      {grupos.map(({ estado, items, totalValor, totalM2 }) => {
+        const colapsado = colapsados[estado];
+        return (
+          <div key={estado} className="space-y-2">
+            <button
+              onClick={() => toggle(estado)}
+              className="w-full flex items-center gap-2 px-3 py-2 bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-left"
+            >
+              <span className="text-zinc-500 text-xs">{colapsado ? '▶' : '▼'}</span>
+              <div className={`w-2 h-2 ${estadoColor(estado)}`} />
+              <span className="text-xs font-black uppercase tracking-wider">{estadoLabel(estado)}</span>
+              <span className="text-[10px] text-zinc-500">({items.length})</span>
+              <div className="ml-auto text-right">
+                <div className="text-xs font-bold text-green-400">{formatRD(totalValor)}</div>
+                <div className="text-[10px] text-zinc-500">{formatNum(totalM2)} m²</div>
+              </div>
+            </button>
+
+            {!colapsado && items.map(({ p, sistema, m2Total, valor, porcentaje, supervisor, maestro }) => (
+              <button key={p.id} onClick={() => onVerProyecto(p)} className="w-full bg-zinc-900 border border-zinc-800 hover:border-red-600 p-3 text-left flex items-center gap-3">
+                <div className={`w-1 self-stretch ${estadoColor(p.estado)}`} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <div className="text-[10px] font-mono text-zinc-500">{p.referenciaOdoo}</div>
+                  </div>
+                  <div className="font-bold text-sm truncate">{p.cliente}</div>
+                  <div className="text-[10px] text-zinc-500 truncate">{p.referenciaProyecto || p.nombre} · {sistema?.nombre} · {formatNum(m2Total)} m²</div>
+                  <div className="text-[9px] text-zinc-600 mt-0.5 flex flex-wrap gap-x-2">
+                    {supervisor && <span>👔 {supervisor.nombre.split(' ')[0]}</span>}
+                    {maestro && <span>🔨 {maestro.nombre.split(' ')[0]}</span>}
+                  </div>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <div className="text-sm font-black text-green-400">{formatRD(valor)}</div>
+                  <div className="text-[10px] text-zinc-500">{porcentaje.toFixed(0)}%</div>
+                </div>
+              </button>
+            ))}
           </div>
-          <div className="text-right flex-shrink-0">
-            <div className="text-sm font-black text-green-400">{formatRD(valor)}</div>
-            <div className="text-[10px] text-zinc-500">{porcentaje.toFixed(0)}%</div>
-          </div>
-        </button>
-      );
-    })}</div>
+        );
+      })}
+    </div>
   );
 }
 

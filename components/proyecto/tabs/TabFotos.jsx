@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Camera, Loader2, Trash2 } from 'lucide-react';
+import { Camera, Loader2, Trash2, X } from 'lucide-react';
 import * as db from '../../../lib/db';
 import { comprimirImagen } from '../../../lib/imports';
 import { formatFechaLarga } from '../../../lib/helpers/formato';

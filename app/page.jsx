@@ -25,6 +25,8 @@ import Sidebar from '../components/sidebar/Sidebar';
 // v8.10.4: Campo e Input extraídos
 import Campo from '../components/common/Campo';
 import Input from '../components/common/Input';
+// v8.10.10: AutoFitText para números que se autoajustan al ancho
+import AutoFitText from '../components/common/AutoFitText';
 // v8.10.4: ModalEditarReporte extraído
 import ModalEditarReporte from '../components/proyecto/modales/ModalEditarReporte';
 // v8.10.4: ModalReporteAvancePDF extraído (incluye ReportePDFContenido)
@@ -4675,7 +4677,22 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
         } catch (e) { alert('Error: ' + (e.message || e)); }
       }} />}
 
-      {!esSupervisor && <div className="grid grid-cols-3 gap-2"><div className="bg-zinc-900 border border-zinc-800 p-3 min-w-0"><div className="text-[10px] text-zinc-500 uppercase tracking-wider">Avance</div><div className="text-xl md:text-2xl font-black">{porcentaje.toFixed(1)}%</div></div><div className="bg-zinc-900 border border-zinc-800 p-3 min-w-0"><div className="text-[10px] text-zinc-500 uppercase tracking-wider">Producido</div><div className="text-base md:text-2xl font-black text-green-400 truncate">{formatRD(produccionRD)}</div></div><div className="bg-zinc-900 border border-zinc-800 p-3 min-w-0"><div className="text-[10px] text-zinc-500 uppercase tracking-wider">Contrato</div><div className="text-base md:text-2xl font-black truncate">{formatRD(valorContrato)}</div></div></div>}
+      {!esSupervisor && (
+        <div className="grid grid-cols-3 gap-2">
+          <div className="bg-zinc-900 border border-zinc-800 p-3 min-w-0">
+            <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Avance</div>
+            <AutoFitText maxSize={28} minSize={14} className="font-black">{porcentaje.toFixed(1)}%</AutoFitText>
+          </div>
+          <div className="bg-zinc-900 border border-zinc-800 p-3 min-w-0">
+            <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Producido</div>
+            <AutoFitText maxSize={28} minSize={11} className="font-black text-green-400">{formatRD(produccionRD)}</AutoFitText>
+          </div>
+          <div className="bg-zinc-900 border border-zinc-800 p-3 min-w-0">
+            <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Contrato</div>
+            <AutoFitText maxSize={28} minSize={11} className="font-black">{formatRD(valorContrato)}</AutoFitText>
+          </div>
+        </div>
+      )}
 
       {esSupervisor && onIrAReportar && proyecto.estado === 'en_ejecucion' && <button onClick={onIrAReportar} className="w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase py-3 flex items-center justify-center gap-2"><Plus className="w-4 h-4" /> Reportar Avance</button>}
       {esAdmin && onIrAReportar && proyecto.estado === 'en_ejecucion' && <button onClick={onIrAReportar} className="w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase py-3 flex items-center justify-center gap-2"><Plus className="w-4 h-4" /> Reportar Avance</button>}

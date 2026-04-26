@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { AlertTriangle, Loader2, Plus, Save, Trash2 } from 'lucide-react';
+import { AlertTriangle, Loader2, Plus, Save, Trash2, X } from 'lucide-react';
 import * as db from '../../lib/db';
 import { abrirEnMapa } from '../../lib/geo';
 import { expandirYExtraer } from '../../lib/geoutils';

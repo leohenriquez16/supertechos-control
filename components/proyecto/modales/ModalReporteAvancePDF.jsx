@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Download, Eye, Loader2 } from 'lucide-react';
+import { Download, Eye, Loader2, X } from 'lucide-react';
 import * as db from '../../../lib/db';
 import { formatRD, formatFechaCorta } from '../../../lib/helpers/formato';
 import { getM2Reporte, calcAvanceProyecto } from '../../../lib/helpers/calculos';

@@ -8,6 +8,9 @@ import { getM2Reporte, calcAvanceProyecto } from '../../../lib/helpers/calculos'
 import Campo from '../../common/Campo';
 import Input from '../../common/Input';
 
+// Helper local (también está en page.jsx)
+const getPersona = (personal, id) => personal.find(p => p.id === id);
+
 export default function ModalReporteAvancePDF({ proyecto, sistema, data, usuario, onCerrar }) {
   const hoy = new Date().toISOString().split('T')[0];
   const haceSieteDias = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];

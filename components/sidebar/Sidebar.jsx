@@ -1,12 +1,12 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { UserCircle, LogOut } from 'lucide-react';
 import { APP_VERSION } from '../../lib/constants';
 
 /**
  * Sidebar lateral del ERP.
- * v8.10.4: Fix scroll y altura
+ * v8.10.9: Fix bug móvil - sidebar ocupaba toda la pantalla
  *
  * Recibe TODAS sus dependencias como props (no toca estado global).
  */
@@ -24,15 +24,29 @@ export default function Sidebar({
   toggleSeccion,
   onCerrarSesion,
 }) {
+  // v8.10.9: Detectar si es desktop para forzar visibilidad
+  const [esDesktop, setEsDesktop] = useState(false);
+  useEffect(() => {
+    const check = () => setEsDesktop(window.innerWidth >= 768);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+
+  // En desktop: siempre visible. En móvil: depende de sidebarAbierta.
+  const visible = esDesktop || sidebarAbierta;
+
   return (
     <>
       <aside
-        className={`fixed top-0 left-0 w-60 bg-black border-r-2 border-red-600 z-50 transform transition-transform md:translate-x-0 ${sidebarAbierta ? 'translate-x-0' : '-translate-x-full'}`}
+        className="fixed top-0 left-0 w-60 bg-black border-r-2 border-red-600 z-50"
         style={{
           height: '100dvh',
           maxHeight: '100dvh',
           display: 'flex',
           flexDirection: 'column',
+          transform: visible ? 'translateX(0)' : 'translateX(-100%)',
+          transition: 'transform 0.3s ease-in-out',
         }}
       >
         {/* Header con logo */}
@@ -143,11 +157,11 @@ export default function Sidebar({
         </div>
       </aside>
 
-      {/* Overlay móvil */}
-      {sidebarAbierta && (
+      {/* Overlay móvil - solo visible en móvil cuando el sidebar está abierto */}
+      {sidebarAbierta && !esDesktop && (
         <div
           onClick={() => setSidebarAbierta(false)}
-          className="fixed inset-0 bg-black/60 z-40 md:hidden"
+          className="fixed inset-0 bg-black/60 z-40"
         />
       )}
     </>

@@ -7579,6 +7579,8 @@ function GaleriaGlobal({ usuario, data, onVolver }) {
   const [fotos, setFotos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filtros, setFiltros] = useState({ sistemaId: '', proyectoId: '', favoritasSolo: false });
+  const [busqueda, setBusqueda] = useState(''); // v8.10.14: búsqueda por # cotización / cliente
+  const [agruparPor, setAgruparPor] = useState('proyecto'); // v8.10.14: 'proyecto' | 'fecha'
   const [viendo, setViendo] = useState(null);
   const [fotoData, setFotoData] = useState(null);
   const esAdmin = tieneRol(usuario, 'admin');
@@ -7613,61 +7615,158 @@ function GaleriaGlobal({ usuario, data, onVolver }) {
     catch (e) { alert('Error: ' + e.message); }
   };
 
-  // Agrupar por fecha
-  const porFecha = {};
-  fotos.forEach(f => { if (!porFecha[f.fecha]) porFecha[f.fecha] = []; porFecha[f.fecha].push(f); });
-  const fechas = Object.keys(porFecha).sort((a, b) => b.localeCompare(a));
+  // v8.10.14: filtrar por búsqueda (cotización + cliente + referencia)
+  const fotosFiltradas = busqueda.trim()
+    ? fotos.filter(f => {
+        const proy = data.proyectos.find(p => p.id === f.proyectoId);
+        if (!proy) return false;
+        const q = busqueda.toLowerCase().trim();
+        const ref = (proy.referenciaOdoo || '').toLowerCase();
+        const cliente = (proy.cliente || '').toLowerCase();
+        const nombre = (proy.nombre || '').toLowerCase();
+        const refProy = (proy.referenciaProyecto || '').toLowerCase();
+        return ref.includes(q) || cliente.includes(q) || nombre.includes(q) || refProy.includes(q);
+      })
+    : fotos;
+
+  // v8.10.14: agrupación dinámica por proyecto o fecha
+  const grupos = {};
+  if (agruparPor === 'proyecto') {
+    fotosFiltradas.forEach(f => {
+      const key = f.proyectoId;
+      if (!grupos[key]) grupos[key] = [];
+      grupos[key].push(f);
+    });
+  } else {
+    fotosFiltradas.forEach(f => {
+      if (!grupos[f.fecha]) grupos[f.fecha] = [];
+      grupos[f.fecha].push(f);
+    });
+  }
+
+  // Ordenar grupos
+  const claves = Object.keys(grupos).sort((a, b) => {
+    if (agruparPor === 'fecha') return b.localeCompare(a); // más reciente primero
+    // Para proyecto: ordenar por # cotización (descendente)
+    const proyA = data.proyectos.find(p => p.id === a);
+    const proyB = data.proyectos.find(p => p.id === b);
+    return (proyB?.referenciaOdoo || '').localeCompare(proyA?.referenciaOdoo || '');
+  });
 
   return (
     <div className="space-y-5">
       <button onClick={onVolver} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button>
       <h1 className="text-3xl font-black tracking-tight">Galería</h1>
 
+      {/* v8.10.14: Buscador rápido */}
       <div className="bg-zinc-900 border border-zinc-800 p-3 space-y-2">
+        <input
+          type="text"
+          value={busqueda}
+          onChange={e => setBusqueda(e.target.value)}
+          placeholder="🔍 Buscar por # cotización (ST-C5459), cliente o referencia..."
+          className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-4 py-3 text-white placeholder-zinc-600 text-sm"
+        />
+        {busqueda && (
+          <div className="flex justify-between items-center text-[10px] text-zinc-500">
+            <span>{fotosFiltradas.length} foto{fotosFiltradas.length !== 1 ? 's' : ''} encontradas</span>
+            <button onClick={() => setBusqueda('')} className="text-red-400 hover:text-red-300">Limpiar</button>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
           <select value={filtros.sistemaId} onChange={e => setFiltros({ ...filtros, sistemaId: e.target.value })} className="bg-zinc-950 border border-zinc-800 px-2 py-2 text-xs text-white"><option value="">Todos los sistemas</option>{Object.values(data.sistemas).map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select>
           <select value={filtros.proyectoId} onChange={e => setFiltros({ ...filtros, proyectoId: e.target.value })} className="bg-zinc-950 border border-zinc-800 px-2 py-2 text-xs text-white"><option value="">Todos los proyectos</option>{data.proyectos.map(p => <option key={p.id} value={p.id}>{labelProyecto(p)}</option>)}</select>
           <label className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 px-3 py-2 cursor-pointer text-xs text-white"><input type="checkbox" checked={filtros.favoritasSolo} onChange={e => setFiltros({ ...filtros, favoritasSolo: e.target.checked })} className="w-4 h-4 accent-red-600" />⭐ Solo favoritas</label>
         </div>
+
+        {/* v8.10.14: Toggle agrupación */}
+        <div className="flex gap-1 text-[10px]">
+          <span className="text-zinc-500 self-center mr-1">Agrupar por:</span>
+          <button
+            onClick={() => setAgruparPor('proyecto')}
+            className={`px-3 py-1 font-bold uppercase tracking-wider ${agruparPor === 'proyecto' ? 'bg-red-600 text-white' : 'bg-zinc-950 text-zinc-400 border border-zinc-800'}`}
+          >
+            Proyecto
+          </button>
+          <button
+            onClick={() => setAgruparPor('fecha')}
+            className={`px-3 py-1 font-bold uppercase tracking-wider ${agruparPor === 'fecha' ? 'bg-red-600 text-white' : 'bg-zinc-950 text-zinc-400 border border-zinc-800'}`}
+          >
+            Fecha
+          </button>
+        </div>
       </div>
 
       {loading && <div className="text-center py-8"><Loader2 className="w-6 h-6 text-red-500 animate-spin mx-auto" /></div>}
-      {!loading && fotos.length === 0 && <div className="text-center py-10 text-zinc-500 text-sm">No hay fotos con estos filtros.</div>}
+      {!loading && fotosFiltradas.length === 0 && <div className="text-center py-10 text-zinc-500 text-sm">{busqueda ? 'No hay fotos que coincidan con la búsqueda.' : 'No hay fotos con estos filtros.'}</div>}
 
-      {fechas.map(fecha => (
-        <div key={fecha}>
-          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2">{formatFechaLarga(fecha)} · {porFecha[fecha].length}</div>
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
-            {porFecha[fecha].map(f => {
-              const proy = data.proyectos.find(p => p.id === f.proyectoId);
-              return (
-                <div key={f.id} className="relative group">
-                  <FotoThumbGlobal foto={f} onClick={() => verFoto(f)} />
-                  <div className="absolute top-1 left-1 text-[9px] bg-black/70 text-white px-1 py-0.5 truncate max-w-[80%]">{proy?.cliente || ''}</div>
-                  <button onClick={() => toggleFav(f.id, !f.favorita)} className={`absolute top-1 right-1 bg-black/70 p-1 ${f.favorita ? 'text-yellow-400' : 'text-white/60'}`} title={f.favorita ? 'Quitar favorita' : 'Marcar favorita'}>★</button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ))}
-
-      {viendo && (
-        <div className="fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-4" onClick={() => setViendo(null)}>
-          <div className="relative max-w-3xl w-full" onClick={e => e.stopPropagation()}>
-            <button onClick={() => setViendo(null)} className="absolute top-2 right-2 z-10 bg-black/60 text-white p-2"><X className="w-5 h-5" /></button>
-            {fotoData ? <img src={fotoData} className="w-full h-auto" alt="" /> : <div className="aspect-video bg-zinc-900 flex items-center justify-center"><Loader2 className="w-8 h-8 text-red-500 animate-spin" /></div>}
-            <div className="bg-zinc-900 p-3 text-xs flex justify-between items-center gap-2">
-              <div className="flex-1 min-w-0">
-                <div className="text-white font-bold">{data.proyectos.find(p => p.id === viendo.proyectoId)?.cliente}</div>
-                <div className="text-zinc-500">{formatFechaLarga(viendo.fecha)} · {viendo.subidaPor}</div>
-              </div>
-              <button onClick={() => toggleFav(viendo.id, !viendo.favorita)} className={`${viendo.favorita ? 'text-yellow-400' : 'text-zinc-400'} text-2xl`}>★</button>
-              {(viendo.subidaPorId === usuario.id || esAdmin) && <button onClick={() => eliminar(viendo.id)} className="text-red-400 hover:text-red-300 p-2"><Trash2 className="w-4 h-4" /></button>}
+      {claves.map(clave => {
+        const fotosGrupo = grupos[clave];
+        // Header según agrupación
+        let headerLabel;
+        if (agruparPor === 'proyecto') {
+          const proy = data.proyectos.find(p => p.id === clave);
+          headerLabel = (
+            <div>
+              <span className="text-red-400 font-mono mr-2">{proy?.referenciaOdoo || 'Sin código'}</span>
+              <span className="text-white">{proy?.cliente || proy?.nombre}</span>
+              {proy?.referenciaProyecto && <span className="text-zinc-500 text-[10px] ml-2">· {proy.referenciaProyecto}</span>}
+            </div>
+          );
+        } else {
+          headerLabel = formatFechaLarga(clave);
+        }
+        return (
+          <div key={clave}>
+            <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2 flex items-center gap-2">
+              {headerLabel}
+              <span className="text-zinc-600">· {fotosGrupo.length} foto{fotosGrupo.length !== 1 ? 's' : ''}</span>
+            </div>
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+              {fotosGrupo.map(f => {
+                const proy = data.proyectos.find(p => p.id === f.proyectoId);
+                return (
+                  <div key={f.id} className="relative group">
+                    <FotoThumbGlobal foto={f} onClick={() => verFoto(f)} />
+                    {/* v8.10.14: Mostrar # cotización + cliente */}
+                    <div className="absolute top-1 left-1 right-8 text-[9px] bg-black/70 text-white px-1 py-0.5 truncate">
+                      <span className="text-red-400 font-mono">{proy?.referenciaOdoo || ''}</span>
+                      {proy?.referenciaOdoo && proy?.cliente && <span> · </span>}
+                      <span>{proy?.cliente || ''}</span>
+                    </div>
+                    <button onClick={() => toggleFav(f.id, !f.favorita)} className={`absolute top-1 right-1 bg-black/70 p-1 ${f.favorita ? 'text-yellow-400' : 'text-white/60'}`} title={f.favorita ? 'Quitar favorita' : 'Marcar favorita'}>★</button>
+                  </div>
+                );
+              })}
             </div>
           </div>
-        </div>
-      )}
+        );
+      })}
+
+      {viendo && (() => {
+        const proyViendo = data.proyectos.find(p => p.id === viendo.proyectoId);
+        return (
+          <div className="fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-4" onClick={() => setViendo(null)}>
+            <div className="relative max-w-3xl w-full" onClick={e => e.stopPropagation()}>
+              <button onClick={() => setViendo(null)} className="absolute top-2 right-2 z-10 bg-black/60 text-white p-2"><X className="w-5 h-5" /></button>
+              {fotoData ? <img src={fotoData} className="w-full h-auto" alt="" /> : <div className="aspect-video bg-zinc-900 flex items-center justify-center"><Loader2 className="w-8 h-8 text-red-500 animate-spin" /></div>}
+              <div className="bg-zinc-900 p-3 text-xs flex justify-between items-center gap-2">
+                <div className="flex-1 min-w-0">
+                  {/* v8.10.14: Mostrar # cotización + cliente en vista grande */}
+                  <div className="text-white font-bold flex items-center gap-2">
+                    <span className="text-red-400 font-mono">{proyViendo?.referenciaOdoo || ''}</span>
+                    <span>{proyViendo?.cliente || proyViendo?.nombre || ''}</span>
+                  </div>
+                  <div className="text-zinc-500 text-[10px]">{formatFechaLarga(viendo.fecha)} · {viendo.subidaPor}</div>
+                </div>
+                <button onClick={() => toggleFav(viendo.id, !viendo.favorita)} className={`${viendo.favorita ? 'text-yellow-400' : 'text-zinc-400'} text-2xl`}>★</button>
+                {(viendo.subidaPorId === usuario.id || esAdmin) && <button onClick={() => eliminar(viendo.id)} className="text-red-400 hover:text-red-300 p-2"><Trash2 className="w-4 h-4" /></button>}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

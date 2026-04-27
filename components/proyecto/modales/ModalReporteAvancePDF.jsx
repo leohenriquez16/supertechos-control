@@ -394,6 +394,7 @@ function ReportePDFContenido({ proyecto, sistema, data, tipo, fechaInicio, fecha
           @page { size: letter; margin: 0.5in; }
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           #reporte-pdf { box-shadow: none !important; }
+          #reporte-pdf > div { max-width: none !important; width: 100% !important; }
           .print-page-break { page-break-after: always; }
         }
       `}</style>

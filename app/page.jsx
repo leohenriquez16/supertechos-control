@@ -5033,13 +5033,65 @@ function ModalCrearDocumento({ tipo, proyecto, usuario, onCerrar, onGuardado }) 
   const [severidad, setSeveridad] = useState('media');
   const [m2Entregados, setM2Entregados] = useState('');
   const [porcentajeAvance, setPorcentajeAvance] = useState('100');
-  const [fotos, setFotos] = useState([]); // [{dataUrl, transcripcion, audioBlob, audioUrl, nota}]
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState('');
+
+  // v8.10.19: galería del proyecto en vez de subir fotos nuevas
+  const [fotosProyecto, setFotosProyecto] = useState([]);
+  const [cargandoFotos, setCargandoFotos] = useState(true);
+  const [fotosSeleccionadas, setFotosSeleccionadas] = useState(new Set()); // Set de IDs
+  const [fotosData, setFotosData] = useState({}); // { fotoId: dataUrl }
+  const [busquedaFotos, setBusquedaFotos] = useState('');
+
+  // Cargar las fotos del proyecto al abrir el modal
+  useEffect(() => {
+    let cancelado = false;
+    (async () => {
+      setCargandoFotos(true);
+      try {
+        const lista = await db.listarFotosProyecto(proyecto.id);
+        if (!cancelado) setFotosProyecto(lista);
+      } catch (e) {
+        if (!cancelado) setError('Error cargando fotos: ' + e.message);
+      }
+      if (!cancelado) setCargandoFotos(false);
+    })();
+    return () => { cancelado = true; };
+  }, [proyecto.id]);
+
+  // Lazy-load la imagen real de cada foto cuando aparece
+  const cargarFotoData = async (fotoId) => {
+    if (fotosData[fotoId]) return;
+    try {
+      const dataUrl = await db.obtenerFoto(fotoId);
+      setFotosData(prev => ({ ...prev, [fotoId]: dataUrl }));
+    } catch (e) {
+      console.warn('Error cargando foto', fotoId, e);
+    }
+  };
+
+  const toggleFoto = (fotoId) => {
+    setFotosSeleccionadas(prev => {
+      const next = new Set(prev);
+      if (next.has(fotoId)) next.delete(fotoId);
+      else next.add(fotoId);
+      return next;
+    });
+  };
 
   const esIncidente = subtipo === 'incidente';
   const esEntregaArea = subtipo === 'entrega_area';
   const esEntregaTotal = subtipo === 'entrega_total';
+
+  // Filtrar fotos por búsqueda (en nota o fecha)
+  const fotosFiltradas = busquedaFotos.trim()
+    ? fotosProyecto.filter(f => {
+        const q = busquedaFotos.toLowerCase().trim();
+        return (f.nota || '').toLowerCase().includes(q) ||
+               (f.fecha || '').includes(q) ||
+               (f.subidaPor || '').toLowerCase().includes(q);
+      })
+    : fotosProyecto;
 
   // Precargar m2 del área seleccionada para entrega parcial
   useEffect(() => {
@@ -5051,30 +5103,6 @@ function ModalCrearDocumento({ tipo, proyecto, usuario, onCerrar, onGuardado }) 
       setM2Entregados(total.toString());
     }
   }, [subtipo, areaId]);
-
-  const agregarFoto = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-    input.capture = 'environment';
-    input.onchange = async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      try {
-        const compressed = await comprimirImagen(file, 1200, 0.85);
-        setFotos(prev => [...prev, { dataUrl: compressed, transcripcion: '', audioBlob: null, nota: '' }]);
-      } catch (err) { setError('Error procesando foto: ' + err.message); }
-    };
-    input.click();
-  };
-
-  const eliminarFoto = (i) => {
-    setFotos(fotos.filter((_, idx) => idx !== i));
-  };
-
-  const actualizarFoto = (i, campos) => {
-    setFotos(fotos.map((f, idx) => idx === i ? { ...f, ...campos } : f));
-  };
 
   const guardar = async () => {
     if (!titulo.trim()) { setError('El título es requerido'); return; }
@@ -5090,28 +5118,31 @@ function ModalCrearDocumento({ tipo, proyecto, usuario, onCerrar, onGuardado }) 
 
       const docId = 'doc_' + Date.now() + Math.random().toString(36).slice(2, 5);
 
-      // Subir fotos (y audios si hay) a Storage
+      // v8.10.19: Copiar las fotos seleccionadas del proyecto al documento
       const fotosProcesadas = [];
-      for (let i = 0; i < fotos.length; i++) {
-        const f = fotos[i];
-        let fotoUrl = f.dataUrl;
-        let audioUrl = null;
+      const idsArray = Array.from(fotosSeleccionadas);
+      for (let i = 0; i < idsArray.length; i++) {
+        const fotoId = idsArray[i];
+        const fotoOriginal = fotosProyecto.find(f => f.id === fotoId);
         try {
-          fotoUrl = await db.subirFotoDocumento(f.dataUrl, proyecto.id, docId, i);
-        } catch (e) { console.warn('Error subiendo foto, usa data URL:', e); }
-        if (f.audioBlob) {
+          // Obtener los bytes de la foto original
+          const dataUrl = fotosData[fotoId] || await db.obtenerFoto(fotoId);
+          // Subirla como foto del documento (queda independiente de la original)
+          let urlDoc = dataUrl;
           try {
-            audioUrl = await db.subirAudioFotoDocumento(f.audioBlob, proyecto.id, docId, i);
-          } catch (e) { console.warn('Error subiendo audio:', e); }
+            urlDoc = await db.subirFotoDocumento(dataUrl, proyecto.id, docId, i);
+          } catch (e) { console.warn('Error subiendo copia, uso data URL:', e); }
+          fotosProcesadas.push({
+            id: 'f_' + i,
+            url: urlDoc,
+            transcripcion: '',
+            audioUrl: null,
+            nota: fotoOriginal?.nota || '',
+            ordenIndex: i,
+          });
+        } catch (e) {
+          console.error('Error copiando foto', fotoId, e);
         }
-        fotosProcesadas.push({
-          id: 'f_' + i,
-          url: fotoUrl,
-          transcripcion: f.transcripcion || '',
-          audioUrl,
-          nota: f.nota || '',
-          ordenIndex: i,
-        });
       }
 
       await db.crearDocumentoProyecto({
@@ -5198,28 +5229,83 @@ function ModalCrearDocumento({ tipo, proyecto, usuario, onCerrar, onGuardado }) 
           </div>
         )}
 
-        {/* Fotos */}
-        <Campo label={`📷 Fotos ${fotos.length > 0 ? `(${fotos.length})` : ''}`}>
+        {/* v8.10.19: Galería del proyecto (en vez de subir nuevas) */}
+        <Campo label={`📷 Fotos del proyecto ${fotosSeleccionadas.size > 0 ? `(${fotosSeleccionadas.size} seleccionadas)` : ''}`}>
           <div className="space-y-2">
-            {fotos.map((f, i) => (
-              <div key={i} className="bg-zinc-950 border border-zinc-800 p-2 space-y-2">
-                <div className="flex gap-2">
-                  <img src={f.dataUrl} alt="" className="w-20 h-20 object-cover border border-zinc-700 flex-shrink-0" />
-                  <div className="flex-1 space-y-1">
-                    <input
-                      value={f.nota}
-                      onChange={e => actualizarFoto(i, { nota: e.target.value })}
-                      placeholder="Nota/descripción de esta foto..."
-                      className="w-full bg-zinc-900 border border-zinc-800 px-2 py-1 text-xs text-white"
-                    />
-                    <button onClick={() => eliminarFoto(i)} className="text-[10px] text-red-400 hover:text-red-300">🗑️ Eliminar foto</button>
-                  </div>
+            {/* Buscador */}
+            {fotosProyecto.length > 6 && (
+              <input
+                type="text"
+                value={busquedaFotos}
+                onChange={e => setBusquedaFotos(e.target.value)}
+                placeholder="🔍 Buscar por nota, fecha o quien la subió..."
+                className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-xs text-white placeholder-zinc-600"
+              />
+            )}
+
+            {cargandoFotos && (
+              <div className="text-center py-6 text-xs text-zinc-500">
+                <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2 text-red-500" />
+                Cargando fotos del proyecto...
+              </div>
+            )}
+
+            {!cargandoFotos && fotosProyecto.length === 0 && (
+              <div className="bg-zinc-950 border border-dashed border-zinc-700 p-6 text-center text-xs text-zinc-500">
+                Este proyecto no tiene fotos todavía.<br />
+                Sube fotos desde el tab "Fotos" del proyecto primero.
+              </div>
+            )}
+
+            {!cargandoFotos && fotosFiltradas.length === 0 && fotosProyecto.length > 0 && (
+              <div className="bg-zinc-950 border border-zinc-800 p-3 text-center text-xs text-zinc-500">
+                Ninguna foto coincide con "{busquedaFotos}"
+              </div>
+            )}
+
+            {/* Galería con scroll */}
+            {!cargandoFotos && fotosFiltradas.length > 0 && (
+              <div className="bg-zinc-950 border border-zinc-800 p-2 max-h-96 overflow-y-auto">
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                  {fotosFiltradas.map(f => {
+                    const seleccionada = fotosSeleccionadas.has(f.id);
+                    return (
+                      <button
+                        key={f.id}
+                        onClick={() => toggleFoto(f.id)}
+                        onMouseEnter={() => cargarFotoData(f.id)}
+                        className={`relative aspect-square border-2 overflow-hidden ${seleccionada ? 'border-red-600 ring-2 ring-red-600/50' : 'border-zinc-700 hover:border-zinc-500'}`}
+                      >
+                        {fotosData[f.id] ? (
+                          <img src={fotosData[f.id]} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full bg-zinc-900 flex items-center justify-center" onClick={(e) => { e.stopPropagation(); cargarFotoData(f.id); toggleFoto(f.id); }}>
+                            <span className="text-xl text-zinc-600">📷</span>
+                          </div>
+                        )}
+                        {/* Checkbox visual */}
+                        <div className={`absolute top-1 left-1 w-5 h-5 border-2 flex items-center justify-center text-[10px] font-black ${seleccionada ? 'bg-red-600 border-red-600 text-white' : 'bg-black/60 border-white/60 text-transparent'}`}>
+                          {seleccionada ? '✓' : ''}
+                        </div>
+                        {f.favorita && <div className="absolute top-1 right-1 text-yellow-400 text-xs">⭐</div>}
+                        {/* Footer con nota/fecha */}
+                        <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-[8px] px-1 py-0.5 truncate">
+                          {f.fecha ? formatFechaCorta(f.fecha) : ''}
+                          {f.nota && <span className="text-zinc-300"> · {f.nota}</span>}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
-            ))}
-            <button onClick={agregarFoto} className="w-full bg-zinc-950 border-2 border-dashed border-zinc-700 hover:border-red-600 py-3 text-xs font-bold uppercase text-zinc-400">
-              📷 Agregar foto
-            </button>
+            )}
+
+            {fotosSeleccionadas.size > 0 && (
+              <div className="text-[10px] text-zinc-400 flex items-center justify-between">
+                <span>{fotosSeleccionadas.size} foto{fotosSeleccionadas.size !== 1 ? 's' : ''} seleccionada{fotosSeleccionadas.size !== 1 ? 's' : ''}</span>
+                <button onClick={() => setFotosSeleccionadas(new Set())} className="text-red-400 hover:text-red-300">Limpiar selección</button>
+              </div>
+            )}
           </div>
         </Campo>
 

@@ -5453,7 +5453,25 @@ function ModalEnviarDocumento({ documento, proyecto, clientes, contactos, person
     try {
       const tipoLbl = d.tipo === 'incidente' ? 'Reporte de Incidente' : d.tipo === 'entrega_total' ? 'Reporte de Entrega Final' : 'Reporte de Entrega Parcial';
       const area = d.areaId ? proyecto.areas.find(a => a.id === d.areaId) : null;
-      const fotosHtml = (d.fotos || []).map((f, i) => `
+
+      // v8.10.20: filtrar fotos con URLs válidas (no null, no vacías, no data URLs)
+      // Resend y otros servicios de email rechazan data URLs (base64) por tamaño
+      const fotosValidas = (d.fotos || []).filter(f => {
+        if (!f || !f.url) return false;
+        const url = String(f.url).trim();
+        if (!url) return false;
+        // Rechazar data URLs (son demasiado grandes para email)
+        if (url.startsWith('data:')) {
+          console.warn('Foto omitida del correo (data URL):', f.id);
+          return false;
+        }
+        // Aceptar solo http(s)
+        if (!url.startsWith('http://') && !url.startsWith('https://')) return false;
+        return true;
+      });
+      const fotosOmitidas = (d.fotos || []).length - fotosValidas.length;
+
+      const fotosHtml = fotosValidas.map((f, i) => `
         <div style="margin:16px 0;page-break-inside:avoid;">
           <img src="${f.url}" style="max-width:100%;max-height:400px;border:1px solid #ccc;" />
           ${f.nota ? `<p style="font-size:11px;color:#555;margin-top:4px;"><strong>Foto ${i+1}:</strong> ${f.nota}</p>` : ''}
@@ -5480,7 +5498,7 @@ function ModalEnviarDocumento({ documento, proyecto, clientes, contactos, person
             </table>
             ${mensajePersonalizado ? `<div style="background:#fff;border-left:4px solid #CC0000;padding:12px;margin-top:16px;font-size:12px;">${mensajePersonalizado.replace(/\n/g, '<br>')}</div>` : ''}
             ${d.descripcion ? `<div style="margin-top:16px;"><h3 style="font-size:13px;color:#CC0000;">Descripción</h3><p style="font-size:12px;white-space:pre-wrap;">${d.descripcion}</p></div>` : ''}
-            ${d.fotos && d.fotos.length > 0 ? `<div style="margin-top:16px;"><h3 style="font-size:13px;color:#CC0000;">Evidencia fotográfica</h3>${fotosHtml}</div>` : ''}
+            ${fotosValidas.length > 0 ? `<div style="margin-top:16px;"><h3 style="font-size:13px;color:#CC0000;">Evidencia fotográfica</h3>${fotosHtml}</div>` : ''}
           </div>
           <div style="padding:16px;background:#222;color:#999;font-size:10px;text-align:center;">
             Super Techos SRL · www.supertechos.com.do · Este reporte fue generado automáticamente desde nuestro sistema de control de obras.
@@ -5497,13 +5515,29 @@ function ModalEnviarDocumento({ documento, proyecto, clientes, contactos, person
           html,
         }),
       });
-      const result = await res.json();
-      if (!result.enviado) throw new Error(result.motivo || 'Error enviando correo');
+
+      // v8.10.20: manejo de errores detallado
+      let result;
+      const responseText = await res.text();
+      try {
+        result = JSON.parse(responseText);
+      } catch (parseErr) {
+        console.error('Respuesta del server no es JSON válido:', responseText);
+        throw new Error(`Server respondió con: ${responseText.slice(0, 200)}`);
+      }
+
+      if (!res.ok) {
+        console.error('Error HTTP del server:', res.status, result);
+        throw new Error(`HTTP ${res.status}: ${result.motivo || result.error || 'Error desconocido'}`);
+      }
+
+      if (!result.enviado) throw new Error(result.motivo || result.error || 'Error enviando correo');
 
       await db.marcarDocumentoEnviado(d.id, usuario.id, destinos.join(', '));
       await onEnviado();
     } catch (e) {
-      setError(e.message || 'Error enviando');
+      console.error('[ENVIAR REPORTE] Error completo:', e);
+      setError(`${e.message}` + (e.stack ? `\n\n(Detalles en consola del navegador)` : ''));
     }
     setEnviando(false);
   };

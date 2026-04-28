@@ -5345,8 +5345,23 @@ function ModalEnviarDocumento({ documento, proyecto, clientes, contactos, person
 
   const enviar = async () => {
     const destinos = [...emailsSel];
-    if (emailExtra.trim()) destinos.push(emailExtra.trim());
+    // v8.10.17: permitir múltiples emails en el campo libre, separados por , ; o espacio
+    if (emailExtra.trim()) {
+      const extras = emailExtra
+        .split(/[,;\s]+/)
+        .map(e => e.trim())
+        .filter(e => e);
+      destinos.push(...extras);
+    }
     if (destinos.length === 0) { setError('Selecciona al menos un destinatario'); return; }
+
+    // v8.10.17: validar cada email con regex simple
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const emailsInvalidos = destinos.filter(e => !emailRegex.test(e));
+    if (emailsInvalidos.length > 0) {
+      setError(`Email${emailsInvalidos.length !== 1 ? 's' : ''} inválido${emailsInvalidos.length !== 1 ? 's' : ''}: ${emailsInvalidos.join(', ')}`);
+      return;
+    }
 
     setEnviando(true); setError('');
     try {
@@ -5436,7 +5451,7 @@ function ModalEnviarDocumento({ documento, proyecto, clientes, contactos, person
                 </div>
               </label>
             ))}
-            <Input value={emailExtra} onChange={v => setEmailExtra(v)} placeholder="+ Otro email (opcional)" />
+            <Input value={emailExtra} onChange={v => setEmailExtra(v)} placeholder="+ Email(s) extras (separa con coma, ej: a@x.com, b@x.com)" />
           </div>
         </Campo>
 
@@ -6960,6 +6975,8 @@ function FormReporteRapidoAudio({ usuario, proyecto, sistema, sistemas, personal
   const timerRef = React.useRef(null);
   const recognitionRef = React.useRef(null);
   const fechaHoy = new Date().toISOString().split('T')[0];
+  // v8.10.16: fecha del trabajo editable (default: hoy)
+  const [fechaTrabajo, setFechaTrabajo] = useState(fechaHoy);
 
   // Editables después de que la IA extrae
   const [avancesEdit, setAvancesEdit] = useState([]);
@@ -7175,7 +7192,7 @@ function FormReporteRapidoAudio({ usuario, proyecto, sistema, sistemas, personal
           proyectoId: proyecto.id,
           areaId,
           tareaId,
-          fecha: fechaHoy,
+          fecha: fechaTrabajo,
           m2: av.m2 || null,
           nota: av.notaEspecifica || notaEdit,
           supervisor: usuario.nombre,
@@ -7209,10 +7226,24 @@ function FormReporteRapidoAudio({ usuario, proyecto, sistema, sistemas, personal
         </button>
       </div>
 
-      <div className="bg-zinc-900 border border-zinc-800 p-4">
-        <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">🎤 Reporte rápido con IA</div>
-        <h1 className="text-xl font-black mt-1">{proyecto.nombre}</h1>
-        <div className="text-xs text-zinc-400 mt-1">{formatFecha(fechaHoy)}</div>
+      <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
+        <div>
+          <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">🎤 Reporte rápido con IA</div>
+          <h1 className="text-xl font-black mt-1">{proyecto.nombre}</h1>
+        </div>
+        {/* v8.10.16: Selector de fecha del trabajo */}
+        <div>
+          <label className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold block mb-1">Fecha del trabajo</label>
+          <input
+            type="date"
+            value={fechaTrabajo}
+            onChange={e => setFechaTrabajo(e.target.value)}
+            className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm"
+          />
+          {fechaTrabajo !== fechaHoy && (
+            <div className="text-[10px] text-yellow-400 mt-1">⚠️ Reporte retroactivo: {formatFecha(fechaTrabajo)}</div>
+          )}
+        </div>
       </div>
 
       {error && (

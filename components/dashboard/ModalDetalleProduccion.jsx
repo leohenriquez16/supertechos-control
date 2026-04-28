@@ -3,9 +3,10 @@
 import React from 'react';
 import { X } from 'lucide-react';
 import { formatRD, formatFecha, formatNum } from '../../lib/helpers/formato';
+import { getM2Reporte, getPrecioVentaArea } from '../../lib/helpers/calculos';
 
 export default function ModalDetalleProduccion({ data, rango, prodPeriodo, onCerrar, onVerProyecto }) {
-  // Calcular producción por proyecto en el rango
+  // v8.10.16: usa la MISMA fórmula que el card del dashboard
   const reportesRango = (data.reportes || []).filter(r => r.fecha >= rango.desde && r.fecha <= rango.hasta);
 
   const porProyecto = {};
@@ -14,25 +15,22 @@ export default function ModalDetalleProduccion({ data, rango, prodPeriodo, onCer
   reportesRango.forEach(r => {
     const proy = (data.proyectos || []).find(p => p.id === r.proyectoId);
     if (!proy) return;
-    const sistema = data.sistemas[proy.sistema];
+
+    // v8.9.27: resolver área y su sistema (puede tener sistema diferente al proyecto)
+    const area = (proy.areas || []).find(a => a.id === r.areaId);
+    const sistemaIdUsado = (area && area.sistemaId) || proy.sistema;
+    const sistema = data.sistemas[sistemaIdUsado];
     if (!sistema) return;
 
-    // Precio de la tarea (m²)
-    let precio = 0;
-    const precios = proy.preciosTareasM2 || {};
-    precio = precios[r.tareaId] || 0;
-    // Si es m2_fijo o no hay precio por tarea, intentar m² del proyecto
-    if (!precio && proy.modoPagoManoObra === 'm2_fijo') {
-      // No aplica - m2_fijo es para maestros, no precio al cliente
-    }
-    // Fallback: usar precio de la tarea del sistema directamente
-    if (!precio && sistema.tareas) {
-      const tarea = sistema.tareas.find(t => t.id === r.tareaId);
-      if (tarea) precio = tarea.precioM2 || 0;
-    }
+    // m² del reporte (usa función centralizada)
+    const m2 = getM2Reporte(r, sistema);
 
-    const m2 = parseFloat(r.m2) || 0;
-    const monto = m2 * precio;
+    // Precio de venta del área (incluye suplementos) × peso de la tarea
+    const tarea = sistema.tareas.find(t => t.id === r.tareaId);
+    if (!tarea) return;
+
+    const precioM2 = getPrecioVentaArea(area, sistema);
+    const monto = m2 * precioM2 * (tarea.peso / 100);
 
     // Por proyecto
     if (!porProyecto[proy.id]) {
@@ -56,7 +54,7 @@ export default function ModalDetalleProduccion({ data, rango, prodPeriodo, onCer
   const proyectosOrdenados = Object.values(porProyecto).sort((a, b) => b.monto - a.monto);
   const maestrosOrdenados = Object.values(porMaestro)
     .filter(m => m.persona && (m.persona.roles || []).includes('maestro'))
-    .sort((a, b) => b.m2 - a.m2);
+    .sort((a, b) => b.monto - a.monto);
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>

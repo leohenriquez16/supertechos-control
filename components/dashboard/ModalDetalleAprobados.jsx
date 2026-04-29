@@ -8,8 +8,16 @@ import { getPrecioTotalM2Area } from '../../lib/helpers/calculos';
 // Helper local
 const labelProyecto = (p) => p?.referenciaOdoo ? `${p.referenciaOdoo} · ${p.cliente || p.nombre}` : (p?.cliente || p?.nombre || 'Sin nombre');
 
-export default function ModalDetalleAprobados({ proyectos, data, onCerrar }) {
-  // v8.10.22: ordenar por fechaAprobacion (con fallback a fecha_inicio para proyectos viejos)
+export default function ModalDetalleAprobados(props) {
+  const { data, onCerrar } = props;
+  // v8.10.22: aceptar proyectos por varios nombres por compatibilidad con Dashboard viejo
+  // (proyectos | items | aprobados). Si nada llega, usar todos los del data filtrados por estado='aprobado'.
+  let proyectos = props.proyectos || props.items || props.aprobados || null;
+  if (!Array.isArray(proyectos)) {
+    proyectos = (data?.proyectos || []).filter(p => p && p.estado === 'aprobado');
+  }
+
+  // ordenar por fechaAprobacion (con fallback a fecha_inicio para proyectos viejos)
   const ordenados = [...proyectos].sort((a, b) => {
     const fa = a.fechaAprobacion || a.fecha_inicio || '';
     const fb = b.fechaAprobacion || b.fecha_inicio || '';

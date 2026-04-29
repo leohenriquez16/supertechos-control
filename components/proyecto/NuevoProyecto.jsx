@@ -45,6 +45,7 @@ export default function NuevoProyecto({ personal, sistemas, clientes = [], conta
     dieta: { habilitada: false, tarifa_dia_persona: 800, dias_hombre_presupuestados: 0, personasIds: [] },
     contactoClienteNombre: '', contactoClienteTelefono: '', contactoClienteEmail: '',
     estadoInicial: 'aprobado', // v8.9.14
+    fechaAprobacion: new Date().toISOString().split('T')[0], // v8.10.22: por defecto hoy
   });
   const supervisores = getSupervisores(personal);
   const maestros = getMaestros(personal);
@@ -132,7 +133,8 @@ export default function NuevoProyecto({ personal, sistemas, clientes = [], conta
         referenciaProyecto: result.referencia || '',
         cliente: result.cliente,
         referenciaOdoo: result.numeroOrden,
-        fecha_inicio: result.fecha || form.fecha_inicio,
+        // v8.10.22: NO autocompletar fecha_inicio del PDF — esa es la fecha del PDF, no la de inicio real
+        // fecha_inicio queda vacío (admin la define cuando arranque el trabajo)
         areas: areasDelForm,
         sistemasNuevosAutoCrear: [...sistemasNuevosPorNombre.values()],
         productosAdicionalesAutoCrear: productosAdic,
@@ -176,6 +178,8 @@ export default function NuevoProyecto({ personal, sistemas, clientes = [], conta
       contactoClienteEmail: form.contactoClienteEmail || '',
       // v8.9.14: estado inicial del proyecto
       estado: form.estadoInicial || 'aprobado',
+      // v8.10.22: fecha de aprobación (cuándo el cliente aprobó la cotización)
+      fechaAprobacion: form.fechaAprobacion || new Date().toISOString().split('T')[0],
     };
     onCrear(payload);
   };
@@ -344,6 +348,10 @@ export default function NuevoProyecto({ personal, sistemas, clientes = [], conta
         </Campo>
         <Campo label="Referencia del proyecto"><Input value={form.referenciaProyecto} onChange={v => setForm({ ...form, referenciaProyecto: v })} /></Campo>
         <Campo label="Nombre interno"><Input value={form.nombre} onChange={v => setForm({ ...form, nombre: v })} /></Campo>
+        {/* v8.10.22: Fecha de aprobación (separada de fecha_inicio) */}
+        <Campo label="Fecha de aprobación (cuándo se aprobó la cotización)">
+          <Input type="date" value={form.fechaAprobacion} onChange={v => setForm({ ...form, fechaAprobacion: v })} />
+        </Campo>
         <div className="grid grid-cols-2 gap-3"><Campo label="Inicio (opcional — déjalo vacío si está por definir)"><Input type="date" value={form.fecha_inicio} onChange={v => setForm({ ...form, fecha_inicio: v })} /></Campo><Campo label="Entrega"><Input type="date" value={form.fecha_entrega} onChange={v => setForm({ ...form, fecha_entrega: v })} /></Campo></div>
 
         {/* v8.9.14: Estado inicial del proyecto */}

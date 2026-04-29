@@ -2,75 +2,90 @@
 
 import React from 'react';
 import { X } from 'lucide-react';
-import { formatRD, formatNum } from '../../lib/helpers/formato';
+import { formatRD } from '../../lib/helpers/formato';
+import { getPrecioTotalM2Area } from '../../lib/helpers/calculos';
 
-export default function ModalDetalleAprobados({ aprobadosPeriodo, montoTotal, onCerrar, onVerProyecto }) {
-  const hoy = new Date();
+// Helper local
+const labelProyecto = (p) => p?.referenciaOdoo ? `${p.referenciaOdoo} · ${p.cliente || p.nombre}` : (p?.cliente || p?.nombre || 'Sin nombre');
 
-  const diasEnAprobado = (proyecto) => {
-    const fref = proyecto.fecha_inicio || proyecto.createdAt;
-    if (!fref) return 0;
-    return Math.floor((hoy - new Date(fref)) / (1000 * 60 * 60 * 24));
-  };
-
-  // Ordenar por monto descendente
-  const ordenados = [...(aprobadosPeriodo || [])].sort((a, b) => {
-    const mA = (a.areas || []).reduce((s, ar) => s + (ar.m2 || 0) * (ar.precio || 0), 0);
-    const mB = (b.areas || []).reduce((s, ar) => s + (ar.m2 || 0) * (ar.precio || 0), 0);
-    return mB - mA;
+export default function ModalDetalleAprobados({ proyectos, data, onCerrar }) {
+  // v8.10.22: ordenar por fechaAprobacion (con fallback a fecha_inicio para proyectos viejos)
+  const ordenados = [...proyectos].sort((a, b) => {
+    const fa = a.fechaAprobacion || a.fecha_inicio || '';
+    const fb = b.fechaAprobacion || b.fecha_inicio || '';
+    return fb.localeCompare(fa); // descendente: más reciente primero
   });
 
+  // Calcular monto por proyecto: suma de áreas usando precio del sistema (con override custom si aplica)
+  const calcularMonto = (p) => {
+    const sistemas = data?.sistemas || {};
+    return (p.areas || []).reduce((sum, area) => {
+      const sistemaArea = area.sistemaId || p.sistema;
+      const sistema = sistemas[sistemaArea];
+      if (!sistema) return sum;
+      return sum + getPrecioTotalM2Area(area, sistema, sistemas);
+    }, 0);
+  };
+
+  const totalGeneral = ordenados.reduce((s, p) => s + calcularMonto(p), 0);
+
   return (
-    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
-      <div className="bg-zinc-900 border-2 border-cyan-600 max-w-xl w-full p-5 space-y-4 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
-        <div className="flex justify-between items-center sticky top-0 bg-zinc-900 pb-2 border-b border-zinc-800">
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto">
+      <div className="bg-zinc-900 border-2 border-green-600 max-w-3xl w-full p-5 space-y-4 max-h-[90vh] overflow-auto my-8">
+        <div className="flex justify-between items-start sticky top-0 bg-zinc-900 pb-2 border-b border-zinc-800">
           <div>
-            <div className="text-[10px] tracking-widest uppercase text-cyan-500 font-bold">✅ Proyectos aprobados</div>
-            <h2 className="text-xl font-black">{formatRD(montoTotal)}</h2>
-            <div className="text-xs text-zinc-400">{ordenados.length} proyecto{ordenados.length !== 1 ? 's' : ''} esperando iniciar</div>
+            <div className="text-xs tracking-widest uppercase text-green-500 font-bold">Detalle aprobados</div>
+            <div className="text-[10px] text-zinc-500 mt-0.5">{ordenados.length} proyecto{ordenados.length !== 1 ? 's' : ''} · Total {formatRD(totalGeneral)}</div>
           </div>
           <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
         </div>
 
         {ordenados.length === 0 ? (
-          <div className="bg-zinc-950 border border-zinc-800 p-6 text-center text-sm text-zinc-500">
-            No hay proyectos en estado "Aprobado"
-          </div>
+          <div className="text-xs text-zinc-500 text-center py-8">No hay proyectos aprobados en este rango.</div>
         ) : (
-          <div className="space-y-1">
+          <div className="space-y-2">
             {ordenados.map(p => {
-              const m2Total = (p.areas || []).reduce((s, a) => s + (a.m2 || 0), 0);
-              const monto = (p.areas || []).reduce((s, a) => s + (a.m2 || 0) * (a.precio || 0), 0);
-              const dias = diasEnAprobado(p);
-              const atrasado = dias > 7;
+              const monto = calcularMonto(p);
+              const fechaAprob = p.fechaAprobacion || p.fecha_inicio || null;
               return (
-                <button
-                  key={p.id}
-                  onClick={() => onVerProyecto(p)}
-                  className={`w-full border p-3 flex items-center justify-between text-left ${atrasado ? 'bg-yellow-900/10 border-yellow-700 hover:border-yellow-500' : 'bg-zinc-950 border-zinc-800 hover:border-cyan-600'}`}
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] text-zinc-500 font-mono">{p.referenciaOdoo}</span>
-                      {atrasado && <span className="text-[9px] text-yellow-400 font-bold">⚠️ {dias} días</span>}
+                <div key={p.id} className="bg-zinc-950 border border-zinc-800 p-3 hover:border-green-700 transition-colors">
+                  <div className="flex justify-between items-start gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-bold text-white truncate">{labelProyecto(p)}</div>
+                      {p.referenciaProyecto && (
+                        <div className="text-[10px] text-zinc-500 truncate">{p.referenciaProyecto}</div>
+                      )}
+                      <div className="text-[10px] text-zinc-400 mt-1">
+                        {fechaAprob ? (
+                          <span>📅 Aprobado: <span className="text-green-400">{fechaAprob}</span></span>
+                        ) : (
+                          <span className="text-zinc-600 italic">sin fecha de aprobación</span>
+                        )}
+                        {p.estado && p.estado !== 'aprobado' && (
+                          <span className="ml-2 text-zinc-500">· estado actual: <span className="text-yellow-400">{p.estado}</span></span>
+                        )}
+                      </div>
                     </div>
-                    <div className="text-sm font-bold truncate">{p.cliente || p.nombre}</div>
-                    <div className="text-[10px] text-zinc-500 truncate">{p.referenciaProyecto}</div>
-                    <div className="text-[10px] text-zinc-400 mt-1">
-                      {formatNum(m2Total, 0)} m² · Aprobado hace {dias} día{dias !== 1 ? 's' : ''}
+                    <div className="text-right shrink-0">
+                      <div className="text-sm font-black text-green-400">{formatRD(monto)}</div>
+                      <div className="text-[10px] text-zinc-600">
+                        {(p.areas || []).reduce((s, a) => s + (a.m2 || 0), 0).toFixed(0)} m²
+                      </div>
                     </div>
                   </div>
-                  <div className="text-right ml-2">
-                    <div className="text-sm font-black text-cyan-400">{formatRD(monto)}</div>
-                  </div>
-                </button>
+                </div>
               );
             })}
           </div>
         )}
 
-        <div className="bg-zinc-950 border border-zinc-800 p-2 text-[10px] text-zinc-500">
-          💡 Los proyectos en amarillo llevan más de 7 días aprobados sin arrancar. Considera moverlos a "En ejecución" o "Parado".
+        <div className="sticky bottom-0 bg-zinc-900 pt-3 border-t border-zinc-800 flex justify-between items-center">
+          <div className="text-[10px] text-zinc-500">
+            Ordenado por fecha de aprobación (más reciente primero)
+          </div>
+          <button onClick={onCerrar} className="bg-zinc-800 text-zinc-300 hover:bg-zinc-700 text-xs font-bold uppercase px-4 py-2">
+            Cerrar
+          </button>
         </div>
       </div>
     </div>

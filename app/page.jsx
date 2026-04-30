@@ -40,11 +40,13 @@ import TabCronograma from '../components/proyecto/tabs/TabCronograma';
 import TabAsistencia from '../components/proyecto/tabs/TabAsistencia';
 import TabEquipoProyecto from '../components/proyecto/tabs/TabEquipoProyecto';
 import TabAvance from '../components/proyecto/tabs/TabAvance';
-// v8.10.8: NuevoProyecto y ModalEditarProyecto extraídos
+// v8.10.8: NuevoProyecto y ModalEditarProyecto extraídos a components/proyecto/
 import NuevoProyecto from '../components/proyecto/NuevoProyecto';
 import ModalEditarProyecto from '../components/proyecto/ModalEditarProyecto';
 // v8.10.13: VistaNomina extraída
 import VistaNomina from '../components/nomina/VistaNomina';
+// v8.10.14: VistaMapa extraída con Leaflet interactivo
+import VistaMapa from '../components/proyecto/VistaMapa';
 
 // ============================================================
 // HELPERS DE ROLES Y PERSONAS (no extraídos aún — quedan en page.jsx)
@@ -4473,6 +4475,22 @@ function VistaLista({ proyectos, data, onVerProyecto }) {
                     {maestro && <span>🔨 {maestro.nombre.split(' ')[0]}</span>}
                   </div>
                 </div>
+                {/* v8.10.14: Mini-mapa thumbnail si tiene ubicación */}
+                {p.ubicacionLat != null && p.ubicacionLng != null && (
+                  <div className="flex-shrink-0 relative overflow-hidden border border-zinc-700" style={{ width: 64, height: 64, borderRadius: 3 }}>
+                    <img
+                      src={`https://staticmap.openstreetmap.de/staticmap.php?center=${p.ubicacionLat},${p.ubicacionLng}&zoom=15&size=128x128&maptype=mapnik&markers=${p.ubicacionLat},${p.ubicacionLng},red`}
+                      alt="Mapa"
+                      width={64}
+                      height={64}
+                      style={{ objectFit: 'cover', width: '100%', height: '100%', opacity: 0.85 }}
+                      onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
+                    />
+                    <div style={{ display: 'none', width: '100%', height: '100%', background: '#27272a', alignItems: 'center', justifyContent: 'center', position: 'absolute', top: 0, left: 0 }}>
+                      <MapPin style={{ width: 16, height: 16, color: '#dc2626' }} />
+                    </div>
+                  </div>
+                )}
                 <div className="text-right flex-shrink-0">
                   <div className="text-sm font-black text-green-400">{formatRD(valor)}</div>
                   <div className="text-[10px] text-zinc-500">{porcentaje.toFixed(0)}%</div>
@@ -4486,51 +4504,7 @@ function VistaLista({ proyectos, data, onVerProyecto }) {
   );
 }
 
-function VistaMapa({ proyectos, data, onVerProyecto }) {
-  const conUbicacion = proyectos.filter(p => p.ubicacionLat != null && p.ubicacionLng != null);
-  const sinUbicacion = proyectos.filter(p => p.ubicacionLat == null || p.ubicacionLng == null);
-
-  // Calculamos bounding box para centrar el mapa
-  const lats = conUbicacion.map(p => p.ubicacionLat);
-  const lngs = conUbicacion.map(p => p.ubicacionLng);
-  const centerLat = lats.length ? (Math.min(...lats) + Math.max(...lats)) / 2 : 18.4861;
-  const centerLng = lngs.length ? (Math.min(...lngs) + Math.max(...lngs)) / 2 : -69.9312;
-
-  // Iframe de Google Maps con un marker por proyecto usando servicio público (sin API key, limitado)
-  // Para realmente mostrar múltiples markers usamos una URL search con el centro + los proyectos
-  const mapSrc = `https://www.google.com/maps?q=${centerLat},${centerLng}&z=11&output=embed`;
-
-  return (
-    <div className="space-y-3">
-      <div className="bg-zinc-900 border border-zinc-800 overflow-hidden" style={{ height: 400 }}>
-        <iframe src={mapSrc} width="100%" height="100%" style={{ border: 0 }} loading="lazy" title="Mapa" />
-      </div>
-      <div className="text-[11px] text-zinc-500">📍 {conUbicacion.length} proyectos con ubicación {sinUbicacion.length > 0 && `· ${sinUbicacion.length} sin ubicación`}</div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        {conUbicacion.map(p => {
-          const sistema = data.sistemas[p.sistema];
-          return (
-            <button key={p.id} onClick={() => onVerProyecto(p)} className="bg-zinc-900 border border-zinc-800 hover:border-red-600 p-3 text-left flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full ${estadoColor(p.estado)}`} />
-              <div className="flex-1 min-w-0">
-                <div className="text-xs font-bold truncate">{p.cliente}</div>
-                <div className="text-[10px] text-zinc-500 truncate">{sistema?.nombre} · {estadoLabel(p.estado)}</div>
-                {p.ubicacionDireccionTexto && <div className="text-[10px] text-zinc-600 truncate">{p.ubicacionDireccionTexto}</div>}
-              </div>
-              <button onClick={e => { e.stopPropagation(); abrirEnMapa(p.ubicacionLat, p.ubicacionLng); }} className="text-red-500" title="Abrir en Google Maps"><ExternalLink className="w-3 h-3" /></button>
-            </button>
-          );
-        })}
-      </div>
-      {sinUbicacion.length > 0 && (
-        <div className="bg-yellow-900/20 border border-yellow-700 p-3 text-xs text-yellow-300">
-          <div className="font-bold mb-1">⚠ {sinUbicacion.length} sin ubicación</div>
-          <div className="text-[10px]">Abre cada proyecto → tab Jornada → captura GPS, o edita el proyecto y pega un link de Google Maps.</div>
-        </div>
-      )}
-    </div>
-  );
-}
+// VistaMapa movida a components/proyecto/VistaMapa.jsx (v8.10.14)
 
 // v8.10.8: NuevoProyecto y ModalEditarProyecto extraídos a components/proyecto/
 
@@ -4679,11 +4653,51 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
 // ============================================================
 function TabInfo({ proyecto, clientes = [], contactos = [], documentos = [], usuario, personal = [], esAdmin, esSupervisor, onRecargar }) {
   const hayUbicacion = proyecto.ubicacionLat != null && proyecto.ubicacionLng != null;
-  const mapSrc = hayUbicacion ? `https://www.google.com/maps?q=${proyecto.ubicacionLat},${proyecto.ubicacionLng}&z=17&output=embed` : null;
   // v8.9.10: cliente y contactos derivados
   const cliente = clienteDelProyecto(proyecto, clientes);
   const contactosCliente = cliente ? contactos.filter(ct => ct.clienteId === cliente.id) : [];
   const contactoPrincipal = contactoDelProyecto(proyecto, contactos);
+
+  // v8.10.14: Mapa Leaflet interactivo con radio de check-in
+  const MapaProyecto = React.useMemo(() => {
+    if (!hayUbicacion) return null;
+    // Importación dinámica para evitar SSR
+    const MapaLeaflet = React.lazy(() => import('../components/common/MapaLeaflet'));
+    const markers = [{
+      lat: proyecto.ubicacionLat,
+      lng: proyecto.ubicacionLng,
+      color: 'red',
+      label: proyecto.cliente || proyecto.nombre,
+      popup: `<div style="font-family:inherit">
+        <div style="font-weight:800;font-size:13px;margin-bottom:4px">${proyecto.cliente || proyecto.nombre || '—'}</div>
+        ${proyecto.ubicacionDireccionTexto ? `<div style="font-size:11px;color:#a1a1aa">${proyecto.ubicacionDireccionTexto}</div>` : ''}
+        <div style="margin-top:8px">
+          <a href="https://www.google.com/maps?q=${proyecto.ubicacionLat},${proyecto.ubicacionLng}" target="_blank"
+            style="color:#dc2626;font-size:11px;text-decoration:none">↗ Abrir en Google Maps</a>
+        </div>
+      </div>`,
+    }];
+    const circle = proyecto.ubicacionRadioM > 0 ? {
+      lat: proyecto.ubicacionLat,
+      lng: proyecto.ubicacionLng,
+      radius: proyecto.ubicacionRadioM,
+      color: '#dc2626',
+    } : null;
+    return (
+      <React.Suspense fallback={<div className="bg-zinc-950 border border-zinc-800 flex items-center justify-center" style={{height:280}}><span className="text-xs text-zinc-500">Cargando mapa...</span></div>}>
+        <MapaLeaflet
+          center={[proyecto.ubicacionLat, proyecto.ubicacionLng]}
+          zoom={16}
+          height={300}
+          markers={markers}
+          circle={circle}
+          scrollWheelZoom={false}
+          className="border border-zinc-800"
+        />
+      </React.Suspense>
+    );
+  }, [proyecto.ubicacionLat, proyecto.ubicacionLng, proyecto.ubicacionRadioM]);
+
   return (
     <div className="space-y-4">
       {/* Ubicación */}
@@ -4694,11 +4708,16 @@ function TabInfo({ proyecto, clientes = [], contactos = [], documentos = [], usu
         </div>
         {proyecto.ubicacionDireccionTexto && <div className="text-sm">{proyecto.ubicacionDireccionTexto}</div>}
         {proyecto.ubicacionDireccion && !proyecto.ubicacionDireccionTexto && <div className="text-sm text-zinc-400">{proyecto.ubicacionDireccion}</div>}
-        {hayUbicacion && <div className="text-[10px] font-mono text-zinc-500">{proyecto.ubicacionLat.toFixed(5)}, {proyecto.ubicacionLng.toFixed(5)}</div>}
-        {hayUbicacion ? (
-          <div className="bg-zinc-950 border border-zinc-800" style={{ height: 280 }}>
-            <iframe src={mapSrc} width="100%" height="100%" style={{ border: 0 }} loading="lazy" title="Mapa" />
+        {hayUbicacion && (
+          <div className="flex items-center gap-3 text-[10px] font-mono text-zinc-500">
+            <span>{proyecto.ubicacionLat.toFixed(5)}, {proyecto.ubicacionLng.toFixed(5)}</span>
+            {proyecto.ubicacionRadioM > 0 && (
+              <span className="text-zinc-600">• Radio check-in: {proyecto.ubicacionRadioM >= 1000 ? `${(proyecto.ubicacionRadioM/1000).toFixed(1)} km` : `${proyecto.ubicacionRadioM} m`}</span>
+            )}
           </div>
+        )}
+        {hayUbicacion ? (
+          MapaProyecto
         ) : (
           <div className="bg-zinc-950 border border-zinc-800 p-6 text-center text-xs text-zinc-500">
             Sin ubicación registrada. Admin puede agregarla desde Editar → Google Maps.

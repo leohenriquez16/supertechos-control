@@ -230,6 +230,18 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
             </div>
           </Campo>
           <div className="grid grid-cols-2 gap-3"><Campo label="Ref. Odoo *"><Input value={form.referenciaOdoo} onChange={v => setForm({ ...form, referenciaOdoo: v })} placeholder="Ej: ST-C5437" /></Campo><Campo label="Ref. Proyecto"><Input value={form.referenciaProyecto} onChange={v => setForm({ ...form, referenciaProyecto: v })} /></Campo></div>
+          {/* v8.10.23: selector de sistema por defecto del proyecto */}
+          <Campo label="Sistema por defecto del proyecto">
+            <select
+              value={form.sistema || ''}
+              onChange={e => setForm({ ...form, sistema: e.target.value || '' })}
+              className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white text-sm"
+            >
+              <option value="">— Sin sistema asignado —</option>
+              {sistemasArray.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+            </select>
+            <div className="text-[10px] text-zinc-500 mt-1">Las áreas que no tengan un sistema específico usarán este. Puedes seguir asignando sistemas distintos por área abajo.</div>
+          </Campo>
           {/* v8.10.22: Fecha de aprobación (cuándo el cliente aprobó) — separada de fecha_inicio */}
           <Campo label="Fecha de aprobación (cuándo se aprobó la cotización)">
             <Input type="date" value={form.fechaAprobacion || ''} onChange={v => setForm({ ...form, fechaAprobacion: v })} />

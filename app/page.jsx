@@ -47,6 +47,8 @@ import ModalEditarProyecto from '../components/proyecto/ModalEditarProyecto';
 import VistaNomina from '../components/nomina/VistaNomina';
 // v8.10.14: VistaMapa extraída con Leaflet interactivo
 import VistaMapa from '../components/proyecto/VistaMapa';
+// v8.10.23: Modal importar desde Odoo
+import ModalImportarOdoo from '../components/proyecto/ModalImportarOdoo';
 
 // ============================================================
 // HELPERS DE ROLES Y PERSONAS (no extraídos aún — quedan en page.jsx)
@@ -476,6 +478,7 @@ export default function App() {
   const [tareas, setTareas] = useState([]);
   const [jornadasHoy, setJornadasHoy] = useState([]);
   const [sidebarAbierta, setSidebarAbierta] = useState(false);
+  const [modalOdooAbierto, setModalOdooAbierto] = useState(false); // v8.10.23: modal importar Odoo
   // v8.9.26: secciones colapsables del sidebar
   const [seccionesColapsadas, setSeccionesColapsadas] = useState(() => {
     try {
@@ -686,7 +689,9 @@ export default function App() {
 
       <main className="md:ml-60 max-w-6xl md:mx-auto px-4 py-6">
         {syncing && <div className="hidden md:block fixed top-2 right-4 z-30"><Loader2 className="w-4 h-4 text-red-500 animate-spin" /></div>}
-        {esAdmin && vista === 'dashboard' && <Dashboard data={data} tareas={tareas} jornadasHoy={jornadasHoy} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} onNuevoProyecto={() => setVista('nuevoProyecto')} onCompletarTarea={async (id) => withSync(async () => { await db.completarTarea(id, usuario.id); })} onCambiarEstadoRapido={async (proyId, estadoNuevo) => withSync(async () => { await db.cambiarEstadoProyecto(proyId, estadoNuevo, usuario, 'Cambio rápido desde Kanban'); })} />}
+        {esAdmin && vista === 'dashboard' && <Dashboard data={data} tareas={tareas} jornadasHoy={jornadasHoy} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} onNuevoProyecto={() => setVista('nuevoProyecto')} onImportarOdoo={() => setModalOdooAbierto(true)} onCompletarTarea={async (id) => withSync(async () => { await db.completarTarea(id, usuario.id); })} onCambiarEstadoRapido={async (proyId, estadoNuevo) => withSync(async () => { await db.cambiarEstadoProyecto(proyId, estadoNuevo, usuario, 'Cambio rápido desde Kanban'); })} />}
+        {/* v8.10.23: Modal importar desde Odoo */}
+        {esAdmin && modalOdooAbierto && <ModalImportarOdoo sistemas={data.sistemas} proyectos={data.proyectos} onCerrar={() => setModalOdooAbierto(false)} onCrear={async (proy) => { await withSync(async () => { await db.crearProyecto({ ...proy, id: 'p_' + Date.now() }); }); setModalOdooAbierto(false); }} />}
         {esAdmin && vista === 'proyectos' && (
           <div className="space-y-4">
             <div>

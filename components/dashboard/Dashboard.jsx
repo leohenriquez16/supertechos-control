@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, AlertTriangle, CircleDashed } from 'lucide-react';
+import { ChevronLeft, ChevronRight, AlertTriangle, CircleDashed, Download } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatRD, formatFechaCorta } from '../../lib/helpers/formato';
 import { getM2Reporte, getPrecioVentaArea, getPrecioTotalM2Area } from '../../lib/helpers/calculos';
@@ -10,7 +10,7 @@ import ModalDetallePersonalAhora from './ModalDetallePersonalAhora';
 import ModalDetalleProduccion from './ModalDetalleProduccion';
 import ModalDetalleAprobados from './ModalDetalleAprobados';
 
-export default function Dashboard({ data, onVerProyecto, onNuevoProyecto, tareas, onCompletarTarea, jornadasHoy, onCambiarEstadoRapido }) {
+export default function Dashboard({ data, onVerProyecto, onNuevoProyecto, onImportarOdoo, tareas, onCompletarTarea, jornadasHoy, onCambiarEstadoRapido }) {
   const hoy = new Date().toISOString().split('T')[0];
   const [periodo, setPeriodo] = useState('dia');
   const [fechaRef, setFechaRef] = useState(hoy);
@@ -285,6 +285,23 @@ export default function Dashboard({ data, onVerProyecto, onNuevoProyecto, tareas
           <div className="text-[10px] text-zinc-600">{aprobadosPeriodo.length} proyecto{aprobadosPeriodo.length !== 1 ? 's' : ''}</div>
         </button>
       </div>
+
+      {/* v8.10.23: Botón Importar desde Odoo */}
+      {onImportarOdoo && (
+        <button
+          onClick={onImportarOdoo}
+          className="w-full bg-purple-900/20 border-2 border-purple-700 hover:border-purple-500 p-3 flex items-center gap-3 transition-colors"
+        >
+          <div className="w-8 h-8 bg-purple-600 flex items-center justify-center flex-shrink-0">
+            <Download className="w-4 h-4 text-white" />
+          </div>
+          <div className="text-left">
+            <div className="text-sm font-black text-purple-300">Importar desde Odoo</div>
+            <div className="text-[10px] text-zinc-500">Crear proyecto desde cotización aprobada</div>
+          </div>
+          <ChevronRight className="w-4 h-4 text-purple-600 ml-auto" />
+        </button>
+      )}
 
       {/* TAREAS PENDIENTES */}
       {tareasPendientes.length > 0 && (

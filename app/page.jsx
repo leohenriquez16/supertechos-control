@@ -4388,6 +4388,13 @@ function VistaKanban({ proyectos, data, onVerProyecto, onCambiarEstadoRapido }) 
                 const valor = m2Total * (sistema?.precio_m2 || 0);
                 const supervisor = getPersona(data.personal, p.supervisorId);
                 const { porcentaje } = sistema ? calcAvanceProyecto(p, data.reportes, sistema, data.sistemas) : { porcentaje: 0 };
+                // v8.10.23: color del donut según avance
+                const donutColor = porcentaje >= 75 ? '#22c55e' : porcentaje >= 40 ? '#eab308' : '#ef4444';
+                const donutTextColor = porcentaje >= 75 ? 'text-green-400' : porcentaje >= 40 ? 'text-yellow-400' : 'text-red-400';
+                const donutSize = 36;
+                const donutRadius = 14;
+                const donutCirc = 2 * Math.PI * donutRadius;
+                const donutOffset = donutCirc - (porcentaje / 100) * donutCirc;
                 return (
                   <div key={p.id}
                     draggable
@@ -4395,14 +4402,29 @@ function VistaKanban({ proyectos, data, onVerProyecto, onCambiarEstadoRapido }) 
                     onDragEnd={() => setDraggingId(null)}
                     onClick={() => onVerProyecto(p)}
                     className={`bg-zinc-900 border border-zinc-800 hover:border-red-600 p-3 text-left cursor-pointer ${draggingId === p.id ? 'opacity-50' : ''}`}>
-                    <div className="text-[10px] font-mono text-zinc-500">{p.referenciaOdoo}</div>
-                    <div className="font-bold text-sm truncate">{p.cliente}</div>
-                    <div className="text-[10px] text-zinc-500 truncate">{p.referenciaProyecto || p.nombre}</div>
+                    <div className="flex items-start gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[10px] font-mono text-zinc-500">{p.referenciaOdoo}</div>
+                        <div className="font-bold text-sm truncate">{p.cliente}</div>
+                        <div className="text-[10px] text-zinc-500 truncate">{p.referenciaProyecto || p.nombre}</div>
+                      </div>
+                      {/* v8.10.23: Mini donut de avance */}
+                      {['en_ejecucion', 'finalizado_no_entregado', 'finalizado_recibido_conforme'].includes(estado) && (
+                        <div className="relative flex-shrink-0" style={{ width: donutSize, height: donutSize }}>
+                          <svg viewBox={`0 0 ${donutSize} ${donutSize}`} className="w-full h-full -rotate-90">
+                            <circle cx={donutSize/2} cy={donutSize/2} r={donutRadius} fill="none" stroke="#27272a" strokeWidth="4" />
+                            <circle cx={donutSize/2} cy={donutSize/2} r={donutRadius} fill="none" stroke={donutColor} strokeWidth="4" strokeLinecap="round" strokeDasharray={donutCirc} strokeDashoffset={donutOffset} />
+                          </svg>
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <span className={`text-[8px] font-black ${donutTextColor}`}>{porcentaje.toFixed(0)}%</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                     <div className="mt-2 flex items-center justify-between text-[10px]">
                       <span className="text-green-400 font-bold">{formatRD(valor)}</span>
-                      {['en_ejecucion', 'finalizado_no_entregado'].includes(estado) && <span className="text-zinc-400">{porcentaje.toFixed(0)}%</span>}
+                      {supervisor && <span className="text-zinc-600">👔 {supervisor.nombre.split(' ')[0]}</span>}
                     </div>
-                    {supervisor && <div className="text-[9px] text-zinc-600 mt-1">👔 {supervisor.nombre.split(' ')[0]}</div>}
                   </div>
                 );
               })}

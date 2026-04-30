@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { Edit2, Trash2 } from 'lucide-react';
 import { formatRD, formatFecha } from '../../../lib/helpers/formato';
 import { getM2Reporte, getPrecioVentaArea, calcAvanceArea } from '../../../lib/helpers/calculos';
+import ModalEditarReporte from '../modales/ModalEditarReporte';
 
 // v8.10.23: Mini donut SVG reutilizable
 function MiniDonut({ porcentaje, size = 80, strokeWidth = 8, className = '' }) {
@@ -147,14 +148,30 @@ export default function TabAvance({ proyecto, reportes, sistema, sistemas, esSup
               </div>
               {!esSupervisor && (
                 <div className="flex gap-1 flex-shrink-0">
-                  <button onClick={() => onEditarReporte && onEditarReporte(r)} className="text-zinc-500 hover:text-blue-500 p-1"><Edit2 className="w-3 h-3" /></button>
-                  <button onClick={() => onEliminarReporte && onEliminarReporte(r)} className="text-zinc-500 hover:text-red-500 p-1"><Trash2 className="w-3 h-3" /></button>
+                  <button onClick={() => setReporteEditando(r)} className="text-zinc-500 hover:text-blue-500 p-1"><Edit2 className="w-3 h-3" /></button>
+                  <button onClick={() => onEliminarReporte && onEliminarReporte(r.id)} className="text-zinc-500 hover:text-red-500 p-1"><Trash2 className="w-3 h-3" /></button>
                 </div>
               )}
             </div>
           );
         })}{reportesProy.length === 0 && <div className="text-center text-zinc-500 text-sm py-8">Sin reportes</div>}</div>
       </div>
+
+      {/* v8.10.23: Modal editar reporte */}
+      {reporteEditando && onEditarReporte && (
+        <ModalEditarReporte
+          reporte={reporteEditando}
+          proyecto={proyecto}
+          data={data}
+          sistema={sistema}
+          sistemas={sistemas}
+          onCerrar={() => setReporteEditando(null)}
+          onGuardar={async (reporteActualizado, motivo) => {
+            await onEditarReporte(reporteActualizado, reporteEditando, motivo);
+            setReporteEditando(null);
+          }}
+        />
+      )}
     </div>
   );
 }

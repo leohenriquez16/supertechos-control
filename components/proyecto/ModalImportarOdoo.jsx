@@ -3,6 +3,7 @@
 // v8.10.23: Modal para importar cotizaciones aprobadas desde Odoo
 import React, { useState, useEffect } from 'react';
 import { X, Loader2, Download, Check, AlertCircle, ChevronRight, MapPin } from 'lucide-react';
+import * as db from '../../lib/db';
 
 export default function ModalImportarOdoo({ sistemas, proyectos = [], onCerrar, onCrear }) {
   const [paso, setPaso] = useState('lista'); // lista | detalle | creando
@@ -49,7 +50,22 @@ export default function ModalImportarOdoo({ sistemas, proyectos = [], onCerrar, 
     try {
       // Mapear la cotización a un payload de proyecto
       const cot = seleccionada;
-      
+
+      // Buscar o crear el cliente local a partir del partner de Odoo
+      let clienteIdLocal = null;
+      if (cot.clienteId) {
+        try {
+          const res = await fetch(`/api/odoo/partner?id=${cot.clienteId}`);
+          const data = await res.json();
+          if (data.ok && data.partner) {
+            const { id } = await db.findOrCreateClienteDesdeOdoo(data.partner);
+            clienteIdLocal = id;
+          }
+        } catch (errCliente) {
+          console.warn('No se pudo resolver cliente desde Odoo:', errCliente);
+        }
+      }
+
       // Determinar el sistema principal basado en los productos
       let sistemaId = null;
       const sistemasArray = Object.values(sistemas);
@@ -117,7 +133,7 @@ export default function ModalImportarOdoo({ sistemas, proyectos = [], onCerrar, 
         estado: 'aprobado',
         fechaAprobacion: new Date().toISOString().split('T')[0],
         // Datos del cliente
-        clienteId: null,
+        clienteId: clienteIdLocal,
         contactoPrincipalId: null,
         contactoClienteNombre: '',
         contactoClienteTelefono: '',

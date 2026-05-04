@@ -95,9 +95,171 @@ function imprimirReciboNomina(d, corte, data) {
   w.document.close();
 }
 
+// Imprimir el CORTE COMPLETO agrupado según la vista activa (persona / proyecto / supervisor / recibos).
+// Usa los resumenes ya calculados — no recalcula nada.
+function imprimirCorteCompleto({ corte, vistaDetalle, resumenPersonas, resumenProyectos, resumenSupervisores, detalleFiltrado, totalCorte, soloMaestros, data }) {
+  const fmt = (n) => new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n) || 0);
+  const fmtNum = (n) => new Intl.NumberFormat('es-DO', { maximumFractionDigits: 1 }).format(Number(n) || 0);
+  const fmtFecha = (s) => {
+    if (!s) return '';
+    const d = new Date(s + 'T12:00:00');
+    return d.toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' });
+  };
+  const hoy = new Date().toLocaleDateString('es-DO', { year: 'numeric', month: 'long', day: 'numeric' });
+  const tituloVista = {
+    persona: 'Por Persona',
+    proyecto: 'Por Proyecto',
+    supervisor: 'Por Supervisor',
+    recibos: 'Recibos',
+  }[vistaDetalle] || 'Detalle';
+
+  const desglosePago = (r) =>
+    r.modoPago === 'dia' ? `${r.diasTrabajados} día${r.diasTrabajados !== 1 ? 's' : ''}${r.diasDobles ? ` (${r.diasDobles} dobles)` : ''}`
+    : (r.modoPago === 'm2' || r.modoPago === 'm2_fijo' || r.modoPago === 'tarea') ? `${fmtNum(r.m2Producidos)} m²`
+    : 'Ajuste';
+
+  let cuerpo = '';
+
+  if (vistaDetalle === 'persona') {
+    cuerpo = resumenPersonas.map(rp => `
+      <div class="grupo">
+        <div class="grupo-head">
+          <div><b>${rp.personaNombre}</b><span class="meta-sub">${rp.proyectos.length} proyecto${rp.proyectos.length !== 1 ? 's' : ''} · ${rp.totalDias} días${rp.totalM2 > 0 ? ` · ${fmtNum(rp.totalM2)} m²` : ''}</span></div>
+          <div class="grupo-total">RD$ ${fmt(rp.total)}</div>
+        </div>
+        <table>
+          <tr><th>Proyecto</th><th>Detalle</th><th class="right">Monto</th></tr>
+          ${rp.proyectos.map(r => `<tr><td>${r.proyectoNombre || '—'}</td><td>${desglosePago(r)}</td><td class="right">RD$ ${fmt(r.montoTotal)}</td></tr>`).join('')}
+        </table>
+      </div>
+    `).join('');
+  } else if (vistaDetalle === 'proyecto') {
+    cuerpo = resumenProyectos.map(rp => `
+      <div class="grupo">
+        <div class="grupo-head">
+          <div><b>${rp.proyectoNombre || 'Sin proyecto'}</b><span class="meta-sub">${rp.personas.length} persona${rp.personas.length !== 1 ? 's' : ''}</span></div>
+          <div class="grupo-total">RD$ ${fmt(rp.total)}</div>
+        </div>
+        <table>
+          <tr><th>Persona</th><th>Detalle</th><th class="right">Monto</th></tr>
+          ${rp.personas.map(r => `<tr><td>${r.personaNombre}</td><td>${desglosePago(r)}</td><td class="right">RD$ ${fmt(r.montoTotal)}</td></tr>`).join('')}
+        </table>
+      </div>
+    `).join('');
+  } else if (vistaDetalle === 'supervisor') {
+    cuerpo = resumenSupervisores.map(rs => {
+      // Reagrupar por proyecto dentro de cada supervisor
+      const porProy = {};
+      rs.recibos.forEach(r => {
+        const k = r.proyectoId || 'sin';
+        if (!porProy[k]) porProy[k] = { proyectoNombre: r.proyectoNombre || 'Sin proyecto', recibos: [], total: 0 };
+        porProy[k].recibos.push(r);
+        porProy[k].total += r.montoTotal;
+      });
+      const proys = Object.values(porProy).sort((a, b) => b.total - a.total);
+      return `
+        <div class="grupo">
+          <div class="grupo-head">
+            <div><b>👔 ${rs.supervisorNombre}</b><span class="meta-sub">${rs.proyectos.length} proyecto${rs.proyectos.length !== 1 ? 's' : ''} · ${rs.personas.length} persona${rs.personas.length !== 1 ? 's' : ''}</span></div>
+            <div class="grupo-total">RD$ ${fmt(rs.total)}</div>
+          </div>
+          ${proys.map(pg => `
+            <div class="subgrupo">
+              <div class="subgrupo-head">
+                <div>${pg.proyectoNombre}</div>
+                <div>RD$ ${fmt(pg.total)}</div>
+              </div>
+              <table>
+                <tr><th>Persona</th><th>Detalle</th><th class="right">Monto</th></tr>
+                ${pg.recibos.map(r => `<tr><td>${r.personaNombre}</td><td>${desglosePago(r)}</td><td class="right">RD$ ${fmt(r.montoTotal)}</td></tr>`).join('')}
+              </table>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }).join('');
+  } else {
+    // recibos: tabla plana
+    cuerpo = `
+      <table class="full">
+        <tr><th>Persona</th><th>Proyecto</th><th>Detalle</th><th class="right">Monto</th></tr>
+        ${detalleFiltrado.map(r => `<tr><td>${r.personaNombre}</td><td>${r.proyectoNombre || '—'}</td><td>${desglosePago(r)}</td><td class="right">RD$ ${fmt(r.montoTotal)}</td></tr>`).join('')}
+      </table>
+    `;
+  }
+
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Corte ${fmtFecha(corte.fechaInicio)} → ${fmtFecha(corte.fechaFin)} · ${tituloVista}</title>
+<style>
+  @page { size: letter; margin: 0.45in; }
+  body { font-family: Arial, sans-serif; color: #000; margin: 0; padding: 0; font-size: 11px; }
+  .letterhead { border-bottom: 3px solid #CC0000; padding-bottom: 10px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; }
+  .logo { font-size: 22px; font-weight: 900; color: #CC0000; letter-spacing: -0.5px; }
+  .logo-sub { font-size: 9px; color: #555; letter-spacing: 1px; text-transform: uppercase; }
+  .company-data { font-size: 9px; color: #555; text-align: right; line-height: 1.4; }
+  h1 { font-size: 16px; margin: 0; }
+  .corte-header { display: flex; justify-content: space-between; align-items: flex-end; padding-bottom: 14px; border-bottom: 1px solid #ddd; margin-bottom: 16px; }
+  .corte-meta { font-size: 11px; color: #555; }
+  .corte-total { text-align: right; }
+  .corte-total .label { font-size: 9px; text-transform: uppercase; color: #888; letter-spacing: 1px; }
+  .corte-total .monto { font-size: 22px; font-weight: 900; color: #2a8a2a; }
+  .filtros { font-size: 9px; color: #888; margin-top: 4px; }
+  .grupo { margin-bottom: 16px; page-break-inside: avoid; }
+  .grupo-head { display: flex; justify-content: space-between; align-items: baseline; padding: 6px 8px; background: #f5f5f5; border-left: 4px solid #CC0000; }
+  .grupo-head b { font-size: 13px; }
+  .grupo-total { font-weight: 900; font-size: 14px; color: #2a8a2a; }
+  .meta-sub { display: block; font-size: 9px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 1px; }
+  .subgrupo { margin-top: 8px; margin-left: 12px; }
+  .subgrupo-head { display: flex; justify-content: space-between; padding: 4px 6px; background: #fafafa; border-bottom: 1px solid #ddd; font-size: 10px; font-weight: bold; color: #555; text-transform: uppercase; }
+  table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  th, td { padding: 5px 8px; text-align: left; border-bottom: 1px solid #eee; font-size: 10px; }
+  th { background: #fafafa; font-weight: bold; text-transform: uppercase; font-size: 9px; color: #666; }
+  .right { text-align: right; }
+  .full { margin-top: 0; }
+  .footer { margin-top: 24px; padding-top: 8px; border-top: 1px solid #eee; font-size: 9px; color: #888; text-align: center; }
+  .vista-badge { display: inline-block; padding: 2px 8px; background: #CC0000; color: #fff; font-size: 9px; text-transform: uppercase; letter-spacing: 1px; font-weight: bold; margin-bottom: 4px; }
+</style></head><body>
+<div class="letterhead">
+  <div>
+    <div class="logo">SUPER TECHOS</div>
+    <div class="logo-sub">Sistema de Impermeabilización</div>
+  </div>
+  <div class="company-data">
+    C/ Arena #1, Mar Azul, Santo Domingo R.D.<br>
+    Tel. 809-535-9293 · www.supertechos.com.do<br>
+    RNC: 130-77433-1
+  </div>
+</div>
+<div class="corte-header">
+  <div>
+    <div class="vista-badge">${tituloVista}</div>
+    <h1>Corte de Nómina</h1>
+    <div class="corte-meta">${fmtFecha(corte.fechaInicio)} → ${fmtFecha(corte.fechaFin)} · Estado: ${corte.estado}</div>
+    <div class="filtros">${soloMaestros ? 'Filtro: solo maestros' : 'Mostrando todos'} · Impreso: ${hoy}</div>
+  </div>
+  <div class="corte-total">
+    <div class="label">Total del corte</div>
+    <div class="monto">RD$ ${fmt(totalCorte)}</div>
+  </div>
+</div>
+${cuerpo}
+<div class="footer">
+  Generado por Super Techos ERP · ${hoy}
+</div>
+<script>window.onload = function(){ window.print(); }</script>
+</body></html>`;
+
+  const w = window.open('', '_blank');
+  if (!w) { alert('Bloqueador de popups activo. Permite popups para imprimir.'); return; }
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+}
+
 
 export default function VistaNomina({ usuario, data, onVolver }) {
   const [cortes, setCortes] = useState([]);
+  const [todosDetalles, setTodosDetalles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [corteVisto, setCorteVisto] = useState(null);
   const [crearModal, setCrearModal] = useState(false);
@@ -107,8 +269,14 @@ export default function VistaNomina({ usuario, data, onVolver }) {
 
   const recargar = async () => {
     setLoading(true);
-    try { setCortes(await db.listarCortes()); }
-    catch (e) { console.error(e); }
+    try {
+      const [ct, det] = await Promise.all([
+        db.listarCortes(),
+        db.listarTodosDetalles().catch(() => []),
+      ]);
+      setCortes(ct);
+      setTodosDetalles(det);
+    } catch (e) { console.error(e); }
     setLoading(false);
   };
   useEffect(() => { recargar(); }, []);
@@ -145,6 +313,57 @@ export default function VistaNomina({ usuario, data, onVolver }) {
   const totalHistorico = cortes.reduce((s, c) => s + (c.totalMonto || 0), 0);
   const totalFiltrado = cortesFiltrados.reduce((s, c) => s + (c.totalMonto || 0), 0);
 
+  // Dashboard global
+  const ahora = new Date();
+  const hace30dias = new Date(ahora.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const cortesUlt30 = cortes.filter(c => c.fechaFin >= hace30dias);
+  const totalUlt30 = cortesUlt30.reduce((s, c) => s + (c.totalMonto || 0), 0);
+  const cortesAbiertos = cortes.filter(c => c.estado === 'abierto');
+  const cortesPorPagar = cortes.filter(c => c.estado === 'cerrado'); // cerrados pero no pagados aún
+
+  // Top maestros y proyectos por monto histórico (de todosDetalles)
+  const topMaestros = React.useMemo(() => {
+    const m = {};
+    todosDetalles.forEach(d => {
+      if (!m[d.personaId]) m[d.personaId] = { personaId: d.personaId, nombre: d.personaNombre, total: 0, recibos: 0 };
+      m[d.personaId].total += d.montoTotal || 0;
+      m[d.personaId].recibos += 1;
+    });
+    return Object.values(m).sort((a, b) => b.total - a.total).slice(0, 5);
+  }, [todosDetalles]);
+
+  const topProyectos = React.useMemo(() => {
+    const m = {};
+    todosDetalles.forEach(d => {
+      if (!d.proyectoId) return;
+      const proy = data.proyectos.find(p => p.id === d.proyectoId);
+      const nombre = proy ? labelProyecto(proy) : d.proyectoId;
+      if (!m[d.proyectoId]) m[d.proyectoId] = { proyectoId: d.proyectoId, nombre, total: 0 };
+      m[d.proyectoId].total += d.montoTotal || 0;
+    });
+    return Object.values(m).sort((a, b) => b.total - a.total).slice(0, 5);
+  }, [todosDetalles, data.proyectos]);
+
+  // Histórico por sistema: cruza detalle × proyecto.sistema. Si un proyecto tiene varias áreas con sistemas
+  // distintos, sumamos al sistema PRINCIPAL (proyecto.sistema). Es aproximación útil — refinable después.
+  const topSistemas = React.useMemo(() => {
+    const m = {};
+    todosDetalles.forEach(d => {
+      if (!d.proyectoId) return;
+      const proy = data.proyectos.find(p => p.id === d.proyectoId);
+      if (!proy?.sistema) return;
+      const sis = data.sistemas[proy.sistema];
+      const nombre = sis?.nombre || proy.sistema;
+      if (!m[proy.sistema]) m[proy.sistema] = { sistemaId: proy.sistema, nombre, total: 0, proyectos: new Set() };
+      m[proy.sistema].total += d.montoTotal || 0;
+      m[proy.sistema].proyectos.add(d.proyectoId);
+    });
+    return Object.values(m)
+      .map(s => ({ ...s, proyectos: s.proyectos.size }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 5);
+  }, [todosDetalles, data.proyectos, data.sistemas]);
+
   return (
     <div className="space-y-5">
       <button onClick={onVolver} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button>
@@ -153,20 +372,90 @@ export default function VistaNomina({ usuario, data, onVolver }) {
         <button onClick={() => setCrearModal(true)} className="bg-red-600 text-white font-black uppercase px-4 py-2 text-xs flex items-center gap-1"><Plus className="w-3 h-3" /> Nuevo corte</button>
       </div>
 
-      {/* Resumen histórico */}
+      {/* Dashboard de nómina: KPIs globales */}
       {cortes.length > 0 && (
-        <div className="grid grid-cols-3 gap-3">
-          <div className="bg-zinc-900 border border-zinc-800 p-3">
-            <div className="text-[10px] text-zinc-500 uppercase tracking-widest">Cortes totales</div>
-            <div className="text-xl font-black text-white mt-1">{cortes.length}</div>
-          </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div className="bg-zinc-900 border border-zinc-800 p-3">
             <div className="text-[10px] text-zinc-500 uppercase tracking-widest">Total histórico</div>
-            <div className="text-xl font-black text-green-400 mt-1">{formatRD(totalHistorico)}</div>
+            <div className="text-lg sm:text-xl font-black text-green-400 mt-1">{formatRD(totalHistorico)}</div>
+            <div className="text-[10px] text-zinc-500 mt-0.5">{cortes.length} corte{cortes.length !== 1 ? 's' : ''} · {aniosDisponibles.length} año{aniosDisponibles.length !== 1 ? 's' : ''}</div>
           </div>
           <div className="bg-zinc-900 border border-zinc-800 p-3">
-            <div className="text-[10px] text-zinc-500 uppercase tracking-widest">Años</div>
-            <div className="text-xl font-black text-white mt-1">{aniosDisponibles.length}</div>
+            <div className="text-[10px] text-zinc-500 uppercase tracking-widest">Últimos 30 días</div>
+            <div className="text-lg sm:text-xl font-black text-white mt-1">{formatRD(totalUlt30)}</div>
+            <div className="text-[10px] text-zinc-500 mt-0.5">{cortesUlt30.length} corte{cortesUlt30.length !== 1 ? 's' : ''}</div>
+          </div>
+          <div className={`p-3 border ${cortesAbiertos.length > 0 ? 'bg-zinc-950 border-orange-700/40' : 'bg-zinc-900 border-zinc-800'}`}>
+            <div className="text-[10px] text-zinc-500 uppercase tracking-widest">Abiertos</div>
+            <div className={`text-lg sm:text-xl font-black mt-1 ${cortesAbiertos.length > 0 ? 'text-orange-400' : 'text-zinc-300'}`}>{cortesAbiertos.length}</div>
+            <div className="text-[10px] text-zinc-500 mt-0.5">en preparación</div>
+          </div>
+          <div className={`p-3 border ${cortesPorPagar.length > 0 ? 'bg-zinc-950 border-yellow-700/40' : 'bg-zinc-900 border-zinc-800'}`}>
+            <div className="text-[10px] text-zinc-500 uppercase tracking-widest">Por pagar</div>
+            <div className={`text-lg sm:text-xl font-black mt-1 ${cortesPorPagar.length > 0 ? 'text-yellow-400' : 'text-zinc-300'}`}>{cortesPorPagar.length}</div>
+            <div className="text-[10px] text-zinc-500 mt-0.5">{formatRD(cortesPorPagar.reduce((s, c) => s + (c.totalMonto || 0), 0))}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Top maestros y proyectos por nómina histórica */}
+      {(topMaestros.length > 0 || topProyectos.length > 0 || topSistemas.length > 0) && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="bg-zinc-900 border border-zinc-800 p-3 space-y-2">
+            <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">🥇 Top maestros (histórico)</div>
+            {topMaestros.length === 0 ? (
+              <div className="text-xs text-zinc-500 py-2">Sin datos aún. Cierra cortes con `proyecto_id` para ver el ranking.</div>
+            ) : (
+              <div className="space-y-1">
+                {topMaestros.map((m, i) => (
+                  <div key={m.personaId} className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 p-2">
+                    <div className="text-[10px] w-5 font-black text-zinc-500">#{i + 1}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-bold truncate">{m.nombre}</div>
+                      <div className="text-[10px] text-zinc-500">{m.recibos} recibo{m.recibos !== 1 ? 's' : ''}</div>
+                    </div>
+                    <div className="text-sm font-bold text-green-400 shrink-0">{formatRD(m.total)}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="bg-zinc-900 border border-zinc-800 p-3 space-y-2">
+            <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">🏗️ Top proyectos (histórico)</div>
+            {topProyectos.length === 0 ? (
+              <div className="text-xs text-zinc-500 py-2">Sin datos aún. Los recibos viejos no tienen `proyecto_id`.</div>
+            ) : (
+              <div className="space-y-1">
+                {topProyectos.map((p, i) => (
+                  <div key={p.proyectoId} className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 p-2">
+                    <div className="text-[10px] w-5 font-black text-zinc-500">#{i + 1}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-bold truncate">{p.nombre}</div>
+                    </div>
+                    <div className="text-sm font-bold text-green-400 shrink-0">{formatRD(p.total)}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="bg-zinc-900 border border-zinc-800 p-3 space-y-2">
+            <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">⚙️ Top sistemas (histórico)</div>
+            {topSistemas.length === 0 ? (
+              <div className="text-xs text-zinc-500 py-2">Sin datos aún.</div>
+            ) : (
+              <div className="space-y-1">
+                {topSistemas.map((s, i) => (
+                  <div key={s.sistemaId} className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 p-2">
+                    <div className="text-[10px] w-5 font-black text-zinc-500">#{i + 1}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-bold truncate">{s.nombre}</div>
+                      <div className="text-[10px] text-zinc-500">{s.proyectos} proyecto{s.proyectos !== 1 ? 's' : ''}</div>
+                    </div>
+                    <div className="text-sm font-bold text-green-400 shrink-0">{formatRD(s.total)}</div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -275,7 +564,7 @@ function DetalleCorte({ corte, data, usuario, onVolver }) {
   const [jornadasCorte, setJornadasCorte] = useState([]);
   const [ajustes, setAjustes] = useState([]);
   const [ajusteModal, setAjusteModal] = useState(null);
-  const [vistaDetalle, setVistaDetalle] = useState('persona'); // persona | proyecto | recibos
+  const [vistaDetalle, setVistaDetalle] = useState('persona'); // persona | proyecto | supervisor | recibos
   const [soloMaestros, setSoloMaestros] = useState(true); // v8.6: default solo maestros
 
   // v8.6: Detalle filtrado por modo "solo maestros"
@@ -310,6 +599,26 @@ function DetalleCorte({ corte, data, usuario, onVolver }) {
     });
     return Object.values(g).sort((a, b) => b.total - a.total);
   }, [detalleFiltrado]);
+
+  // Agrupación por supervisor: cada recibo se imputa al supervisor del proyecto donde se generó.
+  // Si el proyecto no tiene supervisor asignado, va a un grupo "(sin supervisor)".
+  const resumenSupervisores = React.useMemo(() => {
+    const g = {};
+    detalleFiltrado.forEach(r => {
+      const proy = data.proyectos.find(p => p.id === r.proyectoId);
+      const supId = proy?.supervisorId || null;
+      const supNombre = supId ? (data.personal.find(p => p.id === supId)?.nombre || '—') : '(Sin supervisor)';
+      const key = supId || '__none__';
+      if (!g[key]) g[key] = { supervisorId: supId, supervisorNombre: supNombre, recibos: [], proyectos: new Set(), personas: new Set(), total: 0 };
+      g[key].recibos.push(r);
+      g[key].total += r.montoTotal;
+      if (r.proyectoId) g[key].proyectos.add(r.proyectoId);
+      if (r.personaId) g[key].personas.add(r.personaId);
+    });
+    return Object.values(g)
+      .map(s => ({ ...s, proyectos: Array.from(s.proyectos), personas: Array.from(s.personas) }))
+      .sort((a, b) => b.total - a.total);
+  }, [detalleFiltrado, data.proyectos, data.personal]);
 
   const cargar = async () => {
     setLoading(true);
@@ -449,14 +758,19 @@ function DetalleCorte({ corte, data, usuario, onVolver }) {
         });
       }
     });
-    // Distribuir ajustes a la fila con más días de cada persona
+    // Distribuir ajustes:
+    //  - Si el ajuste tiene proyectoId, va a la fila de esa persona en ese proyecto (avance dirigido).
+    //  - Si no la hay (ej: el maestro no trabajó allí este corte), cae a la fila con más días.
+    //  - Si el ajuste no tiene proyectoId, mantiene la heurística vieja (más días).
     ajustesLista.forEach(a => {
       const filasP = filas.filter(f => f.personaId === a.personaId);
       if (filasP.length === 0) return;
-      const principal = filasP.sort((x, y) => y.diasTrabajados - x.diasTrabajados)[0];
-      if (a.tipo === 'adelanto') principal.montoAdelantos += a.monto;
-      else if (a.tipo === 'descuento') principal.montoOtros -= a.monto;
-      else principal.montoOtros += a.monto; // bono, dieta_extra
+      let target = null;
+      if (a.proyectoId) target = filasP.find(f => f.proyectoId === a.proyectoId);
+      if (!target) target = filasP.sort((x, y) => y.diasTrabajados - x.diasTrabajados)[0];
+      if (a.tipo === 'adelanto') target.montoAdelantos += a.monto;
+      else if (a.tipo === 'descuento') target.montoOtros -= a.monto;
+      else target.montoOtros += a.monto; // bono, dieta_extra
     });
     // Recalcular montoTotal
     filas.forEach(f => { f.montoTotal = f.montoBase + f.montoOtros - f.montoAdelantos; });
@@ -511,15 +825,28 @@ function DetalleCorte({ corte, data, usuario, onVolver }) {
   return (
     <div className="space-y-5">
       <button onClick={onVolver} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button>
-      <div>
-        <div className="text-[10px] tracking-widest uppercase text-red-500 font-bold">Corte {corte.estado}</div>
-        <h1 className="text-2xl font-black">{formatFechaCorta(corte.fechaInicio)} → {formatFechaCorta(corte.fechaFin)}</h1>
-        <div className="text-3xl font-black text-green-400 mt-2">{formatRD(totalCorte)}</div>
+      <div className="flex items-start justify-between">
+        <div>
+          <div className="text-[10px] tracking-widest uppercase text-red-500 font-bold">Corte {corte.estado}</div>
+          <h1 className="text-2xl font-black">{formatFechaCorta(corte.fechaInicio)} → {formatFechaCorta(corte.fechaFin)}</h1>
+          <div className="text-3xl font-black text-green-400 mt-2">{formatRD(totalCorte)}</div>
+        </div>
+        <button
+          onClick={() => imprimirCorteCompleto({
+            corte, vistaDetalle, resumenPersonas, resumenProyectos, resumenSupervisores,
+            detalleFiltrado, totalCorte, soloMaestros, data,
+          })}
+          className="flex items-center gap-1 bg-zinc-900 border border-zinc-800 hover:border-red-600 px-3 py-2 text-[10px] font-black uppercase text-zinc-300 hover:text-red-400"
+          title={`Imprimir corte completo (vista actual: ${vistaDetalle})`}
+        >
+          <FileText className="w-3 h-3" /> Imprimir corte
+        </button>
       </div>
 
       <div className="flex gap-1 bg-zinc-900 border border-zinc-800 p-1">
         <button onClick={() => setVistaDetalle('persona')} className={`flex-1 px-3 py-1.5 text-[10px] font-bold uppercase ${vistaDetalle === 'persona' ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>Por Persona</button>
         <button onClick={() => setVistaDetalle('proyecto')} className={`flex-1 px-3 py-1.5 text-[10px] font-bold uppercase ${vistaDetalle === 'proyecto' ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>Por Proyecto</button>
+        <button onClick={() => setVistaDetalle('supervisor')} className={`flex-1 px-3 py-1.5 text-[10px] font-bold uppercase ${vistaDetalle === 'supervisor' ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>Por Supervisor</button>
         <button onClick={() => setVistaDetalle('recibos')} className={`flex-1 px-3 py-1.5 text-[10px] font-bold uppercase ${vistaDetalle === 'recibos' ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>Recibos</button>
       </div>
 
@@ -544,7 +871,7 @@ function DetalleCorte({ corte, data, usuario, onVolver }) {
 
       <div className="space-y-2">
         <div className="flex justify-between items-center">
-          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">{vistaDetalle === 'persona' ? `Personal (${resumenPersonas.length})` : vistaDetalle === 'proyecto' ? `Proyectos (${resumenProyectos.length})` : `Recibos (${detalleFiltrado.length})`}</div>
+          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">{vistaDetalle === 'persona' ? `Personal (${resumenPersonas.length})` : vistaDetalle === 'proyecto' ? `Proyectos (${resumenProyectos.length})` : vistaDetalle === 'supervisor' ? `Supervisores (${resumenSupervisores.length})` : `Recibos (${detalleFiltrado.length})`}</div>
           <button onClick={() => setAjusteModal({})} className="text-xs text-red-500 flex items-center gap-1"><Plus className="w-3 h-3" /> Ajuste</button>
         </div>
 
@@ -577,6 +904,50 @@ function DetalleCorte({ corte, data, usuario, onVolver }) {
             ))}</div>
           </div>
         ))}
+
+        {vistaDetalle === 'supervisor' && resumenSupervisores.map(rs => {
+          // Agrupar los recibos del supervisor por proyecto para una vista anidada más clara
+          const porProyecto = {};
+          rs.recibos.forEach(r => {
+            const k = r.proyectoId || 'sin';
+            if (!porProyecto[k]) porProyecto[k] = { proyectoId: r.proyectoId, proyectoNombre: r.proyectoNombre, recibos: [], total: 0 };
+            porProyecto[k].recibos.push(r);
+            porProyecto[k].total += r.montoTotal;
+          });
+          const proyectosArr = Object.values(porProyecto).sort((a, b) => b.total - a.total);
+          return (
+            <div key={rs.supervisorId || '__none__'} className="bg-zinc-900 border border-zinc-800 p-3">
+              <div className="flex justify-between items-start">
+                <div>
+                  <div className="font-bold text-sm flex items-center gap-1">👔 {rs.supervisorNombre}</div>
+                  <div className="text-[10px] text-zinc-500 uppercase">{rs.proyectos.length} proyecto{rs.proyectos.length !== 1 ? 's' : ''} · {rs.personas.length} persona{rs.personas.length !== 1 ? 's' : ''} · {rs.recibos.length} recibo{rs.recibos.length !== 1 ? 's' : ''}</div>
+                </div>
+                <div className="text-right"><div className="text-lg font-black text-green-400">{formatRD(rs.total)}</div></div>
+              </div>
+              <div className="mt-2 space-y-2">
+                {proyectosArr.map(pg => (
+                  <div key={pg.proyectoId || 'sin'} className="bg-zinc-950 border border-zinc-800 p-2">
+                    <div className="flex justify-between items-center mb-1">
+                      <div className="text-[10px] font-bold text-red-400 uppercase truncate">{pg.proyectoNombre}</div>
+                      <div className="text-[10px] font-bold text-green-400 shrink-0">{formatRD(pg.total)}</div>
+                    </div>
+                    <div className="space-y-1">
+                      {pg.recibos.map(r => (
+                        <div key={r.id} className="flex justify-between items-center text-[10px] border-t border-zinc-900 pt-1">
+                          <div className="flex-1 min-w-0">
+                            <div className="font-bold truncate">{r.personaNombre}</div>
+                            <div className="text-zinc-500 uppercase">{r.modoPago === 'dia' ? `${r.diasTrabajados} días${r.diasDobles ? ` (${r.diasDobles} dobles)` : ''}` : r.modoPago === 'm2' ? `${formatNum(r.m2Producidos)} m²` : 'Ajuste'}</div>
+                          </div>
+                          <div className="text-green-400 font-bold">{formatRD(r.montoTotal)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
 
         {vistaDetalle === 'recibos' && detalleFiltrado.map(d => (
           <div key={d.id} className="bg-zinc-900 border border-zinc-800 p-3">

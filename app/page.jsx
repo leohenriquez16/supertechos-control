@@ -16,6 +16,7 @@ import {
   calcMateriales, agruparAreasPorSistema, calcMaterialesGrupo,
   calcDieta, calcAnalisisCosto,
   produccionPorDia,
+  calcEstadoPagoProyecto,
 } from '../lib/helpers/calculos';
 import { fileToBase64, cargarPdfLib, cortarPDFaPrimerasPaginas, extraerPDF } from '../lib/helpers/pdf';
 // v8.10.2: Dashboard extraído (ya importa los 4 modales internamente)
@@ -40,6 +41,8 @@ import TabCronograma from '../components/proyecto/tabs/TabCronograma';
 import TabAsistencia from '../components/proyecto/tabs/TabAsistencia';
 import TabEquipoProyecto from '../components/proyecto/tabs/TabEquipoProyecto';
 import TabAvance from '../components/proyecto/tabs/TabAvance';
+// Estado de pago de mano de obra del proyecto
+import TabManoDeObra from '../components/proyecto/tabs/TabManoDeObra';
 // v8.10.8: NuevoProyecto y ModalEditarProyecto extraídos a components/proyecto/
 import NuevoProyecto from '../components/proyecto/NuevoProyecto';
 import ModalEditarProyecto from '../components/proyecto/ModalEditarProyecto';
@@ -4655,6 +4658,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
         {esAdmin && <TabBtn active={tab === 'areas'} onClick={() => setTab('areas')}>🗺️ Áreas</TabBtn>}
         {!esSupervisor && <TabBtn active={tab === 'productos'} onClick={() => setTab('productos')}><Sparkles className="w-3 h-3 inline mr-1" />Productos</TabBtn>}
         {!esSupervisor && <TabBtn active={tab === 'costo'} onClick={() => setTab('costo')}><DollarSign className="w-3 h-3 inline mr-1" />Costo</TabBtn>}
+        {esAdmin && <TabBtn active={tab === 'mdo'} onClick={() => setTab('mdo')}><Wallet className="w-3 h-3 inline mr-1" />Mano de obra</TabBtn>}
         {!esSupervisor && proyecto.dieta?.habilitada && <TabBtn active={tab === 'dieta'} onClick={() => setTab('dieta')}><Utensils className="w-3 h-3 inline mr-1" />Dieta</TabBtn>}
       </div>
 
@@ -4670,6 +4674,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
       {tab === 'areas' && esAdmin && <TabAreas proyecto={proyecto} data={data} usuario={usuario} onRecargar={onRecargar} />}
       {tab === 'productos' && !esSupervisor && <TabProductosAdicionales proyecto={proyecto} onActualizarProyecto={onActualizarProyecto} esAdmin={esAdmin} />}
       {tab === 'costo' && !esSupervisor && <TabCosto proyecto={proyecto} sistema={sistema} reportes={data.reportes} envios={data.envios} config={data.config} />}
+      {tab === 'mdo' && esAdmin && <TabManoDeObra proyecto={proyecto} data={data} usuario={usuario} />}
       {tab === 'dieta' && !esSupervisor && <TabDieta proyecto={proyecto} reportes={data.reportes} personal={data.personal} onActualizarProyecto={onActualizarProyecto} />}
     </div>
   );
@@ -8176,6 +8181,12 @@ function VistaMiProduccion({ usuario, data, onVolver, onVerProyecto }) {
   const hoyStr = new Date().toISOString().split('T')[0];
   const [quincenaRef, setQuincenaRef] = useState(hoyStr);
   const [expandido, setExpandido] = useState(new Set()); // proyectos con detalle diario expandido
+  // Datos para calcular el acumulado HISTÓRICO devengado/pagado/por pagar
+  const [detallesMaestro, setDetallesMaestro] = useState([]);
+  const [ajustesMaestro, setAjustesMaestro] = useState([]);
+  const [jornadasMap, setJornadasMap] = useState({}); // { [proyectoId]: jornadas[] }
+  const [costosDiaMap, setCostosDiaMap] = useState({}); // { [proyectoId]: costos[] }
+  const [cargandoHist, setCargandoHist] = useState(true);
 
   // Calcular la quincena (1-15 o 16-fin del mes)
   const rangoQuincena = React.useMemo(() => {
@@ -8201,6 +8212,72 @@ function VistaMiProduccion({ usuario, data, onVolver, onVerProyecto }) {
   const misProyectos = React.useMemo(() => {
     return (data.proyectos || []).filter(p => !p.archivado && p.maestroId === usuario.id);
   }, [data.proyectos, usuario.id]);
+
+  // Cargar histórico: detalles_nomina del maestro + jornadas/costos por cada proyecto
+  React.useEffect(() => {
+    let cancel = false;
+    (async () => {
+      setCargandoHist(true);
+      try {
+        const [det, aj] = await Promise.all([
+          db.listarTodosDetalles({ personaId: usuario.id }),
+          db.listarAjustes({ personaId: usuario.id }),
+        ]);
+        if (cancel) return;
+        const jrnByProy = {};
+        const cdByProy = {};
+        await Promise.all(misProyectos.map(async p => {
+          try {
+            const [jrn, cd] = await Promise.all([
+              db.listarJornadasProyecto(p.id),
+              db.listarCostosDia(p.id),
+            ]);
+            jrnByProy[p.id] = jrn;
+            cdByProy[p.id] = cd;
+          } catch {}
+        }));
+        if (cancel) return;
+        setDetallesMaestro(det);
+        setAjustesMaestro(aj);
+        setJornadasMap(jrnByProy);
+        setCostosDiaMap(cdByProy);
+      } catch (e) {
+        console.error(e);
+      }
+      if (!cancel) setCargandoHist(false);
+    })();
+    return () => { cancel = true; };
+  }, [usuario.id, misProyectos.map(p => p.id).join(',')]);
+
+  // Calcular estado de pago histórico por cada proyecto del maestro
+  const estadoPorProyecto = React.useMemo(() => {
+    const m = {};
+    misProyectos.forEach(p => {
+      const sistema = data.sistemas[p.sistema];
+      m[p.id] = calcEstadoPagoProyecto({
+        proyecto: p, sistema, sistemas: data.sistemas,
+        reportes: data.reportes,
+        // Sólo los detalles y ajustes del maestro en este proyecto
+        detallesNomina: detallesMaestro.filter(d => d.proyectoId === p.id),
+        ajustes: ajustesMaestro.filter(a => a.proyectoId === p.id),
+        cortes: [],
+        jornadas: jornadasMap[p.id] || [],
+        costosDia: costosDiaMap[p.id] || [],
+      });
+    });
+    return m;
+  }, [misProyectos, data.sistemas, data.reportes, detallesMaestro, ajustesMaestro, jornadasMap, costosDiaMap]);
+
+  // Totales históricos
+  const totalHist = React.useMemo(() => {
+    let devengado = 0, pagado = 0, porPagar = 0;
+    Object.values(estadoPorProyecto).forEach(e => {
+      devengado += e.montoDevengado || 0;
+      pagado += e.montoPagado || 0;
+      porPagar += e.montoPorPagar || 0;
+    });
+    return { devengado, pagado, porPagar };
+  }, [estadoPorProyecto]);
 
   // Reportes del maestro en la quincena
   const misReportesQuincena = React.useMemo(() => {
@@ -8331,16 +8408,41 @@ function VistaMiProduccion({ usuario, data, onVolver, onVerProyecto }) {
         </button>
       </div>
 
-      {/* Hero: total producido */}
+      {/* Hero: total producido en la quincena */}
       <div className="bg-gradient-to-br from-red-600 to-red-800 p-6 text-white">
         <div className="text-[11px] tracking-widest uppercase text-red-200 font-bold">
-          {esQuincenaActual ? 'Llevas ganado' : 'Producción del periodo'}
+          {esQuincenaActual ? 'Llevas ganado en esta quincena' : 'Producción del periodo'}
         </div>
         <div className="text-4xl sm:text-5xl font-black mt-2">
           RD$ {formatNum(totalMonto, 2)}
         </div>
         <div className="text-sm text-red-100 mt-1">
           {formatNum(totalM2, 1)} m² producidos · {produccionPorProyecto.length} proyecto{produccionPorProyecto.length !== 1 ? 's' : ''}
+        </div>
+      </div>
+
+      {/* Acumulado HISTÓRICO de TODOS tus proyectos como maestro */}
+      <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">📊 Acumulado total (todos tus proyectos)</div>
+          {cargandoHist && <Loader2 className="w-3 h-3 animate-spin text-zinc-500" />}
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          <div className="bg-zinc-950 border border-zinc-800 p-3">
+            <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">Devengado</div>
+            <div className="text-base sm:text-lg font-black text-white mt-1">RD$ {formatNum(totalHist.devengado, 0)}</div>
+            <div className="text-[10px] text-zinc-500 mt-0.5">por todo lo reportado</div>
+          </div>
+          <div className="bg-zinc-950 border border-zinc-800 p-3">
+            <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">Pagado</div>
+            <div className="text-base sm:text-lg font-black text-green-400 mt-1">RD$ {formatNum(totalHist.pagado, 0)}</div>
+            <div className="text-[10px] text-zinc-500 mt-0.5">en cortes cerrados</div>
+          </div>
+          <div className={`p-3 border ${totalHist.porPagar > 0 ? 'bg-zinc-950 border-yellow-700/40' : 'bg-zinc-950 border-zinc-800'}`}>
+            <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">Por pagar</div>
+            <div className={`text-base sm:text-lg font-black mt-1 ${totalHist.porPagar > 0 ? 'text-yellow-400' : 'text-zinc-300'}`}>RD$ {formatNum(totalHist.porPagar, 0)}</div>
+            <div className="text-[10px] text-zinc-500 mt-0.5">devengado − pagado</div>
+          </div>
         </div>
       </div>
 
@@ -8402,6 +8504,26 @@ function VistaMiProduccion({ usuario, data, onVolver, onVerProyecto }) {
 
                 {isExp && (
                   <div className="border-t border-zinc-800 p-3 space-y-1 bg-zinc-950">
+                    {/* Histórico del proyecto (no solo la quincena) */}
+                    {estadoPorProyecto[g.proyecto.id] && (
+                      <div className="bg-zinc-900 border border-zinc-800 p-2 mb-2">
+                        <div className="text-[9px] tracking-widest uppercase text-zinc-500 font-bold mb-1">Acumulado histórico de este proyecto</div>
+                        <div className="grid grid-cols-3 gap-1 text-[10px]">
+                          <div>
+                            <div className="text-zinc-500">Devengado</div>
+                            <div className="text-white font-bold">RD${formatNum(estadoPorProyecto[g.proyecto.id].montoDevengado, 0)}</div>
+                          </div>
+                          <div>
+                            <div className="text-zinc-500">Pagado</div>
+                            <div className="text-green-400 font-bold">RD${formatNum(estadoPorProyecto[g.proyecto.id].montoPagado, 0)}</div>
+                          </div>
+                          <div>
+                            <div className="text-zinc-500">Por pagar</div>
+                            <div className={`font-bold ${estadoPorProyecto[g.proyecto.id].montoPorPagar > 0 ? 'text-yellow-400' : 'text-zinc-400'}`}>RD${formatNum(estadoPorProyecto[g.proyecto.id].montoPorPagar, 0)}</div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                     <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold mb-2">
                       Detalle por día ({porFecha.length} días reportados)
                     </div>

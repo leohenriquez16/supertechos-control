@@ -16,6 +16,28 @@ const getMaestros = (personal) => personal.filter(p => tieneRol(p, 'maestro'));
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
 const getAyudantesDeMaestro = (personal, mId) => personal.filter(p => tieneRol(p, 'ayudante') && p.maestroId === mId);
 
+// Tarjeta visual para seleccionar modo de pago de mano de obra
+function ModoPagoCard({ activo, onClick, titulo, icono, descripcion, preview }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`text-left p-3 border-2 transition ${
+        activo
+          ? 'bg-red-600/10 border-red-600 text-white'
+          : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:border-zinc-700'
+      }`}
+    >
+      <div className="flex items-center gap-2 mb-1">
+        <span className="text-base leading-none">{icono}</span>
+        <span className="text-[11px] font-black uppercase tracking-wider">{titulo}</span>
+      </div>
+      <div className="text-[10px] leading-tight text-zinc-500 mb-1">{descripcion}</div>
+      {preview ? <div className="text-[10px] font-bold text-green-400">{preview}</div> : <div className="text-[10px] text-zinc-700 italic">— sin configurar —</div>}
+    </button>
+  );
+}
+
 export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar, onGuardar, onArchivar, onEliminar }) {
   const [form, setForm] = useState({
     supervisorId: proyecto.supervisorId || '',
@@ -163,6 +185,24 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
   };
 
   const personasProyecto = [form.supervisorId, form.maestroId, ...form.ayudantesIds].filter(Boolean).map(id => getPersona(data.personal, id)).filter(Boolean);
+
+  // Previews numéricos por modo de pago — usan m² total estimado y pesos del sistema
+  const m2TotalProyecto = (form.areas || []).reduce((s, a) => s + (Number(a.m2) || 0), 0);
+  const previewM2Fijo = m2TotalProyecto * (Number(form.precioM2FijoMaestro) || 0);
+  const previewM2PorTarea = sistema
+    ? (sistema.tareas || []).reduce((s, t) => s + (Number(form.preciosTareasM2[t.id]) || 0) * m2TotalProyecto * ((Number(t.peso) || 0) / 100), 0)
+    : 0;
+  const previewTareaVenta = sistema
+    ? (sistema.tareas || []).reduce((s, t) => s + (Number(form.preciosTareasM2[t.id]) || 0) * m2TotalProyecto * ((Number(t.peso) || 0) / 100), 0)
+    : 0;
+  const previewTareaMaestro = sistema
+    ? (sistema.tareas || []).reduce((s, t) => s + (Number((form.preciosManoObraTareas || {})[t.id]) || 0) * m2TotalProyecto * ((Number(t.peso) || 0) / 100), 0)
+    : 0;
+  const costoDiarioTotal = personasProyecto.reduce((s, p) => s + (Number(getCostoPersona(p.id)) || 0), 0);
+  const diasReferencia = (form.fecha_inicio && form.fecha_entrega)
+    ? Math.max(1, Math.round((new Date(form.fecha_entrega) - new Date(form.fecha_inicio)) / (1000 * 60 * 60 * 24)))
+    : 14;
+  const previewDia = costoDiarioTotal * diasReferencia;
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto">
@@ -374,19 +414,55 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
         </div>
 
         <div className="space-y-3 border-t border-zinc-800 pt-3">
-          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Pago de mano de obra</div>
-          <div className="grid grid-cols-2 gap-1">
-            <button onClick={() => setForm({ ...form, modoPagoManoObra: 'dia' })} className={`p-2 text-xs font-bold uppercase border-2 ${form.modoPagoManoObra === 'dia' ? 'bg-red-600 text-white border-transparent' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>Por día</button>
-            <button onClick={() => setForm({ ...form, modoPagoManoObra: 'm2_fijo' })} className={`p-2 text-xs font-bold uppercase border-2 ${form.modoPagoManoObra === 'm2_fijo' ? 'bg-red-600 text-white border-transparent' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>m² fijo sistema</button>
-            <button onClick={() => setForm({ ...form, modoPagoManoObra: 'm2' })} className={`p-2 text-xs font-bold uppercase border-2 ${form.modoPagoManoObra === 'm2' ? 'bg-red-600 text-white border-transparent' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>m² por tarea (venta)</button>
-            <button onClick={() => setForm({ ...form, modoPagoManoObra: 'tarea' })} className={`p-2 text-xs font-bold uppercase border-2 ${form.modoPagoManoObra === 'tarea' ? 'bg-red-600 text-white border-transparent' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>Por tarea (venta + maestro)</button>
+          <div className="flex items-center justify-between">
+            <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Pago de mano de obra</div>
+            {m2TotalProyecto > 0 && <div className="text-[10px] text-zinc-500">Base: {formatNum(m2TotalProyecto)} m² · {sistema?.nombre || 'sin sistema'}</div>}
           </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <ModoPagoCard
+              activo={form.modoPagoManoObra === 'dia'}
+              onClick={() => setForm({ ...form, modoPagoManoObra: 'dia' })}
+              titulo="Por día"
+              icono="📅"
+              descripcion="Tarifa diaria fija por persona. Útil cuando no se sabe el alcance final."
+              preview={costoDiarioTotal > 0 ? `RD$${formatNum(costoDiarioTotal)}/día × ${diasReferencia}d ≈ ${formatRD(previewDia)}` : null}
+            />
+            <ModoPagoCard
+              activo={form.modoPagoManoObra === 'm2_fijo'}
+              onClick={() => setForm({ ...form, modoPagoManoObra: 'm2_fijo' })}
+              titulo="m² fijo sistema"
+              icono="📐"
+              descripcion="Un solo precio por m² ejecutado, sin distinguir tareas."
+              preview={previewM2Fijo > 0 ? `≈ ${formatRD(previewM2Fijo)} al completar` : null}
+            />
+            <ModoPagoCard
+              activo={form.modoPagoManoObra === 'm2'}
+              onClick={() => setForm({ ...form, modoPagoManoObra: 'm2' })}
+              titulo="m² por tarea"
+              icono="🧱"
+              descripcion="Precio distinto por cada paso/tarea del sistema."
+              preview={previewM2PorTarea > 0 ? `≈ ${formatRD(previewM2PorTarea)} al completar` : null}
+            />
+            <ModoPagoCard
+              activo={form.modoPagoManoObra === 'tarea'}
+              onClick={() => setForm({ ...form, modoPagoManoObra: 'tarea' })}
+              titulo="Tarea (venta + maestro)"
+              icono="🔨"
+              descripcion="Lleva por separado el precio de venta y el pago al maestro."
+              preview={previewTareaMaestro > 0 ? `Maestro ≈ ${formatRD(previewTareaMaestro)}` : null}
+            />
+          </div>
+
+          {/* Detalle según modo seleccionado */}
           {form.modoPagoManoObra === 'm2_fijo' && (
-            <div className="bg-zinc-950 border border-zinc-800 p-3 space-y-2">
-              <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">Precio fijo al maestro por m² ejecutado del sistema</div>
-              <div className="text-[10px] text-zinc-500">Se paga el mismo precio sin importar qué tarea. Ej: RD$40/m² del sistema completo.</div>
+            <div className="bg-zinc-950 border border-zinc-800 p-3 space-y-3">
+              <div>
+                <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1">Precio fijo al maestro por m² del sistema</div>
+                <div className="text-[10px] text-zinc-500">Se paga este monto por cada m² ejecutado, sin importar qué tarea.</div>
+              </div>
               <div className="flex items-center gap-2">
-                <span className="text-xs">RD$</span>
+                <span className="text-xs text-zinc-400 shrink-0">RD$</span>
                 <input
                   type="number"
                   value={form.precioM2FijoMaestro || ''}
@@ -394,63 +470,141 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
                   placeholder="0"
                   className="flex-1 bg-zinc-900 border border-green-800 px-2 py-2 text-green-400 text-sm font-bold text-right"
                 />
-                <span className="text-xs text-zinc-500">/m²</span>
+                <span className="text-xs text-zinc-500 shrink-0">/m²</span>
               </div>
-            </div>
-          )}
-          {form.modoPagoManoObra === 'm2' && sistema && (
-            <div className="bg-zinc-950 border border-zinc-800 p-3 space-y-2">
-              <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">Precio por tarea (RD$/m²)</div>
-              {(sistema.tareas || []).map(t => (
-                <div key={t.id} className="flex items-center gap-2">
-                  <div className="flex-1 text-xs">{t.nombre} <span className="text-zinc-600">({t.peso}%)</span></div>
-                  <input type="number" value={form.preciosTareasM2[t.id] || ''} onChange={e => setPrecio(t.id, e.target.value)} placeholder="0" className="w-24 bg-zinc-900 border border-zinc-800 px-2 py-1 text-white text-xs text-right" />
+              {previewM2Fijo > 0 && (
+                <div className="text-[10px] text-zinc-400 bg-zinc-900 border border-zinc-800 p-2">
+                  💡 {formatNum(m2TotalProyecto)} m² × RD${formatNum(form.precioM2FijoMaestro || 0)}/m² = <span className="text-green-400 font-bold">{formatRD(previewM2Fijo)}</span> al maestro al completar el proyecto.
                 </div>
-              ))}
+              )}
             </div>
           )}
+
+          {form.modoPagoManoObra === 'm2' && sistema && (
+            <div className="bg-zinc-950 border border-zinc-800 p-3 space-y-3">
+              <div>
+                <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1">Precio al maestro por cada paso del sistema</div>
+                <div className="text-[10px] text-zinc-500">Cada paso se paga al m² ejecutado de esa tarea.</div>
+              </div>
+              <div className="space-y-1.5">
+                {(sistema.tareas || []).map(t => {
+                  const precio = Number(form.preciosTareasM2[t.id]) || 0;
+                  const m2Tarea = m2TotalProyecto * ((Number(t.peso) || 0) / 100);
+                  const subtotal = precio * m2Tarea;
+                  return (
+                    <div key={t.id} className="flex items-center gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs truncate">{t.nombre}</div>
+                        <div className="text-[9px] text-zinc-500">{t.peso}% · ≈ {formatNum(m2Tarea)} m²</div>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <input type="number" value={form.preciosTareasM2[t.id] || ''} onChange={e => setPrecio(t.id, e.target.value)} placeholder="0" className="w-20 bg-zinc-900 border border-zinc-800 px-2 py-1 text-white text-xs text-right" />
+                        <span className="text-[9px] text-zinc-600 w-6">/m²</span>
+                      </div>
+                      <div className="text-[10px] text-green-400 font-bold w-24 text-right shrink-0">{subtotal > 0 ? formatRD(subtotal) : '—'}</div>
+                    </div>
+                  );
+                })}
+              </div>
+              {previewM2PorTarea > 0 && (
+                <div className="text-[10px] text-zinc-400 bg-zinc-900 border border-zinc-800 p-2 flex justify-between">
+                  <span>Total estimado al maestro:</span>
+                  <span className="text-green-400 font-bold">{formatRD(previewM2PorTarea)}</span>
+                </div>
+              )}
+            </div>
+          )}
+
           {form.modoPagoManoObra === 'tarea' && sistema && (
             <div className="bg-zinc-950 border border-zinc-800 p-3 space-y-3">
               <div>
-                <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1">Precio de venta al cliente (RD$/m²)</div>
-                <div className="space-y-1.5">
-                  {(sistema.tareas || []).map(t => (
-                    <div key={t.id} className="flex items-center gap-2">
-                      <div className="flex-1 text-xs">{t.nombre}</div>
-                      <input type="number" value={form.preciosTareasM2[t.id] || ''} onChange={e => setPrecio(t.id, e.target.value)} placeholder="venta" className="w-24 bg-zinc-900 border border-zinc-800 px-2 py-1 text-white text-xs text-right" />
-                    </div>
-                  ))}
-                </div>
+                <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1">Precio de venta y pago al maestro por tarea</div>
+                <div className="text-[10px] text-zinc-500">El maestro cubre sus ayudantes con su pago.</div>
               </div>
-              <div className="border-t border-zinc-800 pt-3">
-                <div className="text-[10px] tracking-widest uppercase text-green-500 font-bold mb-1">Pago al maestro por tarea (RD$/m²)</div>
-                <div className="text-[10px] text-zinc-500 mb-2">El maestro recibe este monto por cada m² ejecutado de cada tarea. Él cubre sus ayudantes.</div>
-                <div className="space-y-1.5">
-                  {(sistema.tareas || []).map(t => (
-                    <div key={t.id} className="flex items-center gap-2">
-                      <div className="flex-1 text-xs">{t.nombre}</div>
+              <div className="grid grid-cols-[1fr_auto_auto_auto] gap-2 items-center text-[9px] tracking-wider uppercase text-zinc-500 font-bold border-b border-zinc-800 pb-1">
+                <div>Tarea</div>
+                <div className="w-20 text-right">Venta/m²</div>
+                <div className="w-20 text-right">Maestro/m²</div>
+                <div className="w-16 text-right">Margen</div>
+              </div>
+              <div className="space-y-1.5">
+                {(sistema.tareas || []).map(t => {
+                  const venta = Number(form.preciosTareasM2[t.id]) || 0;
+                  const maestro = Number((form.preciosManoObraTareas || {})[t.id]) || 0;
+                  const margen = venta > 0 ? Math.round(((venta - maestro) / venta) * 100) : 0;
+                  return (
+                    <div key={t.id} className="grid grid-cols-[1fr_auto_auto_auto] gap-2 items-center">
+                      <div className="text-xs truncate">{t.nombre} <span className="text-zinc-600 text-[9px]">{t.peso}%</span></div>
+                      <input type="number" value={form.preciosTareasM2[t.id] || ''} onChange={e => setPrecio(t.id, e.target.value)} placeholder="venta" className="w-20 bg-zinc-900 border border-zinc-800 px-2 py-1 text-white text-xs text-right" />
                       <input
                         type="number"
                         value={(form.preciosManoObraTareas || {})[t.id] || ''}
                         onChange={e => setForm({ ...form, preciosManoObraTareas: { ...(form.preciosManoObraTareas || {}), [t.id]: e.target.value } })}
                         placeholder="maestro"
-                        className="w-24 bg-zinc-950 border border-green-800 px-2 py-1 text-green-400 text-xs text-right"
+                        className="w-20 bg-zinc-950 border border-green-800 px-2 py-1 text-green-400 text-xs text-right"
                       />
+                      <div className={`w-16 text-right text-[10px] font-bold ${margen >= 30 ? 'text-green-400' : margen > 0 ? 'text-yellow-400' : 'text-zinc-600'}`}>
+                        {venta > 0 && maestro > 0 ? `${margen}%` : '—'}
+                      </div>
                     </div>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
+              {(previewTareaVenta > 0 || previewTareaMaestro > 0) && (
+                <div className="text-[10px] bg-zinc-900 border border-zinc-800 p-2 space-y-1">
+                  <div className="flex justify-between"><span className="text-zinc-400">Venta total estimada:</span><span className="text-white font-bold">{formatRD(previewTareaVenta)}</span></div>
+                  <div className="flex justify-between"><span className="text-zinc-400">Pago al maestro estimado:</span><span className="text-green-400 font-bold">{formatRD(previewTareaMaestro)}</span></div>
+                  <div className="flex justify-between border-t border-zinc-800 pt-1"><span className="text-zinc-400">Margen mano de obra:</span><span className={`font-bold ${(previewTareaVenta - previewTareaMaestro) > 0 ? 'text-green-400' : 'text-red-400'}`}>{formatRD(previewTareaVenta - previewTareaMaestro)}</span></div>
+                </div>
+              )}
             </div>
           )}
-          {form.modoPagoManoObra === 'dia' && personasProyecto.length > 0 && (
-            <div className="bg-zinc-950 border border-zinc-800 p-3 space-y-2">
-              <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">Costo por día (RD$)</div>
-              {loadingCostos ? <Loader2 className="w-4 h-4 animate-spin" /> : personasProyecto.map(p => (
-                <div key={p.id} className="flex items-center gap-2">
-                  <div className="flex-1 text-xs">{p.nombre} <span className="text-zinc-600 text-[10px]">{p.id === form.supervisorId ? '(supervisor)' : p.id === form.maestroId ? '(maestro)' : '(ayudante)'}</span></div>
-                  <input type="number" defaultValue={getCostoPersona(p.id)} onBlur={e => setCostoPersona(p.id, parseFloat(e.target.value) || 0)} placeholder="0" className="w-24 bg-zinc-900 border border-zinc-800 px-2 py-1 text-white text-xs text-right" />
+
+          {form.modoPagoManoObra === 'dia' && (
+            <div className="bg-zinc-950 border border-zinc-800 p-3 space-y-3">
+              <div>
+                <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1">Costo por día por persona (RD$)</div>
+                <div className="text-[10px] text-zinc-500">Cada persona del proyecto cobra su tarifa diaria. Día doble cuenta como 2 días.</div>
+              </div>
+              {personasProyecto.length === 0 ? (
+                <div className="text-xs text-yellow-400 bg-yellow-900/10 border border-yellow-900 p-2">⚠️ Asigna supervisor, maestro o ayudantes al proyecto para configurar sus tarifas diarias.</div>
+              ) : loadingCostos ? (
+                <Loader2 className="w-4 h-4 animate-spin text-zinc-500" />
+              ) : (
+                <div className="space-y-1.5">
+                  {personasProyecto.map(p => {
+                    const rol = p.id === form.supervisorId ? 'supervisor' : p.id === form.maestroId ? 'maestro' : 'ayudante';
+                    const icono = rol === 'supervisor' ? '👔' : rol === 'maestro' ? '🔨' : '🧰';
+                    const costo = Number(getCostoPersona(p.id)) || 0;
+                    return (
+                      <div key={p.id} className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 p-2">
+                        <span className="text-base shrink-0">{icono}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs truncate">{p.nombre}</div>
+                          <div className="text-[9px] uppercase tracking-wider text-zinc-500">{rol}</div>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span className="text-[10px] text-zinc-600">RD$</span>
+                          <input
+                            type="number"
+                            defaultValue={getCostoPersona(p.id)}
+                            onBlur={e => setCostoPersona(p.id, parseFloat(e.target.value) || 0)}
+                            placeholder="0"
+                            className={`w-24 border px-2 py-1.5 text-xs text-right font-bold ${costo > 0 ? 'bg-zinc-900 border-green-800 text-green-400' : 'bg-zinc-900 border-zinc-800 text-zinc-500'}`}
+                          />
+                          <span className="text-[10px] text-zinc-600">/día</span>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              ))}
+              )}
+              {costoDiarioTotal > 0 && (
+                <div className="text-[10px] bg-zinc-900 border border-zinc-800 p-2 space-y-1">
+                  <div className="flex justify-between"><span className="text-zinc-400">Costo del equipo por día:</span><span className="text-white font-bold">{formatRD(costoDiarioTotal)}</span></div>
+                  <div className="flex justify-between"><span className="text-zinc-400">Estimado para {diasReferencia} día{diasReferencia !== 1 ? 's' : ''}{form.fecha_inicio && form.fecha_entrega ? ' (calendario)' : ' (referencia)'}:</span><span className="text-green-400 font-bold">{formatRD(previewDia)}</span></div>
+                </div>
+              )}
             </div>
           )}
         </div>

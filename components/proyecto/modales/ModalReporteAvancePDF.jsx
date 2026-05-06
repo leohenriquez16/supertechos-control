@@ -43,7 +43,9 @@ export default function ModalReporteAvancePDF({ proyecto, sistema, data, usuario
     }
   }, [tipo]);
 
-  // v8.9.28: cargar fotos del periodo para el PDF
+  // v8.11.1: cargar fotos del periodo con MIX por día (round-robin)
+  // En vez de agarrar las primeras N, distribuye el cupo entre los días que tienen fotos
+  // para que el reporte represente todo el periodo y no solo el primer día con muchas fotos.
   useEffect(() => {
     if (!incluirFotos) { setFotosCargadas([]); return; }
     let cancelado = false;
@@ -53,19 +55,60 @@ export default function ModalReporteAvancePDF({ proyecto, sistema, data, usuario
         // Cantidades segun tipo: diario 4, semanal 10, quincenal 12, custom hasta 12
         const maxFotos = tipo === 'diario' ? 4 : tipo === 'semanal' ? 10 : 12;
         const todasFotos = await db.listarFotosProyecto(proyecto.id);
-        // Filtrar por rango de fechas (usa created_at o fecha si existe)
+        // Filtrar por rango de fechas (usa fecha o created_at)
         const enRango = (todasFotos || []).filter(f => {
           const fecha = (f.fecha || f.created_at || '').slice(0, 10);
           return fecha >= fechaInicio && fecha <= fechaFin;
         });
-        // Orden cronologico antiguas primero
-        enRango.sort((a, b) => {
+
+        // Agrupar por día (clave: YYYY-MM-DD)
+        const porDia = {};
+        enRango.forEach(f => {
+          const fecha = (f.fecha || f.created_at || '').slice(0, 10);
+          if (!porDia[fecha]) porDia[fecha] = [];
+          porDia[fecha].push(f);
+        });
+
+        // Días ordenados cronológicamente (más antiguos primero)
+        const diasOrdenados = Object.keys(porDia).sort();
+
+        // Dentro de cada día, ordenar por timestamp (created_at) para tomar variadas
+        diasOrdenados.forEach(d => {
+          porDia[d].sort((a, b) => {
+            const ta = a.created_at || a.fecha || '';
+            const tb = b.created_at || b.fecha || '';
+            return ta.localeCompare(tb);
+          });
+        });
+
+        // Round-robin: una pasada agarra 1 foto de cada día, la siguiente otra, etc.
+        // Así si hay 7 días con fotos y maxFotos=10, cada día aporta al menos 1
+        // y los 3 cupos restantes van a los días que tengan más fotos disponibles.
+        const seleccionadas = [];
+        const indicePorDia = {};
+        diasOrdenados.forEach(d => { indicePorDia[d] = 0; });
+
+        let avanzo = true;
+        while (seleccionadas.length < maxFotos && avanzo) {
+          avanzo = false;
+          for (const dia of diasOrdenados) {
+            if (seleccionadas.length >= maxFotos) break;
+            const idx = indicePorDia[dia];
+            if (idx < porDia[dia].length) {
+              seleccionadas.push(porDia[dia][idx]);
+              indicePorDia[dia] = idx + 1;
+              avanzo = true;
+            }
+          }
+        }
+
+        // Reordenar la selección final cronológicamente para que se vean en orden en el PDF
+        seleccionadas.sort((a, b) => {
           const fa = (a.fecha || a.created_at || '');
           const fb = (b.fecha || b.created_at || '');
           return fa.localeCompare(fb);
         });
-        // Limitar cantidad
-        const seleccionadas = enRango.slice(0, maxFotos);
+
         // Cargar base64 en paralelo
         const conDatos = await Promise.all(seleccionadas.map(async f => {
           try {
@@ -198,6 +241,7 @@ export default function ModalReporteAvancePDF({ proyecto, sistema, data, usuario
     document.head.appendChild(s);
   });
 
+  // v8.11.1: PDF en formato Letter 8.5"x11" con ancho fijo independiente de la pantalla
   const descargarPDF = async () => {
     try {
       setDescargandoPDF(true);
@@ -211,20 +255,39 @@ export default function ModalReporteAvancePDF({ proyecto, sistema, data, usuario
       const el = document.getElementById('reporte-pdf');
       if (!el) throw new Error('No se encontró el reporte');
 
-      // Renderizar el HTML a canvas con alta calidad
-      const canvas = await html2canvas(el, {
-        scale: 2, // mejor calidad
-        useCORS: true,
-        backgroundColor: '#ffffff',
-        logging: false,
-        windowWidth: el.scrollWidth,
-        windowHeight: el.scrollHeight,
-      });
+      // v8.11.1: Forzar ancho fijo Letter (8.5") para que el PDF salga IGUAL
+      // sin importar el tamaño de pantalla del usuario.
+      // Letter @ 96 DPI = 816px de ancho.
+      const ANCHO_LETTER_PX = 816; // 8.5 pulgadas * 96 DPI
+      const widthOriginal = el.style.width;
+      const maxWidthOriginal = el.style.maxWidth;
+      el.style.width = ANCHO_LETTER_PX + 'px';
+      el.style.maxWidth = ANCHO_LETTER_PX + 'px';
 
-      // Dimensiones A4 en mm (210 x 297)
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-      const pageWidth = 210;
-      const pageHeight = 297;
+      // Pequeña espera para que el reflow se aplique antes de capturar
+      await new Promise(r => setTimeout(r, 50));
+
+      let canvas;
+      try {
+        canvas = await html2canvas(el, {
+          scale: 2, // mejor calidad
+          useCORS: true,
+          backgroundColor: '#ffffff',
+          logging: false,
+          width: ANCHO_LETTER_PX,
+          windowWidth: ANCHO_LETTER_PX,
+          windowHeight: el.scrollHeight,
+        });
+      } finally {
+        // Restaurar estilos originales del elemento (siempre, aunque falle html2canvas)
+        el.style.width = widthOriginal;
+        el.style.maxWidth = maxWidthOriginal;
+      }
+
+      // v8.11.1: Letter (8.5" x 11") en mm = 215.9 x 279.4
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
+      const pageWidth = 215.9;
+      const pageHeight = 279.4;
       const imgWidth = pageWidth;
       const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
@@ -232,7 +295,7 @@ export default function ModalReporteAvancePDF({ proyecto, sistema, data, usuario
       if (imgHeight <= pageHeight) {
         pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, imgWidth, imgHeight);
       } else {
-        // Multi-página: dividir el canvas en páginas A4
+        // Multi-página: dividir el canvas en páginas Letter
         let remainingHeight = canvas.height;
         let srcY = 0;
         const pageHeightPx = (pageHeight * canvas.width) / pageWidth;

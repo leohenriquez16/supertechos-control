@@ -17,7 +17,7 @@ import Input from '../common/Input';
 
 export default function ModalReportarGasto({ usuario, proyectos = [], proyectoIdDefault = null, onCerrar, onGuardado }) {
   const [paso, setPaso] = useState('foto'); // foto | revisando | confirmar | guardando
-  const [fotoData, setFotoData] = useState(null); // dataURL base64
+  const [fotoData, setFotoData] = useState(null); // dataURL base64 (preview local; al guardar se sube a Storage)
   const [errorAI, setErrorAI] = useState(null);
   const [datos, setDatos] = useState({
     fecha: new Date().toISOString().split('T')[0],
@@ -30,10 +30,12 @@ export default function ModalReportarGasto({ usuario, proyectos = [], proyectoId
   });
   const [datosIA, setDatosIA] = useState(null);
   const [advertencias, setAdvertencias] = useState([]);
+  const [proveedorMemoria, setProveedorMemoria] = useState(null); // si ya tenemos historial de este RNC
 
   const onFile = async (file) => {
     if (!file) return;
     setErrorAI(null);
+    setProveedorMemoria(null);
     try {
       const dataUrl = await comprimirImagen(file);
       setFotoData(dataUrl);
@@ -53,14 +55,30 @@ export default function ModalReportarGasto({ usuario, proyectos = [], proyectoId
       const d = json.datos || {};
       setDatosIA(d);
       setAdvertencias(d.advertencias || []);
+
+      // Buscar memoria de proveedores: si ya conocemos este RNC, autocompletar con
+      // el nombre canónico que el admin guardó (más confiable que la AI).
+      let nombreFinal = d.proveedor || '';
+      let categoriaFinal = d.categoria_sugerida || '';
+      if (d.rnc) {
+        try {
+          const prov = await db.buscarProveedorCajaChicaPorRnc(d.rnc);
+          if (prov) {
+            setProveedorMemoria(prov);
+            nombreFinal = prov.nombre || nombreFinal;
+            categoriaFinal = prov.categoria || categoriaFinal;
+          }
+        } catch (e) { /* no bloquea */ }
+      }
+
       setDatos(prev => ({
         ...prev,
         fecha: d.fecha || prev.fecha,
         monto: d.monto_total != null ? String(d.monto_total) : prev.monto,
-        proveedor: d.proveedor || prev.proveedor,
+        proveedor: nombreFinal,
         rnc: d.rnc || prev.rnc,
         concepto: d.concepto || prev.concepto,
-        categoria: d.categoria_sugerida || prev.categoria,
+        categoria: categoriaFinal,
       }));
       setPaso('confirmar');
     } catch (e) {
@@ -82,11 +100,12 @@ export default function ModalReportarGasto({ usuario, proyectos = [], proyectoId
         fecha: datos.fecha,
         tipo: 'gasto_factura',
         monto,
-        fotoData,
+        // El helper sube la foto al bucket y guarda foto_path
+        fotoDataUrl: fotoData,
         proveedor: datos.proveedor || null,
         rnc: datos.rnc || null,
         concepto: datos.concepto || null,
-        datosIA: datosIA || {},
+        datosIA: { ...(datosIA || {}), categoria_sugerida: datos.categoria || (datosIA?.categoria_sugerida || null) },
         creadoPorId: usuario.id,
         // status implícito: 'pendiente_revision'
       });
@@ -173,6 +192,18 @@ export default function ModalReportarGasto({ usuario, proyectos = [], proyectoId
                     <div className="text-yellow-400 mt-1">⚠️ {advertencias.join(' · ')}</div>
                   )}
                   <div className="text-zinc-500 mt-1">Revisa y corrige si hace falta.</div>
+                </div>
+              </div>
+            )}
+            {proveedorMemoria && (
+              <div className="bg-blue-900/20 border border-blue-800 p-2 text-[10px] flex items-start gap-2">
+                <span className="text-blue-400 shrink-0">💡</span>
+                <div className="flex-1">
+                  <div className="text-blue-300 font-bold">Proveedor conocido: {proveedorMemoria.nombre}</div>
+                  <div className="text-zinc-400 mt-0.5">
+                    {proveedorMemoria.totalFacturas} factura{proveedorMemoria.totalFacturas !== 1 ? 's' : ''} previa{proveedorMemoria.totalFacturas !== 1 ? 's' : ''} · histórico RD${new Intl.NumberFormat('es-DO', { maximumFractionDigits: 0 }).format(proveedorMemoria.totalMonto)}
+                    {proveedorMemoria.categoria && ` · categoría ${proveedorMemoria.categoria}`}
+                  </div>
                 </div>
               </div>
             )}

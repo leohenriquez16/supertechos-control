@@ -51,6 +51,7 @@ import VistaNomina from '../components/nomina/VistaNomina';
 // v8.12: Caja Chica + Dieta
 import VistaMiCajaChica from '../components/caja-chica/VistaMiCajaChica';
 import VistaCajaChicaAdmin from '../components/caja-chica/VistaCajaChicaAdmin';
+import VistaProveedoresCajaChica from '../components/caja-chica/VistaProveedoresCajaChica';
 // v8.10.14: VistaMapa extraída con Leaflet interactivo
 import VistaMapa from '../components/proyecto/VistaMapa';
 // v8.10.23: Modal importar desde Odoo
@@ -635,8 +636,8 @@ export default function App() {
       ...(puede(usuario, data.permisos, 'planificacion', 'ver') ? [{ id: 'planificacion', label: 'Planificación', icon: Calendar, vista: 'planificacion' }] : []),
       // v8.9.18: Maestros ven su producción de la quincena
       ...(tieneRol(usuario, 'maestro') ? [{ id: 'miProduccion', label: 'Mi Producción', icon: Wallet, vista: 'miProduccion' }] : []),
-      // Caja chica: maestros y supervisores titulares la pueden gestionar desde móvil
-      ...((tieneRol(usuario, 'maestro') || tieneRol(usuario, 'supervisor')) ? [{ id: 'miCajaChica', label: 'Mi Caja Chica', icon: CreditCard, vista: 'miCajaChica' }] : []),
+      // Caja chica: solo personal con caja_chica_habilitada (admin lo activa por persona)
+      ...((tieneRol(usuario, 'maestro') || tieneRol(usuario, 'supervisor')) && usuario.cajaChicaHabilitada ? [{ id: 'miCajaChica', label: 'Mi Caja Chica', icon: CreditCard, vista: 'miCajaChica' }] : []),
       ...(tareas.filter(t => t.asignadaAId === usuario.id).length > 0 ? [{ id: 'tareas', label: 'Tareas', icon: ClipboardList, vista: 'tareas', badge: tareas.filter(t => t.asignadaAId === usuario.id).length }] : []),
     ]},
   ];
@@ -721,8 +722,9 @@ export default function App() {
         {esAdmin && vista === 'equipoGlobal' && <VistaEquipoGlobal data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'planificacion' && puede(usuario, data.permisos, 'planificacion', 'ver') && <VistaPlanificacion usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'miProduccion' && tieneRol(usuario, 'maestro') && <VistaMiProduccion usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
-        {vista === 'miCajaChica' && (tieneRol(usuario, 'maestro') || tieneRol(usuario, 'supervisor')) && <VistaMiCajaChica usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} />}
-        {vista === 'cajaChica' && esAdmin && <VistaCajaChicaAdmin usuario={usuario} data={data} onVolver={() => setVista('dashboard')} />}
+        {vista === 'miCajaChica' && (tieneRol(usuario, 'maestro') || tieneRol(usuario, 'supervisor')) && usuario.cajaChicaHabilitada && <VistaMiCajaChica usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} />}
+        {vista === 'cajaChica' && esAdmin && <VistaCajaChicaAdmin usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onIrAProveedores={() => setVista('proveedoresCajaChica')} />}
+        {vista === 'proveedoresCajaChica' && esAdmin && <VistaProveedoresCajaChica usuario={usuario} data={data} onVolver={() => setVista('cajaChica')} />}
         {vista === 'estadisticasPersonal' && esAdmin && <VistaEstadisticasPersonal data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'categorias' && esAdmin && <VistaCategorias data={data} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
         {vista === 'disponibilidad' && esAdmin && <VistaDisponibilidad usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} onRecargar={recargar} />}
@@ -4124,6 +4126,16 @@ function GestionPersonal({ personal, onVolver, onActualizar, onAbrirPerfil, data
               <div className="flex-1">
                 <div className="text-xs font-bold flex items-center gap-1">🎤 Reporte con audio IA <Sparkles className="w-3 h-3 text-red-500" /></div>
                 <div className="text-[10px] text-zinc-500">Esta persona podrá reportar avance por nota de voz (Claude extrae datos)</div>
+              </div>
+            </label>
+          )}
+          {/* v8.12: Toggle Caja Chica — admin habilita por persona */}
+          {(form.roles.includes('maestro') || form.roles.includes('supervisor')) && (
+            <label className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 p-3 cursor-pointer">
+              <input type="checkbox" checked={!!form.cajaChicaHabilitada} onChange={e => setForm({ ...form, cajaChicaHabilitada: e.target.checked })} className="w-4 h-4 accent-red-600" />
+              <div className="flex-1">
+                <div className="text-xs font-bold flex items-center gap-1">💵 Caja Chica habilitada</div>
+                <div className="text-[10px] text-zinc-500">Esta persona podrá ver "Mi Caja Chica" y reportar gastos con factura desde su cuenta</div>
               </div>
             </label>
           )}

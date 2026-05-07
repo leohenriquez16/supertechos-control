@@ -48,6 +48,9 @@ import NuevoProyecto from '../components/proyecto/NuevoProyecto';
 import ModalEditarProyecto from '../components/proyecto/ModalEditarProyecto';
 // v8.10.13: VistaNomina extraída
 import VistaNomina from '../components/nomina/VistaNomina';
+// v8.12: Caja Chica + Dieta
+import VistaMiCajaChica from '../components/caja-chica/VistaMiCajaChica';
+import VistaCajaChicaAdmin from '../components/caja-chica/VistaCajaChicaAdmin';
 // v8.10.14: VistaMapa extraída con Leaflet interactivo
 import VistaMapa from '../components/proyecto/VistaMapa';
 // v8.10.23: Modal importar desde Odoo
@@ -606,6 +609,7 @@ export default function App() {
     ]},
     { seccion: 'FINANZAS', items: [
       { id: 'nomina', label: 'Nómina', icon: Wallet, vista: 'nomina' },
+      { id: 'cajaChica', label: 'Caja Chica', icon: CreditCard, vista: 'cajaChica' },
     ]},
     { seccion: 'CONFIGURACIÓN', items: [
       { id: 'sistemas', label: 'Sistemas', icon: Settings, vista: 'sistemas' },
@@ -631,6 +635,8 @@ export default function App() {
       ...(puede(usuario, data.permisos, 'planificacion', 'ver') ? [{ id: 'planificacion', label: 'Planificación', icon: Calendar, vista: 'planificacion' }] : []),
       // v8.9.18: Maestros ven su producción de la quincena
       ...(tieneRol(usuario, 'maestro') ? [{ id: 'miProduccion', label: 'Mi Producción', icon: Wallet, vista: 'miProduccion' }] : []),
+      // Caja chica: maestros y supervisores titulares la pueden gestionar desde móvil
+      ...((tieneRol(usuario, 'maestro') || tieneRol(usuario, 'supervisor')) ? [{ id: 'miCajaChica', label: 'Mi Caja Chica', icon: CreditCard, vista: 'miCajaChica' }] : []),
       ...(tareas.filter(t => t.asignadaAId === usuario.id).length > 0 ? [{ id: 'tareas', label: 'Tareas', icon: ClipboardList, vista: 'tareas', badge: tareas.filter(t => t.asignadaAId === usuario.id).length }] : []),
     ]},
   ];
@@ -715,6 +721,8 @@ export default function App() {
         {esAdmin && vista === 'equipoGlobal' && <VistaEquipoGlobal data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'planificacion' && puede(usuario, data.permisos, 'planificacion', 'ver') && <VistaPlanificacion usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'miProduccion' && tieneRol(usuario, 'maestro') && <VistaMiProduccion usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
+        {vista === 'miCajaChica' && (tieneRol(usuario, 'maestro') || tieneRol(usuario, 'supervisor')) && <VistaMiCajaChica usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} />}
+        {vista === 'cajaChica' && esAdmin && <VistaCajaChicaAdmin usuario={usuario} data={data} onVolver={() => setVista('dashboard')} />}
         {vista === 'estadisticasPersonal' && esAdmin && <VistaEstadisticasPersonal data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'categorias' && esAdmin && <VistaCategorias data={data} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
         {vista === 'disponibilidad' && esAdmin && <VistaDisponibilidad usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} onRecargar={recargar} />}

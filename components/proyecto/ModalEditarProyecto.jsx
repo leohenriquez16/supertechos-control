@@ -63,6 +63,9 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
     preciosTareasM2: proyecto.preciosTareasM2 || {},
     preciosManoObraTareas: proyecto.preciosManoObraTareas || {},
     precioM2FijoMaestro: proyecto.precioM2FijoMaestro || 0,
+    // v8.12: Dieta diaria pagada desde caja chica
+    dietaDiariaRd: proyecto.dietaDiariaRd || 0,
+    dietaModo: proyecto.dietaModo || 'manual', // 'auto' | 'manual' | 'desactivada'
     tipoAvance: proyecto.tipoAvance || 'tradicional',
     estructuraUnidades: proyecto.estructuraUnidades || [],
     areas: proyecto.areas ? proyecto.areas.map(a => ({ ...a })) : [],
@@ -609,6 +612,66 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
                 <div className="text-[10px] bg-zinc-900 border border-zinc-800 p-2 space-y-1">
                   <div className="flex justify-between"><span className="text-zinc-400">Costo del equipo por día:</span><span className="text-white font-bold">{formatRD(costoDiarioTotal)}</span></div>
                   <div className="flex justify-between"><span className="text-zinc-400">Estimado para {diasReferencia} día{diasReferencia !== 1 ? 's' : ''}{form.fecha_inicio && form.fecha_entrega ? ' (calendario)' : ' (referencia)'}:</span><span className="text-green-400 font-bold">{formatRD(previewDia)}</span></div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* v8.12: Dieta diaria del proyecto (paga desde caja chica del maestro) */}
+        <div className="space-y-3 border-t border-zinc-800 pt-3">
+          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">🍽️ Dieta diaria</div>
+          <div className="text-[10px] text-zinc-500">La dieta se paga desde la caja chica del maestro responsable. Configura el monto y el modo de aplicación.</div>
+
+          <div className="grid grid-cols-3 gap-1">
+            <button
+              type="button"
+              onClick={() => setForm({ ...form, dietaModo: 'desactivada' })}
+              className={`p-2 text-[10px] font-bold uppercase border-2 ${form.dietaModo === 'desactivada' ? 'bg-zinc-700 text-white border-transparent' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}
+            >
+              Desactivada
+            </button>
+            <button
+              type="button"
+              onClick={() => setForm({ ...form, dietaModo: 'manual' })}
+              className={`p-2 text-[10px] font-bold uppercase border-2 ${form.dietaModo === 'manual' ? 'bg-blue-700 text-white border-transparent' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}
+              title="El maestro hace click cada día 'consumí dieta'"
+            >
+              Manual
+            </button>
+            <button
+              type="button"
+              onClick={() => setForm({ ...form, dietaModo: 'auto' })}
+              className={`p-2 text-[10px] font-bold uppercase border-2 ${form.dietaModo === 'auto' ? 'bg-green-700 text-white border-transparent' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}
+              title="Al cerrar la jornada, descuenta la dieta automático"
+            >
+              Auto
+            </button>
+          </div>
+
+          {form.dietaModo !== 'desactivada' && (
+            <div className="bg-zinc-950 border border-zinc-800 p-3 space-y-2">
+              <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">Monto diario al maestro responsable</div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-zinc-400">RD$</span>
+                <input
+                  type="number"
+                  value={form.dietaDiariaRd || ''}
+                  onChange={e => setForm({ ...form, dietaDiariaRd: parseFloat(e.target.value) || 0 })}
+                  placeholder="0"
+                  className="flex-1 bg-zinc-900 border border-blue-800 px-2 py-2 text-blue-300 text-sm font-bold text-right"
+                />
+                <span className="text-xs text-zinc-500">/día</span>
+              </div>
+              <div className="text-[10px] text-zinc-500">
+                {form.dietaModo === 'auto'
+                  ? '⚙️ AUTO: cada vez que se cierra una jornada de este proyecto, se descuenta este monto de la caja chica del maestro principal.'
+                  : '✋ MANUAL: el maestro registra "consumí dieta de hoy" desde la app cuando aplique. Hay protección contra duplicados.'}
+              </div>
+              {(form.dietaDiariaRd > 0) && (
+                <div className="text-[10px] bg-zinc-900 border border-zinc-800 p-2 flex justify-between">
+                  <span className="text-zinc-400">Por 14 días de obra:</span>
+                  <span className="text-blue-300 font-bold">{formatRD((Number(form.dietaDiariaRd) || 0) * 14)}</span>
                 </div>
               )}
             </div>

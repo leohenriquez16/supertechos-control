@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { ArrowLeft, Loader2, Plus, Wallet, AlertCircle, Eye, Check, X, Trash2, FileText, Filter, Sparkles } from 'lucide-react';
+import { ArrowLeft, Loader2, Plus, Wallet, AlertCircle, Eye, Check, X, Trash2, FileText, Filter, Sparkles, MessageSquare, Camera } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatRD, formatNum, formatFechaCorta } from '../../lib/helpers/formato';
+import { comprimirImagen } from '../../lib/imports';
 import Campo from '../common/Campo';
 import Input from '../common/Input';
 
@@ -68,6 +69,18 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
       await db.eliminarMovimientoCajaChica(mov.id);
       cargar();
     } catch (e) { alert('Error: ' + (e.message || e)); }
+  };
+
+  // Adjuntar una foto a un movimiento que se reportó "sin foto" (admin recibe la foto por WS).
+  const adjuntarFoto = async (mov, file) => {
+    if (!file) return;
+    try {
+      const dataUrl = await comprimirImagen(file);
+      await db.adjuntarFotoAMovimiento(mov.id, dataUrl);
+      cargar();
+    } catch (e) {
+      alert('Error adjuntando foto: ' + (e.message || e));
+    }
   };
 
   const pendientes = useMemo(() => movimientos.filter(m => m.status === 'pendiente_revision'), [movimientos]);
@@ -190,7 +203,16 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
             <div className="text-center py-10 text-zinc-500 text-sm">✓ Sin pendientes. Todo aprobado.</div>
           ) : (
             pendientes.map(m => (
-              <FilaPendiente key={m.id} m={m} data={data} onAprobar={() => aprobar(m)} onRechazar={() => rechazar(m)} onEliminar={() => eliminar(m)} onVerFoto={() => verFotoMov(m)} />
+              <FilaPendiente
+                key={m.id}
+                m={m}
+                data={data}
+                onAprobar={() => aprobar(m)}
+                onRechazar={() => rechazar(m)}
+                onEliminar={() => eliminar(m)}
+                onVerFoto={() => verFotoMov(m)}
+                onAdjuntarFoto={(file) => adjuntarFoto(m, file)}
+              />
             ))
           )}
         </div>
@@ -299,6 +321,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
         <ModalEntregarCaja
           usuario={usuario}
           data={data}
+          saldosMap={saldosMap}
           onCerrar={() => setModalEntrega(false)}
           onGuardado={() => { setModalEntrega(false); cargar(); }}
         />
@@ -342,14 +365,22 @@ function TabBtn({ activo, onClick, children }) {
   );
 }
 
-function FilaPendiente({ m, data, onAprobar, onRechazar, onEliminar, onVerFoto }) {
+function FilaPendiente({ m, data, onAprobar, onRechazar, onEliminar, onVerFoto, onAdjuntarFoto }) {
   const persona = data.personal.find(p => p.id === m.personaId);
   const proy = m.proyectoId ? data.proyectos.find(p => p.id === m.proyectoId) : null;
+  const fotoPorWs = !!m.datosIA?.foto_por_ws && !m.tieneFoto;
   return (
-    <div className="bg-zinc-900 border border-orange-800/50 p-3 space-y-2">
+    <div className={`bg-zinc-900 border p-3 space-y-2 ${fotoPorWs ? 'border-yellow-700/60' : 'border-orange-800/50'}`}>
       <div className="flex items-start gap-2">
         <div className="flex-1 min-w-0">
-          <div className="text-xs font-bold">{persona?.nombre || m.personaId}</div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="text-xs font-bold">{persona?.nombre || m.personaId}</div>
+            {fotoPorWs && (
+              <div className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-yellow-900/40 text-yellow-300 border border-yellow-700 flex items-center gap-1">
+                <MessageSquare className="w-2.5 h-2.5" /> Foto por WS
+              </div>
+            )}
+          </div>
           <div className="text-[10px] text-zinc-400 mt-0.5">
             {m.tipo === 'gasto_factura' ? '🧾 Gasto' : m.tipo === 'dieta' ? '🍽️ Dieta' : m.tipo} · {formatFechaCorta(m.fecha)}
             {proy && <span className="text-red-400"> · {proy.referenciaOdoo || proy.cliente}</span>}
@@ -361,11 +392,17 @@ function FilaPendiente({ m, data, onAprobar, onRechazar, onEliminar, onVerFoto }
           <div className="text-xl font-black text-orange-400">{formatRD(m.monto)}</div>
         </div>
       </div>
-      <div className="flex gap-1">
+      <div className="flex gap-1 flex-wrap">
         {m.tieneFoto && (
           <button onClick={onVerFoto} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-bold uppercase px-2 py-1.5 flex items-center gap-1">
             <Eye className="w-3 h-3" /> Foto
           </button>
+        )}
+        {fotoPorWs && onAdjuntarFoto && (
+          <label className="bg-yellow-700 hover:bg-yellow-600 text-white text-[10px] font-bold uppercase px-2 py-1.5 flex items-center gap-1 cursor-pointer">
+            <input type="file" accept="image/*" onChange={e => onAdjuntarFoto(e.target.files?.[0])} className="hidden" />
+            <Camera className="w-3 h-3" /> Adjuntar foto
+          </label>
         )}
         <button onClick={onAprobar} className="flex-1 bg-green-700 hover:bg-green-600 text-white text-[10px] font-black uppercase py-1.5 flex items-center justify-center gap-1">
           <Check className="w-3 h-3" /> Aprobar
@@ -386,6 +423,7 @@ function FilaMovimiento({ m, data, onVerFoto, onEliminar }) {
   const proy = m.proyectoId ? data.proyectos.find(p => p.id === m.proyectoId) : null;
   const meta = TIPOS[m.tipo];
   const stmeta = STATUS[m.status];
+  const fotoPorWs = !!m.datosIA?.foto_por_ws && !m.tieneFoto;
   const signo = m.tipo === 'entrega' ? '+' : (m.tipo === 'ajuste' ? (m.signoAjuste >= 0 ? '+' : '−') : '−');
   const cMonto = m.tipo === 'entrega' ? 'text-green-400' : (m.status === 'aprobado' ? 'text-orange-400' : 'text-zinc-500');
   return (
@@ -395,6 +433,9 @@ function FilaMovimiento({ m, data, onVerFoto, onEliminar }) {
         <div className="flex items-center gap-2 flex-wrap">
           <div className="text-xs font-bold truncate">{persona?.nombre || m.personaId}</div>
           <div className={`text-[9px] font-black uppercase tracking-wider px-1 ${stmeta.cls}`}>{stmeta.label}</div>
+          {fotoPorWs && (
+            <div className="text-[9px] font-black uppercase tracking-wider px-1 bg-yellow-900/40 text-yellow-300 border border-yellow-700">📱 WS</div>
+          )}
         </div>
         <div className="text-[10px] text-zinc-400 truncate">
           {meta.label} · {formatFechaCorta(m.fecha)}{proy ? ` · ${proy.referenciaOdoo || proy.cliente}` : ''}
@@ -426,22 +467,33 @@ const STATUS = {
 };
 
 // Modal para entregar efectivo a una caja chica
-function ModalEntregarCaja({ usuario, data, onCerrar, onGuardado }) {
-  const titulares = data.personal.filter(p => tieneRol(p, 'maestro') || tieneRol(p, 'supervisor'));
+function ModalEntregarCaja({ usuario, data, onCerrar, onGuardado, saldosMap = {} }) {
+  const titulares = data.personal.filter(p => (tieneRol(p, 'maestro') || tieneRol(p, 'supervisor')) && p.cajaChicaHabilitada);
   const [personaId, setPersonaId] = useState('');
   const [monto, setMonto] = useState('');
   const [concepto, setConcepto] = useState('');
   const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
   const [guardando, setGuardando] = useState(false);
 
+  const personaSel = titulares.find(p => p.id === personaId);
+  const saldoSel = personaSel ? (saldosMap[personaSel.id]?.saldo || 0) : 0;
+  const limiteSel = personaSel?.limiteCajaChica;
+  const montoNum = parseFloat(monto) || 0;
+  const saldoTrasEntrega = saldoSel + montoNum;
+  const excedeLimite = limiteSel != null && limiteSel > 0 && saldoTrasEntrega > limiteSel;
+  const personaEnLimite = personaSel && limiteSel != null && limiteSel > 0 && saldoSel <= 0;
+
   const guardar = async () => {
     if (!personaId) { alert('Selecciona la persona'); return; }
-    const m = parseFloat(monto);
-    if (!m || m <= 0) { alert('Ingresa un monto válido'); return; }
+    if (!montoNum || montoNum <= 0) { alert('Ingresa un monto válido'); return; }
+    if (excedeLimite) {
+      const msg = `⚠️ Esta entrega haría que ${personaSel.nombre} tenga RD$${new Intl.NumberFormat('es-DO').format(saldoTrasEntrega)} en caja chica, excediendo su límite de RD$${new Intl.NumberFormat('es-DO').format(limiteSel)}.\n\n¿Confirmas la entrega de todos modos?`;
+      if (!confirm(msg)) return;
+    }
     setGuardando(true);
     try {
       await db.crearMovimientoCajaChica({
-        personaId, fecha, tipo: 'entrega', monto: m,
+        personaId, fecha, tipo: 'entrega', monto: montoNum,
         concepto: concepto || 'Entrega de caja chica',
         status: 'aprobado', // las entregas no requieren aprobación
         aprobadoPorId: usuario.id,
@@ -465,7 +517,7 @@ function ModalEntregarCaja({ usuario, data, onCerrar, onGuardado }) {
           <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
         </div>
 
-        <Campo label="Persona (titular)">
+        <Campo label="Persona (titular con caja chica habilitada)">
           <select
             value={personaId}
             onChange={e => setPersonaId(e.target.value)}
@@ -474,7 +526,32 @@ function ModalEntregarCaja({ usuario, data, onCerrar, onGuardado }) {
             <option value="">— Seleccionar —</option>
             {titulares.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
           </select>
+          {titulares.length === 0 && (
+            <div className="text-[10px] text-yellow-400 mt-1">⚠️ No hay personal con caja chica habilitada. Activa el toggle en Personal antes de entregar.</div>
+          )}
         </Campo>
+
+        {personaSel && (
+          <div className="bg-zinc-950 border border-zinc-800 p-2 text-[11px] space-y-0.5">
+            <div className="flex justify-between"><span className="text-zinc-500">Saldo actual:</span><span className={`font-bold ${saldoSel >= 0 ? 'text-green-400' : 'text-red-400'}`}>RD$ {new Intl.NumberFormat('es-DO').format(saldoSel)}</span></div>
+            {limiteSel != null && limiteSel > 0 ? (
+              <>
+                <div className="flex justify-between"><span className="text-zinc-500">Límite asignado:</span><span className="text-zinc-300">RD$ {new Intl.NumberFormat('es-DO').format(limiteSel)}</span></div>
+                {personaEnLimite && (
+                  <div className="text-red-400 mt-1">🚫 Persona ya consumió su caja. Aprueba sus gastos pendientes antes de entregar más.</div>
+                )}
+                {!personaEnLimite && montoNum > 0 && (
+                  <div className="flex justify-between mt-1 pt-1 border-t border-zinc-800">
+                    <span className="text-zinc-500">Saldo tras entrega:</span>
+                    <span className={`font-bold ${excedeLimite ? 'text-red-400' : 'text-green-400'}`}>RD$ {new Intl.NumberFormat('es-DO').format(saldoTrasEntrega)}{excedeLimite ? ' ⚠️ excede' : ''}</span>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="text-zinc-500">Sin límite definido</div>
+            )}
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           <Campo label="Fecha"><Input type="date" value={fecha} onChange={v => setFecha(v)} /></Campo>
@@ -497,8 +574,9 @@ function ModalEntregarCaja({ usuario, data, onCerrar, onGuardado }) {
           <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2.5">Cancelar</button>
           <button
             onClick={guardar}
-            disabled={guardando}
-            className="flex-1 bg-green-700 hover:bg-green-600 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-2.5 flex items-center justify-center gap-1"
+            disabled={guardando || personaEnLimite}
+            className="flex-1 bg-green-700 hover:bg-green-600 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-xs font-black uppercase py-2.5 flex items-center justify-center gap-1"
+            title={personaEnLimite ? 'Aprueba primero los gastos pendientes' : ''}
           >
             {guardando ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Registrar entrega'}
           </button>

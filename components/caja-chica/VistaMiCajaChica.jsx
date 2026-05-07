@@ -66,6 +66,14 @@ export default function VistaMiCajaChica({ usuario, data, onVolver }) {
   const saldoActual = saldo?.saldo || 0;
   const saldoProy = saldo?.saldoProyectado || 0;
   const pendientes = saldo?.pendientes || 0;
+  const limite = usuario.limiteCajaChica != null ? Number(usuario.limiteCajaChica) : null;
+  // Estado del límite: ok | bajo (<20%) | consumido (<=0)
+  let estadoLimite = 'ok';
+  if (limite && limite > 0) {
+    if (saldoActual <= 0) estadoLimite = 'consumido';
+    else if (saldoActual < limite * 0.2) estadoLimite = 'bajo';
+  }
+  const pctUsado = limite && limite > 0 ? Math.max(0, Math.min(100, ((limite - saldoActual) / limite) * 100)) : 0;
 
   return (
     <div className="space-y-5">
@@ -79,15 +87,54 @@ export default function VistaMiCajaChica({ usuario, data, onVolver }) {
       </div>
 
       {/* Hero: saldo actual */}
-      <div className={`p-6 ${saldoActual >= 0 ? 'bg-gradient-to-br from-green-700 to-green-900' : 'bg-gradient-to-br from-red-700 to-red-900'} text-white`}>
+      <div className={`p-6 text-white ${
+        estadoLimite === 'consumido' ? 'bg-gradient-to-br from-red-700 to-red-900'
+        : estadoLimite === 'bajo' ? 'bg-gradient-to-br from-yellow-600 to-yellow-800'
+        : saldoActual >= 0 ? 'bg-gradient-to-br from-green-700 to-green-900'
+        : 'bg-gradient-to-br from-red-700 to-red-900'
+      }`}>
         <div className="text-[11px] tracking-widest uppercase text-white/80 font-bold">Saldo disponible</div>
         <div className="text-4xl sm:text-5xl font-black mt-2">RD$ {formatNum(saldoActual, 2)}</div>
+        {limite != null && limite > 0 && (
+          <div className="mt-3 space-y-1">
+            <div className="text-xs text-white/80 flex justify-between">
+              <span>Límite asignado</span>
+              <span>RD$ {formatNum(limite, 0)}</span>
+            </div>
+            <div className="h-2 bg-black/30 overflow-hidden">
+              <div
+                className="h-full bg-white/70 transition-all"
+                style={{ width: `${pctUsado}%` }}
+              />
+            </div>
+          </div>
+        )}
         {pendientes > 0 && (
           <div className="text-sm text-white/80 mt-2">
             ⏳ {pendientes} gasto{pendientes !== 1 ? 's' : ''} pendiente{pendientes !== 1 ? 's' : ''} · si se aprueban quedaría en <b>RD$ {formatNum(saldoProy, 2)}</b>
           </div>
         )}
       </div>
+
+      {/* Banners de estado de límite */}
+      {estadoLimite === 'consumido' && (
+        <div className="bg-red-900/30 border-2 border-red-600 p-3 text-xs text-red-200 flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-red-400" />
+          <div>
+            <div className="font-bold text-red-300">Has consumido tu caja chica</div>
+            <div className="mt-0.5">La oficina debe revisar y aprobar tus gastos pendientes para reembolsar. Puedes seguir reportando gastos que ya hiciste, pero no recibirás más caja hasta cuadrar.</div>
+          </div>
+        </div>
+      )}
+      {estadoLimite === 'bajo' && (
+        <div className="bg-yellow-900/30 border-2 border-yellow-700 p-3 text-xs text-yellow-200 flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-yellow-400" />
+          <div>
+            <div className="font-bold text-yellow-300">Estás cerca de tu límite</div>
+            <div className="mt-0.5">Quedan RD${formatNum(saldoActual, 0)} de RD${formatNum(limite, 0)}. Reporta tus gastos pendientes para que la oficina pueda reembolsar a tiempo.</div>
+          </div>
+        </div>
+      )}
 
       {/* Botón principal */}
       <button
@@ -156,6 +203,7 @@ function MovimientoRow({ m, data, onVerFoto }) {
   const proy = m.proyectoId ? data.proyectos.find(p => p.id === m.proyectoId) : null;
   const meta = TIPOS[m.tipo] || TIPOS.ajuste;
   const statusMeta = STATUS[m.status] || STATUS.pendiente_revision;
+  const fotoPorWs = !!m.datosIA?.foto_por_ws && !m.tieneFoto;
   const signo = m.tipo === 'entrega' ? '+' : (m.tipo === 'ajuste' ? (m.signoAjuste >= 0 ? '+' : '−') : '−');
   const colorMonto = m.tipo === 'entrega' ? 'text-green-400'
     : (m.tipo === 'ajuste' ? (m.signoAjuste >= 0 ? 'text-green-400' : 'text-red-400') : 'text-orange-400');
@@ -169,6 +217,9 @@ function MovimientoRow({ m, data, onVerFoto }) {
         <div className="flex items-center gap-2 flex-wrap">
           <div className="text-xs font-bold uppercase tracking-wider">{meta.label}</div>
           <div className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 ${statusMeta.cls}`}>{statusMeta.label}</div>
+          {fotoPorWs && (
+            <div className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-yellow-900/40 text-yellow-300 border border-yellow-700">📱 WS pendiente</div>
+          )}
         </div>
         <div className="text-xs text-zinc-400 mt-0.5 truncate">
           {m.proveedor || m.concepto || '—'}

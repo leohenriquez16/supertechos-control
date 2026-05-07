@@ -46,6 +46,7 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
     cliente: proyecto.cliente || '',
     clienteId: proyecto.clienteId || '', // v8.9.10
     contactoPrincipalId: proyecto.contactoPrincipalId || null, // v8.9.10
+    nombre: proyecto.nombre || '', // v8.10.22: nombre interno editable (lo que aparece como título en reportes)
     referenciaProyecto: proyecto.referenciaProyecto || '',
     referenciaOdoo: proyecto.referenciaOdoo || '',
     contactoClienteNombre: proyecto.contactoClienteNombre || '',
@@ -270,6 +271,11 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
             </div>
           </Campo>
           <div className="grid grid-cols-2 gap-3"><Campo label="Ref. Odoo *"><Input value={form.referenciaOdoo} onChange={v => setForm({ ...form, referenciaOdoo: v })} placeholder="Ej: ST-C5437" /></Campo><Campo label="Ref. Proyecto"><Input value={form.referenciaProyecto} onChange={v => setForm({ ...form, referenciaProyecto: v })} /></Campo></div>
+          {/* v8.10.22: Nombre interno (es el título principal que aparece en reportes semanales y vistas) */}
+          <Campo label="Nombre interno (título que verás en reportes y listas)">
+            <Input value={form.nombre} onChange={v => setForm({ ...form, nombre: v })} placeholder="Ej: Techo Central y Distrito Herrera" />
+            <div className="text-[10px] text-zinc-500 mt-1">Si lo dejas vacío, se usará la Ref. Proyecto como título.</div>
+          </Campo>
           {/* v8.10.23: selector de sistema por defecto del proyecto */}
           <Campo label="Sistema por defecto del proyecto">
             <select

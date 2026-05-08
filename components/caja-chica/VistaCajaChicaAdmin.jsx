@@ -10,6 +10,7 @@ import Input from '../common/Input';
 import ToggleDensidad, { useDensidad } from '../common/ToggleDensidad';
 import ModalGenerarCuadre from './ModalGenerarCuadre';
 import ModalExportarOdoo from './ModalExportarOdoo';
+import DashboardCajaChica from './DashboardCajaChica';
 
 const tieneRol = (p, r) => p?.roles?.includes(r);
 
@@ -19,7 +20,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
   const [movimientos, setMovimientos] = useState([]);
   const [saldosMap, setSaldosMap] = useState({});
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState('bandeja'); // bandeja | porPersona | porProyecto | movimientos
+  const [tab, setTab] = useState('dashboard'); // dashboard | bandeja | porPersona | porProyecto | movimientos
   const [densidad, setDensidad, dx] = useDensidad('caja-chica-admin');
   const [verFoto, setVerFoto] = useState(null); // {id, fotoData}
   const [filtroPersona, setFiltroPersona] = useState('');
@@ -200,7 +201,8 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-zinc-900 border border-zinc-800 p-1">
+      <div className="flex gap-1 bg-zinc-900 border border-zinc-800 p-1 overflow-x-auto">
+        <TabBtn activo={tab === 'dashboard'} onClick={() => setTab('dashboard')}>📊 Dashboard</TabBtn>
         <TabBtn activo={tab === 'bandeja'} onClick={() => setTab('bandeja')}>
           📥 Bandeja {pendientes.length > 0 && <span className="ml-1 bg-orange-600 text-white px-1 text-[9px]">{pendientes.length}</span>}
         </TabBtn>
@@ -208,6 +210,8 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
         <TabBtn activo={tab === 'porProyecto'} onClick={() => setTab('porProyecto')}>🏗️ Por Proyecto</TabBtn>
         <TabBtn activo={tab === 'movimientos'} onClick={() => setTab('movimientos')}>📋 Movimientos</TabBtn>
       </div>
+
+      {tab === 'dashboard' && <DashboardCajaChica data={data} />}
 
       {tab === 'bandeja' && (
         <div className={dx.listGap}>

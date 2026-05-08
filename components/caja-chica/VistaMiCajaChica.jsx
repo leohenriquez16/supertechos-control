@@ -206,6 +206,7 @@ export default function VistaMiCajaChica({ usuario, data, onVolver }) {
         <ModalReportarGasto
           usuario={usuario}
           proyectos={proyectosDelUsuario}
+          categorias={data.categoriasCajaChica || []}
           onCerrar={() => setModal(false)}
           onGuardado={() => { setModal(false); cargar(); }}
         />

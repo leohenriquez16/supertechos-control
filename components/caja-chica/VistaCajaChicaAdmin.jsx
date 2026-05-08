@@ -16,7 +16,7 @@ const tieneRol = (p, r) => p?.roles?.includes(r);
 
 // Vista admin del módulo Caja Chica.
 // Tabs: Bandeja (pendientes) · Por Persona · Por Proyecto · Movimientos
-export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProveedores }) {
+export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProveedores, onIrACategorias }) {
   const [movimientos, setMovimientos] = useState([]);
   const [saldosMap, setSaldosMap] = useState({});
   const [loading, setLoading] = useState(true);
@@ -181,6 +181,11 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
           <button onClick={() => setModalExport(true)} className="bg-zinc-900 border border-zinc-800 hover:border-purple-500 text-zinc-300 text-xs font-bold uppercase px-3 py-2 flex items-center gap-1">
             <FileText className="w-3 h-3 text-purple-400" /> CSV Odoo
           </button>
+          {onIrACategorias && (
+            <button onClick={onIrACategorias} className="bg-zinc-900 border border-zinc-800 hover:border-pink-500 text-zinc-300 text-xs font-bold uppercase px-3 py-2 flex items-center gap-1">
+              🏷️ Categorías
+            </button>
+          )}
           {onIrAProveedores && (
             <button onClick={onIrAProveedores} className="bg-zinc-900 border border-zinc-800 hover:border-yellow-500 text-zinc-300 text-xs font-bold uppercase px-3 py-2 flex items-center gap-1">
               <Sparkles className="w-3 h-3 text-yellow-400" /> Proveedores

@@ -52,6 +52,7 @@ import VistaNomina from '../components/nomina/VistaNomina';
 import VistaMiCajaChica from '../components/caja-chica/VistaMiCajaChica';
 import VistaCajaChicaAdmin from '../components/caja-chica/VistaCajaChicaAdmin';
 import VistaProveedoresCajaChica from '../components/caja-chica/VistaProveedoresCajaChica';
+import VistaCategoriasCajaChica from '../components/caja-chica/VistaCategoriasCajaChica';
 // v8.10.14: VistaMapa extraída con Leaflet interactivo
 import VistaMapa from '../components/proyecto/VistaMapa';
 // v8.10.23: Modal importar desde Odoo
@@ -723,8 +724,9 @@ export default function App() {
         {vista === 'planificacion' && puede(usuario, data.permisos, 'planificacion', 'ver') && <VistaPlanificacion usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'miProduccion' && tieneRol(usuario, 'maestro') && <VistaMiProduccion usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'miCajaChica' && (tieneRol(usuario, 'maestro') || tieneRol(usuario, 'supervisor')) && usuario.cajaChicaHabilitada && <VistaMiCajaChica usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} />}
-        {vista === 'cajaChica' && esAdmin && <VistaCajaChicaAdmin usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onIrAProveedores={() => setVista('proveedoresCajaChica')} />}
+        {vista === 'cajaChica' && esAdmin && <VistaCajaChicaAdmin usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onIrAProveedores={() => setVista('proveedoresCajaChica')} onIrACategorias={() => setVista('categoriasCajaChica')} />}
         {vista === 'proveedoresCajaChica' && esAdmin && <VistaProveedoresCajaChica usuario={usuario} data={data} onVolver={() => setVista('cajaChica')} />}
+        {vista === 'categoriasCajaChica' && esAdmin && <VistaCategoriasCajaChica onVolver={() => setVista('cajaChica')} onCambio={() => recargar()} />}
         {vista === 'estadisticasPersonal' && esAdmin && <VistaEstadisticasPersonal data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'categorias' && esAdmin && <VistaCategorias data={data} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
         {vista === 'disponibilidad' && esAdmin && <VistaDisponibilidad usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} onRecargar={recargar} />}

@@ -100,12 +100,17 @@ function bloqueTitular({ persona, cuadre, fechaInicio, fechaFin, data, conSignat
       </tr>`;
   }).join('');
 
-  // Resumen por categoría (solo gastos aprobados)
-  const filasCategoria = cuadre.categorias.map(c => `
+  // Resumen por categoría (usa nombre canónico de DB si está disponible)
+  const catMap = {};
+  (data?.categoriasCajaChica || []).forEach(cat => { catMap[cat.id] = cat; });
+  const filasCategoria = cuadre.categorias.map(c => {
+    const nombre = catMap[c.categoria]?.nombre || CATEGORIA_LABEL[c.categoria] || c.categoria;
+    return `
     <tr>
-      <td class="label">${CATEGORIA_LABEL[c.categoria] || c.categoria} <span style="color:#888;">(${c.count})</span></td>
+      <td class="label">${nombre} <span style="color:#888;">(${c.count})</span></td>
       <td class="val">RD$ ${fmt(c.total)}</td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 
   // Anexo: pendientes y rechazados (informativos, NO afectan saldo)
   let anexoHtml = '';

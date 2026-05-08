@@ -5,7 +5,27 @@
 export const runtime = 'edge';
 export const maxDuration = 60;
 
-const PROMPT = `Eres un asistente que extrae datos estructurados de facturas físicas dominicanas (típicas de ferretería, gasolineras, restaurantes, peajes).
+// Construye el prompt incluyendo dinámicamente las categorías que el cliente
+// envíe. Si no envía nada, usa la lista por defecto (compatibilidad).
+function buildPrompt(categorias) {
+  const lista = (categorias && categorias.length > 0)
+    ? categorias
+    : [
+        { id: 'ferreteria',   nombre: 'Ferretería',   descripcion: 'Tornillos, cinta, pintura, materiales menores' },
+        { id: 'combustible',  nombre: 'Combustible',  descripcion: 'Gasolina, gasoil' },
+        { id: 'comida',       nombre: 'Comida',       descripcion: 'Almuerzo del equipo, refrigerios' },
+        { id: 'peaje',        nombre: 'Peaje',        descripcion: 'Peajes' },
+        { id: 'transporte',   nombre: 'Transporte',   descripcion: 'Taxis, fletes' },
+        { id: 'herramientas', nombre: 'Herramientas', descripcion: 'Compra o reparación de herramientas' },
+        { id: 'otros',        nombre: 'Otros',        descripcion: 'Otros gastos' },
+      ];
+
+  const ids = lista.map(c => c.id).join(' | ');
+  const descripcionesCategorias = lista
+    .map(c => `  - ${c.id}${c.nombre ? ` ("${c.nombre}")` : ''}${c.descripcion ? `: ${c.descripcion}` : ''}`)
+    .join('\n');
+
+  return `Eres un asistente que extrae datos estructurados de facturas físicas dominicanas (típicas de ferretería, gasolineras, restaurantes, peajes).
 
 Devuelve EXCLUSIVAMENTE un JSON con esta estructura, sin texto antes ni después:
 
@@ -18,25 +38,32 @@ Devuelve EXCLUSIVAMENTE un JSON con esta estructura, sin texto antes ni después
   "fecha": string | null,        // formato YYYY-MM-DD si se identifica, null si no
   "proveedor": string | null,    // nombre de la empresa que emite
   "ncf": string | null,          // número comprobante fiscal si visible (ej: B0100012345)
-  "categoria_sugerida": string | null, // ferreteria | combustible | comida | peaje | transporte | herramientas | otros
+  "categoria_sugerida": string | null, // ELIGE EXACTAMENTE UNO de los IDs listados abajo
   "concepto": string | null,     // breve descripción de qué se compró (10-60 chars)
   "lineas": [                    // hasta 10 productos, opcional
     { "descripcion": string, "cantidad": number | null, "precio": number | null }
   ],
   "confianza": "alta" | "media" | "baja",
-  "advertencias": string[]       // ej: ["foto borrosa en RNC", "no se ve fecha"]
+  "advertencias": string[]
 }
+
+CATEGORÍAS DISPONIBLES (debes elegir UNA de estos IDs exactos para "categoria_sugerida"; si nada encaja claramente usa "otros" o el último ID de la lista):
+${descripcionesCategorias}
+
+IDs válidos: ${ids}
 
 Reglas:
 - Si un campo no se ve claro, usa null en lugar de inventar.
 - monto_total siempre es el TOTAL final (después de ITBIS y propina si aplican).
 - RNC dominicano: 9 u 11 dígitos, puede tener formato 130-77433-1.
 - Si la imagen NO es una factura/recibo, devuelve confianza="baja" y todos los campos null excepto advertencias.
+- "categoria_sugerida" DEBE ser uno de los IDs listados — no inventes nuevas categorías.
 - No incluyas explicaciones fuera del JSON.`;
+}
 
 export async function POST(request) {
   try {
-    const { base64Data, mediaType } = await request.json();
+    const { base64Data, mediaType, categorias } = await request.json();
 
     if (!base64Data) {
       return new Response(JSON.stringify({ error: 'Imagen no recibida' }), { status: 400 });
@@ -73,7 +100,7 @@ export async function POST(request) {
           role: 'user',
           content: [
             { type: 'image', source: { type: 'base64', media_type: detectedMedia, data: pureBase64 } },
-            { type: 'text', text: PROMPT },
+            { type: 'text', text: buildPrompt(categorias) },
           ],
         }],
       }),

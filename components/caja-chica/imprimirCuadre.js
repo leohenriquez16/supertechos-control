@@ -162,9 +162,29 @@ function bloqueTitular({ persona, cuadre, fechaInicio, fechaFin, data, conSignat
     <h2>Egresos por categoría</h2>
     <div class="resumen">
       <table>${filasCategoria}
-        <tr class="total"><td class="label">Total egresos con factura</td><td class="val">RD$ ${fmt(cuadre.totalGastos)}</td></tr>
+        <tr class="total"><td class="label">Total egresos aprobados</td><td class="val">RD$ ${fmt(cuadre.totalGastos)}</td></tr>
       </table>
     </div>` : ''}
+
+    ${cuadre.gastosSinFactura && cuadre.gastosSinFactura.length > 0 ? `
+    <h2 style="border-bottom-color:#CC0000;">Gastos sin factura — atención auditoría</h2>
+    <p style="font-size:10px;color:#555;margin:0 0 6px;">Compras informales sin comprobante fiscal: vendedor ambulante, ayudante ocasional, propinas, etc. Suman al egreso del fondo pero NO se cargan a Odoo como facturas proveedor.</p>
+    <table class="movs">
+      <thead><tr><th>Fecha</th><th>Categoría</th><th>Concepto / descripción</th><th>Monto</th></tr></thead>
+      <tbody>
+        ${cuadre.gastosSinFactura.map(m => {
+          const proy = m.proyectoId ? data.proyectos.find(p => p.id === m.proyectoId) : null;
+          const cat = catMap[m.datosIA?.categoria_sugerida]?.nombre || m.datosIA?.categoria_sugerida || '—';
+          return `<tr>
+            <td>${fmtFecha(m.fecha)}</td>
+            <td>${cat}</td>
+            <td>${m.concepto || '<i style="color:#999;">sin descripción</i>'}${proy ? `<br><span style="color:#888;font-size:9px;">${proy.referenciaOdoo || ''} ${proy.cliente || ''}</span>` : ''}</td>
+            <td class="right" style="color:#CC0000;font-weight:bold;">− RD$ ${fmt(m.monto)}</td>
+          </tr>`;
+        }).join('')}
+        <tr class="total"><td class="label" colspan="3"><b>Total sin factura</b></td><td class="val" style="color:#CC0000;">RD$ ${fmt(cuadre.totalSinFactura)}</td></tr>
+      </tbody>
+    </table>` : ''}
 
     <h2>Conciliación de fondos</h2>
     <div class="resumen">

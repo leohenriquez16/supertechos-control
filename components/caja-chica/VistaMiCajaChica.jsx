@@ -233,6 +233,7 @@ function MovimientoRow({ m, data, onVerFoto }) {
   const meta = TIPOS[m.tipo] || TIPOS.ajuste;
   const statusMeta = STATUS[m.status] || STATUS.pendiente_revision;
   const fotoPorWs = !!m.datosIA?.foto_por_ws && !m.tieneFoto;
+  const sinFactura = !!m.datosIA?.sin_factura;
   const signo = m.tipo === 'entrega' ? '+' : (m.tipo === 'ajuste' ? (m.signoAjuste >= 0 ? '+' : '−') : '−');
   const colorMonto = m.tipo === 'entrega' ? 'text-green-400'
     : (m.tipo === 'ajuste' ? (m.signoAjuste >= 0 ? 'text-green-400' : 'text-red-400') : 'text-orange-400');
@@ -248,6 +249,9 @@ function MovimientoRow({ m, data, onVerFoto }) {
           <div className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 ${statusMeta.cls}`}>{statusMeta.label}</div>
           {fotoPorWs && (
             <div className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-yellow-900/40 text-yellow-300 border border-yellow-700">📱 WS pendiente</div>
+          )}
+          {sinFactura && (
+            <div className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-red-900/40 text-red-300 border border-red-700">✍️ Sin factura</div>
           )}
         </div>
         <div className="text-xs text-zinc-400 mt-0.5 truncate">

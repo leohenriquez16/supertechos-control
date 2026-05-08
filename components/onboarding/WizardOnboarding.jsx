@@ -95,13 +95,8 @@ export default function WizardOnboarding({ usuario, onListo }) {
       if (datos.contactoEmergenciaTelefono.replace(/\D/g, '').length !== 10) return 'Teléfono del contacto debe ser de 10 dígitos.';
       if (!datos.contactoEmergenciaRelacion) return 'Selecciona la relación con el contacto de emergencia.';
     }
-    if (p === 4) {
-      if (!datos.foto2x2) return 'Necesitamos un selfie tuyo.';
-    }
-    if (p === 5) {
-      if (!datos.cedulaFrente) return 'Foto del frente de la cédula requerida.';
-      if (!datos.cedulaReverso) return 'Foto del reverso de la cédula requerida.';
-    }
+    // Pasos 4 y 5 (selfie + cédula) son opcionales en el wizard.
+    // El maestro puede subirlas más tarde desde su perfil.
     if (p === 6) {
       if (!datos.banco) return 'Selecciona el banco.';
       if (!datos.bancoTipoCuenta) return 'Selecciona el tipo de cuenta.';
@@ -370,9 +365,12 @@ function PasoContacto({ datos, set }) {
 function PasoSelfie({ datos, set }) {
   return (
     <div className="space-y-3">
-      <h2 className="text-lg font-black mb-1">Tu foto</h2>
+      <div className="flex items-center gap-2 mb-1">
+        <h2 className="text-lg font-black">Tu foto</h2>
+        <span className="text-[9px] bg-zinc-800 border border-zinc-700 text-zinc-400 px-1.5 py-0.5 tracking-wider uppercase font-bold">Opcional</span>
+      </div>
       <p className="text-xs text-zinc-400 mb-2">
-        Tómate un selfie con buena luz. Esta foto será tu identificación en el sistema.
+        Tómate un selfie con buena luz. Si ahora no es buen momento, puedes saltarlo y subirlo después desde tu perfil.
       </p>
       <CapturaFoto
         valor={datos.foto2x2}
@@ -387,9 +385,12 @@ function PasoSelfie({ datos, set }) {
 function PasoCedula({ datos, set }) {
   return (
     <div className="space-y-3">
-      <h2 className="text-lg font-black mb-1">Tu cédula</h2>
+      <div className="flex items-center gap-2 mb-1">
+        <h2 className="text-lg font-black">Tu cédula</h2>
+        <span className="text-[9px] bg-zinc-800 border border-zinc-700 text-zinc-400 px-1.5 py-0.5 tracking-wider uppercase font-bold">Opcional</span>
+      </div>
       <p className="text-xs text-zinc-400 mb-2">
-        Toma fotos de ambos lados de tu cédula sobre una superficie plana.
+        Toma fotos de ambos lados de tu cédula sobre una superficie plana. Si no la tienes a mano, puedes subirlas más tarde desde tu perfil.
       </p>
       <div className="space-y-3">
         <div>

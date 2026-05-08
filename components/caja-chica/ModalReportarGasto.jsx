@@ -15,7 +15,9 @@ import Input from '../common/Input';
 //  3. Muestra los datos editables (el usuario corrige si la AI se equivocó)
 //  4. Submit → crea movimiento con status='pendiente_revision' para aprobación admin
 
-export default function ModalReportarGasto({ usuario, proyectos = [], proyectoIdDefault = null, onCerrar, onGuardado }) {
+export default function ModalReportarGasto({ usuario, proyectos = [], proyectoIdDefault = null, categorias = [], onCerrar, onGuardado }) {
+  // Solo categorías activas, ordenadas
+  const categoriasActivas = (categorias || []).filter(c => c.activa).sort((a, b) => a.orden - b.orden);
   const [paso, setPaso] = useState('foto'); // foto | revisando | confirmar | guardando
   const [fotoData, setFotoData] = useState(null); // dataURL base64 (preview local; al guardar se sube a Storage)
   const [sinFoto, setSinFoto] = useState(false); // true cuando el usuario eligió "reportar sin foto"
@@ -57,10 +59,16 @@ export default function ModalReportarGasto({ usuario, proyectos = [], proyectoId
       setFotoData(dataUrl);
       setPaso('revisando');
       // Llamar al endpoint de AI
+      // Mandamos las categorías activas al endpoint para que la AI elija de ahí
       const res = await fetch('/api/caja-chica/parse-factura', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ base64Data: dataUrl }),
+        body: JSON.stringify({
+          base64Data: dataUrl,
+          categorias: categoriasActivas.map(c => ({
+            id: c.id, nombre: c.nombre, descripcion: c.descripcion,
+          })),
+        }),
       });
       const json = await res.json();
       if (!res.ok) {
@@ -108,6 +116,12 @@ export default function ModalReportarGasto({ usuario, proyectos = [], proyectoId
     const monto = parseFloat(datos.monto);
     if (!monto || monto <= 0) { alert('Ingresa un monto válido'); return; }
     if (!fotoData && !sinFoto) { alert('Falta la foto de la factura (o marca "reportar sin foto")'); return; }
+    // v8.13: regla de máximo por transacción (bloqueante)
+    const maxTx = usuario?.maxTransaccionCajaChica;
+    if (maxTx != null && maxTx > 0 && monto > maxTx) {
+      alert(`Este gasto (RD$${new Intl.NumberFormat('es-DO').format(monto)}) excede tu máximo permitido por transacción (RD$${new Intl.NumberFormat('es-DO').format(maxTx)}).\n\nPara gastos mayores debes pedir reembolso especial al admin.`);
+      return;
+    }
     setPaso('guardando');
     try {
       await db.crearMovimientoCajaChica({
@@ -273,8 +287,17 @@ export default function ModalReportarGasto({ usuario, proyectos = [], proyectoId
                   value={datos.monto}
                   onChange={e => setDatos({ ...datos, monto: e.target.value })}
                   placeholder="0"
-                  className="w-full bg-zinc-950 border-2 border-green-800 focus:border-green-500 outline-none px-3 py-2 text-green-400 text-sm font-bold text-right"
+                  className={`w-full bg-zinc-950 border-2 outline-none px-3 py-2 text-sm font-bold text-right ${
+                    usuario?.maxTransaccionCajaChica != null && usuario.maxTransaccionCajaChica > 0 && parseFloat(datos.monto) > usuario.maxTransaccionCajaChica
+                      ? 'border-red-600 text-red-400 focus:border-red-500'
+                      : 'border-green-800 text-green-400 focus:border-green-500'
+                  }`}
                 />
+                {usuario?.maxTransaccionCajaChica != null && usuario.maxTransaccionCajaChica > 0 && parseFloat(datos.monto) > usuario.maxTransaccionCajaChica && (
+                  <div className="text-[10px] text-red-400 mt-1">
+                    ⚠️ Excede tu máximo (RD${new Intl.NumberFormat('es-DO').format(usuario.maxTransaccionCajaChica)}). El gasto no se podrá enviar.
+                  </div>
+                )}
               </Campo>
             </div>
 
@@ -325,13 +348,9 @@ export default function ModalReportarGasto({ usuario, proyectos = [], proyectoId
                   className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm"
                 >
                   <option value="">—</option>
-                  <option value="ferreteria">Ferretería</option>
-                  <option value="combustible">Combustible</option>
-                  <option value="comida">Comida</option>
-                  <option value="peaje">Peaje</option>
-                  <option value="transporte">Transporte</option>
-                  <option value="herramientas">Herramientas</option>
-                  <option value="otros">Otros</option>
+                  {categoriasActivas.map(c => (
+                    <option key={c.id} value={c.id}>{c.icono ? `${c.icono} ` : ''}{c.nombre}</option>
+                  ))}
                 </select>
               </Campo>
             </div>

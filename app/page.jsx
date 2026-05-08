@@ -52,6 +52,7 @@ import VistaNomina from '../components/nomina/VistaNomina';
 import VistaMiCajaChica from '../components/caja-chica/VistaMiCajaChica';
 import VistaCajaChicaAdmin from '../components/caja-chica/VistaCajaChicaAdmin';
 import VistaProveedoresCajaChica from '../components/caja-chica/VistaProveedoresCajaChica';
+import VistaCategoriasCajaChica from '../components/caja-chica/VistaCategoriasCajaChica';
 // v8.10.14: VistaMapa extraída con Leaflet interactivo
 import VistaMapa from '../components/proyecto/VistaMapa';
 // v8.10.23: Modal importar desde Odoo
@@ -723,8 +724,9 @@ export default function App() {
         {vista === 'planificacion' && puede(usuario, data.permisos, 'planificacion', 'ver') && <VistaPlanificacion usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'miProduccion' && tieneRol(usuario, 'maestro') && <VistaMiProduccion usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'miCajaChica' && (tieneRol(usuario, 'maestro') || tieneRol(usuario, 'supervisor')) && usuario.cajaChicaHabilitada && <VistaMiCajaChica usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} />}
-        {vista === 'cajaChica' && esAdmin && <VistaCajaChicaAdmin usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onIrAProveedores={() => setVista('proveedoresCajaChica')} />}
+        {vista === 'cajaChica' && esAdmin && <VistaCajaChicaAdmin usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onIrAProveedores={() => setVista('proveedoresCajaChica')} onIrACategorias={() => setVista('categoriasCajaChica')} />}
         {vista === 'proveedoresCajaChica' && esAdmin && <VistaProveedoresCajaChica usuario={usuario} data={data} onVolver={() => setVista('cajaChica')} />}
+        {vista === 'categoriasCajaChica' && esAdmin && <VistaCategoriasCajaChica onVolver={() => setVista('cajaChica')} onCambio={() => recargar()} />}
         {vista === 'estadisticasPersonal' && esAdmin && <VistaEstadisticasPersonal data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'categorias' && esAdmin && <VistaCategorias data={data} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
         {vista === 'disponibilidad' && esAdmin && <VistaDisponibilidad usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} onRecargar={recargar} />}
@@ -4140,19 +4142,35 @@ function GestionPersonal({ personal, onVolver, onActualizar, onAbrirPerfil, data
                 </div>
               </label>
               {form.cajaChicaHabilitada && (
-                <div className="pt-2 border-t border-zinc-800 space-y-1">
-                  <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">Límite de caja chica (RD$)</div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-zinc-500">RD$</span>
-                    <input
-                      type="number"
-                      value={form.limiteCajaChica ?? ''}
-                      onChange={e => setForm({ ...form, limiteCajaChica: e.target.value === '' ? null : parseFloat(e.target.value) || 0 })}
-                      placeholder="Sin límite"
-                      className="flex-1 bg-zinc-900 border border-zinc-800 px-2 py-1.5 text-white text-xs text-right"
-                    />
+                <div className="pt-2 border-t border-zinc-800 space-y-2">
+                  <div>
+                    <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">Límite total de caja chica (RD$)</div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xs text-zinc-500">RD$</span>
+                      <input
+                        type="number"
+                        value={form.limiteCajaChica ?? ''}
+                        onChange={e => setForm({ ...form, limiteCajaChica: e.target.value === '' ? null : parseFloat(e.target.value) || 0 })}
+                        placeholder="Sin límite"
+                        className="flex-1 bg-zinc-900 border border-zinc-800 px-2 py-1.5 text-white text-xs text-right"
+                      />
+                    </div>
+                    <div className="text-[10px] text-zinc-500 mt-1">Cuando el saldo cae bajo el 20% se le advierte; si llega a 0 la oficina no puede entregar más caja sin cuadrar primero.</div>
                   </div>
-                  <div className="text-[10px] text-zinc-500">Cuando el saldo cae bajo el 20% se le advierte; si llega a 0 ve un alerta y la oficina no puede entregar más caja sin cuadrar primero.</div>
+                  <div>
+                    <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">Máximo por transacción (RD$)</div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xs text-zinc-500">RD$</span>
+                      <input
+                        type="number"
+                        value={form.maxTransaccionCajaChica ?? ''}
+                        onChange={e => setForm({ ...form, maxTransaccionCajaChica: e.target.value === '' ? null : parseFloat(e.target.value) || 0 })}
+                        placeholder="Sin máximo"
+                        className="flex-1 bg-zinc-900 border border-zinc-800 px-2 py-1.5 text-white text-xs text-right"
+                      />
+                    </div>
+                    <div className="text-[10px] text-zinc-500 mt-1">Bloquea gastos individuales mayores a este monto. Si excede, debe pedir reembolso especial al admin.</div>
+                  </div>
                 </div>
               )}
             </div>

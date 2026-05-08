@@ -17,10 +17,11 @@ const formatearTelefono = (s) => {
 
 const generarPin = () => Math.floor(Math.random() * 900000 + 100000).toString();
 
-export default function ModalInvitarMaestro({ usuario, onCerrar, onInvitado }) {
+export default function ModalInvitarMaestro({ usuario, personaExistente = null, onCerrar, onInvitado }) {
+  const esActivacion = !!personaExistente;
   const [paso, setPaso] = useState('form'); // 'form' | 'listo'
-  const [nombre, setNombre] = useState('');
-  const [telefono, setTelefono] = useState('');
+  const [nombre, setNombre] = useState(personaExistente?.nombre || '');
+  const [telefono, setTelefono] = useState(personaExistente?.telefono || '');
   const [pin, setPin] = useState(generarPin());
   const [error, setError] = useState('');
   const [guardando, setGuardando] = useState(false);
@@ -39,6 +40,7 @@ export default function ModalInvitarMaestro({ usuario, onCerrar, onInvitado }) {
         telefono,
         pinTemporal: pin,
         invitadoPorId: usuario.id,
+        personaIdExistente: personaExistente?.id || null,
       });
       setResultado(res);
       setPaso('listo');
@@ -87,7 +89,9 @@ Cualquier duda me avisas.`
       <div className="bg-zinc-900 border-2 border-zinc-800 w-full max-w-md max-h-[90vh] overflow-auto">
         <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
           <div className="font-black uppercase tracking-wider text-sm">
-            {paso === 'form' ? 'Invitar al app' : '✅ Invitación lista'}
+            {paso === 'form'
+              ? (esActivacion ? 'Activar para el app' : 'Invitar al app')
+              : '✅ Invitación lista'}
           </div>
           <button onClick={onCerrar} className="text-zinc-400 hover:text-white">
             <X className="w-5 h-5" />
@@ -98,17 +102,20 @@ Cualquier duda me avisas.`
           {paso === 'form' && (
             <div className="space-y-3">
               <p className="text-xs text-zinc-400 mb-3">
-                Crea las credenciales del maestro. El sistema genera un PIN temporal y te da el texto listo para enviar por WhatsApp.
+                {esActivacion
+                  ? `${personaExistente.nombre} ya está en el sistema. Confirma su teléfono y le generamos credenciales para que entre al app y complete su perfil.`
+                  : 'Crea las credenciales del maestro. El sistema genera un PIN temporal y te da el texto listo para enviar por WhatsApp.'}
               </p>
 
               <Field label="Nombre completo">
                 <input
                   type="text"
-                  autoFocus
+                  autoFocus={!esActivacion}
+                  readOnly={esActivacion}
                   value={nombre}
                   onChange={e => { setNombre(e.target.value); setError(''); }}
                   placeholder="Adonis Heredia Jiménez"
-                  className="w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-3 py-3 text-white"
+                  className={`w-full bg-zinc-950 border border-zinc-700 ${esActivacion ? 'text-zinc-400' : 'focus:border-red-600 text-white'} outline-none px-3 py-3`}
                 />
               </Field>
 
@@ -164,7 +171,7 @@ Cualquier duda me avisas.`
                   className="flex-[2] bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-black uppercase tracking-wider py-3 flex items-center justify-center gap-2"
                 >
                   {guardando ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                  {guardando ? 'Creando...' : 'Crear invitación'}
+                  {guardando ? 'Creando...' : (esActivacion ? 'Activar y generar PIN' : 'Crear invitación')}
                 </button>
               </div>
             </div>
@@ -175,7 +182,9 @@ Cualquier duda me avisas.`
               <div className="bg-green-950/30 border border-green-800 px-3 py-2 text-xs text-green-300">
                 {resultado.esNueva
                   ? `Se creó el usuario ${resultado.nombre}.`
-                  : `Se reinvitó a ${resultado.nombre} (ya existía).`}
+                  : (esActivacion
+                    ? `Se activó a ${resultado.nombre} para el app. Cuando entre, le pedirá cambiar el PIN y completar su perfil.`
+                    : `Se reinvitó a ${resultado.nombre} (ya existía).`)}
               </div>
 
               <div className="bg-zinc-950 border border-zinc-800 p-3">

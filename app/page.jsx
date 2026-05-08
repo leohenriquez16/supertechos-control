@@ -48,6 +48,10 @@ import NuevoProyecto from '../components/proyecto/NuevoProyecto';
 import ModalEditarProyecto from '../components/proyecto/ModalEditarProyecto';
 // v8.10.13: VistaNomina extraída
 import VistaNomina from '../components/nomina/VistaNomina';
+// v8.12: Caja Chica + Dieta
+import VistaMiCajaChica from '../components/caja-chica/VistaMiCajaChica';
+import VistaCajaChicaAdmin from '../components/caja-chica/VistaCajaChicaAdmin';
+import VistaProveedoresCajaChica from '../components/caja-chica/VistaProveedoresCajaChica';
 // v8.10.14: VistaMapa extraída con Leaflet interactivo
 import VistaMapa from '../components/proyecto/VistaMapa';
 // v8.10.23: Modal importar desde Odoo
@@ -606,6 +610,7 @@ export default function App() {
     ]},
     { seccion: 'FINANZAS', items: [
       { id: 'nomina', label: 'Nómina', icon: Wallet, vista: 'nomina' },
+      { id: 'cajaChica', label: 'Caja Chica', icon: CreditCard, vista: 'cajaChica' },
     ]},
     { seccion: 'CONFIGURACIÓN', items: [
       { id: 'sistemas', label: 'Sistemas', icon: Settings, vista: 'sistemas' },
@@ -631,6 +636,8 @@ export default function App() {
       ...(puede(usuario, data.permisos, 'planificacion', 'ver') ? [{ id: 'planificacion', label: 'Planificación', icon: Calendar, vista: 'planificacion' }] : []),
       // v8.9.18: Maestros ven su producción de la quincena
       ...(tieneRol(usuario, 'maestro') ? [{ id: 'miProduccion', label: 'Mi Producción', icon: Wallet, vista: 'miProduccion' }] : []),
+      // Caja chica: solo personal con caja_chica_habilitada (admin lo activa por persona)
+      ...((tieneRol(usuario, 'maestro') || tieneRol(usuario, 'supervisor')) && usuario.cajaChicaHabilitada ? [{ id: 'miCajaChica', label: 'Mi Caja Chica', icon: CreditCard, vista: 'miCajaChica' }] : []),
       ...(tareas.filter(t => t.asignadaAId === usuario.id).length > 0 ? [{ id: 'tareas', label: 'Tareas', icon: ClipboardList, vista: 'tareas', badge: tareas.filter(t => t.asignadaAId === usuario.id).length }] : []),
     ]},
   ];
@@ -715,6 +722,9 @@ export default function App() {
         {esAdmin && vista === 'equipoGlobal' && <VistaEquipoGlobal data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'planificacion' && puede(usuario, data.permisos, 'planificacion', 'ver') && <VistaPlanificacion usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'miProduccion' && tieneRol(usuario, 'maestro') && <VistaMiProduccion usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
+        {vista === 'miCajaChica' && (tieneRol(usuario, 'maestro') || tieneRol(usuario, 'supervisor')) && usuario.cajaChicaHabilitada && <VistaMiCajaChica usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} />}
+        {vista === 'cajaChica' && esAdmin && <VistaCajaChicaAdmin usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onIrAProveedores={() => setVista('proveedoresCajaChica')} />}
+        {vista === 'proveedoresCajaChica' && esAdmin && <VistaProveedoresCajaChica usuario={usuario} data={data} onVolver={() => setVista('cajaChica')} />}
         {vista === 'estadisticasPersonal' && esAdmin && <VistaEstadisticasPersonal data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'categorias' && esAdmin && <VistaCategorias data={data} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
         {vista === 'disponibilidad' && esAdmin && <VistaDisponibilidad usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} onRecargar={recargar} />}
@@ -4118,6 +4128,34 @@ function GestionPersonal({ personal, onVolver, onActualizar, onAbrirPerfil, data
                 <div className="text-[10px] text-zinc-500">Esta persona podrá reportar avance por nota de voz (Claude extrae datos)</div>
               </div>
             </label>
+          )}
+          {/* v8.12: Toggle Caja Chica + límite — admin habilita por persona */}
+          {(form.roles.includes('maestro') || form.roles.includes('supervisor')) && (
+            <div className="bg-zinc-950 border border-zinc-800 p-3 space-y-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={!!form.cajaChicaHabilitada} onChange={e => setForm({ ...form, cajaChicaHabilitada: e.target.checked })} className="w-4 h-4 accent-red-600" />
+                <div className="flex-1">
+                  <div className="text-xs font-bold flex items-center gap-1">💵 Caja Chica habilitada</div>
+                  <div className="text-[10px] text-zinc-500">Podrá ver "Mi Caja Chica" y reportar gastos con factura desde su cuenta</div>
+                </div>
+              </label>
+              {form.cajaChicaHabilitada && (
+                <div className="pt-2 border-t border-zinc-800 space-y-1">
+                  <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">Límite de caja chica (RD$)</div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-zinc-500">RD$</span>
+                    <input
+                      type="number"
+                      value={form.limiteCajaChica ?? ''}
+                      onChange={e => setForm({ ...form, limiteCajaChica: e.target.value === '' ? null : parseFloat(e.target.value) || 0 })}
+                      placeholder="Sin límite"
+                      className="flex-1 bg-zinc-900 border border-zinc-800 px-2 py-1.5 text-white text-xs text-right"
+                    />
+                  </div>
+                  <div className="text-[10px] text-zinc-500">Cuando el saldo cae bajo el 20% se le advierte; si llega a 0 ve un alerta y la oficina no puede entregar más caja sin cuadrar primero.</div>
+                </div>
+              )}
+            </div>
           )}
           <div className="flex gap-2 pt-2"><button onClick={() => { setEditando(null); setForm(null); }} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button><button onClick={guardar} disabled={!form.nombre} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-3 flex items-center justify-center gap-1"><Save className="w-3 h-3" /> Guardar</button></div>
         </div>

@@ -8,6 +8,7 @@ import { comprimirImagen } from '../../lib/imports';
 import Campo from '../common/Campo';
 import Input from '../common/Input';
 import ToggleDensidad, { useDensidad } from '../common/ToggleDensidad';
+import ModalGenerarCuadre from './ModalGenerarCuadre';
 
 const tieneRol = (p, r) => p?.roles?.includes(r);
 
@@ -23,6 +24,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
   const [filtroPersona, setFiltroPersona] = useState('');
   const [filtroProyecto, setFiltroProyecto] = useState('');
   const [modalEntrega, setModalEntrega] = useState(false);
+  const [modalCuadre, setModalCuadre] = useState(false);
 
   const cargar = async () => {
     setLoading(true);
@@ -170,6 +172,9 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
         </div>
         <div className="flex gap-2 items-center flex-wrap">
           <ToggleDensidad valor={densidad} onChange={setDensidad} />
+          <button onClick={() => setModalCuadre(true)} className="bg-zinc-900 border border-zinc-800 hover:border-blue-500 text-zinc-300 text-xs font-bold uppercase px-3 py-2 flex items-center gap-1">
+            <FileText className="w-3 h-3 text-blue-400" /> Cuadre PDF
+          </button>
           {onIrAProveedores && (
             <button onClick={onIrAProveedores} className="bg-zinc-900 border border-zinc-800 hover:border-yellow-500 text-zinc-300 text-xs font-bold uppercase px-3 py-2 flex items-center gap-1">
               <Sparkles className="w-3 h-3 text-yellow-400" /> Proveedores
@@ -376,6 +381,13 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
           saldosMap={saldosMap}
           onCerrar={() => setModalEntrega(false)}
           onGuardado={() => { setModalEntrega(false); cargar(); }}
+        />
+      )}
+
+      {modalCuadre && (
+        <ModalGenerarCuadre
+          data={data}
+          onCerrar={() => setModalCuadre(false)}
         />
       )}
 

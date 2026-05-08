@@ -4140,19 +4140,35 @@ function GestionPersonal({ personal, onVolver, onActualizar, onAbrirPerfil, data
                 </div>
               </label>
               {form.cajaChicaHabilitada && (
-                <div className="pt-2 border-t border-zinc-800 space-y-1">
-                  <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">Límite de caja chica (RD$)</div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-zinc-500">RD$</span>
-                    <input
-                      type="number"
-                      value={form.limiteCajaChica ?? ''}
-                      onChange={e => setForm({ ...form, limiteCajaChica: e.target.value === '' ? null : parseFloat(e.target.value) || 0 })}
-                      placeholder="Sin límite"
-                      className="flex-1 bg-zinc-900 border border-zinc-800 px-2 py-1.5 text-white text-xs text-right"
-                    />
+                <div className="pt-2 border-t border-zinc-800 space-y-2">
+                  <div>
+                    <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">Límite total de caja chica (RD$)</div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xs text-zinc-500">RD$</span>
+                      <input
+                        type="number"
+                        value={form.limiteCajaChica ?? ''}
+                        onChange={e => setForm({ ...form, limiteCajaChica: e.target.value === '' ? null : parseFloat(e.target.value) || 0 })}
+                        placeholder="Sin límite"
+                        className="flex-1 bg-zinc-900 border border-zinc-800 px-2 py-1.5 text-white text-xs text-right"
+                      />
+                    </div>
+                    <div className="text-[10px] text-zinc-500 mt-1">Cuando el saldo cae bajo el 20% se le advierte; si llega a 0 la oficina no puede entregar más caja sin cuadrar primero.</div>
                   </div>
-                  <div className="text-[10px] text-zinc-500">Cuando el saldo cae bajo el 20% se le advierte; si llega a 0 ve un alerta y la oficina no puede entregar más caja sin cuadrar primero.</div>
+                  <div>
+                    <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">Máximo por transacción (RD$)</div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xs text-zinc-500">RD$</span>
+                      <input
+                        type="number"
+                        value={form.maxTransaccionCajaChica ?? ''}
+                        onChange={e => setForm({ ...form, maxTransaccionCajaChica: e.target.value === '' ? null : parseFloat(e.target.value) || 0 })}
+                        placeholder="Sin máximo"
+                        className="flex-1 bg-zinc-900 border border-zinc-800 px-2 py-1.5 text-white text-xs text-right"
+                      />
+                    </div>
+                    <div className="text-[10px] text-zinc-500 mt-1">Bloquea gastos individuales mayores a este monto. Si excede, debe pedir reembolso especial al admin.</div>
+                  </div>
                 </div>
               )}
             </div>

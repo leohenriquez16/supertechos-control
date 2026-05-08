@@ -108,6 +108,12 @@ export default function ModalReportarGasto({ usuario, proyectos = [], proyectoId
     const monto = parseFloat(datos.monto);
     if (!monto || monto <= 0) { alert('Ingresa un monto válido'); return; }
     if (!fotoData && !sinFoto) { alert('Falta la foto de la factura (o marca "reportar sin foto")'); return; }
+    // v8.13: regla de máximo por transacción (bloqueante)
+    const maxTx = usuario?.maxTransaccionCajaChica;
+    if (maxTx != null && maxTx > 0 && monto > maxTx) {
+      alert(`Este gasto (RD$${new Intl.NumberFormat('es-DO').format(monto)}) excede tu máximo permitido por transacción (RD$${new Intl.NumberFormat('es-DO').format(maxTx)}).\n\nPara gastos mayores debes pedir reembolso especial al admin.`);
+      return;
+    }
     setPaso('guardando');
     try {
       await db.crearMovimientoCajaChica({
@@ -273,8 +279,17 @@ export default function ModalReportarGasto({ usuario, proyectos = [], proyectoId
                   value={datos.monto}
                   onChange={e => setDatos({ ...datos, monto: e.target.value })}
                   placeholder="0"
-                  className="w-full bg-zinc-950 border-2 border-green-800 focus:border-green-500 outline-none px-3 py-2 text-green-400 text-sm font-bold text-right"
+                  className={`w-full bg-zinc-950 border-2 outline-none px-3 py-2 text-sm font-bold text-right ${
+                    usuario?.maxTransaccionCajaChica != null && usuario.maxTransaccionCajaChica > 0 && parseFloat(datos.monto) > usuario.maxTransaccionCajaChica
+                      ? 'border-red-600 text-red-400 focus:border-red-500'
+                      : 'border-green-800 text-green-400 focus:border-green-500'
+                  }`}
                 />
+                {usuario?.maxTransaccionCajaChica != null && usuario.maxTransaccionCajaChica > 0 && parseFloat(datos.monto) > usuario.maxTransaccionCajaChica && (
+                  <div className="text-[10px] text-red-400 mt-1">
+                    ⚠️ Excede tu máximo (RD${new Intl.NumberFormat('es-DO').format(usuario.maxTransaccionCajaChica)}). El gasto no se podrá enviar.
+                  </div>
+                )}
               </Campo>
             </div>
 

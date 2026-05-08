@@ -9,6 +9,7 @@ import Campo from '../common/Campo';
 import Input from '../common/Input';
 import ToggleDensidad, { useDensidad } from '../common/ToggleDensidad';
 import ModalGenerarCuadre from './ModalGenerarCuadre';
+import ModalExportarOdoo from './ModalExportarOdoo';
 
 const tieneRol = (p, r) => p?.roles?.includes(r);
 
@@ -25,6 +26,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
   const [filtroProyecto, setFiltroProyecto] = useState('');
   const [modalEntrega, setModalEntrega] = useState(false);
   const [modalCuadre, setModalCuadre] = useState(false);
+  const [modalExport, setModalExport] = useState(false);
 
   const cargar = async () => {
     setLoading(true);
@@ -174,6 +176,9 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
           <ToggleDensidad valor={densidad} onChange={setDensidad} />
           <button onClick={() => setModalCuadre(true)} className="bg-zinc-900 border border-zinc-800 hover:border-blue-500 text-zinc-300 text-xs font-bold uppercase px-3 py-2 flex items-center gap-1">
             <FileText className="w-3 h-3 text-blue-400" /> Cuadre PDF
+          </button>
+          <button onClick={() => setModalExport(true)} className="bg-zinc-900 border border-zinc-800 hover:border-purple-500 text-zinc-300 text-xs font-bold uppercase px-3 py-2 flex items-center gap-1">
+            <FileText className="w-3 h-3 text-purple-400" /> CSV Odoo
           </button>
           {onIrAProveedores && (
             <button onClick={onIrAProveedores} className="bg-zinc-900 border border-zinc-800 hover:border-yellow-500 text-zinc-300 text-xs font-bold uppercase px-3 py-2 flex items-center gap-1">
@@ -388,6 +393,13 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
         <ModalGenerarCuadre
           data={data}
           onCerrar={() => setModalCuadre(false)}
+        />
+      )}
+
+      {modalExport && (
+        <ModalExportarOdoo
+          data={data}
+          onCerrar={() => setModalExport(false)}
         />
       )}
 

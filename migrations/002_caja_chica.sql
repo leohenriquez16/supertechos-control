@@ -50,6 +50,10 @@ CREATE INDEX IF NOT EXISTS idx_caja_chica_proyecto    ON caja_chica_movimientos(
 CREATE INDEX IF NOT EXISTS idx_caja_chica_status      ON caja_chica_movimientos(status);
 CREATE INDEX IF NOT EXISTS idx_caja_chica_tipo_fecha  ON caja_chica_movimientos(tipo, fecha DESC);
 
+-- Sistema NO usa Supabase Auth (anon key sola, autorización a nivel app).
+-- Mantener RLS deshabilitado para ser consistente con el resto del schema.
+ALTER TABLE caja_chica_movimientos DISABLE ROW LEVEL SECURITY;
+
 -- 2. Configuración de dieta a nivel proyecto.
 --    Reemplaza el modelo viejo proyecto.dieta (que era tarifa × días-hombre presupuestados)
 --    por un esquema más simple: monto fijo diario + modo de aplicación.

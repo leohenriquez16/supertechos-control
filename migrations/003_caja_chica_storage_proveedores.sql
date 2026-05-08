@@ -57,6 +57,9 @@ CREATE INDEX IF NOT EXISTS idx_caja_chica_proveedores_rnc       ON caja_chica_pr
 CREATE INDEX IF NOT EXISTS idx_caja_chica_proveedores_nombre    ON caja_chica_proveedores(nombre);
 CREATE INDEX IF NOT EXISTS idx_caja_chica_proveedores_categoria ON caja_chica_proveedores(categoria);
 
+-- Consistente con resto del schema (sin Supabase Auth)
+ALTER TABLE caja_chica_proveedores DISABLE ROW LEVEL SECURITY;
+
 -- Trigger para updated_at
 CREATE OR REPLACE FUNCTION caja_chica_proveedores_updated_at_fn() RETURNS trigger AS $$
 BEGIN

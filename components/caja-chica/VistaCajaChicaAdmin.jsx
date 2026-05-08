@@ -481,7 +481,9 @@ function ModalEntregarCaja({ usuario, data, onCerrar, onGuardado, saldosMap = {}
   const montoNum = parseFloat(monto) || 0;
   const saldoTrasEntrega = saldoSel + montoNum;
   const excedeLimite = limiteSel != null && limiteSel > 0 && saldoTrasEntrega > limiteSel;
-  const personaEnLimite = personaSel && limiteSel != null && limiteSel > 0 && saldoSel <= 0;
+  // Bloqueamos entrega solo si la persona tiene saldo NEGATIVO (debe dinero a la oficina).
+  // Saldo = 0 (persona nueva o cuadrada) NO bloquea.
+  const personaEnLimite = personaSel && limiteSel != null && limiteSel > 0 && saldoSel < 0;
 
   const guardar = async () => {
     if (!personaId) { alert('Selecciona la persona'); return; }
@@ -538,7 +540,7 @@ function ModalEntregarCaja({ usuario, data, onCerrar, onGuardado, saldosMap = {}
               <>
                 <div className="flex justify-between"><span className="text-zinc-500">Límite asignado:</span><span className="text-zinc-300">RD$ {new Intl.NumberFormat('es-DO').format(limiteSel)}</span></div>
                 {personaEnLimite && (
-                  <div className="text-red-400 mt-1">🚫 Persona ya consumió su caja. Aprueba sus gastos pendientes antes de entregar más.</div>
+                  <div className="text-red-400 mt-1">🚫 La persona tiene saldo negativo (debe dinero a la oficina). Cuadra antes de entregar más.</div>
                 )}
                 {!personaEnLimite && montoNum > 0 && (
                   <div className="flex justify-between mt-1 pt-1 border-t border-zinc-800">

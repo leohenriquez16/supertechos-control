@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed, Building2, Star, MessageCircle } from 'lucide-react';
+import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed, Building2, Star, MessageCircle, Send } from 'lucide-react';
 import * as db from '../lib/db';
 import { leerArchivo, parseMateriales, parseSistemas, descargarPlantilla, comprimirImagen } from '../lib/imports';
 import { obtenerUbicacion, distanciaMetros, formatDistancia, abrirEnMapa } from '../lib/geo';
@@ -57,6 +57,11 @@ import VistaCategoriasCajaChica from '../components/caja-chica/VistaCategoriasCa
 import VistaMapa from '../components/proyecto/VistaMapa';
 // v8.10.23: Modal importar desde Odoo
 import ModalImportarOdoo from '../components/proyecto/ModalImportarOdoo';
+// v8.14: Onboarding obligatorio para maestros
+import PantallaCambiarPin from '../components/onboarding/PantallaCambiarPin';
+import WizardOnboarding from '../components/onboarding/WizardOnboarding';
+import ModalInvitarMaestro from '../components/onboarding/ModalInvitarMaestro';
+import { registrarBiometria, loginConBiometria } from '../lib/biometria';
 
 // ============================================================
 // HELPERS DE ROLES Y PERSONAS (no extraídos aún — quedan en page.jsx)
@@ -596,7 +601,30 @@ export default function App() {
   if (loading) return <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center gap-3"><Loader2 className="w-8 h-8 text-red-600 animate-spin" /><div className="text-xs text-zinc-500 uppercase tracking-widest">Conectando a base de datos...</div></div>;
   if (error) return <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center px-4"><AlertTriangle className="w-10 h-10 text-red-500 mb-3" /><div className="text-lg font-bold text-white mb-1">Error de conexión</div><div className="text-xs text-zinc-400 text-center max-w-md mb-4">{error}</div><button onClick={() => window.location.reload()} className="bg-red-600 text-white font-bold uppercase px-6 py-3">Reintentar</button></div>;
   if (!data) return null;
-  if (!usuario) return <Login personal={getPersonasConLogin(data.personal)} onLogin={(u) => { setUsuario(u); db.setAuditContext({ usuarioId: u.id, usuarioNombre: u.nombre }); db.registrarAudit({ usuarioId: u.id, usuarioNombre: u.nombre, accion: 'login.exitoso', severidad: 'info' }); setVista(tieneRol(u, 'admin') ? 'dashboard' : 'misProyectos'); try { localStorage.setItem('supertechos_usuario_id', u.id); } catch {} }} />;
+  if (!usuario) return <Login onLogin={async (u) => {
+    setUsuario(u);
+    db.setAuditContext({ usuarioId: u.id, usuarioNombre: u.nombre });
+    db.registrarAudit({ usuarioId: u.id, usuarioNombre: u.nombre, accion: 'login.exitoso', severidad: 'info' });
+    // v8.14: capturar geolocation y registrar acceso (no bloquea si denegado)
+    try {
+      const ubic = await obtenerUbicacion();
+      db.registrarAcceso({ personaId: u.id, tipo: 'login.exitoso', lat: ubic.lat, lng: ubic.lng, precisionM: ubic.precision });
+    } catch (e) {
+      db.registrarAcceso({ personaId: u.id, tipo: 'login.exitoso', geoDenegada: true, geoError: String(e?.message || e) });
+    }
+    if (!u.pinTemporal && u.onboardingCompletado) {
+      setVista(tieneRol(u, 'admin') ? 'dashboard' : 'misProyectos');
+    }
+    try { localStorage.setItem('supertechos_usuario_id', u.id); } catch {}
+  }} />;
+  // v8.14: cambio de PIN obligatorio (pin_temporal=true tras invitación)
+  if (usuario.pinTemporal) return <PantallaCambiarPin usuario={usuario} onListo={(uActualizado) => setUsuario(uActualizado)} />;
+  // v8.14: onboarding obligatorio (datos personales, selfie, bancarios, biometría opcional)
+  if (!usuario.onboardingCompletado) return <WizardOnboarding usuario={usuario} onListo={async (uActualizado) => {
+    setUsuario(uActualizado);
+    await recargar();
+    setVista(tieneRol(uActualizado, 'admin') ? 'dashboard' : 'misProyectos');
+  }} />;
 
   const esAdmin = tieneRol(usuario, 'admin');
 
@@ -737,7 +765,7 @@ export default function App() {
         {vista === 'brigadas' && esAdmin && <VistaBrigadas data={data} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
         {vista === 'auditLog' && esAdmin && <VistaAuditLog data={data} onVolver={() => setVista('dashboard')} />}
         {vista === 'miPerfil' && <MiPerfil usuario={usuario} persona={usuario} soloLectura={false} onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }} onGuardar={(campos) => withSync(() => db.guardarPerfil(usuario.id, campos))} />}
-        {esAdmin && vista === 'personal' && <GestionPersonal personal={data.personal} data={data} onVolver={() => setVista('dashboard')} onActualizar={(p) => withSync(() => db.reemplazarPersonal(p))} onAbrirPerfil={(p) => { setPerfilViendo(p); setVista('perfilPersona'); }} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
+        {esAdmin && vista === 'personal' && <GestionPersonal usuario={usuario} personal={data.personal} data={data} onVolver={() => setVista('dashboard')} onActualizar={(p) => withSync(() => db.reemplazarPersonal(p))} onRecargar={recargar} onAbrirPerfil={(p) => { setPerfilViendo(p); setVista('perfilPersona'); }} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'perfilPersona' && perfilViendo && <MiPerfil usuario={usuario} persona={perfilViendo} soloLectura={false} onVolver={() => setVista('personal')} onGuardar={(campos) => withSync(async () => { await db.guardarPerfil(perfilViendo.id, campos); const d = await db.loadAllData(); const actualizada = d.personal.find(p => p.id === perfilViendo.id); if (actualizada) setPerfilViendo(actualizada); })} />}
         {esAdmin && vista === 'sistemas' && <GestionSistemas sistemas={data.sistemas} config={data.config} dataGlobal={data} onVolver={() => setVista('dashboard')} onActualizarSistemas={(s) => withSync(() => db.guardarSistemas(s))} onActualizarConfig={(c) => withSync(() => db.guardarConfig(c))} />}
         {esAdmin && vista === 'clientes' && <GestionClientes clientes={data.clientes || []} contactos={data.contactos || []} proyectos={data.proyectos || []} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
@@ -3070,146 +3098,16 @@ function IconBtn({ onClick, title, children }) {
 // ============================================================
 // LOGIN
 // ============================================================
-// ============================================================
-// v8.9.22: WebAuthn helpers (Face ID / Touch ID / Huella)
-// ============================================================
-
-// Convierte base64url a ArrayBuffer
-const base64urlToBuffer = (base64url) => {
-  const padding = '='.repeat((4 - base64url.length % 4) % 4);
-  const base64 = (base64url + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const raw = window.atob(base64);
-  const buffer = new ArrayBuffer(raw.length);
-  const view = new Uint8Array(buffer);
-  for (let i = 0; i < raw.length; i++) view[i] = raw.charCodeAt(i);
-  return buffer;
-};
-
-// Convierte ArrayBuffer a base64url
-const bufferToBase64url = (buffer) => {
-  const bytes = new Uint8Array(buffer);
-  let str = '';
-  for (const byte of bytes) str += String.fromCharCode(byte);
-  return window.btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-};
-
-const detectarDispositivo = () => {
-  const ua = navigator.userAgent || '';
-  if (/iPhone|iPad|iPod/.test(ua)) return { tipo: 'iphone', nombre: 'iPhone' };
-  if (/Mac OS/.test(ua)) return { tipo: 'mac', nombre: 'Mac' };
-  if (/Android/.test(ua)) return { tipo: 'android', nombre: 'Android' };
-  if (/Windows/.test(ua)) return { tipo: 'windows', nombre: 'Windows' };
-  return { tipo: 'other', nombre: 'Dispositivo' };
-};
-
-const registrarBiometria = async (personaId, personaNombre) => {
-  if (!window.PublicKeyCredential) throw new Error('Este dispositivo no soporta biometría');
-
-  const beginRes = await fetch('/api/webauthn/register-begin', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ personaId, personaNombre }),
-  });
-  const { options, challenge } = await beginRes.json();
-  if (!options) throw new Error('No se pudo iniciar el registro');
-
-  // Convertir challenge y userId a ArrayBuffer
-  const publicKey = {
-    ...options,
-    challenge: base64urlToBuffer(options.challenge),
-    user: {
-      ...options.user,
-      id: base64urlToBuffer(options.user.id),
-    },
-  };
-
-  const credential = await navigator.credentials.create({ publicKey });
-  if (!credential) throw new Error('No se pudo crear la credencial');
-
-  const credData = {
-    id: credential.id,
-    rawId: bufferToBase64url(credential.rawId),
-    type: credential.type,
-    response: {
-      clientDataJSON: bufferToBase64url(credential.response.clientDataJSON),
-      attestationObject: bufferToBase64url(credential.response.attestationObject),
-      publicKey: credential.response.getPublicKey ? bufferToBase64url(credential.response.getPublicKey()) : null,
-      transports: credential.response.getTransports ? credential.response.getTransports() : [],
-    },
-  };
-
-  const device = detectarDispositivo();
-  const finishRes = await fetch('/api/webauthn/register-finish', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      personaId,
-      credential: credData,
-      deviceName: device.nombre,
-      deviceType: device.tipo,
-      challenge,
-    }),
-  });
-  const res = await finishRes.json();
-  if (!res.success) throw new Error(res.error || 'Registro falló');
-  return true;
-};
-
-const loginConBiometria = async (personaId = null) => {
-  if (!window.PublicKeyCredential) throw new Error('Este dispositivo no soporta biometría');
-
-  const beginRes = await fetch('/api/webauthn/login-begin', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ personaId }),
-  });
-  const beginData = await beginRes.json();
-  if (!beginData.options) throw new Error(beginData.error || 'Sin credenciales');
-
-  const publicKey = {
-    ...beginData.options,
-    challenge: base64urlToBuffer(beginData.options.challenge),
-    allowCredentials: beginData.options.allowCredentials.map(c => ({
-      ...c,
-      id: base64urlToBuffer(c.id),
-    })),
-  };
-
-  const credential = await navigator.credentials.get({ publicKey });
-  if (!credential) throw new Error('Autenticación cancelada');
-
-  const credData = {
-    id: credential.id,
-    rawId: bufferToBase64url(credential.rawId),
-    type: credential.type,
-    response: {
-      clientDataJSON: bufferToBase64url(credential.response.clientDataJSON),
-      authenticatorData: bufferToBase64url(credential.response.authenticatorData),
-      signature: bufferToBase64url(credential.response.signature),
-      userHandle: credential.response.userHandle ? bufferToBase64url(credential.response.userHandle) : null,
-    },
-  };
-
-  const finishRes = await fetch('/api/webauthn/login-finish', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ credential: credData }),
-  });
-  const res = await finishRes.json();
-  if (!res.persona) throw new Error(res.error || 'Login falló');
-  return res.persona;
-};
-
-
-function Login({ personal, onLogin }) {
-  const [sel, setSel] = useState(null);
+// v8.14: Login con teléfono + PIN (sin enumerar usuarios) + Face ID
+function Login({ onLogin }) {
+  const [telefono, setTelefono] = useState('');
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
+  const [cargando, setCargando] = useState(false);
   const [bioSoportado, setBioSoportado] = useState(false);
   const [bioCargando, setBioCargando] = useState(false);
 
   useEffect(() => {
-    // v8.9.22: Detectar si el dispositivo soporta biometría
     if (window.PublicKeyCredential) {
       PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable?.()
         .then(available => setBioSoportado(!!available))
@@ -3217,16 +3115,28 @@ function Login({ personal, onLogin }) {
     }
   }, []);
 
-  const rolLabel = (p) => {
-    if (tieneRol(p, 'admin')) return 'Administrador';
-    const r = [];
-    if (tieneRol(p, 'supervisor')) r.push('Supervisor');
-    if (tieneRol(p, 'maestro')) r.push('Maestro');
-    return r.join(' · ');
+  // Formato visual del teléfono mientras escribe: 809-555-1234
+  const telVisual = (t) => {
+    const d = String(t || '').replace(/\D/g, '').slice(0, 10);
+    if (d.length <= 3) return d;
+    if (d.length <= 6) return `${d.slice(0, 3)}-${d.slice(3)}`;
+    return `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`;
   };
-  const intentar = () => { if (sel.pin === pin) onLogin(sel); else { setError('PIN incorrecto'); setPin(''); } };
 
-  // v8.9.22: Login con biometría
+  const intentar = async () => {
+    if (cargando) return;
+    setCargando(true); setError('');
+    try {
+      const persona = await db.loginConTelefono(telefono, pin);
+      onLogin(persona);
+    } catch (e) {
+      setError(e.message || 'Teléfono o PIN incorrecto');
+      setPin('');
+    } finally {
+      setCargando(false);
+    }
+  };
+
   const loginBiometrico = async () => {
     setBioCargando(true); setError('');
     try {
@@ -3238,6 +3148,9 @@ function Login({ personal, onLogin }) {
     setBioCargando(false);
   };
 
+  const telefonoDigitos = String(telefono || '').replace(/\D/g, '').length;
+  const puedeEnviar = telefonoDigitos === 10 && pin.length >= 4 && !cargando;
+
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col items-center justify-center px-4" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
       <div className="w-full max-w-sm">
@@ -3247,42 +3160,64 @@ function Login({ personal, onLogin }) {
           <div className="text-[10px] text-zinc-500 tracking-widest uppercase">Control de Obras</div>
         </div>
 
-        {/* v8.9.22: Botón Face ID arriba (solo si dispositivo soporta) */}
-        {!sel && bioSoportado && (
+        {bioSoportado && (
           <div className="mb-4">
             <button
               onClick={loginBiometrico}
-              disabled={bioCargando}
+              disabled={bioCargando || cargando}
               className="w-full bg-gradient-to-br from-red-600 to-red-800 hover:brightness-110 disabled:opacity-50 text-white font-black uppercase tracking-widest py-4 flex items-center justify-center gap-2"
             >
               {bioCargando ? <Loader2 className="w-5 h-5 animate-spin" /> : '🔐'}
-              {bioCargando ? 'Autenticando...' : 'Entrar con Face ID'}
+              {bioCargando ? 'Autenticando...' : 'Entrar con Face ID / Huella'}
             </button>
-            <div className="text-[10px] text-zinc-500 text-center mt-2 tracking-widest uppercase">— o ingresa con PIN —</div>
+            <div className="text-[10px] text-zinc-500 text-center mt-2 tracking-widest uppercase">— o ingresa con tu teléfono —</div>
           </div>
         )}
 
-        {!sel ? (
-          <div className="space-y-2">
-            <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-3">Selecciona tu usuario</div>
-            {personal.map(p => (
-              <button key={p.id} onClick={() => { setSel(p); setError(''); }} className="w-full bg-zinc-900 border-2 border-zinc-800 hover:border-red-600 p-4 text-left flex items-center gap-3">
-                <UserCircle className="w-8 h-8 text-zinc-500" />
-                <div><div className="font-bold">{p.nombre}</div><div className="text-xs text-zinc-500">{rolLabel(p)}</div></div>
-              </button>
-            ))}
-            {error && <div className="text-xs text-red-500 text-center mt-3">{error}</div>}
+        <div className="space-y-3">
+          <div>
+            <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-1">Tu número de teléfono</div>
+            <input
+              type="tel"
+              inputMode="numeric"
+              autoComplete="tel"
+              value={telVisual(telefono)}
+              onChange={e => { setTelefono(e.target.value); setError(''); }}
+              placeholder="809-555-1234"
+              className="w-full bg-zinc-900 border-2 border-zinc-800 focus:border-red-600 outline-none px-4 py-4 text-white text-center text-xl tracking-widest"
+            />
           </div>
-        ) : (
-          <div className="space-y-3">
-            <button onClick={() => setSel(null)} className="text-xs text-zinc-400 flex items-center gap-1"><ArrowLeft className="w-3 h-3" /> Cambiar usuario</button>
-            <div className="bg-zinc-900 border-2 border-zinc-800 p-4 flex items-center gap-3"><UserCircle className="w-10 h-10 text-red-600" /><div><div className="font-bold">{sel.nombre}</div><div className="text-xs text-zinc-500">{rolLabel(sel)}</div></div></div>
-            <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">PIN de acceso</div>
-            <input type="password" inputMode="numeric" autoFocus value={pin} onChange={e => { setPin(e.target.value); setError(''); }} onKeyDown={e => e.key === 'Enter' && intentar()} placeholder="••••" className="w-full bg-zinc-900 border-2 border-zinc-800 focus:border-red-600 outline-none px-4 py-4 text-white text-center text-2xl tracking-widest" />
-            {error && <div className="text-xs text-red-500 text-center">{error}</div>}
-            <button onClick={intentar} disabled={!pin} className="w-full bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-600 text-white font-black tracking-wider uppercase py-4">Entrar</button>
+
+          <div>
+            <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-1">PIN de acceso</div>
+            <input
+              type="password"
+              inputMode="numeric"
+              autoComplete="current-password"
+              value={pin}
+              onChange={e => { setPin(e.target.value.replace(/\D/g, '').slice(0, 6)); setError(''); }}
+              onKeyDown={e => e.key === 'Enter' && puedeEnviar && intentar()}
+              placeholder="••••••"
+              maxLength={6}
+              className="w-full bg-zinc-900 border-2 border-zinc-800 focus:border-red-600 outline-none px-4 py-4 text-white text-center text-2xl tracking-[0.5em]"
+            />
           </div>
-        )}
+
+          {error && <div className="text-xs text-red-500 text-center">{error}</div>}
+
+          <button
+            onClick={intentar}
+            disabled={!puedeEnviar}
+            className="w-full bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-600 text-white font-black tracking-wider uppercase py-4 flex items-center justify-center gap-2"
+          >
+            {cargando ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
+            {cargando ? 'Verificando...' : 'Entrar'}
+          </button>
+
+          <div className="text-[10px] text-zinc-600 text-center mt-4 leading-relaxed">
+            Si no tienes acceso, contacta al administrador.
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -4065,11 +4000,12 @@ function EditorSistema({ sistema, setSistema, onGuardar, onCancelar, categorias 
 // ============================================================
 // GESTIÓN PERSONAL (con admin como rol seleccionable)
 // ============================================================
-function GestionPersonal({ personal, onVolver, onActualizar, onAbrirPerfil, data, onVerProyecto }) {
+function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar, onAbrirPerfil, data, onVerProyecto }) {
   const [editando, setEditando] = useState(null);
   const [form, setForm] = useState(null);
   const [experienciaDe, setExperienciaDe] = useState(null); // v8.9.19
   const [capacidadesDe, setCapacidadesDe] = useState(null); // v8.9.23
+  const [modalInvitar, setModalInvitar] = useState(false); // v8.14: invitar maestro al app
 
   const guardar = () => {
     if (!form.nombre) return;
@@ -4102,8 +4038,12 @@ function GestionPersonal({ personal, onVolver, onActualizar, onAbrirPerfil, data
       <button onClick={onVolver} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button>
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-black tracking-tight">Personal</h1>
-        <button onClick={() => { setEditando('new'); setForm({ id: 'p_' + Date.now(), nombre: '', pin: '', roles: ['ayudante'], maestroId: '' }); }} className="bg-red-600 hover:bg-red-700 text-white font-black uppercase px-4 py-2 text-xs flex items-center gap-1"><Plus className="w-3 h-3" /> Nueva</button>
+        <div className="flex gap-2">
+          <button onClick={() => setModalInvitar(true)} className="bg-green-600 hover:bg-green-700 text-white font-black uppercase px-4 py-2 text-xs flex items-center gap-1" title="Invita a un maestro al app y obtén el texto de WhatsApp listo para enviar"><Send className="w-3 h-3" /> Invitar al app</button>
+          <button onClick={() => { setEditando('new'); setForm({ id: 'p_' + Date.now(), nombre: '', pin: '', roles: ['ayudante'], maestroId: '' }); }} className="bg-red-600 hover:bg-red-700 text-white font-black uppercase px-4 py-2 text-xs flex items-center gap-1"><Plus className="w-3 h-3" /> Nueva</button>
+        </div>
       </div>
+      {modalInvitar && <ModalInvitarMaestro usuario={usuario} onCerrar={() => setModalInvitar(false)} onInvitado={() => { onRecargar?.(); }} />}
 
       {editando && form && (
         <div className="bg-zinc-900 border-2 border-red-600 p-4 space-y-3">
@@ -10213,7 +10153,6 @@ function MiPerfil({ usuario, persona, onVolver, onGuardar }) {
           <div className="text-[10px] tracking-widest uppercase text-red-500 font-bold">{esMio ? 'Mi Perfil' : 'Perfil'}</div>
           <div className="text-xl font-black truncate">{persona.nombre}</div>
           <div className="text-xs text-zinc-500">{roles.join(' · ')}</div>
-          {persona.pin && esMio && <div className="text-[10px] text-zinc-600 mt-1">PIN: {persona.pin}</div>}
         </div>
       </div>
 
@@ -10227,13 +10166,16 @@ function MiPerfil({ usuario, persona, onVolver, onGuardar }) {
         </Campo>
       </div>
 
-      <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
-        <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Información laboral</div>
-        <div className="grid grid-cols-2 gap-3">
-          <Campo label="Fecha de ingreso"><Input type="date" value={form.fechaIngreso} onChange={v => actualizar('fechaIngreso', v)} /></Campo>
-          <Campo label="Recomendado por"><Input value={form.recomendadoPor} onChange={v => actualizar('recomendadoPor', v)} placeholder="Nombre" /></Campo>
+      {/* v8.14: información laboral solo visible a admin */}
+      {tieneRol(usuario, 'admin') && (
+        <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
+          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Información laboral</div>
+          <div className="grid grid-cols-2 gap-3">
+            <Campo label="Fecha de ingreso"><Input type="date" value={form.fechaIngreso} onChange={v => actualizar('fechaIngreso', v)} /></Campo>
+            <Campo label="Recomendado por"><Input value={form.recomendadoPor} onChange={v => actualizar('recomendadoPor', v)} placeholder="Nombre" /></Campo>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Modo de pago - solo visible a admin */}
       {tieneRol(usuario, 'admin') && (tieneRol(persona, 'maestro') || tieneRol(persona, 'ayudante') || tieneRol(persona, 'supervisor')) && (

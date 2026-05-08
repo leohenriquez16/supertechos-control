@@ -4006,6 +4006,7 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
   const [experienciaDe, setExperienciaDe] = useState(null); // v8.9.19
   const [capacidadesDe, setCapacidadesDe] = useState(null); // v8.9.23
   const [modalInvitar, setModalInvitar] = useState(false); // v8.14: invitar maestro al app
+  const [activando, setActivando] = useState(null); // v8.14.1: persona existente a activar para app
 
   const guardar = () => {
     if (!form.nombre) return;
@@ -4044,6 +4045,7 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
         </div>
       </div>
       {modalInvitar && <ModalInvitarMaestro usuario={usuario} onCerrar={() => setModalInvitar(false)} onInvitado={() => { onRecargar?.(); }} />}
+      {activando && <ModalInvitarMaestro usuario={usuario} personaExistente={activando} onCerrar={() => setActivando(null)} onInvitado={() => { onRecargar?.(); }} />}
 
       {editando && form && (
         <div className="bg-zinc-900 border-2 border-red-600 p-4 space-y-3">
@@ -4140,9 +4142,24 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
                   <div key={p.id} className="bg-zinc-900 border border-zinc-800 p-3 flex items-center gap-3">
                     {p.foto2x2 ? <img src={p.foto2x2} alt="" className="w-10 h-10 object-cover rounded-sm flex-shrink-0 border border-zinc-700" /> : <UserCircle className="w-10 h-10 text-zinc-500 flex-shrink-0" />}
                     <div className="flex-1 min-w-0">
-                      <div className="font-bold text-sm">{p.nombre}</div>
+                      <div className="font-bold text-sm flex items-center gap-2">
+                        <span className="truncate">{p.nombre}</span>
+                        {/* v8.14.1: indicador de pendiente de activación al app */}
+                        {p.pin && !p.cedulaNumero && !tieneRol(p, 'admin') && !p.pinTemporal && (
+                          <span className="text-[9px] bg-yellow-900/50 border border-yellow-700 text-yellow-300 px-1.5 py-0.5 tracking-wider uppercase font-bold flex-shrink-0" title="Aún no ha completado el onboarding del app">⚠ Sin app</span>
+                        )}
+                        {p.pinTemporal && (
+                          <span className="text-[9px] bg-blue-900/50 border border-blue-700 text-blue-300 px-1.5 py-0.5 tracking-wider uppercase font-bold flex-shrink-0" title="Invitación pendiente de cambio de PIN">📨 Invitado</span>
+                        )}
+                      </div>
                       <div className="text-[10px] text-zinc-500">{rolLabel(p)}{p.pin && ` · PIN ${p.pin}`}{maestro && ` · Con ${maestro.nombre}`}{ayudantes.length > 0 && ` · ${ayudantes.length} ayudante${ayudantes.length > 1 ? 's' : ''}`}{p.telefono && ` · ${p.telefono}`}</div>
                     </div>
+                    {/* v8.14.1: botón "Activar para app" — solo para personas con PIN, sin cédula y que no son admin */}
+                    {p.pin && !p.cedulaNumero && !tieneRol(p, 'admin') && (
+                      <button onClick={() => setActivando(p)} className="bg-green-700 hover:bg-green-600 text-white px-2 py-1.5 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider" title="Activar para el app y generar credenciales para WhatsApp">
+                        <Send className="w-3 h-3" /> {p.pinTemporal ? 'Reinvitar' : 'Activar'}
+                      </button>
+                    )}
                     <button onClick={() => { setEditando(p.id); setForm({ ...p, roles: [...(p.roles || [])] }); }} className="text-zinc-500 hover:text-white p-1" title="Editar básico"><Edit2 className="w-3 h-3" /></button>
                     <button onClick={() => onAbrirPerfil(p)} className="text-zinc-500 hover:text-red-500 p-1" title="Ver perfil"><UserIcon className="w-3 h-3" /></button>
                     {data && <button onClick={() => setExperienciaDe(p)} className="text-zinc-500 hover:text-green-400 p-1" title="Ver experiencia"><TrendingUp className="w-3 h-3" /></button>}

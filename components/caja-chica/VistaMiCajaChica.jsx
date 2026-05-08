@@ -33,10 +33,38 @@ export default function VistaMiCajaChica({ usuario, data, onVolver }) {
   };
   useEffect(() => { cargar(); }, [usuario.id]);
 
-  const proyectosActivos = useMemo(
-    () => (data.proyectos || []).filter(p => !p.archivado),
-    [data.proyectos]
-  );
+  // Proyectos a los que el usuario está o estuvo asignado.
+  // Restricción intencional: un maestro no puede asociar un gasto a un proyecto
+  // donde nunca ha trabajado.
+  const proyectosDelUsuario = useMemo(() => {
+    const ids = new Set();
+
+    // 1. Asignación actual: maestro principal, supervisor, ayudante, o maestro de área
+    (data.proyectos || []).forEach(p => {
+      if (p.archivado) return;
+      if (p.maestroId === usuario.id) ids.add(p.id);
+      if (p.supervisorId === usuario.id) ids.add(p.id);
+      if ((p.ayudantesIds || []).includes(usuario.id)) ids.add(p.id);
+      (p.areas || []).forEach(a => {
+        if (a.maestroAreaId === usuario.id) ids.add(p.id);
+      });
+    });
+
+    // 2. Histórico vía reportes: si reportó avance o supervisó algún reporte
+    (data.reportes || []).forEach(r => {
+      if (r.personaId === usuario.id || r.supervisorId === usuario.id) {
+        if (r.proyectoId) ids.add(r.proyectoId);
+      }
+    });
+
+    // Devolvemos los objetos completos, ordenados con activos primero
+    return (data.proyectos || [])
+      .filter(p => ids.has(p.id))
+      .sort((a, b) => {
+        if (!!a.archivado === !!b.archivado) return 0;
+        return a.archivado ? 1 : -1;
+      });
+  }, [data.proyectos, data.reportes, usuario.id]);
 
   const verFotoMov = async (mov) => {
     if (!mov.tieneFoto) return;
@@ -177,7 +205,7 @@ export default function VistaMiCajaChica({ usuario, data, onVolver }) {
       {modal && (
         <ModalReportarGasto
           usuario={usuario}
-          proyectos={proyectosActivos}
+          proyectos={proyectosDelUsuario}
           onCerrar={() => setModal(false)}
           onGuardado={() => { setModal(false); cargar(); }}
         />

@@ -6,6 +6,7 @@ import * as db from '../../lib/db';
 import { formatRD, formatNum, formatFechaCorta } from '../../lib/helpers/formato';
 import Campo from '../common/Campo';
 import Input from '../common/Input';
+import ToggleDensidad, { useDensidad } from '../common/ToggleDensidad';
 
 const CATEGORIAS = ['ferreteria', 'combustible', 'comida', 'peaje', 'transporte', 'herramientas', 'otros'];
 
@@ -18,6 +19,7 @@ export default function VistaProveedoresCajaChica({ usuario, data, onVolver }) {
   const [busqueda, setBusqueda] = useState('');
   const [orden, setOrden] = useState('ultimaFactura');
   const [editando, setEditando] = useState(null); // {id, nombre, categoria, notas}
+  const [densidad, setDensidad, dx] = useDensidad('caja-chica-proveedores');
 
   const cargar = async () => {
     setLoading(true);
@@ -69,14 +71,17 @@ export default function VistaProveedoresCajaChica({ usuario, data, onVolver }) {
         <ArrowLeft className="w-4 h-4" /> Volver
       </button>
 
-      <div>
-        <div className="text-xs tracking-widest uppercase text-red-500 font-bold flex items-center gap-2">
-          PROVEEDORES <Sparkles className="w-3 h-3 text-yellow-400" />
+      <div className="flex justify-between items-start flex-wrap gap-2">
+        <div>
+          <div className="text-xs tracking-widest uppercase text-red-500 font-bold flex items-center gap-2">
+            PROVEEDORES <Sparkles className="w-3 h-3 text-yellow-400" />
+          </div>
+          <h1 className="text-3xl font-black tracking-tight">Memoria de la IA</h1>
+          <div className="text-sm text-zinc-500 mt-1">
+            {proveedores.length} proveedor{proveedores.length !== 1 ? 'es' : ''} · {totalFacturas} factura{totalFacturas !== 1 ? 's' : ''} histórico · {formatRD(totalMonto)}
+          </div>
         </div>
-        <h1 className="text-3xl font-black tracking-tight">Memoria de la IA</h1>
-        <div className="text-sm text-zinc-500 mt-1">
-          {proveedores.length} proveedor{proveedores.length !== 1 ? 'es' : ''} · {totalFacturas} factura{totalFacturas !== 1 ? 's' : ''} histórico · {formatRD(totalMonto)}
-        </div>
+        <ToggleDensidad valor={densidad} onChange={setDensidad} />
       </div>
 
       <div className="bg-zinc-950 border border-zinc-800 p-2 text-[10px] text-zinc-500 flex items-start gap-2">
@@ -102,7 +107,7 @@ export default function VistaProveedoresCajaChica({ usuario, data, onVolver }) {
       </div>
 
       {/* Lista */}
-      <div className="space-y-2">
+      <div className={dx.listGap}>
         {filtrados.length === 0 ? (
           <div className="text-center py-10 text-zinc-500 text-sm">
             {proveedores.length === 0
@@ -111,7 +116,7 @@ export default function VistaProveedoresCajaChica({ usuario, data, onVolver }) {
           </div>
         ) : (
           filtrados.map(p => (
-            <div key={p.id} className="bg-zinc-900 border border-zinc-800 p-3">
+            <div key={p.id} className={`bg-zinc-900 border border-zinc-800 ${dx.cardPad}`}>
               {editando?.id === p.id ? (
                 <div className="space-y-2">
                   <Campo label="Nombre canónico"><Input value={editando.nombre} onChange={v => setEditando({ ...editando, nombre: v })} /></Campo>
@@ -140,6 +145,22 @@ export default function VistaProveedoresCajaChica({ usuario, data, onVolver }) {
                       <Save className="w-3 h-3" /> Guardar
                     </button>
                   </div>
+                </div>
+              ) : dx.compacto ? (
+                // Vista compacta: una línea con todo
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[11px] font-bold truncate">{p.nombre}</span>
+                      {p.categoria && <span className="text-[9px] uppercase tracking-wider px-1 bg-zinc-950 border border-zinc-700 text-zinc-300">{p.categoria}</span>}
+                    </div>
+                    <div className="text-[9px] text-zinc-500 truncate">
+                      <span className="font-mono">{p.rnc}</span> · {p.totalFacturas} fact · {formatRD(p.totalMonto)}
+                      {p.ultimaFacturaAt && <> · últ {formatFechaCorta(p.ultimaFacturaAt.split('T')[0])}</>}
+                    </div>
+                  </div>
+                  <button onClick={() => setEditando({ id: p.id, nombre: p.nombre, categoria: p.categoria || '', notas: p.notas || '' })} className="text-zinc-500 hover:text-red-400 p-1 shrink-0" title="Editar"><Edit2 className="w-3 h-3" /></button>
+                  <button onClick={() => eliminar(p)} className="text-zinc-500 hover:text-red-400 p-1 shrink-0" title="Eliminar"><Trash2 className="w-3 h-3" /></button>
                 </div>
               ) : (
                 <div className="flex items-start gap-2">

@@ -7,6 +7,7 @@ import { formatRD, formatNum, formatFechaCorta } from '../../lib/helpers/formato
 import { comprimirImagen } from '../../lib/imports';
 import Campo from '../common/Campo';
 import Input from '../common/Input';
+import ToggleDensidad, { useDensidad } from '../common/ToggleDensidad';
 
 const tieneRol = (p, r) => p?.roles?.includes(r);
 
@@ -17,6 +18,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
   const [saldosMap, setSaldosMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('bandeja'); // bandeja | porPersona | porProyecto | movimientos
+  const [densidad, setDensidad, dx] = useDensidad('caja-chica-admin');
   const [verFoto, setVerFoto] = useState(null); // {id, fotoData}
   const [filtroPersona, setFiltroPersona] = useState('');
   const [filtroProyecto, setFiltroProyecto] = useState('');
@@ -166,7 +168,8 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
           <div className="text-xs tracking-widest uppercase text-red-500 font-bold">CAJA CHICA</div>
           <h1 className="text-3xl font-black tracking-tight">Gestión global</h1>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center flex-wrap">
+          <ToggleDensidad valor={densidad} onChange={setDensidad} />
           {onIrAProveedores && (
             <button onClick={onIrAProveedores} className="bg-zinc-900 border border-zinc-800 hover:border-yellow-500 text-zinc-300 text-xs font-bold uppercase px-3 py-2 flex items-center gap-1">
               <Sparkles className="w-3 h-3 text-yellow-400" /> Proveedores
@@ -197,7 +200,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
       </div>
 
       {tab === 'bandeja' && (
-        <div className="space-y-2">
+        <div className={dx.listGap}>
           <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Pendientes de aprobación ({pendientes.length})</div>
           {pendientes.length === 0 ? (
             <div className="text-center py-10 text-zinc-500 text-sm">✓ Sin pendientes. Todo aprobado.</div>
@@ -207,6 +210,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
                 key={m.id}
                 m={m}
                 data={data}
+                dx={dx}
                 onAprobar={() => aprobar(m)}
                 onRechazar={() => rechazar(m)}
                 onEliminar={() => eliminar(m)}
@@ -219,85 +223,133 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
       )}
 
       {tab === 'porPersona' && (
-        <div className="space-y-2">
+        <div className={dx.listGap}>
           <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Por persona ({porPersona.length})</div>
           {porPersona.map(p => (
-            <div key={p.personaId} className="bg-zinc-900 border border-zinc-800 p-3">
-              <div className="flex justify-between items-start">
-                <div>
-                  <div className="font-bold text-sm">{p.nombre}</div>
-                  <div className="text-[10px] text-zinc-500 uppercase">{p.movimientos.length} movs · {p.pendientes} pend.</div>
+            <div key={p.personaId} className={`bg-zinc-900 border border-zinc-800 ${dx.cardPad}`}>
+              {dx.compacto ? (
+                // Compacto: una sola fila con saldo + mini desglose en línea
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-bold truncate">{p.nombre}</div>
+                    <div className="text-[9px] text-zinc-500 truncate">
+                      <span className="text-green-400">+{formatNum(p.totalEntregado, 0)}</span>
+                      <span className="text-zinc-600 mx-1">·</span>
+                      <span className="text-orange-400">−{formatNum(p.totalGastado, 0)}</span>
+                      <span className="text-zinc-600 mx-1">·</span>
+                      <span className="text-blue-400">−{formatNum(p.totalDieta, 0)} dieta</span>
+                      {p.pendientes > 0 && <><span className="text-zinc-600 mx-1">·</span><span className="text-orange-300">{p.pendientes} pend</span></>}
+                    </div>
+                  </div>
+                  <div className={`font-black shrink-0 ${p.saldo >= 0 ? 'text-green-400' : 'text-red-400'} text-sm`}>RD${formatNum(p.saldo, 0)}</div>
+                  <button
+                    onClick={() => { setFiltroPersona(p.personaId); setFiltroProyecto(''); setTab('movimientos'); }}
+                    className="text-[9px] text-red-400 hover:text-red-300 shrink-0 px-1"
+                    title="Ver movimientos"
+                  >
+                    →
+                  </button>
                 </div>
-                <div className="text-right">
-                  <div className={`text-lg font-black ${p.saldo >= 0 ? 'text-green-400' : 'text-red-400'}`}>RD$ {formatNum(p.saldo, 2)}</div>
-                  <div className="text-[10px] text-zinc-500">saldo actual</div>
-                </div>
-              </div>
-              <div className="grid grid-cols-3 gap-2 mt-2 text-[10px]">
-                <div className="bg-zinc-950 border border-zinc-800 p-2">
-                  <div className="text-zinc-500">Entregado</div>
-                  <div className="text-green-400 font-bold">{formatRD(p.totalEntregado)}</div>
-                </div>
-                <div className="bg-zinc-950 border border-zinc-800 p-2">
-                  <div className="text-zinc-500">Gastado</div>
-                  <div className="text-orange-400 font-bold">{formatRD(p.totalGastado)}</div>
-                </div>
-                <div className="bg-zinc-950 border border-zinc-800 p-2">
-                  <div className="text-zinc-500">Dietas</div>
-                  <div className="text-blue-400 font-bold">{formatRD(p.totalDieta)}</div>
-                </div>
-              </div>
-              <button
-                onClick={() => { setFiltroPersona(p.personaId); setFiltroProyecto(''); setTab('movimientos'); }}
-                className="mt-2 text-[10px] text-red-400 hover:text-red-300"
-              >
-                Ver todos los movimientos →
-              </button>
+              ) : (
+                <>
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <div className="font-bold text-sm">{p.nombre}</div>
+                      <div className="text-[10px] text-zinc-500 uppercase">{p.movimientos.length} movs · {p.pendientes} pend.</div>
+                    </div>
+                    <div className="text-right">
+                      <div className={`text-lg font-black ${p.saldo >= 0 ? 'text-green-400' : 'text-red-400'}`}>RD$ {formatNum(p.saldo, 2)}</div>
+                      <div className="text-[10px] text-zinc-500">saldo actual</div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 mt-2 text-[10px]">
+                    <div className="bg-zinc-950 border border-zinc-800 p-2">
+                      <div className="text-zinc-500">Entregado</div>
+                      <div className="text-green-400 font-bold">{formatRD(p.totalEntregado)}</div>
+                    </div>
+                    <div className="bg-zinc-950 border border-zinc-800 p-2">
+                      <div className="text-zinc-500">Gastado</div>
+                      <div className="text-orange-400 font-bold">{formatRD(p.totalGastado)}</div>
+                    </div>
+                    <div className="bg-zinc-950 border border-zinc-800 p-2">
+                      <div className="text-zinc-500">Dietas</div>
+                      <div className="text-blue-400 font-bold">{formatRD(p.totalDieta)}</div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => { setFiltroPersona(p.personaId); setFiltroProyecto(''); setTab('movimientos'); }}
+                    className="mt-2 text-[10px] text-red-400 hover:text-red-300"
+                  >
+                    Ver todos los movimientos →
+                  </button>
+                </>
+              )}
             </div>
           ))}
         </div>
       )}
 
       {tab === 'porProyecto' && (
-        <div className="space-y-2">
+        <div className={dx.listGap}>
           <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Por proyecto ({porProyecto.length})</div>
           {porProyecto.length === 0 ? (
             <div className="text-center py-10 text-zinc-500 text-sm">Sin gastos asociados a proyecto.</div>
           ) : porProyecto.map(p => (
-            <div key={p.proyectoId} className="bg-zinc-900 border border-zinc-800 p-3">
-              <div className="flex justify-between items-start">
-                <div className="min-w-0">
-                  <div className="font-bold text-sm truncate">{p.nombre}</div>
-                  <div className="text-[10px] text-zinc-500 uppercase">{p.movimientos.length} movs</div>
+            <div key={p.proyectoId} className={`bg-zinc-900 border border-zinc-800 ${dx.cardPad}`}>
+              {dx.compacto ? (
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-bold truncate">{p.nombre}</div>
+                    <div className="text-[9px] text-zinc-500 truncate">
+                      {p.movimientos.length} movs ·
+                      <span className="text-orange-400 ml-1">{formatNum(p.totalGastado, 0)} fact</span>
+                      <span className="text-zinc-600 mx-1">·</span>
+                      <span className="text-blue-400">{formatNum(p.totalDieta, 0)} dietas</span>
+                    </div>
+                  </div>
+                  <div className="text-orange-400 font-black text-sm shrink-0">RD${formatNum(p.totalGastado + p.totalDieta, 0)}</div>
+                  <button
+                    onClick={() => { setFiltroProyecto(p.proyectoId); setFiltroPersona(''); setTab('movimientos'); }}
+                    className="text-[9px] text-red-400 hover:text-red-300 shrink-0 px-1"
+                  >→</button>
                 </div>
-                <div className="text-right">
-                  <div className="text-lg font-black text-orange-400">RD$ {formatNum(p.totalGastado + p.totalDieta, 0)}</div>
-                  <div className="text-[10px] text-zinc-500">total gastado</div>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2 mt-2 text-[10px]">
-                <div className="bg-zinc-950 border border-zinc-800 p-2">
-                  <div className="text-zinc-500">Facturas</div>
-                  <div className="text-orange-400 font-bold">{formatRD(p.totalGastado)}</div>
-                </div>
-                <div className="bg-zinc-950 border border-zinc-800 p-2">
-                  <div className="text-zinc-500">Dietas</div>
-                  <div className="text-blue-400 font-bold">{formatRD(p.totalDieta)}</div>
-                </div>
-              </div>
-              <button
-                onClick={() => { setFiltroProyecto(p.proyectoId); setFiltroPersona(''); setTab('movimientos'); }}
-                className="mt-2 text-[10px] text-red-400 hover:text-red-300"
-              >
-                Ver todos los movimientos →
-              </button>
+              ) : (
+                <>
+                  <div className="flex justify-between items-start">
+                    <div className="min-w-0">
+                      <div className="font-bold text-sm truncate">{p.nombre}</div>
+                      <div className="text-[10px] text-zinc-500 uppercase">{p.movimientos.length} movs</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-lg font-black text-orange-400">RD$ {formatNum(p.totalGastado + p.totalDieta, 0)}</div>
+                      <div className="text-[10px] text-zinc-500">total gastado</div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 mt-2 text-[10px]">
+                    <div className="bg-zinc-950 border border-zinc-800 p-2">
+                      <div className="text-zinc-500">Facturas</div>
+                      <div className="text-orange-400 font-bold">{formatRD(p.totalGastado)}</div>
+                    </div>
+                    <div className="bg-zinc-950 border border-zinc-800 p-2">
+                      <div className="text-zinc-500">Dietas</div>
+                      <div className="text-blue-400 font-bold">{formatRD(p.totalDieta)}</div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => { setFiltroProyecto(p.proyectoId); setFiltroPersona(''); setTab('movimientos'); }}
+                    className="mt-2 text-[10px] text-red-400 hover:text-red-300"
+                  >
+                    Ver todos los movimientos →
+                  </button>
+                </>
+              )}
             </div>
           ))}
         </div>
       )}
 
       {tab === 'movimientos' && (
-        <div className="space-y-2">
+        <div className={dx.listGap}>
           <div className="bg-zinc-900 border border-zinc-800 p-2 flex flex-wrap gap-2 items-center text-xs">
             <Filter className="w-3 h-3 text-zinc-500" />
             <select value={filtroPersona} onChange={e => setFiltroPersona(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-1 text-white">
@@ -312,7 +364,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
             <div className="ml-auto text-[10px] text-zinc-500">{movimientosFiltrados.length} de {movimientos.length}</div>
           </div>
           {movimientosFiltrados.map(m => (
-            <FilaMovimiento key={m.id} m={m} data={data} onVerFoto={() => verFotoMov(m)} onEliminar={tieneRol(usuario, 'admin') ? () => eliminar(m) : null} />
+            <FilaMovimiento key={m.id} m={m} data={data} dx={dx} onVerFoto={() => verFotoMov(m)} onEliminar={tieneRol(usuario, 'admin') ? () => eliminar(m) : null} />
           ))}
         </div>
       )}
@@ -365,10 +417,45 @@ function TabBtn({ activo, onClick, children }) {
   );
 }
 
-function FilaPendiente({ m, data, onAprobar, onRechazar, onEliminar, onVerFoto, onAdjuntarFoto }) {
+function FilaPendiente({ m, data, dx, onAprobar, onRechazar, onEliminar, onVerFoto, onAdjuntarFoto }) {
   const persona = data.personal.find(p => p.id === m.personaId);
   const proy = m.proyectoId ? data.proyectos.find(p => p.id === m.proyectoId) : null;
   const fotoPorWs = !!m.datosIA?.foto_por_ws && !m.tieneFoto;
+  // En compacto: 1 fila con todo en línea + botones íconos.
+  if (dx?.compacto) {
+    return (
+      <div className={`bg-zinc-900 border p-1.5 flex items-center gap-2 ${fotoPorWs ? 'border-yellow-700/60' : 'border-orange-800/50'}`}>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1 flex-wrap">
+            <span className="text-[11px] font-bold truncate">{persona?.nombre || m.personaId}</span>
+            <span className="text-[9px] text-zinc-500">{m.tipo === 'gasto_factura' ? '🧾' : m.tipo === 'dieta' ? '🍽️' : m.tipo}</span>
+            {fotoPorWs && <span className="text-[9px] px-1 bg-yellow-900/40 text-yellow-300 border border-yellow-700">📱 WS</span>}
+          </div>
+          <div className="text-[9px] text-zinc-400 truncate">
+            {formatFechaCorta(m.fecha)}
+            {proy && <span className="text-red-400"> · {proy.referenciaOdoo || proy.cliente}</span>}
+            {m.proveedor && <span> · {m.proveedor}</span>}
+            {m.concepto && <span className="text-zinc-500"> · {m.concepto}</span>}
+          </div>
+        </div>
+        <div className="text-orange-400 font-black text-sm shrink-0">{formatRD(m.monto)}</div>
+        <div className="flex gap-1 shrink-0">
+          {m.tieneFoto && (
+            <button onClick={onVerFoto} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 p-1" title="Ver foto"><Eye className="w-3 h-3" /></button>
+          )}
+          {fotoPorWs && onAdjuntarFoto && (
+            <label className="bg-yellow-700 hover:bg-yellow-600 text-white p-1 cursor-pointer" title="Adjuntar foto">
+              <input type="file" accept="image/*" onChange={e => onAdjuntarFoto(e.target.files?.[0])} className="hidden" />
+              <Camera className="w-3 h-3" />
+            </label>
+          )}
+          <button onClick={onAprobar} className="bg-green-700 hover:bg-green-600 text-white px-2 py-1 text-[9px] font-black" title="Aprobar"><Check className="w-3 h-3" /></button>
+          <button onClick={onRechazar} className="bg-zinc-800 hover:bg-red-700 text-zinc-300 hover:text-white p-1" title="Rechazar"><X className="w-3 h-3" /></button>
+          <button onClick={onEliminar} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-500 hover:text-red-400 p-1" title="Eliminar"><Trash2 className="w-3 h-3" /></button>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className={`bg-zinc-900 border p-3 space-y-2 ${fotoPorWs ? 'border-yellow-700/60' : 'border-orange-800/50'}`}>
       <div className="flex items-start gap-2">
@@ -418,7 +505,7 @@ function FilaPendiente({ m, data, onAprobar, onRechazar, onEliminar, onVerFoto, 
   );
 }
 
-function FilaMovimiento({ m, data, onVerFoto, onEliminar }) {
+function FilaMovimiento({ m, data, dx, onVerFoto, onEliminar }) {
   const persona = data.personal.find(p => p.id === m.personaId);
   const proy = m.proyectoId ? data.proyectos.find(p => p.id === m.proyectoId) : null;
   const meta = TIPOS[m.tipo];
@@ -426,28 +513,25 @@ function FilaMovimiento({ m, data, onVerFoto, onEliminar }) {
   const fotoPorWs = !!m.datosIA?.foto_por_ws && !m.tieneFoto;
   const signo = m.tipo === 'entrega' ? '+' : (m.tipo === 'ajuste' ? (m.signoAjuste >= 0 ? '+' : '−') : '−');
   const cMonto = m.tipo === 'entrega' ? 'text-green-400' : (m.status === 'aprobado' ? 'text-orange-400' : 'text-zinc-500');
+  const compacto = !!dx?.compacto;
   return (
-    <div className="bg-zinc-900 border border-zinc-800 p-2 flex items-start gap-2">
-      <div className={`w-7 h-7 shrink-0 flex items-center justify-center ${meta.bg}`}>{meta.icono}</div>
+    <div className={`bg-zinc-900 border border-zinc-800 ${compacto ? 'p-1' : 'p-2'} flex items-center gap-2`}>
+      <div className={`${compacto ? 'w-5 h-5 text-xs' : 'w-7 h-7'} shrink-0 flex items-center justify-center ${meta.bg}`}>{meta.icono}</div>
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="text-xs font-bold truncate">{persona?.nombre || m.personaId}</div>
+        <div className="flex items-center gap-1 flex-wrap">
+          <div className={`${compacto ? 'text-[11px]' : 'text-xs'} font-bold truncate`}>{persona?.nombre || m.personaId}</div>
           <div className={`text-[9px] font-black uppercase tracking-wider px-1 ${stmeta.cls}`}>{stmeta.label}</div>
-          {fotoPorWs && (
-            <div className="text-[9px] font-black uppercase tracking-wider px-1 bg-yellow-900/40 text-yellow-300 border border-yellow-700">📱 WS</div>
-          )}
+          {fotoPorWs && <div className="text-[9px] font-black uppercase tracking-wider px-1 bg-yellow-900/40 text-yellow-300 border border-yellow-700">📱 WS</div>}
         </div>
-        <div className="text-[10px] text-zinc-400 truncate">
+        <div className={`${compacto ? 'text-[9px]' : 'text-[10px]'} text-zinc-400 truncate`}>
           {meta.label} · {formatFechaCorta(m.fecha)}{proy ? ` · ${proy.referenciaOdoo || proy.cliente}` : ''}
+          {(m.proveedor || m.concepto) && <span className="text-zinc-500"> · {m.proveedor}{m.proveedor && m.concepto ? ' · ' : ''}{m.concepto}</span>}
         </div>
-        {(m.proveedor || m.concepto) && <div className="text-[10px] text-zinc-500 truncate">{m.proveedor}{m.proveedor && m.concepto ? ' · ' : ''}{m.concepto}</div>}
       </div>
-      <div className="text-right shrink-0">
-        <div className={`text-sm font-black ${cMonto}`}>{signo}{formatRD(m.monto)}</div>
-        <div className="flex gap-1 justify-end mt-0.5">
-          {m.tieneFoto && <button onClick={onVerFoto} className="text-zinc-500 hover:text-red-400" title="Ver foto"><Eye className="w-3 h-3" /></button>}
-          {onEliminar && <button onClick={onEliminar} className="text-zinc-500 hover:text-red-400" title="Eliminar"><Trash2 className="w-3 h-3" /></button>}
-        </div>
+      <div className={`text-right shrink-0 flex items-center gap-1`}>
+        <div className={`${compacto ? 'text-xs' : 'text-sm'} font-black ${cMonto}`}>{signo}{formatRD(m.monto)}</div>
+        {m.tieneFoto && <button onClick={onVerFoto} className="text-zinc-500 hover:text-red-400 p-0.5" title="Ver foto"><Eye className="w-3 h-3" /></button>}
+        {onEliminar && <button onClick={onEliminar} className="text-zinc-500 hover:text-red-400 p-0.5" title="Eliminar"><Trash2 className="w-3 h-3" /></button>}
       </div>
     </div>
   );

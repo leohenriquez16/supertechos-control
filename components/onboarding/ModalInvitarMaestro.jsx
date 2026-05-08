@@ -59,7 +59,11 @@ export default function ModalInvitarMaestro({ usuario, onCerrar, onInvitado }) {
 👤 Tu usuario: ${formatearTelefono(resultado.telefono)}
 🔑 Tu PIN temporal: ${resultado.pin}
 
-En tu primer acceso te pedirá cambiar el PIN y completar tus datos. Cualquier duda me avisas.`
+En tu primer acceso te pedirá cambiar el PIN y completar tus datos.
+
+📲 Si quieres tenerlo como app en tu pantalla principal, sigue estos pasos: ${url}/instalar
+
+Cualquier duda me avisas.`
     : '';
 
   const copiar = async () => {

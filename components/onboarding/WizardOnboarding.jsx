@@ -10,6 +10,7 @@ import { Loader2, ArrowLeft, ArrowRight, Camera, ShieldCheck, Check, AlertCircle
 import * as db from '../../lib/db';
 import { comprimirImagen } from '../../lib/imports';
 import { registrarBiometria, biometriaSoportada } from '../../lib/biometria';
+import InstructivoInstalar from './InstructivoInstalar';
 
 const BANCOS_RD = [
   'Banco Popular Dominicano',
@@ -45,7 +46,7 @@ const formatearCedula = (s) => {
   return `${d.slice(0, 3)}-${d.slice(3, 10)}-${d.slice(10)}`;
 };
 
-const TOTAL_PASOS = 7;
+const TOTAL_PASOS = 8;
 
 export default function WizardOnboarding({ usuario, onListo }) {
   const [paso, setPaso] = useState(1);
@@ -181,6 +182,13 @@ export default function WizardOnboarding({ usuario, onListo }) {
           {paso === 5 && <PasoCedula datos={datos} set={set} />}
           {paso === 6 && <PasoBancarios datos={datos} set={set} />}
           {paso === 7 && <PasoBiometria usuario={usuario} bioSoportado={bioSoportadoState} />}
+          {paso === 8 && (
+            <InstructivoInstalar
+              modo="wizard"
+              onListo={finalizar}
+              onMasTarde={finalizar}
+            />
+          )}
 
           {error && (
             <div className="mt-4 bg-red-950/50 border border-red-800 px-3 py-2 flex items-start gap-2">
@@ -189,17 +197,18 @@ export default function WizardOnboarding({ usuario, onListo }) {
             </div>
           )}
 
-          <div className="flex gap-2 mt-5">
-            {paso > 1 && (
-              <button
-                onClick={anterior}
-                disabled={guardando}
-                className="flex-1 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-white font-bold uppercase tracking-wider py-3 flex items-center justify-center gap-1"
-              >
-                <ArrowLeft className="w-4 h-4" /> Atrás
-              </button>
-            )}
-            {paso < TOTAL_PASOS ? (
+          {/* Paso 8 maneja sus propios botones (Más tarde / Ya lo hice) */}
+          {paso !== 8 && (
+            <div className="flex gap-2 mt-5">
+              {paso > 1 && (
+                <button
+                  onClick={anterior}
+                  disabled={guardando}
+                  className="flex-1 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-white font-bold uppercase tracking-wider py-3 flex items-center justify-center gap-1"
+                >
+                  <ArrowLeft className="w-4 h-4" /> Atrás
+                </button>
+              )}
               <button
                 onClick={siguiente}
                 disabled={guardando}
@@ -207,17 +216,13 @@ export default function WizardOnboarding({ usuario, onListo }) {
               >
                 Siguiente <ArrowRight className="w-4 h-4" />
               </button>
-            ) : (
-              <button
-                onClick={finalizar}
-                disabled={guardando}
-                className="flex-[2] bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-black tracking-wider uppercase py-3 flex items-center justify-center gap-2"
-              >
-                {guardando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                {guardando ? 'Guardando...' : 'Finalizar'}
-              </button>
-            )}
-          </div>
+            </div>
+          )}
+          {paso === 8 && guardando && (
+            <div className="mt-3 text-center text-xs text-zinc-400 flex items-center justify-center gap-2">
+              <Loader2 className="w-3 h-3 animate-spin" /> Guardando…
+            </div>
+          )}
         </div>
       </div>
     </div>

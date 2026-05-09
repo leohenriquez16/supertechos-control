@@ -26,6 +26,9 @@ export default function ModalExportarOdoo({ data, onCerrar }) {
   const [fechaFin, setFechaFin] = useState(semanaPasada.fechaFin);
   const [generando, setGenerando] = useState(false);
   const [progresoZip, setProgresoZip] = useState(null); // { procesadas, total }
+  // v8.15.2: previsualización del conteo antes de descargar
+  const [movsPreview, setMovsPreview] = useState(null); // null = cargando, [] = vacío, [...] = con datos
+  const [cargandoPreview, setCargandoPreview] = useState(false);
 
   useEffect(() => {
     if (presetPeriodo === 'semana_pasada') {
@@ -38,6 +41,39 @@ export default function ModalExportarOdoo({ data, onCerrar }) {
       setFechaFin(new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).toISOString().split('T')[0]);
     }
   }, [presetPeriodo]);
+
+  // v8.15.2: cargar preview cada vez que cambia fecha o tipo
+  useEffect(() => {
+    let cancelado = false;
+    setCargandoPreview(true);
+    setMovsPreview(null);
+    db.listarMovimientosCajaChica({ fechaDesde: fechaInicio, fechaHasta: fechaFin })
+      .then(movs => {
+        if (cancelado) return;
+        setMovsPreview(movs);
+      })
+      .catch(e => {
+        console.error(e);
+        if (!cancelado) setMovsPreview([]);
+      })
+      .finally(() => { if (!cancelado) setCargandoPreview(false); });
+    return () => { cancelado = true; };
+  }, [fechaInicio, fechaFin]);
+
+  // Filtrar el preview según el tipo seleccionado para mostrar el conteo correcto
+  const movsAExportar = useMemo(() => {
+    if (!movsPreview) return [];
+    if (tipo === 'pagos') {
+      return movsPreview.filter(m => m.tipo === 'entrega' || m.status === 'aprobado');
+    }
+    // facturas y facturas_zip: solo gastos_factura aprobados
+    return movsPreview.filter(m => m.tipo === 'gasto_factura' && m.status === 'aprobado');
+  }, [movsPreview, tipo]);
+
+  const totalAExportar = useMemo(
+    () => movsAExportar.reduce((acc, m) => acc + Number(m.monto || 0), 0),
+    [movsAExportar]
+  );
 
   const generar = async () => {
     setGenerando(true);
@@ -148,6 +184,29 @@ export default function ModalExportarOdoo({ data, onCerrar }) {
           )}
         </div>
 
+        {/* v8.15.2: preview del conteo */}
+        <div className={`border-2 px-3 py-2 ${
+          cargandoPreview ? 'bg-zinc-950 border-zinc-700' :
+          movsAExportar.length === 0 ? 'bg-yellow-950/30 border-yellow-700' :
+          'bg-green-950/20 border-green-700'
+        }`}>
+          {cargandoPreview ? (
+            <div className="flex items-center gap-2 text-xs text-zinc-400">
+              <Loader2 className="w-3 h-3 animate-spin" /> Calculando movimientos en el rango...
+            </div>
+          ) : movsAExportar.length === 0 ? (
+            <div className="text-xs text-yellow-200">
+              ⚠ <b>0 movimientos</b> que cumplan los criterios en este período.
+              {tipo !== 'pagos' && <div className="text-[10px] text-yellow-200/70 mt-1">Solo se exportan gastos con factura APROBADOS. Verifica que haya gastos aprobados (no pendientes) en el rango.</div>}
+              {tipo === 'pagos' && <div className="text-[10px] text-yellow-200/70 mt-1">Solo se exportan entregas y movimientos APROBADOS. Verifica fechas + status.</div>}
+            </div>
+          ) : (
+            <div className="text-xs text-green-200">
+              ✓ Se exportarán <b>{movsAExportar.length}</b> {tipo === 'pagos' ? 'movimientos' : 'facturas'} · Total <b>RD${new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2 }).format(totalAExportar)}</b>
+            </div>
+          )}
+        </div>
+
         {progresoZip && (
           <div className="bg-zinc-950 border border-blue-700/50 p-2 text-[10px]">
             <div className="flex justify-between text-blue-300 mb-1">
@@ -165,10 +224,10 @@ export default function ModalExportarOdoo({ data, onCerrar }) {
           <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2.5">Cancelar</button>
           <button
             onClick={generar}
-            disabled={generando || titulares.length === 0}
+            disabled={generando || titulares.length === 0 || cargandoPreview || movsAExportar.length === 0}
             className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-xs font-black uppercase py-2.5 flex items-center justify-center gap-1"
           >
-            {generando ? <Loader2 className="w-3 h-3 animate-spin" /> : tipo === 'facturas_zip' ? <Archive className="w-3 h-3" /> : <Download className="w-3 h-3" />} Descargar {tipo === 'facturas_zip' ? 'ZIP' : 'CSV'}
+            {generando ? <Loader2 className="w-3 h-3 animate-spin" /> : tipo === 'facturas_zip' ? <Archive className="w-3 h-3" /> : <Download className="w-3 h-3" />} Descargar {tipo === 'facturas_zip' ? 'ZIP' : 'CSV'} {!cargandoPreview && movsAExportar.length > 0 && `(${movsAExportar.length})`}
           </button>
         </div>
       </div>

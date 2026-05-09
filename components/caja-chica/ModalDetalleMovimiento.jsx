@@ -1,21 +1,31 @@
 'use client';
 
-// v8.15.1: Modal de detalle de un movimiento de caja chica.
-// Muestra foto + datos editables + permite asignar/cambiar proyecto.
-// Editable: fecha, monto, proveedor, RNC, NCF, concepto, categoría, proyecto.
+// v8.15.2: Modal de detalle de un movimiento de caja chica.
+// Layout vertical (foto arriba, datos abajo) para que funcione bien en
+// cualquier ancho. Header sticky con botón cerrar prominente. Toolbar
+// de rotar visible arriba de la foto.
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Loader2, Save, Camera, AlertCircle, Building2, FileText, User as UserIcon, Calendar, DollarSign, RotateCcw, RotateCw, Maximize2 } from 'lucide-react';
+import { X, Loader2, Save, Camera, AlertCircle, Building2, FileText, User as UserIcon, Calendar, DollarSign, RotateCcw, RotateCw, Maximize2, Lock, Sparkles } from 'lucide-react';
 import * as db from '../../lib/db';
-import { formatRD, formatFechaCorta } from '../../lib/helpers/formato';
+import { formatFechaCorta } from '../../lib/helpers/formato';
+
+const tieneRol = (p, r) => p?.roles?.includes(r);
 
 export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCerrar, onActualizado }) {
   const persona = data.personal.find(p => p.id === movimiento.personaId);
-  const proyectoActual = movimiento.proyectoId ? data.proyectos.find(p => p.id === movimiento.proyectoId) : null;
   const proyectosActivos = (data.proyectos || []).filter(p => !p.archivado);
   const categoriasActivas = (data.categoriasCajaChica || []).filter(c => c.activa);
 
-  // Estado editable — se inicializa desde el movimiento al abrir.
+  // v8.15.2: bloqueo de edición
+  const esAdmin = tieneRol(usuario, 'admin');
+  const yaAprobado = movimiento.status === 'aprobado';
+  const yaRechazado = movimiento.status === 'rechazado';
+  // Si ya fue aprobado/rechazado y el usuario NO es admin → solo lectura.
+  const soloLectura = (yaAprobado || yaRechazado) && !esAdmin;
+  // Si admin edita un movimiento ya aprobado, lo avisamos y queda en audit.
+  const editandoAprobado = yaAprobado && esAdmin;
+
   const [campos, setCampos] = useState({
     fecha: movimiento.fecha || '',
     monto: String(movimiento.monto ?? ''),
@@ -33,8 +43,8 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
   const [cargandoFoto, setCargandoFoto] = useState(false);
   const [rotacion, setRotacion] = useState(0);
   const [verGrande, setVerGrande] = useState(false);
-
-  const rotar = (delta) => setRotacion(r => (((r + delta) % 360) + 360) % 360);
+  // v8.15.2: auto-fill por RNC
+  const [proveedorMatch, setProveedorMatch] = useState(null);
 
   const tieneFoto = !!movimiento.tieneFoto;
 
@@ -48,8 +58,38 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
   }, [movimiento.id, tieneFoto]);
 
   const set = (k, v) => setCampos(prev => ({ ...prev, [k]: v }));
+  const rotar = (delta) => setRotacion(r => (((r + delta) % 360) + 360) % 360);
 
-  // Detectar qué campos cambiaron
+  // v8.15.2: cuando cambia el RNC, buscar proveedor conocido y autocompletar razón social.
+  // Debounced para no spamear queries mientras tipean.
+  useEffect(() => {
+    const rncLimpio = (campos.rnc || '').replace(/\D/g, '');
+    if (!rncLimpio || rncLimpio === (movimiento.rnc || '').replace(/\D/g, '')) {
+      // No buscar si vacío o no cambió respecto al original
+      setProveedorMatch(null);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        const prov = await db.buscarProveedorCajaChicaPorRnc(campos.rnc);
+        if (prov) {
+          setProveedorMatch(prov);
+          // Solo autocompletar si el campo proveedor está vacío o coincide con el original (no pisar si ya editó)
+          if (!campos.proveedor || campos.proveedor === (movimiento.proveedor || '')) {
+            setCampos(prev => ({
+              ...prev,
+              proveedor: prov.nombre || prev.proveedor,
+              categoria: prev.categoria || prov.categoria || '',
+            }));
+          }
+        } else {
+          setProveedorMatch(null);
+        }
+      } catch (e) { /* silencioso */ }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [campos.rnc]);
+
   const diff = useMemo(() => {
     const d = {};
     if (campos.fecha !== (movimiento.fecha || '')) d.fecha = campos.fecha;
@@ -58,7 +98,6 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
     if ((campos.rnc || '') !== (movimiento.rnc || '')) d.rnc = campos.rnc;
     if ((campos.concepto || '') !== (movimiento.concepto || '')) d.concepto = campos.concepto;
     if ((campos.proyectoId || '') !== (movimiento.proyectoId || '')) d.proyectoId = campos.proyectoId || null;
-    // NCF y categoría viven en datos_ia
     const ncfActual = movimiento.datosIA?.ncf || '';
     const catActual = movimiento.datosIA?.categoria_sugerida || '';
     if (campos.ncf !== ncfActual || campos.categoria !== catActual) {
@@ -74,13 +113,42 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
   const hayCambios = Object.keys(diff).length > 0;
 
   const guardar = async () => {
-    if (guardando || !hayCambios) return;
+    if (guardando || !hayCambios || soloLectura) return;
     if (diff.monto != null && (!Number.isFinite(diff.monto) || diff.monto <= 0)) {
       setError('Monto debe ser mayor a 0.'); return;
+    }
+    // v8.15.2: si admin edita un movimiento ya aprobado, confirmar antes de guardar.
+    if (editandoAprobado) {
+      const camposCambiados = Object.keys(diff).join(', ');
+      const ok = confirm(`Este gasto ya está APROBADO.\n\nEstás por modificar: ${camposCambiados}\n\nEl cambio queda registrado en el histórico de auditoría. ¿Continuar?`);
+      if (!ok) return;
     }
     setGuardando(true); setError('');
     try {
       await db.actualizarMovimientoCajaChica(movimiento.id, diff);
+      // v8.15.2: audit log explícito si modificó aprobado
+      if (editandoAprobado) {
+        try {
+          db.registrarAudit({
+            usuarioId: usuario.id, usuarioNombre: usuario.nombre,
+            accion: 'caja_chica.movimiento_aprobado_editado',
+            recursoTipo: 'caja_chica_movimiento', recursoId: movimiento.id,
+            recursoNombre: `Gasto ${movimiento.tipo} de ${persona?.nombre || movimiento.personaId}`,
+            datosAntes: {
+              fecha: movimiento.fecha,
+              monto: movimiento.monto,
+              proveedor: movimiento.proveedor,
+              rnc: movimiento.rnc,
+              concepto: movimiento.concepto,
+              proyectoId: movimiento.proyectoId,
+              ncf: movimiento.datosIA?.ncf,
+              categoria: movimiento.datosIA?.categoria_sugerida,
+            },
+            datosDespues: diff,
+            severidad: 'warning',
+          });
+        } catch (e) { console.warn('Audit log falló:', e?.message); }
+      }
       onActualizado?.();
       onCerrar();
     } catch (e) {
@@ -89,203 +157,220 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
     setGuardando(false);
   };
 
+  // Cerrar al presionar Escape
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onCerrar(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onCerrar]);
+
   return (
-    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
-      <div className="bg-zinc-900 border-2 border-zinc-800 w-full max-w-3xl max-h-[95vh] flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3 flex-shrink-0">
-          <div className="font-black uppercase tracking-wider text-sm">Detalle del gasto</div>
-          <button onClick={onCerrar} className="text-zinc-400 hover:text-white"><X className="w-5 h-5" /></button>
+    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-2 sm:p-4" onClick={onCerrar}>
+      <div
+        className="bg-zinc-900 border-2 border-zinc-800 w-full max-w-2xl flex flex-col"
+        style={{ maxHeight: 'calc(100vh - 1rem)' }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* HEADER sticky con cerrar prominente */}
+        <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3 flex-shrink-0 bg-zinc-900">
+          <div className="font-black uppercase tracking-wider text-sm">📋 Detalle del gasto</div>
+          <button
+            onClick={onCerrar}
+            className="bg-zinc-800 hover:bg-red-600 text-white px-3 py-2 text-xs font-black uppercase tracking-wider flex items-center gap-1 transition-colors"
+            title="Cerrar (ESC)"
+          >
+            <X className="w-4 h-4" /> Cerrar
+          </button>
         </div>
 
-        <div className="flex-1 overflow-auto">
-          {/* Top: foto + datos básicos en grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-0">
-            {/* Foto */}
-            <div className="bg-black border-r border-zinc-800 flex items-center justify-center min-h-[300px] p-2 relative">
-              {tieneFoto ? (
-                cargandoFoto ? (
+        {/* CUERPO scrolleable */}
+        <div className="flex-1 overflow-y-auto">
+          {/* Banners según rol y status */}
+          {soloLectura && (
+            <div className="bg-zinc-950 border-b-2 border-yellow-700 px-4 py-3 flex items-start gap-2">
+              <Lock className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
+              <div className="text-xs text-yellow-200">
+                Este gasto ya está <strong>{movimiento.status}</strong>. Solo el administrador puede modificarlo.
+              </div>
+            </div>
+          )}
+          {editandoAprobado && (
+            <div className="bg-orange-950/40 border-b-2 border-orange-700 px-4 py-3 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-orange-400 flex-shrink-0 mt-0.5" />
+              <div className="text-xs text-orange-200">
+                <strong>Atención:</strong> estás editando un gasto <strong>ya aprobado</strong>. Cualquier cambio queda registrado en el histórico de auditoría.
+              </div>
+            </div>
+          )}
+          {/* FOTO con toolbar de rotar arriba */}
+          {tieneFoto && (
+            <div className="bg-black border-b border-zinc-800">
+              <div className="flex items-center justify-between px-3 py-2 bg-zinc-950 border-b border-zinc-800">
+                <div className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">📷 Foto de la factura</div>
+                {fotoUrl && (
+                  <div className="flex gap-1">
+                    <button onClick={() => rotar(-90)} className="bg-zinc-800 hover:bg-zinc-700 text-white p-1.5" title="Rotar a la izquierda">
+                      <RotateCcw className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={() => rotar(90)} className="bg-zinc-800 hover:bg-zinc-700 text-white p-1.5" title="Rotar a la derecha">
+                      <RotateCw className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={() => setVerGrande(true)} className="bg-zinc-800 hover:bg-zinc-700 text-white p-1.5" title="Ver foto en grande">
+                      <Maximize2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center justify-center p-2" style={{ minHeight: '200px', maxHeight: '50vh' }}>
+                {cargandoFoto ? (
                   <Loader2 className="w-8 h-8 text-zinc-500 animate-spin" />
                 ) : fotoUrl ? (
-                  <>
-                    <img
-                      src={fotoUrl}
-                      alt="Factura"
-                      className="max-w-full max-h-[450px] object-contain transition-transform duration-200"
-                      style={{ transform: `rotate(${rotacion}deg)` }}
-                    />
-                    {/* Toolbar superpuesta arriba a la derecha */}
-                    <div className="absolute top-2 right-2 flex gap-1">
-                      <button
-                        onClick={() => rotar(-90)}
-                        className="bg-black/70 hover:bg-black text-white p-1.5"
-                        title="Rotar a la izquierda"
-                      >
-                        <RotateCcw className="w-3 h-3" />
-                      </button>
-                      <button
-                        onClick={() => rotar(90)}
-                        className="bg-black/70 hover:bg-black text-white p-1.5"
-                        title="Rotar a la derecha"
-                      >
-                        <RotateCw className="w-3 h-3" />
-                      </button>
-                      <button
-                        onClick={() => setVerGrande(true)}
-                        className="bg-black/70 hover:bg-black text-white p-1.5"
-                        title="Ver foto en grande"
-                      >
-                        <Maximize2 className="w-3 h-3" />
-                      </button>
-                    </div>
-                  </>
+                  <img
+                    src={fotoUrl}
+                    alt="Factura"
+                    className="max-w-full max-h-[50vh] object-contain transition-transform duration-200 cursor-zoom-in"
+                    style={{ transform: `rotate(${rotacion}deg)` }}
+                    onClick={() => setVerGrande(true)}
+                  />
                 ) : (
-                  <div className="text-zinc-500 text-xs">No se pudo cargar la foto</div>
-                )
-              ) : movimiento.datosIA?.foto_por_ws ? (
-                <div className="text-center text-yellow-400 text-xs px-4">
+                  <div className="text-zinc-500 text-xs py-12">No se pudo cargar la foto</div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {!tieneFoto && (
+            <div className="bg-black border-b border-zinc-800 p-6 text-center">
+              {movimiento.datosIA?.foto_por_ws ? (
+                <div className="text-yellow-400 text-xs">
                   <Camera className="w-8 h-8 mx-auto mb-2 opacity-50" />
                   📱 Pendiente de foto por WhatsApp
                 </div>
               ) : (
-                <div className="text-center text-zinc-600 text-xs px-4">
+                <div className="text-zinc-600 text-xs">
                   <Camera className="w-8 h-8 mx-auto mb-2 opacity-30" />
                   Sin foto adjunta
                 </div>
               )}
             </div>
+          )}
 
-            {/* Visor fullscreen de la foto del modal de detalle */}
-            {verGrande && fotoUrl && (
-              <div className="fixed inset-0 bg-black/95 z-[60] flex flex-col" onClick={() => setVerGrande(false)}>
-                <div className="flex items-center justify-between px-3 py-2 bg-black/80 border-b border-zinc-800" onClick={e => e.stopPropagation()}>
-                  <div className="text-xs text-zinc-400 uppercase tracking-widest">Foto de factura</div>
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => rotar(-90)} className="bg-zinc-800 hover:bg-zinc-700 text-white p-2" title="Rotar izq"><RotateCcw className="w-4 h-4" /></button>
-                    <button onClick={() => rotar(90)} className="bg-zinc-800 hover:bg-zinc-700 text-white p-2" title="Rotar der"><RotateCw className="w-4 h-4" /></button>
-                    <button onClick={() => setVerGrande(false)} className="bg-red-600 hover:bg-red-700 text-white px-3 py-2 text-xs font-black uppercase flex items-center gap-1"><X className="w-4 h-4" /> Cerrar</button>
-                  </div>
-                </div>
-                <div className="flex-1 flex items-center justify-center overflow-auto p-4" onClick={e => e.stopPropagation()}>
-                  <img
-                    src={fotoUrl}
-                    alt=""
-                    className="max-w-full max-h-full object-contain transition-transform duration-200"
-                    style={{ transform: `rotate(${rotacion}deg)` }}
-                  />
-                </div>
-              </div>
-            )}
+          {/* DATOS editables */}
+          <div className="p-4 space-y-3">
+            <Item icon={<UserIcon className="w-3 h-3" />} label="Persona">
+              {persona?.nombre || movimiento.personaId}
+            </Item>
 
-            {/* Datos editables */}
-            <div className="p-4 space-y-3">
-              {/* Persona y status — no editables */}
-              <Item icon={<UserIcon className="w-3 h-3" />} label="Persona">
-                {persona?.nombre || movimiento.personaId}
-              </Item>
+            <Item icon={<FileText className="w-3 h-3" />} label="Tipo · Status">
+              <span className="capitalize">{movimiento.tipo}</span> · <span className={`font-bold ${movimiento.status === 'aprobado' ? 'text-green-400' : movimiento.status === 'rechazado' ? 'text-red-400' : 'text-orange-400'}`}>{movimiento.status}</span>
+            </Item>
 
-              <Item icon={<FileText className="w-3 h-3" />} label="Tipo · Status">
-                <span className="capitalize">{movimiento.tipo}</span> · <span className={`font-bold ${movimiento.status === 'aprobado' ? 'text-green-400' : movimiento.status === 'rechazado' ? 'text-red-400' : 'text-orange-400'}`}>{movimiento.status}</span>
-              </Item>
-
-              {/* Fecha — editable */}
+            <div className="grid grid-cols-2 gap-2">
               <Field label="Fecha" icon={<Calendar className="w-3 h-3" />}>
                 <input
                   type="date"
                   value={campos.fecha}
                   onChange={e => set('fecha', e.target.value)}
-                  className="w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-1.5 text-white text-sm"
+                  readOnly={soloLectura}
+                  className={`w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-2 text-white text-sm ${soloLectura ? 'cursor-not-allowed opacity-60' : ''}`}
                 />
               </Field>
-
-              {/* Monto — editable */}
               <Field label="Monto RD$" icon={<DollarSign className="w-3 h-3" />}>
                 <input
                   type="number" step="0.01"
                   value={campos.monto}
                   onChange={e => set('monto', e.target.value)}
-                  className="w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-1.5 text-white text-base font-bold text-right text-orange-400"
+                  readOnly={soloLectura}
+                  className={`w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-2 text-white text-base font-bold text-right text-orange-400 ${soloLectura ? 'cursor-not-allowed opacity-60' : ''}`}
                 />
               </Field>
+            </div>
 
-              {/* Proveedor — editable */}
-              <Field label="Proveedor (razón social)">
+            <Field label="Proveedor (razón social)">
+              <input
+                type="text"
+                value={campos.proveedor}
+                onChange={e => set('proveedor', e.target.value)}
+                placeholder="Razón social del emisor"
+                readOnly={soloLectura}
+                className={`w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-2 text-white text-sm ${soloLectura ? 'cursor-not-allowed opacity-60' : ''}`}
+              />
+              {!soloLectura && (
+                <div className="text-[9px] text-zinc-500 mt-0.5 italic">⚠ Si la AI puso el RNC de Super Techos en lugar del proveedor, corrige aquí.</div>
+              )}
+              {proveedorMatch && (
+                <div className="text-[10px] text-green-400 mt-1 flex items-center gap-1">
+                  <Sparkles className="w-3 h-3" /> Proveedor conocido: <b>{proveedorMatch.nombre}</b> ({proveedorMatch.total_facturas} factura{proveedorMatch.total_facturas !== 1 ? 's' : ''} previa{proveedorMatch.total_facturas !== 1 ? 's' : ''})
+                </div>
+              )}
+            </Field>
+
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="RNC del proveedor">
                 <input
                   type="text"
-                  value={campos.proveedor}
-                  onChange={e => set('proveedor', e.target.value)}
-                  placeholder="Razón social del emisor"
-                  className="w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-1.5 text-white text-sm"
-                />
-                <div className="text-[9px] text-zinc-500 mt-0.5 italic">⚠ A veces la AI lee el RNC de Super Techos en lugar del proveedor — corrige aquí.</div>
-              </Field>
-
-              {/* RNC + NCF en grid */}
-              <div className="grid grid-cols-2 gap-2">
-                <Field label="RNC del proveedor">
-                  <input
-                    type="text"
-                    value={campos.rnc}
-                    onChange={e => set('rnc', e.target.value)}
-                    placeholder="000-00000-0"
-                    className="w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-1.5 text-white text-sm font-mono"
-                  />
-                </Field>
-                <Field label="NCF">
-                  <input
-                    type="text"
-                    value={campos.ncf}
-                    onChange={e => set('ncf', e.target.value.toUpperCase())}
-                    placeholder="B0100..."
-                    className="w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-1.5 text-white text-sm font-mono"
-                  />
-                </Field>
-              </div>
-
-              {/* Categoría — editable */}
-              <Field label="Categoría">
-                <select
-                  value={campos.categoria}
-                  onChange={e => set('categoria', e.target.value)}
-                  className="w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-1.5 text-white text-sm"
-                >
-                  <option value="">— Seleccionar —</option>
-                  {categoriasActivas.map(c => (
-                    <option key={c.id} value={c.id}>{c.icono} {c.nombre}</option>
-                  ))}
-                </select>
-              </Field>
-
-              {/* Concepto — editable */}
-              <Field label="Concepto">
-                <textarea
-                  value={campos.concepto}
-                  onChange={e => set('concepto', e.target.value)}
-                  rows={2}
-                  placeholder="Descripción breve"
-                  className="w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-1.5 text-white text-sm"
+                  value={campos.rnc}
+                  onChange={e => set('rnc', e.target.value)}
+                  placeholder="000-00000-0"
+                  readOnly={soloLectura}
+                  className={`w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-2 text-white text-sm font-mono ${soloLectura ? 'cursor-not-allowed opacity-60' : ''}`}
                 />
               </Field>
-
-              {movimiento.datosIA?.confianza && (
-                <div className="text-[10px] text-zinc-500">
-                  Confianza original AI: <span className={
-                    movimiento.datosIA.confianza === 'alta' ? 'text-green-400' :
-                    movimiento.datosIA.confianza === 'media' ? 'text-yellow-400' : 'text-red-400'
-                  }>{movimiento.datosIA.confianza}</span>
-                </div>
-              )}
-
-              {movimiento.motivoRechazo && (
-                <div className="bg-red-950/30 border border-red-800 px-3 py-2 text-xs text-red-200">
-                  <div className="font-bold mb-1">Motivo de rechazo:</div>
-                  {movimiento.motivoRechazo}
-                </div>
-              )}
+              <Field label="NCF">
+                <input
+                  type="text"
+                  value={campos.ncf}
+                  onChange={e => set('ncf', e.target.value.toUpperCase())}
+                  placeholder="B0100..."
+                  readOnly={soloLectura}
+                  className={`w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-2 text-white text-sm font-mono ${soloLectura ? 'cursor-not-allowed opacity-60' : ''}`}
+                />
+              </Field>
             </div>
+
+            <Field label="Categoría">
+              <select
+                value={campos.categoria}
+                onChange={e => set('categoria', e.target.value)}
+                disabled={soloLectura}
+                className={`w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-2 text-white text-sm ${soloLectura ? 'cursor-not-allowed opacity-60' : ''}`}
+              >
+                <option value="">— Seleccionar —</option>
+                {categoriasActivas.map(c => (
+                  <option key={c.id} value={c.id}>{c.icono} {c.nombre}</option>
+                ))}
+              </select>
+            </Field>
+
+            <Field label="Concepto">
+              <textarea
+                value={campos.concepto}
+                onChange={e => set('concepto', e.target.value)}
+                rows={2}
+                placeholder="Descripción breve"
+                readOnly={soloLectura}
+                className={`w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-2 text-white text-sm ${soloLectura ? 'cursor-not-allowed opacity-60' : ''}`}
+              />
+            </Field>
+
+            {movimiento.datosIA?.confianza && (
+              <div className="text-[10px] text-zinc-500">
+                Confianza original AI: <span className={
+                  movimiento.datosIA.confianza === 'alta' ? 'text-green-400' :
+                  movimiento.datosIA.confianza === 'media' ? 'text-yellow-400' : 'text-red-400'
+                }>{movimiento.datosIA.confianza}</span>
+              </div>
+            )}
+
+            {movimiento.motivoRechazo && (
+              <div className="bg-red-950/30 border border-red-800 px-3 py-2 text-xs text-red-200">
+                <div className="font-bold mb-1">Motivo de rechazo:</div>
+                {movimiento.motivoRechazo}
+              </div>
+            )}
           </div>
 
-          {/* Sección de Proyecto — full width abajo */}
+          {/* PROYECTO */}
           <div className="border-t border-zinc-800 p-4 bg-zinc-950">
             <div className="flex items-center gap-2 mb-2">
               <Building2 className="w-3 h-3 text-zinc-400" />
@@ -304,7 +389,8 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
             <select
               value={campos.proyectoId}
               onChange={e => set('proyectoId', e.target.value)}
-              className="w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-3 py-2 text-white text-sm"
+              disabled={soloLectura}
+              className={`w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-3 py-2 text-white text-sm ${soloLectura ? 'cursor-not-allowed opacity-60' : ''}`}
             >
               <option value="">— Sin proyecto —</option>
               {proyectosActivos.map(p => (
@@ -323,32 +409,49 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
           )}
         </div>
 
-        {/* Footer fijo con botón guardar */}
+        {/* FOOTER fijo */}
         <div className="border-t border-zinc-800 px-4 py-3 flex items-center justify-between gap-2 flex-shrink-0 bg-zinc-950">
-          <div className="text-[10px] text-zinc-500">
-            {hayCambios
-              ? <span className="text-yellow-400">⚠ Hay cambios sin guardar ({Object.keys(diff).length} {Object.keys(diff).length === 1 ? 'campo' : 'campos'})</span>
-              : 'Sin cambios'}
+          <div className="text-[10px] text-zinc-500 truncate">
+            {soloLectura
+              ? <span className="text-zinc-500"><Lock className="w-3 h-3 inline mr-1" />Solo lectura</span>
+              : hayCambios
+                ? <span className="text-yellow-400">⚠ {Object.keys(diff).length} {Object.keys(diff).length === 1 ? 'cambio' : 'cambios'} sin guardar</span>
+                : 'Sin cambios'}
           </div>
-          <div className="flex gap-2">
-            <button
-              onClick={onCerrar}
-              disabled={guardando}
-              className="px-4 py-2 text-zinc-400 hover:text-white text-xs font-bold uppercase"
-            >
-              {hayCambios ? 'Descartar' : 'Cerrar'}
-            </button>
+          {!soloLectura && (
             <button
               onClick={guardar}
               disabled={!hayCambios || guardando}
-              className="bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-600 text-white font-black uppercase tracking-wider px-4 py-2 text-xs flex items-center gap-1"
+              className="bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-600 text-white font-black uppercase tracking-wider px-4 py-2 text-xs flex items-center gap-1 flex-shrink-0"
             >
               {guardando ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-              Guardar cambios
+              Guardar
             </button>
-          </div>
+          )}
         </div>
       </div>
+
+      {/* VISOR FULLSCREEN de la foto */}
+      {verGrande && fotoUrl && (
+        <div className="fixed inset-0 bg-black/95 z-[60] flex flex-col" onClick={() => setVerGrande(false)}>
+          <div className="flex items-center justify-between px-3 py-2 bg-black/80 border-b border-zinc-800" onClick={e => e.stopPropagation()}>
+            <div className="text-xs text-zinc-400 uppercase tracking-widest">Foto de factura</div>
+            <div className="flex items-center gap-2">
+              <button onClick={() => rotar(-90)} className="bg-zinc-800 hover:bg-zinc-700 text-white p-2" title="Rotar izq"><RotateCcw className="w-4 h-4" /></button>
+              <button onClick={() => rotar(90)} className="bg-zinc-800 hover:bg-zinc-700 text-white p-2" title="Rotar der"><RotateCw className="w-4 h-4" /></button>
+              <button onClick={() => setVerGrande(false)} className="bg-red-600 hover:bg-red-700 text-white px-3 py-2 text-xs font-black uppercase flex items-center gap-1"><X className="w-4 h-4" /> Cerrar</button>
+            </div>
+          </div>
+          <div className="flex-1 flex items-center justify-center overflow-auto p-4" onClick={e => e.stopPropagation()}>
+            <img
+              src={fotoUrl}
+              alt=""
+              className="max-w-full max-h-full object-contain transition-transform duration-200"
+              style={{ transform: `rotate(${rotacion}deg)` }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { ArrowLeft, Loader2, Plus, Wallet, AlertCircle, Eye, Check, X, Trash2, FileText, Filter, Sparkles, MessageSquare, Camera, RotateCcw, Info } from 'lucide-react';
+import { ArrowLeft, Loader2, Plus, Wallet, AlertCircle, Eye, Check, X, Trash2, FileText, Filter, Sparkles, MessageSquare, Camera, RotateCcw, RotateCw, Info } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatRD, formatNum, formatFechaCorta } from '../../lib/helpers/formato';
 import { comprimirImagen } from '../../lib/imports';
@@ -25,6 +25,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
   const [tab, setTab] = useState('dashboard'); // dashboard | bandeja | porPersona | porProyecto | movimientos
   const [densidad, setDensidad, dx] = useDensidad('caja-chica-admin');
   const [verFoto, setVerFoto] = useState(null); // {id, fotoData}
+  const [rotacionFoto, setRotacionFoto] = useState(0); // v8.15.1: grados de rotación del visor de foto
   const [filtroPersona, setFiltroPersona] = useState('');
   const [filtroProyecto, setFiltroProyecto] = useState('');
   const [modalEntrega, setModalEntrega] = useState(false);
@@ -51,6 +52,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
 
   const verFotoMov = async (mov) => {
     if (!mov.tieneFoto) return;
+    setRotacionFoto(0); // reset al abrir nueva foto
     setVerFoto({ id: mov.id, fotoData: null });
     try {
       const fd = await db.obtenerFotoFacturaCajaChica(mov.id);
@@ -60,6 +62,8 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
       setVerFoto(null);
     }
   };
+  const cerrarFoto = () => { setVerFoto(null); setRotacionFoto(0); };
+  const rotarFoto = (delta) => setRotacionFoto(r => (((r + delta) % 360) + 360) % 360);
 
   const aprobar = async (mov) => {
     try {
@@ -448,13 +452,48 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
       )}
 
       {verFoto && (
-        <div className="fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-4" onClick={() => setVerFoto(null)}>
-          <div className="relative max-w-3xl w-full" onClick={e => e.stopPropagation()}>
-            <button onClick={() => setVerFoto(null)} className="absolute top-2 right-2 z-10 bg-black/60 text-white p-2"><X className="w-5 h-5" /></button>
+        <div className="fixed inset-0 bg-black/95 z-50 flex flex-col" onClick={cerrarFoto}>
+          {/* Toolbar superior */}
+          <div className="flex items-center justify-between px-3 py-2 bg-black/80 border-b border-zinc-800" onClick={e => e.stopPropagation()}>
+            <div className="text-xs text-zinc-400 uppercase tracking-widest">Foto de factura</div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => rotarFoto(-90)}
+                disabled={!verFoto.fotoData}
+                className="bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-white p-2"
+                title="Rotar a la izquierda"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => rotarFoto(90)}
+                disabled={!verFoto.fotoData}
+                className="bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-white p-2"
+                title="Rotar a la derecha"
+              >
+                <RotateCw className="w-4 h-4" />
+              </button>
+              <button
+                onClick={cerrarFoto}
+                className="bg-red-600 hover:bg-red-700 text-white px-3 py-2 text-xs font-black uppercase flex items-center gap-1"
+                title="Cerrar"
+              >
+                <X className="w-4 h-4" /> Cerrar
+              </button>
+            </div>
+          </div>
+
+          {/* Imagen centrada con rotación */}
+          <div className="flex-1 flex items-center justify-center overflow-auto p-4" onClick={e => e.stopPropagation()}>
             {verFoto.fotoData ? (
-              <img src={verFoto.fotoData} alt="" className="w-full h-auto" />
+              <img
+                src={verFoto.fotoData}
+                alt=""
+                className="max-w-full max-h-full object-contain transition-transform duration-200"
+                style={{ transform: `rotate(${rotacionFoto}deg)` }}
+              />
             ) : (
-              <div className="aspect-video bg-zinc-900 flex items-center justify-center"><Loader2 className="w-8 h-8 text-red-500 animate-spin" /></div>
+              <Loader2 className="w-10 h-10 text-red-500 animate-spin" />
             )}
           </div>
         </div>

@@ -5,7 +5,7 @@
 // Editable: fecha, monto, proveedor, RNC, NCF, concepto, categoría, proyecto.
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Loader2, Save, Camera, AlertCircle, Building2, FileText, User as UserIcon, Calendar, DollarSign } from 'lucide-react';
+import { X, Loader2, Save, Camera, AlertCircle, Building2, FileText, User as UserIcon, Calendar, DollarSign, RotateCcw, RotateCw, Maximize2 } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatRD, formatFechaCorta } from '../../lib/helpers/formato';
 
@@ -31,6 +31,10 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
   const [error, setError] = useState('');
   const [fotoUrl, setFotoUrl] = useState(null);
   const [cargandoFoto, setCargandoFoto] = useState(false);
+  const [rotacion, setRotacion] = useState(0);
+  const [verGrande, setVerGrande] = useState(false);
+
+  const rotar = (delta) => setRotacion(r => (((r + delta) % 360) + 360) % 360);
 
   const tieneFoto = !!movimiento.tieneFoto;
 
@@ -98,12 +102,43 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
           {/* Top: foto + datos básicos en grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-0">
             {/* Foto */}
-            <div className="bg-black border-r border-zinc-800 flex items-center justify-center min-h-[300px] p-2">
+            <div className="bg-black border-r border-zinc-800 flex items-center justify-center min-h-[300px] p-2 relative">
               {tieneFoto ? (
                 cargandoFoto ? (
                   <Loader2 className="w-8 h-8 text-zinc-500 animate-spin" />
                 ) : fotoUrl ? (
-                  <img src={fotoUrl} alt="Factura" className="max-w-full max-h-[450px] object-contain" />
+                  <>
+                    <img
+                      src={fotoUrl}
+                      alt="Factura"
+                      className="max-w-full max-h-[450px] object-contain transition-transform duration-200"
+                      style={{ transform: `rotate(${rotacion}deg)` }}
+                    />
+                    {/* Toolbar superpuesta arriba a la derecha */}
+                    <div className="absolute top-2 right-2 flex gap-1">
+                      <button
+                        onClick={() => rotar(-90)}
+                        className="bg-black/70 hover:bg-black text-white p-1.5"
+                        title="Rotar a la izquierda"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={() => rotar(90)}
+                        className="bg-black/70 hover:bg-black text-white p-1.5"
+                        title="Rotar a la derecha"
+                      >
+                        <RotateCw className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={() => setVerGrande(true)}
+                        className="bg-black/70 hover:bg-black text-white p-1.5"
+                        title="Ver foto en grande"
+                      >
+                        <Maximize2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </>
                 ) : (
                   <div className="text-zinc-500 text-xs">No se pudo cargar la foto</div>
                 )
@@ -119,6 +154,28 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
                 </div>
               )}
             </div>
+
+            {/* Visor fullscreen de la foto del modal de detalle */}
+            {verGrande && fotoUrl && (
+              <div className="fixed inset-0 bg-black/95 z-[60] flex flex-col" onClick={() => setVerGrande(false)}>
+                <div className="flex items-center justify-between px-3 py-2 bg-black/80 border-b border-zinc-800" onClick={e => e.stopPropagation()}>
+                  <div className="text-xs text-zinc-400 uppercase tracking-widest">Foto de factura</div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => rotar(-90)} className="bg-zinc-800 hover:bg-zinc-700 text-white p-2" title="Rotar izq"><RotateCcw className="w-4 h-4" /></button>
+                    <button onClick={() => rotar(90)} className="bg-zinc-800 hover:bg-zinc-700 text-white p-2" title="Rotar der"><RotateCw className="w-4 h-4" /></button>
+                    <button onClick={() => setVerGrande(false)} className="bg-red-600 hover:bg-red-700 text-white px-3 py-2 text-xs font-black uppercase flex items-center gap-1"><X className="w-4 h-4" /> Cerrar</button>
+                  </div>
+                </div>
+                <div className="flex-1 flex items-center justify-center overflow-auto p-4" onClick={e => e.stopPropagation()}>
+                  <img
+                    src={fotoUrl}
+                    alt=""
+                    className="max-w-full max-h-full object-contain transition-transform duration-200"
+                    style={{ transform: `rotate(${rotacion}deg)` }}
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Datos editables */}
             <div className="p-4 space-y-3">

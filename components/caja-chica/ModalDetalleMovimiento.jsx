@@ -202,10 +202,13 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
               </div>
             </div>
           )}
-          {/* FOTO con toolbar de rotar arriba */}
+          {/* FOTO con toolbar STICKY arriba */}
           {tieneFoto && (
             <div className="bg-black border-b border-zinc-800">
-              <div className="flex items-center justify-between px-3 py-2 bg-zinc-950 border-b border-zinc-800">
+              <div
+                className="flex items-center justify-between px-3 py-2 bg-zinc-950 border-b border-zinc-800 sticky top-0 z-10"
+                style={{ position: 'sticky', top: 0 }}
+              >
                 <div className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">📷 Foto de la factura</div>
                 {fotoUrl && (
                   <div className="flex gap-1">
@@ -221,21 +224,38 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
                   </div>
                 )}
               </div>
-              <div className="flex items-center justify-center p-2" style={{ minHeight: '200px', maxHeight: '50vh' }}>
+              <div
+                className="flex items-center justify-center p-2 overflow-hidden"
+                style={{ minHeight: '150px', maxHeight: '35vh' }}
+              >
                 {cargandoFoto ? (
                   <Loader2 className="w-8 h-8 text-zinc-500 animate-spin" />
                 ) : fotoUrl ? (
                   <img
                     src={fotoUrl}
                     alt="Factura"
-                    className="max-w-full max-h-[50vh] object-contain transition-transform duration-200 cursor-zoom-in"
-                    style={{ transform: `rotate(${rotacion}deg)` }}
+                    className="object-contain transition-transform duration-200 cursor-zoom-in"
+                    style={{
+                      transform: `rotate(${rotacion}deg)`,
+                      maxHeight: '33vh',
+                      maxWidth: '100%',
+                    }}
                     onClick={() => setVerGrande(true)}
                   />
                 ) : (
                   <div className="text-zinc-500 text-xs py-12">No se pudo cargar la foto</div>
                 )}
               </div>
+              {fotoUrl && (
+                <div className="px-3 py-1.5 bg-zinc-950 border-t border-zinc-800 text-center">
+                  <button
+                    onClick={() => setVerGrande(true)}
+                    className="text-[10px] text-blue-400 hover:text-blue-300 uppercase tracking-widest font-bold flex items-center gap-1 mx-auto"
+                  >
+                    <Maximize2 className="w-3 h-3" /> Toca para ver en grande
+                  </button>
+                </div>
+              )}
             </div>
           )}
 

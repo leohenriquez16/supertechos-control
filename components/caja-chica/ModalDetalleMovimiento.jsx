@@ -6,13 +6,19 @@
 // de rotar visible arriba de la foto.
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Loader2, Save, Camera, AlertCircle, Building2, FileText, User as UserIcon, Calendar, DollarSign, RotateCcw, RotateCw, Maximize2, Lock, Sparkles } from 'lucide-react';
+import { X, Loader2, Save, Camera, AlertCircle, Building2, FileText, User as UserIcon, Calendar, DollarSign, RotateCcw, RotateCw, Maximize2, Lock, Sparkles, ChevronLeft, ChevronRight, Check } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatFechaCorta } from '../../lib/helpers/formato';
 
 const tieneRol = (p, r) => p?.roles?.includes(r);
 
-export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCerrar, onActualizado }) {
+export default function ModalDetalleMovimiento({
+  usuario, movimiento, data, onCerrar, onActualizado,
+  // v8.15.5: navegación entre pendientes desde la bandeja
+  onSiguiente, onAnterior, posicion,
+  // v8.15.5: aprobar/rechazar in-modal con avance automático
+  onAprobar, onRechazar,
+}) {
   const persona = data.personal.find(p => p.id === movimiento.personaId);
   const proyectosActivos = (data.proyectos || []).filter(p => !p.archivado);
   const categoriasActivas = (data.categoriasCajaChica || []).filter(c => c.activa);
@@ -157,12 +163,59 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
     setGuardando(false);
   };
 
-  // Cerrar al presionar Escape
+  // Cerrar con ESC + navegar con flechas (si hay onSiguiente/onAnterior)
   useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') onCerrar(); };
+    const onKey = (e) => {
+      // Si está en un input/textarea/select, no capturar flechas
+      const tag = (e.target?.tagName || '').toLowerCase();
+      const enInput = tag === 'input' || tag === 'textarea' || tag === 'select';
+      if (e.key === 'Escape') onCerrar();
+      if (!enInput) {
+        if (e.key === 'ArrowRight' && onSiguiente && posicion && posicion.actual < posicion.total - 1) onSiguiente();
+        if (e.key === 'ArrowLeft' && onAnterior && posicion && posicion.actual > 0) onAnterior();
+      }
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onCerrar]);
+  }, [onCerrar, onSiguiente, onAnterior, posicion]);
+
+  // v8.15.5: aprobar (con guardado previo de cambios si hay) + avanzar al siguiente
+  const aprobarYAvanzar = async () => {
+    if (guardando) return;
+    setGuardando(true); setError('');
+    try {
+      // Si hay cambios sin guardar, los guardamos primero
+      if (hayCambios) {
+        if (diff.monto != null && (!Number.isFinite(diff.monto) || diff.monto <= 0)) {
+          setError('Monto debe ser mayor a 0.'); setGuardando(false); return;
+        }
+        await db.actualizarMovimientoCajaChica(movimiento.id, diff);
+      }
+      await onAprobar?.(movimiento);
+      onActualizado?.();
+    } catch (e) {
+      setError(e.message || 'Error al aprobar');
+      setGuardando(false);
+      return;
+    }
+    setGuardando(false);
+  };
+
+  const rechazarYAvanzar = async () => {
+    if (guardando) return;
+    setGuardando(true); setError('');
+    try {
+      await onRechazar?.(movimiento);
+      onActualizado?.();
+    } catch (e) {
+      setError(e.message || 'Error al rechazar');
+      setGuardando(false);
+      return;
+    }
+    setGuardando(false);
+  };
+
+  const esUltimoPendiente = posicion && posicion.actual >= posicion.total - 1;
 
   return (
     <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-2 sm:p-4" onClick={onCerrar}>
@@ -171,12 +224,38 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
         style={{ maxHeight: 'calc(100vh - 1rem)' }}
         onClick={e => e.stopPropagation()}
       >
-        {/* HEADER sticky con cerrar prominente */}
-        <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3 flex-shrink-0 bg-zinc-900">
-          <div className="font-black uppercase tracking-wider text-sm">📋 Detalle del gasto</div>
+        {/* HEADER sticky con cerrar prominente + navegación entre pendientes */}
+        <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-2.5 flex-shrink-0 bg-zinc-900 gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            {/* Navegación entre pendientes — solo si viene de la bandeja */}
+            {posicion && (
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={onAnterior}
+                  disabled={posicion.actual === 0}
+                  className="bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed text-white p-1.5"
+                  title="Gasto anterior (←)"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <div className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold whitespace-nowrap px-1">
+                  {posicion.actual + 1} de {posicion.total}
+                </div>
+                <button
+                  onClick={onSiguiente}
+                  disabled={posicion.actual >= posicion.total - 1}
+                  className="bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed text-white p-1.5"
+                  title="Gasto siguiente (→)"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+            <div className="font-black uppercase tracking-wider text-sm truncate">📋 Detalle</div>
+          </div>
           <button
             onClick={onCerrar}
-            className="bg-zinc-800 hover:bg-red-600 text-white px-3 py-2 text-xs font-black uppercase tracking-wider flex items-center gap-1 transition-colors"
+            className="bg-zinc-800 hover:bg-red-600 text-white px-3 py-2 text-xs font-black uppercase tracking-wider flex items-center gap-1 transition-colors flex-shrink-0"
             title="Cerrar (ESC)"
           >
             <X className="w-4 h-4" /> Cerrar
@@ -202,10 +281,13 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
               </div>
             </div>
           )}
-          {/* FOTO con toolbar de rotar arriba */}
+          {/* FOTO con toolbar STICKY arriba */}
           {tieneFoto && (
             <div className="bg-black border-b border-zinc-800">
-              <div className="flex items-center justify-between px-3 py-2 bg-zinc-950 border-b border-zinc-800">
+              <div
+                className="flex items-center justify-between px-3 py-2 bg-zinc-950 border-b border-zinc-800 sticky top-0 z-10"
+                style={{ position: 'sticky', top: 0 }}
+              >
                 <div className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">📷 Foto de la factura</div>
                 {fotoUrl && (
                   <div className="flex gap-1">
@@ -221,21 +303,38 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
                   </div>
                 )}
               </div>
-              <div className="flex items-center justify-center p-2" style={{ minHeight: '200px', maxHeight: '50vh' }}>
+              <div
+                className="flex items-center justify-center p-2 overflow-hidden"
+                style={{ minHeight: '150px', maxHeight: '35vh' }}
+              >
                 {cargandoFoto ? (
                   <Loader2 className="w-8 h-8 text-zinc-500 animate-spin" />
                 ) : fotoUrl ? (
                   <img
                     src={fotoUrl}
                     alt="Factura"
-                    className="max-w-full max-h-[50vh] object-contain transition-transform duration-200 cursor-zoom-in"
-                    style={{ transform: `rotate(${rotacion}deg)` }}
+                    className="object-contain transition-transform duration-200 cursor-zoom-in"
+                    style={{
+                      transform: `rotate(${rotacion}deg)`,
+                      maxHeight: '33vh',
+                      maxWidth: '100%',
+                    }}
                     onClick={() => setVerGrande(true)}
                   />
                 ) : (
                   <div className="text-zinc-500 text-xs py-12">No se pudo cargar la foto</div>
                 )}
               </div>
+              {fotoUrl && (
+                <div className="px-3 py-1.5 bg-zinc-950 border-t border-zinc-800 text-center">
+                  <button
+                    onClick={() => setVerGrande(true)}
+                    className="text-[10px] text-blue-400 hover:text-blue-300 uppercase tracking-widest font-bold flex items-center gap-1 mx-auto"
+                  >
+                    <Maximize2 className="w-3 h-3" /> Toca para ver en grande
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -410,24 +509,60 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
         </div>
 
         {/* FOOTER fijo */}
-        <div className="border-t border-zinc-800 px-4 py-3 flex items-center justify-between gap-2 flex-shrink-0 bg-zinc-950">
+        <div className="border-t border-zinc-800 px-3 py-2.5 flex items-center justify-between gap-2 flex-shrink-0 bg-zinc-950">
           <div className="text-[10px] text-zinc-500 truncate">
             {soloLectura
               ? <span className="text-zinc-500"><Lock className="w-3 h-3 inline mr-1" />Solo lectura</span>
               : hayCambios
-                ? <span className="text-yellow-400">⚠ {Object.keys(diff).length} {Object.keys(diff).length === 1 ? 'cambio' : 'cambios'} sin guardar</span>
+                ? <span className="text-yellow-400">⚠ {Object.keys(diff).length} sin guardar</span>
                 : 'Sin cambios'}
           </div>
-          {!soloLectura && (
-            <button
-              onClick={guardar}
-              disabled={!hayCambios || guardando}
-              className="bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-600 text-white font-black uppercase tracking-wider px-4 py-2 text-xs flex items-center gap-1 flex-shrink-0"
-            >
-              {guardando ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-              Guardar
-            </button>
-          )}
+          <div className="flex gap-1.5 flex-shrink-0">
+            {/* Modo bandeja: Rechazar + Aprobar y siguiente */}
+            {onRechazar && !soloLectura && (
+              <button
+                onClick={rechazarYAvanzar}
+                disabled={guardando}
+                className="bg-zinc-800 hover:bg-red-600 disabled:opacity-50 text-white font-bold uppercase tracking-wider px-3 py-2 text-xs flex items-center gap-1"
+                title="Rechazar este gasto"
+              >
+                <X className="w-3 h-3" /> Rechazar
+              </button>
+            )}
+            {!soloLectura && !onAprobar && (
+              <button
+                onClick={guardar}
+                disabled={!hayCambios || guardando}
+                className="bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-600 text-white font-black uppercase tracking-wider px-3 py-2 text-xs flex items-center gap-1"
+              >
+                {guardando ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                Guardar
+              </button>
+            )}
+            {onAprobar && !soloLectura && (
+              <>
+                {hayCambios && (
+                  <button
+                    onClick={guardar}
+                    disabled={guardando}
+                    className="bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-zinc-300 font-bold uppercase tracking-wider px-3 py-2 text-xs flex items-center gap-1"
+                    title="Solo guardar cambios sin aprobar"
+                  >
+                    <Save className="w-3 h-3" /> Solo guardar
+                  </button>
+                )}
+                <button
+                  onClick={aprobarYAvanzar}
+                  disabled={guardando}
+                  className="bg-green-600 hover:bg-green-700 disabled:bg-zinc-800 disabled:text-zinc-600 text-white font-black uppercase tracking-wider px-3 py-2 text-xs flex items-center gap-1"
+                  title={esUltimoPendiente ? 'Aprobar y cerrar' : 'Aprobar y pasar al siguiente'}
+                >
+                  {guardando ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                  Aprobar {!esUltimoPendiente && posicion ? '→' : ''}
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </div>
 

@@ -32,7 +32,8 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
   const [modalCuadre, setModalCuadre] = useState(false);
   const [modalExport, setModalExport] = useState(false);
   const [modalCargaMasiva, setModalCargaMasiva] = useState(false); // v8.15
-  const [verDetalle, setVerDetalle] = useState(null); // v8.15.1: movimiento abierto en modal de detalle
+  const [verDetalle, setVerDetalle] = useState(null); // v8.15.1: movimiento abierto en modal de detalle (modo simple)
+  const [indicePendiente, setIndicePendiente] = useState(null); // v8.15.5: índice del pendiente abierto en modo bandeja
 
   const cargar = async () => {
     setLoading(true);
@@ -244,7 +245,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
           {pendientes.length === 0 ? (
             <div className="text-center py-10 text-zinc-500 text-sm">✓ Sin pendientes. Todo aprobado.</div>
           ) : (
-            pendientes.map(m => (
+            pendientes.map((m, idx) => (
               <FilaPendiente
                 key={m.id}
                 m={m}
@@ -255,6 +256,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
                 onEliminar={() => eliminar(m)}
                 onVerFoto={() => verFotoMov(m)}
                 onAdjuntarFoto={(file) => adjuntarFoto(m, file)}
+                onAbrirDetalle={() => setIndicePendiente(idx)}
               />
             ))
           )}
@@ -451,6 +453,43 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
         />
       )}
 
+      {/* v8.15.5: modo bandeja con navegación + aprobar/rechazar in-modal */}
+      {indicePendiente !== null && pendientes[indicePendiente] && (
+        <ModalDetalleMovimiento
+          key={pendientes[indicePendiente].id}
+          usuario={usuario}
+          movimiento={pendientes[indicePendiente]}
+          data={data}
+          posicion={{ actual: indicePendiente, total: pendientes.length }}
+          onAnterior={() => setIndicePendiente(Math.max(0, indicePendiente - 1))}
+          onSiguiente={() => setIndicePendiente(Math.min(pendientes.length - 1, indicePendiente + 1))}
+          onCerrar={() => setIndicePendiente(null)}
+          onActualizado={() => cargar()}
+          onAprobar={async (mov) => {
+            await db.actualizarStatusMovimientoCajaChica(mov.id, { status: 'aprobado', aprobadoPorId: usuario.id });
+            // Avanzar al siguiente o cerrar si era el último.
+            // Importante: tras aprobar, el array `pendientes` se actualizará en el próximo render
+            // porque cargar() recarga movimientos. El índice queda apuntando al "siguiente" de la
+            // nueva lista, que es el que ahora ocupa esa posición.
+            await cargar();
+            // Si ya no quedan más en esa posición → cerrar
+            if (indicePendiente >= pendientes.length - 1) {
+              setIndicePendiente(null);
+            }
+            // Si quedan, dejamos el índice igual: el modal mostrará el siguiente que cayó en esa posición.
+          }}
+          onRechazar={async (mov) => {
+            const motivo = prompt('Motivo del rechazo (opcional):') || '';
+            if (motivo === null) return;
+            await db.actualizarStatusMovimientoCajaChica(mov.id, { status: 'rechazado', motivoRechazo: motivo });
+            await cargar();
+            if (indicePendiente >= pendientes.length - 1) {
+              setIndicePendiente(null);
+            }
+          }}
+        />
+      )}
+
       {verFoto && (
         <div className="fixed inset-0 bg-black/95 z-50 flex flex-col" onClick={cerrarFoto}>
           {/* Toolbar superior */}
@@ -524,14 +563,16 @@ function TabBtn({ activo, onClick, children }) {
   );
 }
 
-function FilaPendiente({ m, data, dx, onAprobar, onRechazar, onEliminar, onVerFoto, onAdjuntarFoto }) {
+function FilaPendiente({ m, data, dx, onAprobar, onRechazar, onEliminar, onVerFoto, onAdjuntarFoto, onAbrirDetalle }) {
+  // v8.15.5: stop propagation en botones para que el click en la fila no dispare onAbrirDetalle
+  const stop = (fn) => (e) => { e.stopPropagation(); fn?.(); };
   const persona = data.personal.find(p => p.id === m.personaId);
   const proy = m.proyectoId ? data.proyectos.find(p => p.id === m.proyectoId) : null;
   const fotoPorWs = !!m.datosIA?.foto_por_ws && !m.tieneFoto;
   // En compacto: 1 fila con todo en línea + botones íconos.
   if (dx?.compacto) {
     return (
-      <div className={`bg-zinc-900 border p-1.5 flex items-center gap-2 ${fotoPorWs ? 'border-yellow-700/60' : 'border-orange-800/50'}`}>
+      <div onClick={onAbrirDetalle} className={`bg-zinc-900 border p-1.5 flex items-center gap-2 ${fotoPorWs ? 'border-yellow-700/60' : 'border-orange-800/50'} ${onAbrirDetalle ? 'cursor-pointer hover:border-red-600' : ''}`}>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1 flex-wrap">
             <span className="text-[11px] font-bold truncate">{persona?.nombre || m.personaId}</span>
@@ -548,23 +589,23 @@ function FilaPendiente({ m, data, dx, onAprobar, onRechazar, onEliminar, onVerFo
         <div className="text-orange-400 font-black text-sm shrink-0">{formatRD(m.monto)}</div>
         <div className="flex gap-1 shrink-0">
           {m.tieneFoto && (
-            <button onClick={onVerFoto} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 p-1" title="Ver foto"><Eye className="w-3 h-3" /></button>
+            <button onClick={stop(onVerFoto)} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 p-1" title="Ver foto"><Eye className="w-3 h-3" /></button>
           )}
           {fotoPorWs && onAdjuntarFoto && (
-            <label className="bg-yellow-700 hover:bg-yellow-600 text-white p-1 cursor-pointer" title="Adjuntar foto">
+            <label onClick={e => e.stopPropagation()} className="bg-yellow-700 hover:bg-yellow-600 text-white p-1 cursor-pointer" title="Adjuntar foto">
               <input type="file" accept="image/*" onChange={e => onAdjuntarFoto(e.target.files?.[0])} className="hidden" />
               <Camera className="w-3 h-3" />
             </label>
           )}
-          <button onClick={onAprobar} className="bg-green-700 hover:bg-green-600 text-white px-2 py-1 text-[9px] font-black" title="Aprobar"><Check className="w-3 h-3" /></button>
-          <button onClick={onRechazar} className="bg-zinc-800 hover:bg-red-700 text-zinc-300 hover:text-white p-1" title="Rechazar"><X className="w-3 h-3" /></button>
-          <button onClick={onEliminar} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-500 hover:text-red-400 p-1" title="Eliminar"><Trash2 className="w-3 h-3" /></button>
+          <button onClick={stop(onAprobar)} className="bg-green-700 hover:bg-green-600 text-white px-2 py-1 text-[9px] font-black" title="Aprobar"><Check className="w-3 h-3" /></button>
+          <button onClick={stop(onRechazar)} className="bg-zinc-800 hover:bg-red-700 text-zinc-300 hover:text-white p-1" title="Rechazar"><X className="w-3 h-3" /></button>
+          <button onClick={stop(onEliminar)} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-500 hover:text-red-400 p-1" title="Eliminar"><Trash2 className="w-3 h-3" /></button>
         </div>
       </div>
     );
   }
   return (
-    <div className={`bg-zinc-900 border p-3 space-y-2 ${fotoPorWs ? 'border-yellow-700/60' : 'border-orange-800/50'}`}>
+    <div onClick={onAbrirDetalle} className={`bg-zinc-900 border p-3 space-y-2 ${fotoPorWs ? 'border-yellow-700/60' : 'border-orange-800/50'} ${onAbrirDetalle ? 'cursor-pointer hover:border-red-600' : ''}`}>
       <div className="flex items-start gap-2">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
@@ -588,26 +629,31 @@ function FilaPendiente({ m, data, dx, onAprobar, onRechazar, onEliminar, onVerFo
       </div>
       <div className="flex gap-1 flex-wrap">
         {m.tieneFoto && (
-          <button onClick={onVerFoto} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-bold uppercase px-2 py-1.5 flex items-center gap-1">
+          <button onClick={stop(onVerFoto)} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-bold uppercase px-2 py-1.5 flex items-center gap-1">
             <Eye className="w-3 h-3" /> Foto
           </button>
         )}
         {fotoPorWs && onAdjuntarFoto && (
-          <label className="bg-yellow-700 hover:bg-yellow-600 text-white text-[10px] font-bold uppercase px-2 py-1.5 flex items-center gap-1 cursor-pointer">
+          <label onClick={e => e.stopPropagation()} className="bg-yellow-700 hover:bg-yellow-600 text-white text-[10px] font-bold uppercase px-2 py-1.5 flex items-center gap-1 cursor-pointer">
             <input type="file" accept="image/*" onChange={e => onAdjuntarFoto(e.target.files?.[0])} className="hidden" />
             <Camera className="w-3 h-3" /> Adjuntar foto
           </label>
         )}
-        <button onClick={onAprobar} className="flex-1 bg-green-700 hover:bg-green-600 text-white text-[10px] font-black uppercase py-1.5 flex items-center justify-center gap-1">
+        <button onClick={stop(onAprobar)} className="flex-1 bg-green-700 hover:bg-green-600 text-white text-[10px] font-black uppercase py-1.5 flex items-center justify-center gap-1">
           <Check className="w-3 h-3" /> Aprobar
         </button>
-        <button onClick={onRechazar} className="bg-zinc-800 hover:bg-red-700 text-zinc-300 hover:text-white text-[10px] font-bold uppercase px-2 py-1.5">
+        <button onClick={stop(onRechazar)} className="bg-zinc-800 hover:bg-red-700 text-zinc-300 hover:text-white text-[10px] font-bold uppercase px-2 py-1.5">
           Rechazar
         </button>
-        <button onClick={onEliminar} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-500 hover:text-red-400 px-2 py-1.5">
+        <button onClick={stop(onEliminar)} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-500 hover:text-red-400 px-2 py-1.5">
           <Trash2 className="w-3 h-3" />
         </button>
       </div>
+      {onAbrirDetalle && (
+        <div className="text-[9px] text-zinc-600 text-center mt-1 italic">
+          Toca la fila para revisar / editar este gasto
+        </div>
+      )}
     </div>
   );
 }

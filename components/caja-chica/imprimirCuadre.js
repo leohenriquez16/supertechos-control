@@ -78,6 +78,15 @@ function bloqueTitular({ persona, cuadre, fechaInicio, fechaFin, data, conSignat
       <td class="val">${signo === 'sub' ? '−' : signo === 'add' ? '+' : ''} RD$ ${fmt(val)}</td>
     </tr>`;
 
+  // Mapa de categorías (nombre canónico) — se usa en el detalle y en el resumen
+  const catMap = {};
+  (data?.categoriasCajaChica || []).forEach(cat => { catMap[cat.id] = cat; });
+  const labelCategoria = (m) => {
+    const id = m.datosIA?.categoria_sugerida;
+    if (!id) return '';
+    return catMap[id]?.nombre || CATEGORIA_LABEL[id] || id;
+  };
+
   // Detalle de movimientos cronológico — solo aprobados (norma contable)
   const movsAprobados = cuadre.movimientosEnRango.filter(
     m => m.tipo === 'entrega' || m.tipo === 'ajuste' || m.status === 'aprobado'
@@ -88,6 +97,7 @@ function bloqueTitular({ persona, cuadre, fechaInicio, fechaFin, data, conSignat
     const proyLbl = proy ? `${proy.referenciaOdoo || ''} ${proy.cliente || proy.nombre || ''}`.trim() : '';
     const ncf = m.datosIA?.ncf || '';
     const monto = aportePresentacion(m);
+    const cat = labelCategoria(m);
     return `
       <tr class="${m.tipo === 'entrega' ? 'entrega' : m.tipo === 'gasto_factura' ? 'gasto' : m.tipo === 'dieta' ? 'dieta' : ''}">
         <td>${fmtFecha(m.fecha)}</td>
@@ -95,14 +105,13 @@ function bloqueTitular({ persona, cuadre, fechaInicio, fechaFin, data, conSignat
         <td>${m.proveedor || (m.tipo === 'entrega' ? '—' : m.tipo === 'dieta' ? 'Dieta diaria' : '—')}</td>
         <td>${m.rnc || ''}</td>
         <td>${ncf}</td>
+        <td>${cat}</td>
         <td>${m.concepto || ''}${proyLbl ? `<br><span style="color:#888;font-size:9px;">${proyLbl}</span>` : ''}</td>
         <td class="right">${monto}</td>
       </tr>`;
   }).join('');
 
   // Resumen por categoría (usa nombre canónico de DB si está disponible)
-  const catMap = {};
-  (data?.categoriasCajaChica || []).forEach(cat => { catMap[cat.id] = cat; });
   const filasCategoria = cuadre.categorias.map(c => {
     const nombre = catMap[c.categoria]?.nombre || CATEGORIA_LABEL[c.categoria] || c.categoria;
     return `
@@ -120,6 +129,7 @@ function bloqueTitular({ persona, cuadre, fechaInicio, fechaFin, data, conSignat
         <td>${fmtFecha(m.fecha)}</td>
         <td><b>${TIPO_LABEL[m.tipo]}</b></td>
         <td>${m.proveedor || '—'}</td>
+        <td>${labelCategoria(m)}</td>
         <td>${m.concepto || ''}</td>
         <td><span class="badge badge-${m.status === 'pendiente_revision' ? 'pendiente' : 'rechazado'}">${m.status === 'pendiente_revision' ? 'Pendiente' : 'Rechazado'}</span>${m.motivoRechazo ? `<br><span style="color:#888;font-size:9px;">${m.motivoRechazo}</span>` : ''}</td>
         <td class="right">RD$ ${fmt(m.monto)}</td>
@@ -128,7 +138,7 @@ function bloqueTitular({ persona, cuadre, fechaInicio, fechaFin, data, conSignat
       <div class="anexo">
         <h3>Movimientos NO incluidos en el cuadre (informativo)</h3>
         <p style="font-size:10px;color:#555;margin:0 0 6px;">Los movimientos pendientes o rechazados no afectan el saldo del fondo. Se listan aquí para referencia y seguimiento.</p>
-        <table class="movs"><thead><tr><th>Fecha</th><th>Tipo</th><th>Proveedor</th><th>Concepto</th><th>Estado</th><th>Monto</th></tr></thead><tbody>${filasAnexo}</tbody></table>
+        <table class="movs"><thead><tr><th>Fecha</th><th>Tipo</th><th>Proveedor</th><th>Categoría</th><th>Concepto</th><th>Estado</th><th>Monto</th></tr></thead><tbody>${filasAnexo}</tbody></table>
       </div>`;
   }
 
@@ -154,7 +164,7 @@ function bloqueTitular({ persona, cuadre, fechaInicio, fechaFin, data, conSignat
     <h2>Detalle de movimientos del período</h2>
     ${filasDetalle ? `
     <table class="movs">
-      <thead><tr><th>Fecha</th><th>Tipo</th><th>Proveedor</th><th>RNC</th><th>NCF</th><th>Concepto</th><th>Monto</th></tr></thead>
+      <thead><tr><th>Fecha</th><th>Tipo</th><th>Proveedor</th><th>RNC</th><th>NCF</th><th>Categoría</th><th>Concepto</th><th>Monto</th></tr></thead>
       <tbody>${filasDetalle}</tbody>
     </table>` : '<p style="color:#888;font-size:11px;">Sin movimientos aprobados en el período.</p>'}
 

@@ -10,6 +10,7 @@ import Input from '../common/Input';
 import ToggleDensidad, { useDensidad } from '../common/ToggleDensidad';
 import ModalGenerarCuadre from './ModalGenerarCuadre';
 import ModalExportarOdoo from './ModalExportarOdoo';
+import ModalCargaMasiva from './ModalCargaMasiva';
 import DashboardCajaChica from './DashboardCajaChica';
 
 const tieneRol = (p, r) => p?.roles?.includes(r);
@@ -28,6 +29,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
   const [modalEntrega, setModalEntrega] = useState(false);
   const [modalCuadre, setModalCuadre] = useState(false);
   const [modalExport, setModalExport] = useState(false);
+  const [modalCargaMasiva, setModalCargaMasiva] = useState(false); // v8.15
 
   const cargar = async () => {
     setLoading(true);
@@ -191,6 +193,9 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
               <Sparkles className="w-3 h-3 text-yellow-400" /> Proveedores
             </button>
           )}
+          <button onClick={() => setModalCargaMasiva(true)} className="bg-zinc-900 border border-zinc-800 hover:border-green-500 text-zinc-300 text-xs font-bold uppercase px-3 py-2 flex items-center gap-1" title="Sube varias facturas a la vez con AI procesándolas en paralelo">
+            <Sparkles className="w-3 h-3 text-green-400" /> Carga masiva
+          </button>
           <button onClick={() => setModalEntrega(true)} className="bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase px-4 py-2 flex items-center gap-1">
             <Plus className="w-3 h-3" /> Entregar caja
           </button>
@@ -409,6 +414,15 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
         <ModalExportarOdoo
           data={data}
           onCerrar={() => setModalExport(false)}
+        />
+      )}
+
+      {modalCargaMasiva && (
+        <ModalCargaMasiva
+          usuario={usuario}
+          data={data}
+          onCerrar={() => setModalCargaMasiva(false)}
+          onListo={() => { setModalCargaMasiva(false); setTab('bandeja'); cargar(); }}
         />
       )}
 

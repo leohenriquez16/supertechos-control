@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { ArrowLeft, Loader2, Plus, Wallet, AlertCircle, Eye, Check, X, Trash2, FileText, Filter, Sparkles, MessageSquare, Camera, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Loader2, Plus, Wallet, AlertCircle, Eye, Check, X, Trash2, FileText, Filter, Sparkles, MessageSquare, Camera, RotateCcw, Info } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatRD, formatNum, formatFechaCorta } from '../../lib/helpers/formato';
 import { comprimirImagen } from '../../lib/imports';
@@ -11,6 +11,7 @@ import ToggleDensidad, { useDensidad } from '../common/ToggleDensidad';
 import ModalGenerarCuadre from './ModalGenerarCuadre';
 import ModalExportarOdoo from './ModalExportarOdoo';
 import ModalCargaMasiva from './ModalCargaMasiva';
+import ModalDetalleMovimiento from './ModalDetalleMovimiento';
 import DashboardCajaChica from './DashboardCajaChica';
 
 const tieneRol = (p, r) => p?.roles?.includes(r);
@@ -30,6 +31,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
   const [modalCuadre, setModalCuadre] = useState(false);
   const [modalExport, setModalExport] = useState(false);
   const [modalCargaMasiva, setModalCargaMasiva] = useState(false); // v8.15
+  const [verDetalle, setVerDetalle] = useState(null); // v8.15.1: movimiento abierto en modal de detalle
 
   const cargar = async () => {
     setLoading(true);
@@ -397,7 +399,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
             <div className="ml-auto text-[10px] text-zinc-500">{movimientosFiltrados.length} de {movimientos.length}</div>
           </div>
           {movimientosFiltrados.map(m => (
-            <FilaMovimiento key={m.id} m={m} data={data} dx={dx} onVerFoto={() => verFotoMov(m)} onEliminar={tieneRol(usuario, 'admin') ? () => eliminar(m) : null} onDesaprobar={tieneRol(usuario, 'admin') ? () => desaprobar(m) : null} />
+            <FilaMovimiento key={m.id} m={m} data={data} dx={dx} onAbrirDetalle={() => setVerDetalle(m)} onVerFoto={() => verFotoMov(m)} onEliminar={tieneRol(usuario, 'admin') ? () => eliminar(m) : null} onDesaprobar={tieneRol(usuario, 'admin') ? () => desaprobar(m) : null} />
           ))}
         </div>
       )}
@@ -432,6 +434,16 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
           data={data}
           onCerrar={() => setModalCargaMasiva(false)}
           onListo={() => { setModalCargaMasiva(false); setTab('bandeja'); cargar(); }}
+        />
+      )}
+
+      {verDetalle && (
+        <ModalDetalleMovimiento
+          usuario={usuario}
+          movimiento={verDetalle}
+          data={data}
+          onCerrar={() => setVerDetalle(null)}
+          onActualizado={() => cargar()}
         />
       )}
 
@@ -561,7 +573,7 @@ function FilaPendiente({ m, data, dx, onAprobar, onRechazar, onEliminar, onVerFo
   );
 }
 
-function FilaMovimiento({ m, data, dx, onVerFoto, onEliminar, onDesaprobar }) {
+function FilaMovimiento({ m, data, dx, onAbrirDetalle, onVerFoto, onEliminar, onDesaprobar }) {
   const persona = data.personal.find(p => p.id === m.personaId);
   const proy = m.proyectoId ? data.proyectos.find(p => p.id === m.proyectoId) : null;
   const meta = TIPOS[m.tipo];
@@ -586,6 +598,12 @@ function FilaMovimiento({ m, data, dx, onVerFoto, onEliminar, onDesaprobar }) {
       </div>
       <div className={`text-right shrink-0 flex items-center gap-1`}>
         <div className={`${compacto ? 'text-xs' : 'text-sm'} font-black ${cMonto}`}>{signo}{formatRD(m.monto)}</div>
+        {/* v8.15.1: abrir detalle del gasto + cambiar proyecto si aplica */}
+        {onAbrirDetalle && m.tipo !== 'entrega' && (
+          <button onClick={onAbrirDetalle} className="text-zinc-500 hover:text-blue-400 p-0.5" title="Ver detalle del gasto">
+            <Info className="w-3 h-3" />
+          </button>
+        )}
         {m.tieneFoto && <button onClick={onVerFoto} className="text-zinc-500 hover:text-red-400 p-0.5" title="Ver foto"><Eye className="w-3 h-3" /></button>}
         {/* v8.15.1: desaprobar/reabrir → vuelve a la bandeja como pendiente. Solo para gastos/dietas/ajustes (no entregas). */}
         {onDesaprobar && m.tipo !== 'entrega' && (m.status === 'aprobado' || m.status === 'rechazado') && (

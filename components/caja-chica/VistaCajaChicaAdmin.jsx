@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { ArrowLeft, Loader2, Plus, Wallet, AlertCircle, Eye, Check, X, Trash2, FileText, Filter, Sparkles, MessageSquare, Camera, RotateCcw, RotateCw, Info } from 'lucide-react';
+import { ArrowLeft, Loader2, Plus, Wallet, AlertCircle, Eye, Check, X, Trash2, FileText, Filter, Sparkles, MessageSquare, Camera, RotateCcw, RotateCw, Info, FileX } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatRD, formatNum, formatFechaCorta } from '../../lib/helpers/formato';
 import { comprimirImagen } from '../../lib/imports';
@@ -448,6 +448,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
           usuario={usuario}
           movimiento={verDetalle}
           data={data}
+          movimientos={movimientos}
           onCerrar={() => setVerDetalle(null)}
           onActualizado={() => cargar()}
         />
@@ -460,6 +461,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
           usuario={usuario}
           movimiento={pendientes[indicePendiente]}
           data={data}
+          movimientos={movimientos}
           posicion={{ actual: indicePendiente, total: pendientes.length }}
           onAnterior={() => setIndicePendiente(Math.max(0, indicePendiente - 1))}
           onSiguiente={() => setIndicePendiente(Math.min(pendientes.length - 1, indicePendiente + 1))}
@@ -569,15 +571,17 @@ function FilaPendiente({ m, data, dx, onAprobar, onRechazar, onEliminar, onVerFo
   const persona = data.personal.find(p => p.id === m.personaId);
   const proy = m.proyectoId ? data.proyectos.find(p => p.id === m.proyectoId) : null;
   const fotoPorWs = !!m.datosIA?.foto_por_ws && !m.tieneFoto;
+  const sinFactura = !!m.datosIA?.sin_factura;
   // En compacto: 1 fila con todo en línea + botones íconos.
   if (dx?.compacto) {
     return (
-      <div onClick={onAbrirDetalle} className={`bg-zinc-900 border p-1.5 flex items-center gap-2 ${fotoPorWs ? 'border-yellow-700/60' : 'border-orange-800/50'} ${onAbrirDetalle ? 'cursor-pointer hover:border-red-600' : ''}`}>
+      <div onClick={onAbrirDetalle} className={`bg-zinc-900 border p-1.5 flex items-center gap-2 ${sinFactura ? 'border-red-800/60' : fotoPorWs ? 'border-yellow-700/60' : 'border-orange-800/50'} ${onAbrirDetalle ? 'cursor-pointer hover:border-red-600' : ''}`}>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1 flex-wrap">
             <span className="text-[11px] font-bold truncate">{persona?.nombre || m.personaId}</span>
             <span className="text-[9px] text-zinc-500">{m.tipo === 'gasto_factura' ? '🧾' : m.tipo === 'dieta' ? '🍽️' : m.tipo}</span>
             {fotoPorWs && <span className="text-[9px] px-1 bg-yellow-900/40 text-yellow-300 border border-yellow-700">📱 WS</span>}
+            {sinFactura && <span className="text-[9px] px-1 bg-red-900/40 text-red-300 border border-red-800 font-bold">✍ SIN FACTURA</span>}
           </div>
           <div className="text-[9px] text-zinc-400 truncate">
             {formatFechaCorta(m.fecha)}
@@ -605,7 +609,7 @@ function FilaPendiente({ m, data, dx, onAprobar, onRechazar, onEliminar, onVerFo
     );
   }
   return (
-    <div onClick={onAbrirDetalle} className={`bg-zinc-900 border p-3 space-y-2 ${fotoPorWs ? 'border-yellow-700/60' : 'border-orange-800/50'} ${onAbrirDetalle ? 'cursor-pointer hover:border-red-600' : ''}`}>
+    <div onClick={onAbrirDetalle} className={`bg-zinc-900 border p-3 space-y-2 ${sinFactura ? 'border-red-800/60' : fotoPorWs ? 'border-yellow-700/60' : 'border-orange-800/50'} ${onAbrirDetalle ? 'cursor-pointer hover:border-red-600' : ''}`}>
       <div className="flex items-start gap-2">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
@@ -613,6 +617,11 @@ function FilaPendiente({ m, data, dx, onAprobar, onRechazar, onEliminar, onVerFo
             {fotoPorWs && (
               <div className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-yellow-900/40 text-yellow-300 border border-yellow-700 flex items-center gap-1">
                 <MessageSquare className="w-2.5 h-2.5" /> Foto por WS
+              </div>
+            )}
+            {sinFactura && (
+              <div className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-red-900/40 text-red-300 border border-red-800 flex items-center gap-1">
+                <FileX className="w-2.5 h-2.5" /> Sin factura
               </div>
             )}
           </div>
@@ -664,6 +673,7 @@ function FilaMovimiento({ m, data, dx, onAbrirDetalle, onVerFoto, onEliminar, on
   const meta = TIPOS[m.tipo];
   const stmeta = STATUS[m.status];
   const fotoPorWs = !!m.datosIA?.foto_por_ws && !m.tieneFoto;
+  const sinFactura = !!m.datosIA?.sin_factura;
   const signo = m.tipo === 'entrega' ? '+' : (m.tipo === 'ajuste' ? (m.signoAjuste >= 0 ? '+' : '−') : '−');
   const cMonto = m.tipo === 'entrega' ? 'text-green-400' : (m.status === 'aprobado' ? 'text-orange-400' : 'text-zinc-500');
   const compacto = !!dx?.compacto;
@@ -675,6 +685,7 @@ function FilaMovimiento({ m, data, dx, onAbrirDetalle, onVerFoto, onEliminar, on
           <div className={`${compacto ? 'text-[11px]' : 'text-xs'} font-bold truncate`}>{persona?.nombre || m.personaId}</div>
           <div className={`text-[9px] font-black uppercase tracking-wider px-1 ${stmeta.cls}`}>{stmeta.label}</div>
           {fotoPorWs && <div className="text-[9px] font-black uppercase tracking-wider px-1 bg-yellow-900/40 text-yellow-300 border border-yellow-700">📱 WS</div>}
+          {sinFactura && <div className="text-[9px] font-black uppercase tracking-wider px-1 bg-red-900/40 text-red-300 border border-red-800">✍ SIN FACTURA</div>}
         </div>
         <div className={`${compacto ? 'text-[9px]' : 'text-[10px]'} text-zinc-400 truncate`}>
           {meta.label} · {formatFechaCorta(m.fecha)}{proy ? ` · ${proy.referenciaOdoo || proy.cliente}` : ''}

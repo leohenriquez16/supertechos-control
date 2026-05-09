@@ -6,9 +6,10 @@
 // de rotar visible arriba de la foto.
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Loader2, Save, Camera, AlertCircle, Building2, FileText, User as UserIcon, Calendar, DollarSign, RotateCcw, RotateCw, Maximize2, Lock, Sparkles, ChevronLeft, ChevronRight, Check } from 'lucide-react';
+import { X, Loader2, Save, Camera, AlertCircle, Building2, FileText, User as UserIcon, Calendar, DollarSign, RotateCcw, RotateCw, Maximize2, Lock, Sparkles, ChevronLeft, ChevronRight, Check, FileX } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatFechaCorta } from '../../lib/helpers/formato';
+import { calcularAlertasSinFactura } from '../../lib/helpers/alertasSinFactura';
 
 const tieneRol = (p, r) => p?.roles?.includes(r);
 
@@ -18,10 +19,19 @@ export default function ModalDetalleMovimiento({
   onSiguiente, onAnterior, posicion,
   // v8.15.5: aprobar/rechazar in-modal con avance automático
   onAprobar, onRechazar,
+  // v8.16.1: lista completa de movimientos para calcular alertas detectivas
+  movimientos = null,
 }) {
   const persona = data.personal.find(p => p.id === movimiento.personaId);
   const proyectosActivos = (data.proyectos || []).filter(p => !p.archivado);
   const categoriasActivas = (data.categoriasCajaChica || []).filter(c => c.activa);
+
+  // v8.16.1: alertas detectivas para gastos sin factura
+  const sinFactura = !!movimiento.datosIA?.sin_factura;
+  const alertasSinFactura = useMemo(() => {
+    if (!sinFactura || !movimientos) return [];
+    return calcularAlertasSinFactura(movimiento, movimientos);
+  }, [sinFactura, movimientos, movimiento.id, movimiento.monto, movimiento.fecha]);
 
   // v8.15.2: bloqueo de edición
   const esAdmin = tieneRol(usuario, 'admin');
@@ -279,6 +289,33 @@ export default function ModalDetalleMovimiento({
               <div className="text-xs text-orange-200">
                 <strong>Atención:</strong> estás editando un gasto <strong>ya aprobado</strong>. Cualquier cambio queda registrado en el histórico de auditoría.
               </div>
+            </div>
+          )}
+          {/* v8.16.1: gasto sin factura — banner siempre visible si aplica */}
+          {sinFactura && (
+            <div className="bg-red-950/40 border-b-2 border-red-800 px-4 py-3 flex items-start gap-2">
+              <FileX className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+              <div className="text-xs text-red-200 flex-1">
+                <strong>✍️ Compra informal sin comprobante fiscal.</strong> Sin RNC ni NCF. Revisa el concepto cuidadosamente.
+              </div>
+            </div>
+          )}
+          {/* v8.16.1: alertas detectivas (no bloquean, solo informan al admin) */}
+          {alertasSinFactura.length > 0 && (
+            <div className="bg-zinc-950 border-b-2 border-zinc-800">
+              {alertasSinFactura.map((a, i) => (
+                <div
+                  key={i}
+                  className={`px-4 py-2 flex items-start gap-2 text-xs ${
+                    a.color === 'red' ? 'bg-red-950/40 border-l-4 border-red-600 text-red-200' :
+                    a.color === 'orange' ? 'bg-orange-950/40 border-l-4 border-orange-600 text-orange-200' :
+                    'bg-yellow-950/40 border-l-4 border-yellow-600 text-yellow-200'
+                  }`}
+                >
+                  <span className="flex-shrink-0">{a.label}</span>
+                  <span>{a.mensaje}</span>
+                </div>
+              ))}
             </div>
           )}
           {/* v8.16: maestro indicó cotización manualmente porque su proyecto no estaba asignado */}

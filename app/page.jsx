@@ -281,6 +281,25 @@ const personaEsElegibleParaProyecto = (personaId, proyecto, data, opciones = {})
   return { elegible: razones.length === 0, razones };
 };
 
+// v8.17.0: Acceso de una persona a un cliente (Opción C híbrida)
+// Devuelve { acceso: bool, fuente: 'manual'|'credencial'|'sin_requisitos', faltantes: [tipoCredencialId], notas }
+const personaTieneAccesoCliente = (personaId, clienteId, data) => {
+  // 1. Override manual del admin tiene prioridad
+  const override = (data.accesosClientes || []).find(a => a.personaId === personaId && a.clienteId === clienteId);
+  if (override) {
+    return { acceso: !!override.activo, fuente: 'manual', faltantes: [], notas: override.notas || '' };
+  }
+  // 2. Derivado de credenciales requeridas por el cliente
+  const requisitos = (data.clienteRequisitos || [])
+    .filter(r => r.clienteId === clienteId && r.obligatorio !== false)
+    .map(r => r.tipoCredencialId);
+  if (requisitos.length === 0) return { acceso: true, fuente: 'sin_requisitos', faltantes: [], notas: '' };
+  const hoy = new Date().toISOString().split('T')[0];
+  const vigentes = credencialesVigentes(personaId, hoy, data.credencialesPersonas).map(c => c.tipoCredencialId);
+  const faltantes = requisitos.filter(req => !vigentes.includes(req));
+  return { acceso: faltantes.length === 0, fuente: 'credencial', faltantes, notas: '' };
+};
+
 // Sugiere personal para una obra/área
 const sugerirPersonalParaArea = (proyecto, areaId, fechaObjetivo, data) => {
   const area = (proyecto.areas || []).find(a => a.id === areaId);
@@ -4005,6 +4024,8 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
   const [form, setForm] = useState(null);
   const [experienciaDe, setExperienciaDe] = useState(null); // v8.9.19
   const [capacidadesDe, setCapacidadesDe] = useState(null); // v8.9.23
+  const [accesosDe, setAccesosDe] = useState(null); // v8.17.0: gestionar accesos/credenciales por persona
+  const [filtroAccesoCliente, setFiltroAccesoCliente] = useState(''); // v8.17.0
   const [modalInvitar, setModalInvitar] = useState(false); // v8.14: invitar maestro al app
   const [activando, setActivando] = useState(null); // v8.14.1: persona existente a activar para app
 
@@ -4046,6 +4067,20 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
       </div>
       {modalInvitar && <ModalInvitarMaestro usuario={usuario} onCerrar={() => setModalInvitar(false)} onInvitado={() => { onRecargar?.(); }} />}
       {activando && <ModalInvitarMaestro usuario={usuario} personaExistente={activando} onCerrar={() => setActivando(null)} onInvitado={() => { onRecargar?.(); }} />}
+
+      {/* v8.17.0: Filtro por acceso a cliente */}
+      {data && (data.clientes || []).length > 0 && (
+        <div className="bg-zinc-950 border border-zinc-800 p-2 flex items-center gap-2 text-xs">
+          <span className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">🔑 Filtrar por acceso a:</span>
+          <select value={filtroAccesoCliente} onChange={e => setFiltroAccesoCliente(e.target.value)} className="flex-1 bg-zinc-900 border border-zinc-800 px-2 py-1 text-xs">
+            <option value="">Cualquiera</option>
+            {(data.clientes || []).slice().sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '')).map(c => (
+              <option key={c.id} value={c.id}>{c.nombre}</option>
+            ))}
+          </select>
+          {filtroAccesoCliente && <button onClick={() => setFiltroAccesoCliente('')} className="text-zinc-500 hover:text-white px-2"><X className="w-3 h-3" /></button>}
+        </div>
+      )}
 
       {editando && form && (
         <div className="bg-zinc-900 border-2 border-red-600 p-4 space-y-3">
@@ -4123,6 +4158,11 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
 
       {['admin', 'supervisor', 'maestro', 'ayudante'].map(rol => {
         const grupo = personal.filter(p => {
+          // v8.17.0: filtro por acceso a cliente
+          if (filtroAccesoCliente && data) {
+            const ac = personaTieneAccesoCliente(p.id, filtroAccesoCliente, data);
+            if (!ac.acceso) return false;
+          }
           if (rol === 'admin') return tieneRol(p, 'admin');
           if (rol === 'supervisor') return tieneRol(p, 'supervisor') && !tieneRol(p, 'admin');
           if (rol === 'maestro') return tieneRol(p, 'maestro') && !tieneRol(p, 'supervisor') && !tieneRol(p, 'admin');
@@ -4164,6 +4204,7 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
                     <button onClick={() => onAbrirPerfil(p)} className="text-zinc-500 hover:text-red-500 p-1" title="Ver perfil"><UserIcon className="w-3 h-3" /></button>
                     {data && <button onClick={() => setExperienciaDe(p)} className="text-zinc-500 hover:text-green-400 p-1" title="Ver experiencia"><TrendingUp className="w-3 h-3" /></button>}
                     {data && <button onClick={() => setCapacidadesDe(p)} className="text-zinc-500 hover:text-blue-400 p-1" title="Capacidades técnicas">🧰</button>}
+                    {data && <button onClick={() => setAccesosDe(p)} className="text-zinc-500 hover:text-amber-400 p-1" title="Accesos y credenciales">🔐</button>}
                     <button onClick={() => { if (confirm('¿Eliminar?')) onActualizar(personal.filter(x => x.id !== p.id)); }} className="text-zinc-500 hover:text-red-400 p-1"><Trash2 className="w-3 h-3" /></button>
                   </div>
                 );
@@ -4189,6 +4230,16 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
           persona={capacidadesDe}
           data={data}
           onCerrar={() => setCapacidadesDe(null)}
+        />
+      )}
+
+      {/* v8.17.0: Modal de accesos / credenciales / autorizaciones por persona */}
+      {accesosDe && data && (
+        <ModalAccesosPersona
+          persona={accesosDe}
+          data={data}
+          onCerrar={() => setAccesosDe(null)}
+          onRecargar={onRecargar}
         />
       )}
     </div>
@@ -4257,6 +4308,264 @@ function ModalCapacidadesPersona({ persona, data, onCerrar }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// v8.17.0: Modal de accesos / credenciales / autorizaciones por persona
+function ModalAccesosPersona({ persona, data, onCerrar, onRecargar }) {
+  const [tab, setTab] = useState('accesos');
+  return (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
+      <div className="bg-zinc-900 border-2 border-amber-600 max-w-2xl w-full p-5 space-y-3 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-start">
+          <div>
+            <div className="text-[10px] tracking-widest uppercase text-amber-500 font-bold">🔐 Accesos y credenciales</div>
+            <h2 className="text-xl font-black">{persona.nombre}</h2>
+            <div className="text-[10px] text-zinc-500 uppercase">{(persona.roles || []).join(' · ')}</div>
+          </div>
+          <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
+        </div>
+
+        <div className="flex gap-1 border-b border-zinc-800">
+          {[
+            { id: 'accesos', label: '🔑 Accesos a clientes' },
+            { id: 'credenciales', label: '📋 Credenciales' },
+            { id: 'autorizaciones', label: '🎫 Autorizaciones' },
+          ].map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)} className={`px-3 py-2 text-xs font-bold uppercase ${tab === t.id ? 'text-amber-400 border-b-2 border-amber-500' : 'text-zinc-500'}`}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'accesos' && <SubAccesosClientes persona={persona} data={data} onRecargar={onRecargar} />}
+        {tab === 'credenciales' && <SubCredencialesPersona persona={persona} data={data} onRecargar={onRecargar} />}
+        {tab === 'autorizaciones' && <SubAutorizacionesPersona persona={persona} data={data} onRecargar={onRecargar} />}
+      </div>
+    </div>
+  );
+}
+
+function SubAccesosClientes({ persona, data, onRecargar }) {
+  const clientes = (data.clientes || []).slice().sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+  const [guardando, setGuardando] = useState(null);
+
+  const forzarActivo = async (clienteId) => {
+    setGuardando(clienteId);
+    try {
+      await db.setAccesoCliente({ personaId: persona.id, clienteId, activo: true, fuente: 'manual' });
+      await onRecargar();
+    } catch (e) { alert('Error: ' + e.message); }
+    setGuardando(null);
+  };
+  const denegar = async (clienteId) => {
+    setGuardando(clienteId);
+    try {
+      await db.setAccesoCliente({ personaId: persona.id, clienteId, activo: false, fuente: 'manual' });
+      await onRecargar();
+    } catch (e) { alert('Error: ' + e.message); }
+    setGuardando(null);
+  };
+  const limpiarOverride = async (clienteId) => {
+    setGuardando(clienteId);
+    try {
+      await db.quitarAccesoCliente(persona.id, clienteId);
+      await onRecargar();
+    } catch (e) { alert('Error: ' + e.message); }
+    setGuardando(null);
+  };
+
+  if (clientes.length === 0) {
+    return <div className="text-center text-zinc-500 text-sm py-8">No hay clientes registrados.</div>;
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="text-[11px] text-zinc-500">
+        Sin override → el sistema decide según las credenciales y los requisitos del cliente. Puedes <strong>forzar activo</strong> o <strong>denegar</strong> manualmente.
+      </div>
+      {clientes.map(c => {
+        const ac = personaTieneAccesoCliente(persona.id, c.id, data);
+        const override = (data.accesosClientes || []).find(a => a.personaId === persona.id && a.clienteId === c.id);
+        const tieneOverride = !!override;
+        let badge, color;
+        if (tieneOverride && ac.acceso) { badge = '✓ Activo (manual)'; color = 'bg-green-900/30 border-green-700 text-green-300'; }
+        else if (tieneOverride && !ac.acceso) { badge = '✗ Denegado'; color = 'bg-red-900/30 border-red-700 text-red-300'; }
+        else if (ac.fuente === 'sin_requisitos') { badge = '✓ Acceso libre'; color = 'bg-zinc-800 border-zinc-700 text-zinc-400'; }
+        else if (ac.acceso) { badge = '✓ Activo (credencial)'; color = 'bg-green-900/30 border-green-700 text-green-300'; }
+        else {
+          const tipos = ac.faltantes.map(id => (data.tiposCredenciales || []).find(t => t.id === id)?.nombre || id).join(', ');
+          badge = `⚠ Faltan: ${tipos}`;
+          color = 'bg-yellow-900/20 border-yellow-700 text-yellow-300';
+        }
+        return (
+          <div key={c.id} className={`border p-2 ${color}`}>
+            <div className="flex items-center gap-2">
+              <div className="flex-1 min-w-0">
+                <div className="font-bold text-sm truncate">{c.nombre}</div>
+                <div className="text-[10px] opacity-80">{badge}</div>
+              </div>
+              <div className="flex gap-1">
+                {!ac.acceso && <button disabled={guardando === c.id} onClick={() => forzarActivo(c.id)} className="text-[10px] bg-green-700 hover:bg-green-600 disabled:bg-zinc-800 text-white font-bold uppercase px-2 py-1">✓ Activar</button>}
+                {ac.acceso && !tieneOverride && <button disabled={guardando === c.id} onClick={() => denegar(c.id)} className="text-[10px] bg-zinc-800 hover:bg-red-700 disabled:bg-zinc-900 text-white font-bold uppercase px-2 py-1">✗ Denegar</button>}
+                {tieneOverride && <button disabled={guardando === c.id} onClick={() => limpiarOverride(c.id)} className="text-[10px] bg-zinc-800 hover:bg-zinc-700 disabled:bg-zinc-900 text-zinc-300 font-bold uppercase px-2 py-1">Quitar override</button>}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function SubCredencialesPersona({ persona, data, onRecargar }) {
+  const tipos = data.tiposCredenciales || [];
+  const credenciales = (data.credencialesPersonas || []).filter(c => c.personaId === persona.id);
+  const [form, setForm] = useState(null);
+  const hoy = new Date().toISOString().split('T')[0];
+
+  const venceEstado = (c) => {
+    if (!c.fechaVencimiento) return { label: 'Sin vencimiento', color: 'text-zinc-400' };
+    if (c.fechaVencimiento < hoy) return { label: 'VENCIDA', color: 'text-red-400' };
+    const dias = Math.ceil((new Date(c.fechaVencimiento) - new Date(hoy)) / (1000 * 60 * 60 * 24));
+    if (dias < 30) return { label: `Vence en ${dias}d`, color: 'text-yellow-400' };
+    return { label: `Vence ${formatFecha(c.fechaVencimiento)}`, color: 'text-green-400' };
+  };
+
+  const guardar = async () => {
+    if (!form.tipoCredencialId) return alert('Selecciona el tipo');
+    try {
+      await db.guardarCredencialPersona({ ...form, personaId: persona.id, activa: true });
+      setForm(null);
+      await onRecargar();
+    } catch (e) { alert('Error: ' + e.message); }
+  };
+
+  return (
+    <div className="space-y-2">
+      {!form && <button onClick={() => setForm({ tipoCredencialId: '', numero: '', fechaEmision: '', fechaVencimiento: '', notas: '' })} className="bg-red-600 text-white px-3 py-2 text-xs font-black uppercase flex items-center gap-2"><Plus className="w-3 h-3" /> Registrar credencial</button>}
+      {form && (
+        <div className="bg-zinc-950 border-2 border-red-600 p-3 space-y-2">
+          <select value={form.tipoCredencialId} onChange={e => setForm({ ...form, tipoCredencialId: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm">
+            <option value="">Tipo de credencial</option>
+            {tipos.map(t => <option key={t.id} value={t.id}>{t.icono} {t.nombre}</option>)}
+          </select>
+          <input placeholder="Número / código (opcional)" value={form.numero} onChange={e => setForm({ ...form, numero: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm" />
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[10px] text-zinc-500 uppercase">Emisión</label>
+              <input type="date" value={form.fechaEmision} onChange={e => setForm({ ...form, fechaEmision: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label className="text-[10px] text-zinc-500 uppercase">Vencimiento</label>
+              <input type="date" value={form.fechaVencimiento} onChange={e => setForm({ ...form, fechaVencimiento: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm" />
+            </div>
+          </div>
+          <textarea placeholder="Notas (opcional)" value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm" rows={2} />
+          <div className="flex gap-2">
+            <button onClick={() => setForm(null)} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2">Cancelar</button>
+            <button onClick={guardar} className="flex-1 bg-red-600 text-white text-xs font-black uppercase py-2">Guardar</button>
+          </div>
+        </div>
+      )}
+      {credenciales.length === 0 && <div className="text-center text-zinc-500 text-sm py-6">Sin credenciales registradas</div>}
+      {credenciales.map(c => {
+        const t = tipos.find(x => x.id === c.tipoCredencialId);
+        const est = venceEstado(c);
+        return (
+          <div key={c.id} className="bg-zinc-950 border border-zinc-800 p-2 flex items-center gap-2">
+            <span className="text-xl">{t?.icono || '🔖'}</span>
+            <div className="flex-1 min-w-0">
+              <div className="font-bold text-sm truncate">{t?.nombre || 'Desconocido'}{c.numero && ` · ${c.numero}`}</div>
+              <div className={`text-[10px] font-bold ${est.color}`}>{est.label}</div>
+            </div>
+            <button onClick={async () => { if (confirm('¿Revocar credencial?')) { await db.revocarCredencialPersona(c.id); await onRecargar(); } }} className="text-zinc-500 hover:text-red-400 p-1"><Trash2 className="w-3 h-3" /></button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function SubAutorizacionesPersona({ persona, data, onRecargar }) {
+  const tipos = data.tiposCredenciales || [];
+  const clientes = data.clientes || [];
+  const proyectos = (data.proyectos || []).filter(p => !p.archivado);
+  const autorizaciones = (data.autorizaciones || []).filter(a => a.personaId === persona.id);
+  const [form, setForm] = useState(null);
+
+  const guardar = async () => {
+    if (!form.tipoCredencialId || !form.fechaDesde || !form.fechaHasta) return alert('Completa tipo y fechas');
+    try {
+      if (form.id) await db.actualizarAutorizacion(form.id, form);
+      else await db.crearAutorizacion({ ...form, personaId: persona.id });
+      setForm(null);
+      await onRecargar();
+    } catch (e) { alert('Error: ' + e.message); }
+  };
+
+  const estadoStyle = {
+    solicitada: { color: 'text-yellow-400', bg: 'bg-yellow-900/20 border-yellow-700' },
+    aprobada: { color: 'text-green-400', bg: 'bg-green-900/20 border-green-700' },
+    rechazada: { color: 'text-red-400', bg: 'bg-red-900/20 border-red-700' },
+    usada: { color: 'text-zinc-400', bg: 'bg-zinc-900/20 border-zinc-700' },
+  };
+
+  return (
+    <div className="space-y-2">
+      {!form && <button onClick={() => setForm({ tipoCredencialId: '', clienteId: '', proyectoId: '', fechaDesde: '', fechaHasta: '', estado: 'aprobada', notas: '' })} className="bg-red-600 text-white px-3 py-2 text-xs font-black uppercase flex items-center gap-2"><Plus className="w-3 h-3" /> Nueva autorización</button>}
+      {form && (
+        <div className="bg-zinc-950 border-2 border-red-600 p-3 space-y-2">
+          <select value={form.tipoCredencialId} onChange={e => setForm({ ...form, tipoCredencialId: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm">
+            <option value="">Tipo de credencial</option>
+            {tipos.map(t => <option key={t.id} value={t.id}>{t.icono} {t.nombre}</option>)}
+          </select>
+          <select value={form.clienteId} onChange={e => setForm({ ...form, clienteId: e.target.value, proyectoId: '' })} className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm">
+            <option value="">Cliente (opcional)</option>
+            {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+          </select>
+          <select value={form.proyectoId} onChange={e => setForm({ ...form, proyectoId: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm">
+            <option value="">Proyecto específico (opcional)</option>
+            {proyectos.filter(p => !form.clienteId || p.clienteId === form.clienteId).map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo || p.cliente}</option>)}
+          </select>
+          <div className="grid grid-cols-2 gap-2">
+            <input type="date" value={form.fechaDesde} onChange={e => setForm({ ...form, fechaDesde: e.target.value })} className="bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm" />
+            <input type="date" value={form.fechaHasta} onChange={e => setForm({ ...form, fechaHasta: e.target.value })} className="bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm" />
+          </div>
+          <select value={form.estado} onChange={e => setForm({ ...form, estado: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm">
+            <option value="solicitada">Solicitada</option>
+            <option value="aprobada">Aprobada</option>
+            <option value="rechazada">Rechazada</option>
+            <option value="usada">Usada</option>
+          </select>
+          <textarea placeholder="Notas" value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm" rows={2} />
+          <div className="flex gap-2">
+            <button onClick={() => setForm(null)} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2">Cancelar</button>
+            <button onClick={guardar} className="flex-1 bg-red-600 text-white text-xs font-black uppercase py-2">Guardar</button>
+          </div>
+        </div>
+      )}
+      {autorizaciones.length === 0 && <div className="text-center text-zinc-500 text-sm py-6">Sin autorizaciones</div>}
+      {autorizaciones.map(a => {
+        const t = tipos.find(x => x.id === a.tipoCredencialId);
+        const cl = clientes.find(c => c.id === a.clienteId);
+        const est = estadoStyle[a.estado] || estadoStyle.solicitada;
+        return (
+          <div key={a.id} className={`border p-2 ${est.bg}`}>
+            <div className="flex items-center gap-2">
+              <span className="text-xl">{t?.icono || '🔖'}</span>
+              <div className="flex-1 min-w-0">
+                <div className="font-bold text-sm truncate">{t?.nombre || '?'}{cl && ` · ${cl.nombre}`}</div>
+                <div className="text-[10px] text-zinc-500">{formatFecha(a.fechaDesde)} → {formatFecha(a.fechaHasta)}</div>
+              </div>
+              <div className={`text-[10px] font-black uppercase ${est.color}`}>{a.estado}</div>
+              <button onClick={() => setForm({ ...a })} className="text-zinc-500 hover:text-white p-1"><Edit2 className="w-3 h-3" /></button>
+            </div>
+            {a.notas && <div className="text-[10px] text-zinc-500 mt-1 pl-7">{a.notas}</div>}
+          </div>
+        );
+      })}
     </div>
   );
 }

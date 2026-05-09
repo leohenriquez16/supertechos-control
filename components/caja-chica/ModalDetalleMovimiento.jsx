@@ -281,6 +281,24 @@ export default function ModalDetalleMovimiento({
               </div>
             </div>
           )}
+          {/* v8.16: maestro indicó cotización manualmente porque su proyecto no estaba asignado */}
+          {!campos.proyectoId && movimiento.datosIA?.cotizacion_manual && (
+            <div className="bg-orange-950/40 border-b-2 border-orange-700 px-4 py-3 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-orange-400 flex-shrink-0 mt-0.5" />
+              <div className="text-xs text-orange-200">
+                Maestro indicó: <strong className="font-mono">{movimiento.datosIA.cotizacion_manual}</strong>. Asígnalo al proyecto correspondiente más abajo.
+              </div>
+            </div>
+          )}
+          {/* v8.16: maestro marcó como gasto genérico (sin proyecto específico) */}
+          {!campos.proyectoId && movimiento.datosIA?.gasto_generico && (
+            <div className="bg-blue-950/40 border-b-2 border-blue-700 px-4 py-3 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
+              <div className="text-xs text-blue-200">
+                🌐 Maestro marcó este gasto como <strong>genérico</strong> (sin proyecto específico). Si va dividido entre varias obras, podrás distribuirlo más adelante.
+              </div>
+            </div>
+          )}
           {/* FOTO con toolbar STICKY arriba */}
           {tieneFoto && (
             <div className="bg-black border-b border-zinc-800">

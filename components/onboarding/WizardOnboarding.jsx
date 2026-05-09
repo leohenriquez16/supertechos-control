@@ -375,8 +375,7 @@ function PasoSelfie({ datos, set }) {
       <CapturaFoto
         valor={datos.foto2x2}
         onCapturar={(d) => set('foto2x2', d)}
-        capture="user"
-        label="Tomar selfie"
+        label="Tomar selfie o subir del carrete"
       />
     </div>
   );
@@ -398,7 +397,6 @@ function PasoCedula({ datos, set }) {
           <CapturaFoto
             valor={datos.cedulaFrente}
             onCapturar={(d) => set('cedulaFrente', d)}
-            capture="environment"
             label="Foto del frente"
           />
         </div>
@@ -407,7 +405,6 @@ function PasoCedula({ datos, set }) {
           <CapturaFoto
             valor={datos.cedulaReverso}
             onCapturar={(d) => set('cedulaReverso', d)}
-            capture="environment"
             label="Foto del reverso"
           />
         </div>
@@ -584,7 +581,7 @@ function Field({ label, hint, children }) {
   );
 }
 
-function CapturaFoto({ valor, onCapturar, capture, label }) {
+function CapturaFoto({ valor, onCapturar, label }) {
   const [cargando, setCargando] = useState(false);
   const inputId = 'foto_' + label.replace(/\s/g, '_');
 
@@ -609,7 +606,6 @@ function CapturaFoto({ valor, onCapturar, capture, label }) {
         id={inputId}
         type="file"
         accept="image/*"
-        capture={capture}
         onChange={onFile}
         className="hidden"
       />

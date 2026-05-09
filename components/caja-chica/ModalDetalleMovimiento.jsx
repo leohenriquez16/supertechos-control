@@ -1,10 +1,10 @@
 'use client';
 
 // v8.15.1: Modal de detalle de un movimiento de caja chica.
-// Muestra foto + datos AI + permite asignar/cambiar proyecto si no tenía.
-// Funciona como acción de "abrir" desde la lista de movimientos.
+// Muestra foto + datos editables + permite asignar/cambiar proyecto.
+// Editable: fecha, monto, proveedor, RNC, NCF, concepto, categoría, proyecto.
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { X, Loader2, Save, Camera, AlertCircle, Building2, FileText, User as UserIcon, Calendar, DollarSign } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatRD, formatFechaCorta } from '../../lib/helpers/formato';
@@ -13,16 +13,26 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
   const persona = data.personal.find(p => p.id === movimiento.personaId);
   const proyectoActual = movimiento.proyectoId ? data.proyectos.find(p => p.id === movimiento.proyectoId) : null;
   const proyectosActivos = (data.proyectos || []).filter(p => !p.archivado);
-  const cat = (data.categoriasCajaChica || []).find(c => c.id === movimiento.datosIA?.categoria_sugerida);
+  const categoriasActivas = (data.categoriasCajaChica || []).filter(c => c.activa);
 
-  const [proyectoIdNuevo, setProyectoIdNuevo] = useState(movimiento.proyectoId || '');
+  // Estado editable — se inicializa desde el movimiento al abrir.
+  const [campos, setCampos] = useState({
+    fecha: movimiento.fecha || '',
+    monto: String(movimiento.monto ?? ''),
+    proveedor: movimiento.proveedor || '',
+    rnc: movimiento.rnc || '',
+    ncf: movimiento.datosIA?.ncf || '',
+    categoria: movimiento.datosIA?.categoria_sugerida || '',
+    concepto: movimiento.concepto || '',
+    proyectoId: movimiento.proyectoId || '',
+  });
+
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState('');
   const [fotoUrl, setFotoUrl] = useState(null);
   const [cargandoFoto, setCargandoFoto] = useState(false);
 
   const tieneFoto = !!movimiento.tieneFoto;
-  const cambioProyecto = (proyectoIdNuevo || '') !== (movimiento.proyectoId || '');
 
   useEffect(() => {
     if (!tieneFoto) return;
@@ -33,13 +43,40 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
       .finally(() => setCargandoFoto(false));
   }, [movimiento.id, tieneFoto]);
 
-  const guardarProyecto = async () => {
-    if (guardando || !cambioProyecto) return;
+  const set = (k, v) => setCampos(prev => ({ ...prev, [k]: v }));
+
+  // Detectar qué campos cambiaron
+  const diff = useMemo(() => {
+    const d = {};
+    if (campos.fecha !== (movimiento.fecha || '')) d.fecha = campos.fecha;
+    if (Number(campos.monto) !== Number(movimiento.monto || 0)) d.monto = Number(campos.monto);
+    if ((campos.proveedor || '') !== (movimiento.proveedor || '')) d.proveedor = campos.proveedor;
+    if ((campos.rnc || '') !== (movimiento.rnc || '')) d.rnc = campos.rnc;
+    if ((campos.concepto || '') !== (movimiento.concepto || '')) d.concepto = campos.concepto;
+    if ((campos.proyectoId || '') !== (movimiento.proyectoId || '')) d.proyectoId = campos.proyectoId || null;
+    // NCF y categoría viven en datos_ia
+    const ncfActual = movimiento.datosIA?.ncf || '';
+    const catActual = movimiento.datosIA?.categoria_sugerida || '';
+    if (campos.ncf !== ncfActual || campos.categoria !== catActual) {
+      d.datosIA = {
+        ...(movimiento.datosIA || {}),
+        ncf: campos.ncf || null,
+        categoria_sugerida: campos.categoria || null,
+      };
+    }
+    return d;
+  }, [campos, movimiento]);
+
+  const hayCambios = Object.keys(diff).length > 0;
+
+  const guardar = async () => {
+    if (guardando || !hayCambios) return;
+    if (diff.monto != null && (!Number.isFinite(diff.monto) || diff.monto <= 0)) {
+      setError('Monto debe ser mayor a 0.'); return;
+    }
     setGuardando(true); setError('');
     try {
-      await db.actualizarMovimientoCajaChica(movimiento.id, {
-        proyectoId: proyectoIdNuevo || null,
-      });
+      await db.actualizarMovimientoCajaChica(movimiento.id, diff);
       onActualizado?.();
       onCerrar();
     } catch (e) {
@@ -50,7 +87,7 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
 
   return (
     <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
-      <div className="bg-zinc-900 border-2 border-zinc-800 w-full max-w-2xl max-h-[95vh] flex flex-col">
+      <div className="bg-zinc-900 border-2 border-zinc-800 w-full max-w-3xl max-h-[95vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3 flex-shrink-0">
           <div className="font-black uppercase tracking-wider text-sm">Detalle del gasto</div>
@@ -66,7 +103,7 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
                 cargandoFoto ? (
                   <Loader2 className="w-8 h-8 text-zinc-500 animate-spin" />
                 ) : fotoUrl ? (
-                  <img src={fotoUrl} alt="Factura" className="max-w-full max-h-[400px] object-contain" />
+                  <img src={fotoUrl} alt="Factura" className="max-w-full max-h-[450px] object-contain" />
                 ) : (
                   <div className="text-zinc-500 text-xs">No se pudo cargar la foto</div>
                 )
@@ -83,57 +120,103 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
               )}
             </div>
 
-            {/* Datos */}
+            {/* Datos editables */}
             <div className="p-4 space-y-3">
-              <div className="flex items-baseline gap-2">
-                <DollarSign className="w-5 h-5 text-orange-400" />
-                <div className="text-3xl font-black text-orange-400">{formatRD(movimiento.monto)}</div>
-              </div>
-
+              {/* Persona y status — no editables */}
               <Item icon={<UserIcon className="w-3 h-3" />} label="Persona">
                 {persona?.nombre || movimiento.personaId}
               </Item>
 
-              <Item icon={<Calendar className="w-3 h-3" />} label="Fecha">
-                {formatFechaCorta(movimiento.fecha)}
+              <Item icon={<FileText className="w-3 h-3" />} label="Tipo · Status">
+                <span className="capitalize">{movimiento.tipo}</span> · <span className={`font-bold ${movimiento.status === 'aprobado' ? 'text-green-400' : movimiento.status === 'rechazado' ? 'text-red-400' : 'text-orange-400'}`}>{movimiento.status}</span>
               </Item>
 
-              <Item icon={<FileText className="w-3 h-3" />} label="Tipo">
-                {movimiento.tipo} · status: <span className={`font-bold ${movimiento.status === 'aprobado' ? 'text-green-400' : movimiento.status === 'rechazado' ? 'text-red-400' : 'text-orange-400'}`}>{movimiento.status}</span>
-              </Item>
+              {/* Fecha — editable */}
+              <Field label="Fecha" icon={<Calendar className="w-3 h-3" />}>
+                <input
+                  type="date"
+                  value={campos.fecha}
+                  onChange={e => set('fecha', e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-1.5 text-white text-sm"
+                />
+              </Field>
 
-              {(movimiento.proveedor || movimiento.rnc) && (
-                <Item label="Proveedor">
-                  <div>{movimiento.proveedor || <span className="text-zinc-500">—</span>}</div>
-                  {movimiento.rnc && <div className="text-[10px] text-zinc-500 font-mono">RNC: {movimiento.rnc}</div>}
-                </Item>
-              )}
+              {/* Monto — editable */}
+              <Field label="Monto RD$" icon={<DollarSign className="w-3 h-3" />}>
+                <input
+                  type="number" step="0.01"
+                  value={campos.monto}
+                  onChange={e => set('monto', e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-1.5 text-white text-base font-bold text-right text-orange-400"
+                />
+              </Field>
 
-              {movimiento.datosIA?.ncf && (
-                <Item label="NCF">
-                  <span className="font-mono text-xs">{movimiento.datosIA.ncf}</span>
-                </Item>
-              )}
+              {/* Proveedor — editable */}
+              <Field label="Proveedor (razón social)">
+                <input
+                  type="text"
+                  value={campos.proveedor}
+                  onChange={e => set('proveedor', e.target.value)}
+                  placeholder="Razón social del emisor"
+                  className="w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-1.5 text-white text-sm"
+                />
+                <div className="text-[9px] text-zinc-500 mt-0.5 italic">⚠ A veces la AI lee el RNC de Super Techos en lugar del proveedor — corrige aquí.</div>
+              </Field>
 
-              {cat && (
-                <Item label="Categoría">
-                  <span style={{ color: cat.color }}>{cat.icono} {cat.nombre}</span>
-                </Item>
-              )}
+              {/* RNC + NCF en grid */}
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="RNC del proveedor">
+                  <input
+                    type="text"
+                    value={campos.rnc}
+                    onChange={e => set('rnc', e.target.value)}
+                    placeholder="000-00000-0"
+                    className="w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-1.5 text-white text-sm font-mono"
+                  />
+                </Field>
+                <Field label="NCF">
+                  <input
+                    type="text"
+                    value={campos.ncf}
+                    onChange={e => set('ncf', e.target.value.toUpperCase())}
+                    placeholder="B0100..."
+                    className="w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-1.5 text-white text-sm font-mono"
+                  />
+                </Field>
+              </div>
 
-              {movimiento.concepto && (
-                <Item label="Concepto">
-                  <span className="text-xs">{movimiento.concepto}</span>
-                </Item>
-              )}
+              {/* Categoría — editable */}
+              <Field label="Categoría">
+                <select
+                  value={campos.categoria}
+                  onChange={e => set('categoria', e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-1.5 text-white text-sm"
+                >
+                  <option value="">— Seleccionar —</option>
+                  {categoriasActivas.map(c => (
+                    <option key={c.id} value={c.id}>{c.icono} {c.nombre}</option>
+                  ))}
+                </select>
+              </Field>
+
+              {/* Concepto — editable */}
+              <Field label="Concepto">
+                <textarea
+                  value={campos.concepto}
+                  onChange={e => set('concepto', e.target.value)}
+                  rows={2}
+                  placeholder="Descripción breve"
+                  className="w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-1.5 text-white text-sm"
+                />
+              </Field>
 
               {movimiento.datosIA?.confianza && (
-                <Item label="Confianza AI">
-                  <span className={
+                <div className="text-[10px] text-zinc-500">
+                  Confianza original AI: <span className={
                     movimiento.datosIA.confianza === 'alta' ? 'text-green-400' :
                     movimiento.datosIA.confianza === 'media' ? 'text-yellow-400' : 'text-red-400'
                   }>{movimiento.datosIA.confianza}</span>
-                </Item>
+                </div>
               )}
 
               {movimiento.motivoRechazo && (
@@ -145,22 +228,14 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
             </div>
           </div>
 
-          {/* Sección de Proyecto — siempre visible, editable */}
+          {/* Sección de Proyecto — full width abajo */}
           <div className="border-t border-zinc-800 p-4 bg-zinc-950">
             <div className="flex items-center gap-2 mb-2">
               <Building2 className="w-3 h-3 text-zinc-400" />
               <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Proyecto / Obra asignado</div>
             </div>
 
-            {proyectoActual ? (
-              <div className="bg-zinc-900 border border-zinc-800 px-3 py-2 mb-2">
-                <div className="text-sm font-bold">{proyectoActual.nombre}</div>
-                <div className="text-[10px] text-zinc-500">
-                  {proyectoActual.cliente}
-                  {proyectoActual.referenciaOdoo && ` · ${proyectoActual.referenciaOdoo}`}
-                </div>
-              </div>
-            ) : (
+            {!campos.proyectoId && (
               <div className="bg-yellow-950/30 border border-yellow-800 px-3 py-2 mb-2 flex items-start gap-2">
                 <AlertCircle className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
                 <div className="text-xs text-yellow-200">
@@ -169,37 +244,51 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
               </div>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
-              <select
-                value={proyectoIdNuevo}
-                onChange={e => setProyectoIdNuevo(e.target.value)}
-                className="bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-3 py-2 text-white text-sm"
-              >
-                <option value="">— Sin proyecto —</option>
-                {proyectosActivos.map(p => (
-                  <option key={p.id} value={p.id}>
-                    {p.nombre}{p.cliente ? ` · ${p.cliente}` : ''}
-                  </option>
-                ))}
-              </select>
-              <button
-                onClick={guardarProyecto}
-                disabled={!cambioProyecto || guardando}
-                className="bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-600 text-white font-black uppercase tracking-wider px-4 py-2 text-xs flex items-center justify-center gap-1"
-              >
-                {guardando ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-                {cambioProyecto
-                  ? (proyectoIdNuevo ? 'Asignar proyecto' : 'Quitar proyecto')
-                  : 'Sin cambios'}
-              </button>
-            </div>
+            <select
+              value={campos.proyectoId}
+              onChange={e => set('proyectoId', e.target.value)}
+              className="w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-3 py-2 text-white text-sm"
+            >
+              <option value="">— Sin proyecto —</option>
+              {proyectosActivos.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.nombre}{p.cliente ? ` · ${p.cliente}` : ''}{p.referenciaOdoo ? ` · ${p.referenciaOdoo}` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
 
-            {error && (
-              <div className="bg-red-950/40 border border-red-800 px-3 py-2 text-xs text-red-300 mt-2 flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                <div>{error}</div>
-              </div>
-            )}
+          {error && (
+            <div className="bg-red-950/40 border border-red-800 px-3 py-2 m-4 text-xs text-red-300 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+              <div>{error}</div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer fijo con botón guardar */}
+        <div className="border-t border-zinc-800 px-4 py-3 flex items-center justify-between gap-2 flex-shrink-0 bg-zinc-950">
+          <div className="text-[10px] text-zinc-500">
+            {hayCambios
+              ? <span className="text-yellow-400">⚠ Hay cambios sin guardar ({Object.keys(diff).length} {Object.keys(diff).length === 1 ? 'campo' : 'campos'})</span>
+              : 'Sin cambios'}
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={onCerrar}
+              disabled={guardando}
+              className="px-4 py-2 text-zinc-400 hover:text-white text-xs font-bold uppercase"
+            >
+              {hayCambios ? 'Descartar' : 'Cerrar'}
+            </button>
+            <button
+              onClick={guardar}
+              disabled={!hayCambios || guardando}
+              className="bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-600 text-white font-black uppercase tracking-wider px-4 py-2 text-xs flex items-center gap-1"
+            >
+              {guardando ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+              Guardar cambios
+            </button>
           </div>
         </div>
       </div>
@@ -211,10 +300,20 @@ function Item({ icon, label, children }) {
   return (
     <div>
       <div className="flex items-center gap-1 text-[10px] tracking-widest uppercase text-zinc-500 font-bold mb-0.5">
-        {icon}
-        {label}
+        {icon}{label}
       </div>
       <div className="text-sm text-zinc-200">{children}</div>
+    </div>
+  );
+}
+
+function Field({ icon, label, children }) {
+  return (
+    <div>
+      <div className="flex items-center gap-1 text-[10px] tracking-widest uppercase text-zinc-500 font-bold mb-0.5">
+        {icon}{label}
+      </div>
+      {children}
     </div>
   );
 }

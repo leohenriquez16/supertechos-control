@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { ArrowLeft, Loader2, Plus, Wallet, AlertCircle, Eye, Check, X, Trash2, FileText, Filter, Sparkles, MessageSquare, Camera } from 'lucide-react';
+import { ArrowLeft, Loader2, Plus, Wallet, AlertCircle, Eye, Check, X, Trash2, FileText, Filter, Sparkles, MessageSquare, Camera, RotateCcw } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatRD, formatNum, formatFechaCorta } from '../../lib/helpers/formato';
 import { comprimirImagen } from '../../lib/imports';
@@ -76,6 +76,15 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
     if (!confirm(`¿Eliminar este movimiento de ${mov.tipo}?`)) return;
     try {
       await db.eliminarMovimientoCajaChica(mov.id);
+      cargar();
+    } catch (e) { alert('Error: ' + (e.message || e)); }
+  };
+  // v8.15.1: revertir aprobación o rechazo → vuelve a la bandeja como pendiente.
+  const desaprobar = async (mov) => {
+    const tipoTxt = mov.status === 'aprobado' ? 'desaprobar' : 'reabrir';
+    if (!confirm(`¿${tipoTxt === 'desaprobar' ? 'Desaprobar' : 'Reabrir'} este gasto? Volverá a la bandeja de pendientes.`)) return;
+    try {
+      await db.actualizarStatusMovimientoCajaChica(mov.id, { status: 'pendiente_revision' });
       cargar();
     } catch (e) { alert('Error: ' + (e.message || e)); }
   };
@@ -388,7 +397,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
             <div className="ml-auto text-[10px] text-zinc-500">{movimientosFiltrados.length} de {movimientos.length}</div>
           </div>
           {movimientosFiltrados.map(m => (
-            <FilaMovimiento key={m.id} m={m} data={data} dx={dx} onVerFoto={() => verFotoMov(m)} onEliminar={tieneRol(usuario, 'admin') ? () => eliminar(m) : null} />
+            <FilaMovimiento key={m.id} m={m} data={data} dx={dx} onVerFoto={() => verFotoMov(m)} onEliminar={tieneRol(usuario, 'admin') ? () => eliminar(m) : null} onDesaprobar={tieneRol(usuario, 'admin') ? () => desaprobar(m) : null} />
           ))}
         </div>
       )}
@@ -552,7 +561,7 @@ function FilaPendiente({ m, data, dx, onAprobar, onRechazar, onEliminar, onVerFo
   );
 }
 
-function FilaMovimiento({ m, data, dx, onVerFoto, onEliminar }) {
+function FilaMovimiento({ m, data, dx, onVerFoto, onEliminar, onDesaprobar }) {
   const persona = data.personal.find(p => p.id === m.personaId);
   const proy = m.proyectoId ? data.proyectos.find(p => p.id === m.proyectoId) : null;
   const meta = TIPOS[m.tipo];
@@ -578,6 +587,12 @@ function FilaMovimiento({ m, data, dx, onVerFoto, onEliminar }) {
       <div className={`text-right shrink-0 flex items-center gap-1`}>
         <div className={`${compacto ? 'text-xs' : 'text-sm'} font-black ${cMonto}`}>{signo}{formatRD(m.monto)}</div>
         {m.tieneFoto && <button onClick={onVerFoto} className="text-zinc-500 hover:text-red-400 p-0.5" title="Ver foto"><Eye className="w-3 h-3" /></button>}
+        {/* v8.15.1: desaprobar/reabrir → vuelve a la bandeja como pendiente. Solo para gastos/dietas/ajustes (no entregas). */}
+        {onDesaprobar && m.tipo !== 'entrega' && (m.status === 'aprobado' || m.status === 'rechazado') && (
+          <button onClick={onDesaprobar} className="text-zinc-500 hover:text-yellow-400 p-0.5" title={m.status === 'aprobado' ? 'Desaprobar (volver a bandeja)' : 'Reabrir (volver a bandeja)'}>
+            <RotateCcw className="w-3 h-3" />
+          </button>
+        )}
         {onEliminar && <button onClick={onEliminar} className="text-zinc-500 hover:text-red-400 p-0.5" title="Eliminar"><Trash2 className="w-3 h-3" /></button>}
       </div>
     </div>

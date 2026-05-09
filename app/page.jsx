@@ -10163,7 +10163,7 @@ function MiPerfil({ usuario, persona, onVolver, onGuardar }) {
           )}
           <label className="absolute bottom-0 right-0 bg-red-600 p-1.5 cursor-pointer" title="Cambiar foto 2x2">
             {subiendoFoto === 'foto2x2' ? <Loader2 className="w-3 h-3 text-white animate-spin" /> : <Camera className="w-3 h-3 text-white" />}
-            <input type="file" accept="image/*" capture="user" className="hidden" onChange={e => e.target.files[0] && subirImagen('foto2x2', e.target.files[0], 400, 0.7)} />
+            <input type="file" accept="image/*" className="hidden" onChange={e => e.target.files[0] && subirImagen('foto2x2', e.target.files[0], 400, 0.7)} />
           </label>
         </div>
         <div className="flex-1 min-w-0">

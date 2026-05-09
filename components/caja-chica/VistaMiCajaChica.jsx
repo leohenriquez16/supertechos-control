@@ -1,10 +1,11 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { ArrowLeft, Plus, Loader2, Camera, Wallet, Clock, CircleCheck, X, AlertTriangle, Eye } from 'lucide-react';
+import { ArrowLeft, Plus, Loader2, Camera, Wallet, Clock, CircleCheck, X, AlertTriangle, Eye, Sparkles } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatRD, formatNum, formatFechaCorta } from '../../lib/helpers/formato';
 import ModalReportarGasto from './ModalReportarGasto';
+import ModalReportarGastosMasivo from './ModalReportarGastosMasivo';
 
 // Vista para el maestro/supervisor titular de una caja chica.
 // Muestra: saldo actual, saldo proyectado (si aprueban todo lo pendiente),
@@ -15,6 +16,7 @@ export default function VistaMiCajaChica({ usuario, data, onVolver }) {
   const [saldo, setSaldo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(false);
+  const [modalMasivo, setModalMasivo] = useState(false); // v8.16: carga masiva celular
   const [verFoto, setVerFoto] = useState(null); // {id, fotoData}
 
   const cargar = async () => {
@@ -164,13 +166,21 @@ export default function VistaMiCajaChica({ usuario, data, onVolver }) {
         </div>
       )}
 
-      {/* Botón principal */}
-      <button
-        onClick={() => setModal(true)}
-        className="w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase py-4 flex items-center justify-center gap-2"
-      >
-        <Camera className="w-5 h-5" /> Reportar gasto con factura
-      </button>
+      {/* Botones principales */}
+      <div className="space-y-2">
+        <button
+          onClick={() => setModal(true)}
+          className="w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase py-4 flex items-center justify-center gap-2"
+        >
+          <Camera className="w-5 h-5" /> Reportar gasto con factura
+        </button>
+        <button
+          onClick={() => setModalMasivo(true)}
+          className="w-full bg-zinc-900 hover:bg-zinc-800 border-2 border-zinc-700 hover:border-red-600 text-white font-bold uppercase py-3 flex items-center justify-center gap-2 text-sm"
+        >
+          <Sparkles className="w-4 h-4 text-red-500" /> Reportar varios a la vez
+        </button>
+      </div>
 
       {/* Resumen del histórico */}
       <div className="grid grid-cols-2 gap-2 text-xs">
@@ -209,6 +219,16 @@ export default function VistaMiCajaChica({ usuario, data, onVolver }) {
           categorias={data.categoriasCajaChica || []}
           onCerrar={() => setModal(false)}
           onGuardado={() => { setModal(false); cargar(); }}
+        />
+      )}
+
+      {modalMasivo && (
+        <ModalReportarGastosMasivo
+          usuario={usuario}
+          proyectos={proyectosDelUsuario}
+          categorias={data.categoriasCajaChica || []}
+          onCerrar={() => setModalMasivo(false)}
+          onGuardado={() => { setModalMasivo(false); cargar(); }}
         />
       )}
 

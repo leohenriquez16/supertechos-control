@@ -6,14 +6,25 @@
 // de rotar visible arriba de la foto.
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Loader2, Save, Camera, AlertCircle, Building2, FileText, User as UserIcon, Calendar, DollarSign, RotateCcw, RotateCw, Maximize2 } from 'lucide-react';
+import { X, Loader2, Save, Camera, AlertCircle, Building2, FileText, User as UserIcon, Calendar, DollarSign, RotateCcw, RotateCw, Maximize2, Lock, Sparkles } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatFechaCorta } from '../../lib/helpers/formato';
+
+const tieneRol = (p, r) => p?.roles?.includes(r);
 
 export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCerrar, onActualizado }) {
   const persona = data.personal.find(p => p.id === movimiento.personaId);
   const proyectosActivos = (data.proyectos || []).filter(p => !p.archivado);
   const categoriasActivas = (data.categoriasCajaChica || []).filter(c => c.activa);
+
+  // v8.15.2: bloqueo de edición
+  const esAdmin = tieneRol(usuario, 'admin');
+  const yaAprobado = movimiento.status === 'aprobado';
+  const yaRechazado = movimiento.status === 'rechazado';
+  // Si ya fue aprobado/rechazado y el usuario NO es admin → solo lectura.
+  const soloLectura = (yaAprobado || yaRechazado) && !esAdmin;
+  // Si admin edita un movimiento ya aprobado, lo avisamos y queda en audit.
+  const editandoAprobado = yaAprobado && esAdmin;
 
   const [campos, setCampos] = useState({
     fecha: movimiento.fecha || '',
@@ -32,6 +43,8 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
   const [cargandoFoto, setCargandoFoto] = useState(false);
   const [rotacion, setRotacion] = useState(0);
   const [verGrande, setVerGrande] = useState(false);
+  // v8.15.2: auto-fill por RNC
+  const [proveedorMatch, setProveedorMatch] = useState(null);
 
   const tieneFoto = !!movimiento.tieneFoto;
 
@@ -46,6 +59,36 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
 
   const set = (k, v) => setCampos(prev => ({ ...prev, [k]: v }));
   const rotar = (delta) => setRotacion(r => (((r + delta) % 360) + 360) % 360);
+
+  // v8.15.2: cuando cambia el RNC, buscar proveedor conocido y autocompletar razón social.
+  // Debounced para no spamear queries mientras tipean.
+  useEffect(() => {
+    const rncLimpio = (campos.rnc || '').replace(/\D/g, '');
+    if (!rncLimpio || rncLimpio === (movimiento.rnc || '').replace(/\D/g, '')) {
+      // No buscar si vacío o no cambió respecto al original
+      setProveedorMatch(null);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        const prov = await db.buscarProveedorCajaChicaPorRnc(campos.rnc);
+        if (prov) {
+          setProveedorMatch(prov);
+          // Solo autocompletar si el campo proveedor está vacío o coincide con el original (no pisar si ya editó)
+          if (!campos.proveedor || campos.proveedor === (movimiento.proveedor || '')) {
+            setCampos(prev => ({
+              ...prev,
+              proveedor: prov.nombre || prev.proveedor,
+              categoria: prev.categoria || prov.categoria || '',
+            }));
+          }
+        } else {
+          setProveedorMatch(null);
+        }
+      } catch (e) { /* silencioso */ }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [campos.rnc]);
 
   const diff = useMemo(() => {
     const d = {};
@@ -70,13 +113,42 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
   const hayCambios = Object.keys(diff).length > 0;
 
   const guardar = async () => {
-    if (guardando || !hayCambios) return;
+    if (guardando || !hayCambios || soloLectura) return;
     if (diff.monto != null && (!Number.isFinite(diff.monto) || diff.monto <= 0)) {
       setError('Monto debe ser mayor a 0.'); return;
+    }
+    // v8.15.2: si admin edita un movimiento ya aprobado, confirmar antes de guardar.
+    if (editandoAprobado) {
+      const camposCambiados = Object.keys(diff).join(', ');
+      const ok = confirm(`Este gasto ya está APROBADO.\n\nEstás por modificar: ${camposCambiados}\n\nEl cambio queda registrado en el histórico de auditoría. ¿Continuar?`);
+      if (!ok) return;
     }
     setGuardando(true); setError('');
     try {
       await db.actualizarMovimientoCajaChica(movimiento.id, diff);
+      // v8.15.2: audit log explícito si modificó aprobado
+      if (editandoAprobado) {
+        try {
+          db.registrarAudit({
+            usuarioId: usuario.id, usuarioNombre: usuario.nombre,
+            accion: 'caja_chica.movimiento_aprobado_editado',
+            recursoTipo: 'caja_chica_movimiento', recursoId: movimiento.id,
+            recursoNombre: `Gasto ${movimiento.tipo} de ${persona?.nombre || movimiento.personaId}`,
+            datosAntes: {
+              fecha: movimiento.fecha,
+              monto: movimiento.monto,
+              proveedor: movimiento.proveedor,
+              rnc: movimiento.rnc,
+              concepto: movimiento.concepto,
+              proyectoId: movimiento.proyectoId,
+              ncf: movimiento.datosIA?.ncf,
+              categoria: movimiento.datosIA?.categoria_sugerida,
+            },
+            datosDespues: diff,
+            severidad: 'warning',
+          });
+        } catch (e) { console.warn('Audit log falló:', e?.message); }
+      }
       onActualizado?.();
       onCerrar();
     } catch (e) {
@@ -113,6 +185,23 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
 
         {/* CUERPO scrolleable */}
         <div className="flex-1 overflow-y-auto">
+          {/* Banners según rol y status */}
+          {soloLectura && (
+            <div className="bg-zinc-950 border-b-2 border-yellow-700 px-4 py-3 flex items-start gap-2">
+              <Lock className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
+              <div className="text-xs text-yellow-200">
+                Este gasto ya está <strong>{movimiento.status}</strong>. Solo el administrador puede modificarlo.
+              </div>
+            </div>
+          )}
+          {editandoAprobado && (
+            <div className="bg-orange-950/40 border-b-2 border-orange-700 px-4 py-3 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-orange-400 flex-shrink-0 mt-0.5" />
+              <div className="text-xs text-orange-200">
+                <strong>Atención:</strong> estás editando un gasto <strong>ya aprobado</strong>. Cualquier cambio queda registrado en el histórico de auditoría.
+              </div>
+            </div>
+          )}
           {/* FOTO con toolbar de rotar arriba */}
           {tieneFoto && (
             <div className="bg-black border-b border-zinc-800">
@@ -182,7 +271,8 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
                   type="date"
                   value={campos.fecha}
                   onChange={e => set('fecha', e.target.value)}
-                  className="w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-2 text-white text-sm"
+                  readOnly={soloLectura}
+                  className={`w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-2 text-white text-sm ${soloLectura ? 'cursor-not-allowed opacity-60' : ''}`}
                 />
               </Field>
               <Field label="Monto RD$" icon={<DollarSign className="w-3 h-3" />}>
@@ -190,7 +280,8 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
                   type="number" step="0.01"
                   value={campos.monto}
                   onChange={e => set('monto', e.target.value)}
-                  className="w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-2 text-white text-base font-bold text-right text-orange-400"
+                  readOnly={soloLectura}
+                  className={`w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-2 text-white text-base font-bold text-right text-orange-400 ${soloLectura ? 'cursor-not-allowed opacity-60' : ''}`}
                 />
               </Field>
             </div>
@@ -201,9 +292,17 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
                 value={campos.proveedor}
                 onChange={e => set('proveedor', e.target.value)}
                 placeholder="Razón social del emisor"
-                className="w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-2 text-white text-sm"
+                readOnly={soloLectura}
+                className={`w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-2 text-white text-sm ${soloLectura ? 'cursor-not-allowed opacity-60' : ''}`}
               />
-              <div className="text-[9px] text-zinc-500 mt-0.5 italic">⚠ Si la AI puso el RNC de Super Techos en lugar del proveedor, corrige aquí.</div>
+              {!soloLectura && (
+                <div className="text-[9px] text-zinc-500 mt-0.5 italic">⚠ Si la AI puso el RNC de Super Techos en lugar del proveedor, corrige aquí.</div>
+              )}
+              {proveedorMatch && (
+                <div className="text-[10px] text-green-400 mt-1 flex items-center gap-1">
+                  <Sparkles className="w-3 h-3" /> Proveedor conocido: <b>{proveedorMatch.nombre}</b> ({proveedorMatch.total_facturas} factura{proveedorMatch.total_facturas !== 1 ? 's' : ''} previa{proveedorMatch.total_facturas !== 1 ? 's' : ''})
+                </div>
+              )}
             </Field>
 
             <div className="grid grid-cols-2 gap-2">
@@ -213,7 +312,8 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
                   value={campos.rnc}
                   onChange={e => set('rnc', e.target.value)}
                   placeholder="000-00000-0"
-                  className="w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-2 text-white text-sm font-mono"
+                  readOnly={soloLectura}
+                  className={`w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-2 text-white text-sm font-mono ${soloLectura ? 'cursor-not-allowed opacity-60' : ''}`}
                 />
               </Field>
               <Field label="NCF">
@@ -222,7 +322,8 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
                   value={campos.ncf}
                   onChange={e => set('ncf', e.target.value.toUpperCase())}
                   placeholder="B0100..."
-                  className="w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-2 text-white text-sm font-mono"
+                  readOnly={soloLectura}
+                  className={`w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-2 text-white text-sm font-mono ${soloLectura ? 'cursor-not-allowed opacity-60' : ''}`}
                 />
               </Field>
             </div>
@@ -231,7 +332,8 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
               <select
                 value={campos.categoria}
                 onChange={e => set('categoria', e.target.value)}
-                className="w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-2 text-white text-sm"
+                disabled={soloLectura}
+                className={`w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-2 text-white text-sm ${soloLectura ? 'cursor-not-allowed opacity-60' : ''}`}
               >
                 <option value="">— Seleccionar —</option>
                 {categoriasActivas.map(c => (
@@ -246,7 +348,8 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
                 onChange={e => set('concepto', e.target.value)}
                 rows={2}
                 placeholder="Descripción breve"
-                className="w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-2 text-white text-sm"
+                readOnly={soloLectura}
+                className={`w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-2 text-white text-sm ${soloLectura ? 'cursor-not-allowed opacity-60' : ''}`}
               />
             </Field>
 
@@ -286,7 +389,8 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
             <select
               value={campos.proyectoId}
               onChange={e => set('proyectoId', e.target.value)}
-              className="w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-3 py-2 text-white text-sm"
+              disabled={soloLectura}
+              className={`w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-3 py-2 text-white text-sm ${soloLectura ? 'cursor-not-allowed opacity-60' : ''}`}
             >
               <option value="">— Sin proyecto —</option>
               {proyectosActivos.map(p => (
@@ -308,18 +412,22 @@ export default function ModalDetalleMovimiento({ usuario, movimiento, data, onCe
         {/* FOOTER fijo */}
         <div className="border-t border-zinc-800 px-4 py-3 flex items-center justify-between gap-2 flex-shrink-0 bg-zinc-950">
           <div className="text-[10px] text-zinc-500 truncate">
-            {hayCambios
-              ? <span className="text-yellow-400">⚠ {Object.keys(diff).length} {Object.keys(diff).length === 1 ? 'cambio' : 'cambios'} sin guardar</span>
-              : 'Sin cambios'}
+            {soloLectura
+              ? <span className="text-zinc-500"><Lock className="w-3 h-3 inline mr-1" />Solo lectura</span>
+              : hayCambios
+                ? <span className="text-yellow-400">⚠ {Object.keys(diff).length} {Object.keys(diff).length === 1 ? 'cambio' : 'cambios'} sin guardar</span>
+                : 'Sin cambios'}
           </div>
-          <button
-            onClick={guardar}
-            disabled={!hayCambios || guardando}
-            className="bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-600 text-white font-black uppercase tracking-wider px-4 py-2 text-xs flex items-center gap-1 flex-shrink-0"
-          >
-            {guardando ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-            Guardar
-          </button>
+          {!soloLectura && (
+            <button
+              onClick={guardar}
+              disabled={!hayCambios || guardando}
+              className="bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-600 text-white font-black uppercase tracking-wider px-4 py-2 text-xs flex items-center gap-1 flex-shrink-0"
+            >
+              {guardando ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+              Guardar
+            </button>
+          )}
         </div>
       </div>
 

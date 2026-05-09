@@ -176,6 +176,31 @@ function bloqueTitular({ persona, cuadre, fechaInicio, fechaFin, data, conSignat
       </table>
     </div>` : ''}
 
+    ${cuadre.sinFacturaAprob && cuadre.sinFacturaAprob.length > 0 ? `
+    <h2 style="color:#CC0000;border-color:#CC0000;">⚠️ Gastos sin factura — atención auditoría</h2>
+    <p style="font-size:10px;color:#555;margin:0 0 6px;">
+      Compras informales sin comprobante fiscal (vendedor ambulante, ayudante ocasional, propina, etc.).
+      Total: <b>RD$ ${fmt(cuadre.totalSinFactura)}</b> · ${cuadre.pctSinFactura.toFixed(1)}% del total de gastos del período
+      ${cuadre.pctSinFactura > 20 ? '<span style="color:#CC0000;font-weight:bold;"> · ⚠ Alto porcentaje</span>' : ''}.
+    </p>
+    <table class="movs">
+      <thead><tr><th>Fecha</th><th>Categoría</th><th>Concepto</th><th>Monto</th></tr></thead>
+      <tbody>
+        ${cuadre.sinFacturaAprob.map(m => {
+          const proy = m.proyectoId ? data.proyectos.find(p => p.id === m.proyectoId) : null;
+          const proyLbl = proy ? `${proy.referenciaOdoo || ''} ${proy.cliente || proy.nombre || ''}`.trim() : '';
+          return `
+            <tr style="background:#fff5f5;">
+              <td>${fmtFecha(m.fecha)}</td>
+              <td>${labelCategoria(m)}</td>
+              <td>${m.concepto || '—'}${proyLbl ? `<br><span style="color:#888;font-size:9px;">${proyLbl}</span>` : ''}</td>
+              <td class="right" style="color:#CC0000;font-weight:bold;">RD$ ${fmt(m.monto)}</td>
+            </tr>`;
+        }).join('')}
+        <tr class="total"><td colspan="3" class="label">Total sin factura</td><td class="val" style="color:#CC0000;">RD$ ${fmt(cuadre.totalSinFactura)}</td></tr>
+      </tbody>
+    </table>` : ''}
+
     <h2>Conciliación de fondos</h2>
     <div class="resumen">
       <table>

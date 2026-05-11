@@ -650,27 +650,28 @@ export default function ModalDetalleMovimiento({
         dentro del modal y por el stacking context la cabecera sticky del modal
         seguía visible encima de la foto. */}
     {verGrande && fotoUrl && (
-      <div className="fixed inset-0 bg-black/95 z-[100] flex flex-col" onClick={() => setVerGrande(false)}>
-        <div className="flex items-center justify-between px-3 py-2 bg-black/80 border-b border-zinc-800" onClick={e => e.stopPropagation()}>
+      <div className="fixed inset-0 bg-black/95 z-[100]" onClick={() => setVerGrande(false)}>
+        {/* v8.17.18: cabecera ABSOLUTA (no toma espacio del layout) → la foto
+            puede usar el viewport completo. */}
+        <div className="absolute top-0 inset-x-0 z-10 flex items-center justify-between px-3 py-2 bg-black/70 backdrop-blur-sm border-b border-zinc-800" onClick={e => e.stopPropagation()}>
           <div className="text-xs text-zinc-400 uppercase tracking-widest">Foto de factura</div>
           <div className="flex items-center gap-2">
-            <button onClick={() => rotar(-90)} className="bg-zinc-800 hover:bg-zinc-700 text-white p-2" title="Rotar izq"><RotateCcw className="w-4 h-4" /></button>
-            <button onClick={() => rotar(90)} className="bg-zinc-800 hover:bg-zinc-700 text-white p-2" title="Rotar der"><RotateCw className="w-4 h-4" /></button>
+            <button onClick={() => rotar(-90)} className="bg-zinc-800/80 hover:bg-zinc-700 text-white p-2" title="Rotar izq"><RotateCcw className="w-4 h-4" /></button>
+            <button onClick={() => rotar(90)} className="bg-zinc-800/80 hover:bg-zinc-700 text-white p-2" title="Rotar der"><RotateCw className="w-4 h-4" /></button>
             <button onClick={() => setVerGrande(false)} className="bg-red-600 hover:bg-red-700 text-white px-3 py-2 text-xs font-black uppercase flex items-center gap-1"><X className="w-4 h-4" /> Cerrar</button>
           </div>
         </div>
-        {/* v8.17.17: cuando la foto está rotada 90/270, la rotación CSS no cambia
-            el bounding box. Hay que invertir maxWidth/maxHeight para que la imagen
-            rotada quepa dentro del visor sin que la cabecera la tape. */}
-        <div className="flex-1 flex items-center justify-center overflow-auto p-4" onClick={e => e.stopPropagation()}>
+        <div className="w-full h-full flex items-center justify-center" onClick={e => e.stopPropagation()}>
           <img
             src={fotoUrl}
             alt=""
             className="object-contain transition-transform duration-200"
             style={{
               transform: `rotate(${rotacion}deg)`,
-              maxWidth: (rotacion === 90 || rotacion === 270) ? 'calc(100vh - 100px)' : 'calc(100vw - 32px)',
-              maxHeight: (rotacion === 90 || rotacion === 270) ? 'calc(100vw - 32px)' : 'calc(100vh - 100px)',
+              // v8.17.18: usa viewport completo dejando ~8px de holgura, e invierte
+              // ancho/alto cuando la rotación es lateral (90/270)
+              maxWidth: (rotacion === 90 || rotacion === 270) ? 'calc(100vh - 8px)' : 'calc(100vw - 8px)',
+              maxHeight: (rotacion === 90 || rotacion === 270) ? 'calc(100vw - 8px)' : 'calc(100vh - 8px)',
             }}
           />
         </div>

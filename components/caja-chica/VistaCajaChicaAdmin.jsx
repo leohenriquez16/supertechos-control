@@ -51,6 +51,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
   const [filtroPersona, setFiltroPersona] = useState('');
   const [filtroProyecto, setFiltroProyecto] = useState('');
   const [soloIncompletos, setSoloIncompletos] = useState(false); // v8.17.6
+  const [busqueda, setBusqueda] = useState(''); // v8.17.8: buscador libre en Movimientos
   const [modalEntrega, setModalEntrega] = useState(false);
   const [modalCuadre, setModalCuadre] = useState(false);
   const [modalExport, setModalExport] = useState(false);
@@ -229,13 +230,70 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
   }, [movimientos]);
 
   const movimientosFiltrados = useMemo(() => {
+    const q = busqueda.trim().toLowerCase();
     return movimientos.filter(m => {
       if (filtroPersona && m.personaId !== filtroPersona) return false;
       if (filtroProyecto && m.proyectoId !== filtroProyecto) return false;
       if (soloIncompletos && !evaluarDatosIncompletos(m).incompleto) return false;
+      if (q) {
+        // v8.17.8: busca en concepto, proveedor, RNC, NCF, nombre persona, ref proyecto, monto
+        const persona = data.personal.find(p => p.id === m.personaId);
+        const proy = m.proyectoId ? data.proyectos.find(p => p.id === m.proyectoId) : null;
+        const haystack = [
+          m.concepto, m.proveedor, m.rnc, m.ncf,
+          persona?.nombre, proy?.referenciaOdoo, proy?.cliente, proy?.nombre,
+          String(m.monto || ''),
+        ].filter(Boolean).join(' ').toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
       return true;
     });
-  }, [movimientos, filtroPersona, filtroProyecto, soloIncompletos]);
+  }, [movimientos, filtroPersona, filtroProyecto, soloIncompletos, busqueda, data.personal, data.proyectos]);
+
+  // v8.17.8: agrupar movimientos filtrados por fecha
+  const movimientosAgrupados = useMemo(() => {
+    if (movimientosFiltrados.length === 0) return [];
+    const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+    const ayer = new Date(hoy); ayer.setDate(hoy.getDate() - 1);
+    const haceSieteDias = new Date(hoy); haceSieteDias.setDate(hoy.getDate() - 7);
+    const haceTreintaDias = new Date(hoy); haceTreintaDias.setDate(hoy.getDate() - 30);
+
+    // ordenar por fecha desc por seguridad
+    const ordenados = movimientosFiltrados.slice().sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+    const grupos = new Map(); // label -> { label, orden, items, total }
+    const ensure = (label, orden) => {
+      if (!grupos.has(label)) grupos.set(label, { label, orden, items: [], total: 0, totalGasto: 0 });
+      return grupos.get(label);
+    };
+
+    const fmtMes = (d) => d.toLocaleDateString('es-DO', { month: 'long', year: 'numeric' }).replace(/^./, c => c.toUpperCase());
+
+    ordenados.forEach(m => {
+      const f = new Date(m.fecha + 'T00:00:00');
+      let g;
+      if (f.getTime() === hoy.getTime()) g = ensure('Hoy', 0);
+      else if (f.getTime() === ayer.getTime()) g = ensure('Ayer', 1);
+      else if (f >= haceSieteDias) g = ensure('Últimos 7 días', 2);
+      else if (f >= haceTreintaDias) g = ensure('Últimos 30 días', 3);
+      else g = ensure(fmtMes(f), 4 + (1 / Math.max(1, f.getTime()))); // meses anteriores ordenados por fecha desc
+      g.items.push(m);
+      if (m.tipo === 'gasto_factura' || m.tipo === 'dieta') g.totalGasto += (m.status === 'aprobado' ? m.monto : 0);
+    });
+
+    return Array.from(grupos.values()).sort((a, b) => a.orden - b.orden);
+  }, [movimientosFiltrados]);
+
+  // v8.17.8: totales del filtro actual (para resumen arriba)
+  const totalesFiltro = useMemo(() => {
+    let entregas = 0, gastosAprob = 0, gastosPend = 0, dietas = 0, pendCount = 0;
+    movimientosFiltrados.forEach(m => {
+      if (m.tipo === 'entrega') entregas += m.monto;
+      else if (m.tipo === 'gasto_factura' && m.status === 'aprobado') gastosAprob += m.monto;
+      else if (m.tipo === 'gasto_factura' && m.status === 'pendiente_revision') { gastosPend += m.monto; pendCount++; }
+      else if (m.tipo === 'dieta' && m.status === 'aprobado') dietas += m.monto;
+    });
+    return { entregas, gastosAprob, gastosPend, dietas, pendCount };
+  }, [movimientosFiltrados]);
 
   // KPIs globales
   const kpis = useMemo(() => {
@@ -544,27 +602,68 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
 
       {tab === 'movimientos' && (
         <div className={dx.listGap}>
-          <div className="bg-zinc-900 border border-zinc-800 p-2 flex flex-wrap gap-2 items-center text-xs">
-            <Filter className="w-3 h-3 text-zinc-500" />
-            <select value={filtroPersona} onChange={e => setFiltroPersona(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-1 text-white">
-              <option value="">Todas las personas</option>
-              {data.personal.filter(p => tieneRol(p, 'maestro') || tieneRol(p, 'supervisor')).map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-            </select>
-            <select value={filtroProyecto} onChange={e => setFiltroProyecto(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-1 text-white">
-              <option value="">Todos los proyectos</option>
-              {data.proyectos.filter(p => !p.archivado).map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo || p.cliente}</option>)}
-            </select>
-            {/* v8.17.6: filtro solo incompletos */}
-            <label className={`flex items-center gap-1 px-2 py-1 cursor-pointer border ${soloIncompletos ? 'bg-amber-900/30 border-amber-700 text-amber-300' : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-amber-300'}`}>
-              <input type="checkbox" checked={soloIncompletos} onChange={e => setSoloIncompletos(e.target.checked)} className="w-3 h-3 accent-amber-500" />
-              <span className="text-[10px] font-bold uppercase tracking-wider">⚠ Faltan datos {cantIncompletos > 0 && `(${cantIncompletos})`}</span>
-            </label>
-            {(filtroPersona || filtroProyecto || soloIncompletos) && <button onClick={() => { setFiltroPersona(''); setFiltroProyecto(''); setSoloIncompletos(false); }} className="text-red-400">Limpiar</button>}
-            <div className="ml-auto text-[10px] text-zinc-500">{movimientosFiltrados.length} de {movimientos.length}</div>
+          {/* v8.17.8: barra de filtros + buscador libre */}
+          <div className="bg-zinc-900 border border-zinc-800 p-2 space-y-2 text-xs">
+            <div className="flex flex-wrap gap-2 items-center">
+              <Filter className="w-3 h-3 text-zinc-500" />
+              <select value={filtroPersona} onChange={e => setFiltroPersona(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-1 text-white">
+                <option value="">Todas las personas</option>
+                {data.personal.filter(p => tieneRol(p, 'maestro') || tieneRol(p, 'supervisor')).map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+              </select>
+              <select value={filtroProyecto} onChange={e => setFiltroProyecto(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-1 text-white">
+                <option value="">Todos los proyectos</option>
+                {data.proyectos.filter(p => !p.archivado).map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo || p.cliente}</option>)}
+              </select>
+              <label className={`flex items-center gap-1 px-2 py-1 cursor-pointer border ${soloIncompletos ? 'bg-amber-900/30 border-amber-700 text-amber-300' : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-amber-300'}`}>
+                <input type="checkbox" checked={soloIncompletos} onChange={e => setSoloIncompletos(e.target.checked)} className="w-3 h-3 accent-amber-500" />
+                <span className="text-[10px] font-bold uppercase tracking-wider">⚠ Faltan datos {cantIncompletos > 0 && `(${cantIncompletos})`}</span>
+              </label>
+              {(filtroPersona || filtroProyecto || soloIncompletos || busqueda) && <button onClick={() => { setFiltroPersona(''); setFiltroProyecto(''); setSoloIncompletos(false); setBusqueda(''); }} className="text-red-400">Limpiar</button>}
+              <div className="ml-auto text-[10px] text-zinc-500">{movimientosFiltrados.length} de {movimientos.length}</div>
+            </div>
+            {/* Buscador libre */}
+            <div className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 px-2 py-1">
+              <span className="text-zinc-500">🔍</span>
+              <input
+                type="text"
+                value={busqueda}
+                onChange={e => setBusqueda(e.target.value)}
+                placeholder="Buscar por concepto, proveedor, RNC, monto..."
+                className="flex-1 bg-transparent outline-none text-white text-xs placeholder:text-zinc-600"
+              />
+              {busqueda && <button onClick={() => setBusqueda('')} className="text-zinc-500 hover:text-white"><X className="w-3 h-3" /></button>}
+            </div>
+            {/* Resumen del filtro */}
+            {movimientosFiltrados.length > 0 && (
+              <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] pt-1 border-t border-zinc-800 text-zinc-500">
+                <span><span className="text-green-400 font-bold">+{formatNum(totalesFiltro.entregas, 0)}</span> entregado</span>
+                <span><span className="text-orange-400 font-bold">−{formatNum(totalesFiltro.gastosAprob, 0)}</span> gastado</span>
+                {totalesFiltro.dietas > 0 && <span><span className="text-blue-400 font-bold">−{formatNum(totalesFiltro.dietas, 0)}</span> dietas</span>}
+                {totalesFiltro.pendCount > 0 && <span><span className="text-orange-300 font-bold">{totalesFiltro.pendCount} pend</span> · RD${formatNum(totalesFiltro.gastosPend, 0)}</span>}
+              </div>
+            )}
           </div>
-          {movimientosFiltrados.map(m => (
-            <FilaMovimiento key={m.id} m={m} data={data} dx={dx} onAbrirDetalle={() => setVerDetalle(m)} onVerFoto={() => verFotoMov(m)} onEliminar={tieneRol(usuario, 'admin') ? () => eliminar(m) : null} onDesaprobar={tieneRol(usuario, 'admin') ? () => desaprobar(m) : null} />
-          ))}
+
+          {/* v8.17.8: lista agrupada por fecha */}
+          {movimientosAgrupados.length === 0 ? (
+            <div className="text-center py-10 text-zinc-500 text-sm">
+              {busqueda ? `Sin resultados para "${busqueda}"` : 'Sin movimientos.'}
+            </div>
+          ) : (
+            movimientosAgrupados.map(grupo => (
+              <div key={grupo.label} className="space-y-1">
+                <div className="sticky top-0 z-10 bg-zinc-950 px-2 py-1 flex items-center justify-between border-b border-zinc-800">
+                  <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">{grupo.label} · {grupo.items.length}</div>
+                  {grupo.totalGasto > 0 && (
+                    <div className="text-[10px] text-orange-400 font-bold">−{formatRD(grupo.totalGasto)}</div>
+                  )}
+                </div>
+                {grupo.items.map(m => (
+                  <FilaMovimiento key={m.id} m={m} data={data} dx={dx} onAbrirDetalle={() => setVerDetalle(m)} onVerFoto={() => verFotoMov(m)} onEliminar={tieneRol(usuario, 'admin') ? () => eliminar(m) : null} onDesaprobar={tieneRol(usuario, 'admin') ? () => desaprobar(m) : null} />
+                ))}
+              </div>
+            ))
+          )}
         </div>
       )}
 

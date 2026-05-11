@@ -241,6 +241,7 @@ export default function ModalDetalleMovimiento({
   const esUltimoPendiente = posicion && posicion.actual >= posicion.total - 1;
 
   return (
+    <>
     <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-2 sm:p-4" onClick={onCerrar}>
       {/* v8.17.9: desktop side-by-side — foto izquierda, datos derecha */}
       <div
@@ -642,28 +643,32 @@ export default function ModalDetalleMovimiento({
         </div>
       </div>
 
-      {/* VISOR FULLSCREEN de la foto */}
-      {verGrande && fotoUrl && (
-        <div className="fixed inset-0 bg-black/95 z-[60] flex flex-col" onClick={() => setVerGrande(false)}>
-          <div className="flex items-center justify-between px-3 py-2 bg-black/80 border-b border-zinc-800" onClick={e => e.stopPropagation()}>
-            <div className="text-xs text-zinc-400 uppercase tracking-widest">Foto de factura</div>
-            <div className="flex items-center gap-2">
-              <button onClick={() => rotar(-90)} className="bg-zinc-800 hover:bg-zinc-700 text-white p-2" title="Rotar izq"><RotateCcw className="w-4 h-4" /></button>
-              <button onClick={() => rotar(90)} className="bg-zinc-800 hover:bg-zinc-700 text-white p-2" title="Rotar der"><RotateCw className="w-4 h-4" /></button>
-              <button onClick={() => setVerGrande(false)} className="bg-red-600 hover:bg-red-700 text-white px-3 py-2 text-xs font-black uppercase flex items-center gap-1"><X className="w-4 h-4" /> Cerrar</button>
-            </div>
-          </div>
-          <div className="flex-1 flex items-center justify-center overflow-auto p-4" onClick={e => e.stopPropagation()}>
-            <img
-              src={fotoUrl}
-              alt=""
-              className="max-w-full max-h-full object-contain transition-transform duration-200"
-              style={{ transform: `rotate(${rotacion}deg)` }}
-            />
+    </div>
+    {/* v8.17.16: VISOR FULLSCREEN como HERMANO del modal (no hijo) para que
+        su z-[60] efectivamente tape el modal de z-50. Antes estaba renderizado
+        dentro del modal y por el stacking context la cabecera sticky del modal
+        seguía visible encima de la foto. */}
+    {verGrande && fotoUrl && (
+      <div className="fixed inset-0 bg-black/95 z-[100] flex flex-col" onClick={() => setVerGrande(false)}>
+        <div className="flex items-center justify-between px-3 py-2 bg-black/80 border-b border-zinc-800" onClick={e => e.stopPropagation()}>
+          <div className="text-xs text-zinc-400 uppercase tracking-widest">Foto de factura</div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => rotar(-90)} className="bg-zinc-800 hover:bg-zinc-700 text-white p-2" title="Rotar izq"><RotateCcw className="w-4 h-4" /></button>
+            <button onClick={() => rotar(90)} className="bg-zinc-800 hover:bg-zinc-700 text-white p-2" title="Rotar der"><RotateCw className="w-4 h-4" /></button>
+            <button onClick={() => setVerGrande(false)} className="bg-red-600 hover:bg-red-700 text-white px-3 py-2 text-xs font-black uppercase flex items-center gap-1"><X className="w-4 h-4" /> Cerrar</button>
           </div>
         </div>
-      )}
-    </div>
+        <div className="flex-1 flex items-center justify-center overflow-auto p-4" onClick={e => e.stopPropagation()}>
+          <img
+            src={fotoUrl}
+            alt=""
+            className="max-w-full max-h-full object-contain transition-transform duration-200"
+            style={{ transform: `rotate(${rotacion}deg)` }}
+          />
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 

@@ -8978,14 +8978,15 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto }) {
   useEffect(() => { cargar(); }, [semanaRef, proyectosVisibles.length]);
 
   // Grid por persona: { personaId: { fecha: [proyectos] } }
+  // v8.18.0: Una sola fuente — jornadas. Pre-jornadas (estado='programada') vienen incluidas en jornadasSemana.
   const gridPersonas = React.useMemo(() => {
     const g = {};
     jornadasSemana.forEach(j => {
       (j.personasPresentesIds || []).forEach(pid => {
         if (!g[pid]) g[pid] = {};
         if (!g[pid][j.fecha]) g[pid][j.fecha] = [];
-        // Ver si hay reporte de m² en esa fecha para ese proyecto
         const hayReporte = reportesSemana.some(r => r.proyectoId === j.proyectoId && r.fecha === j.fecha);
+        const esProgramada = j.estado === 'programada';
         g[pid][j.fecha].push({
           jornadaId: j.id,
           proyectoId: j.proyectoId,
@@ -8994,45 +8995,17 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto }) {
           condicionDia: j.condicionDia,
           horaInicio: j.horaInicio,
           hayReporte,
-          esProgramada: false, // viene de jornada real
-        });
-      });
-    });
-    // v8.9.26.1: agregar ASIGNACIONES programadas (futuras o sin jornada)
-    const asignaciones = (data.asignaciones || []).filter(a => a.estado !== 'cancelada');
-    const finInicioStr = fechaStr(dias[0]);
-    const finFinStr = fechaStr(dias[6]);
-    asignaciones.forEach(asig => {
-      // ¿solapa con la semana visible?
-      if (asig.fechaDesde > finFinStr || asig.fechaHasta < finInicioStr) return;
-      const proyecto = (data.proyectos || []).find(p => p.id === asig.proyectoId);
-      if (!proyecto) return;
-      // iterar día por día dentro del rango de la asignación
-      dias.forEach(d => {
-        const fStr = fechaStr(d);
-        if (fStr < asig.fechaDesde || fStr > asig.fechaHasta) return;
-        const pid = asig.personaId;
-        if (!g[pid]) g[pid] = {};
-        if (!g[pid][fStr]) g[pid][fStr] = [];
-        // NO duplicar si ya hay jornada para este proyecto ese día
-        const yaExiste = g[pid][fStr].some(x => x.proyectoId === asig.proyectoId);
-        if (yaExiste) return;
-        g[pid][fStr].push({
-          asignacionId: asig.id,
-          proyectoId: asig.proyectoId,
-          proyectoNombre: proyecto.cliente || proyecto.nombre,
-          referenciaOdoo: proyecto.referenciaOdoo,
-          rol: asig.rol,
-          estado: asig.estado,
-          esProgramada: true, // viene de asignación
-          hayReporte: false,
+          esProgramada,
+          estado: j.estado,
+          origen: j.origen,
         });
       });
     });
     return g;
-  }, [jornadasSemana, reportesSemana, data.asignaciones, data.proyectos, dias]);
+  }, [jornadasSemana, reportesSemana, dias]);
 
   // Grid por proyecto: { proyectoId: { fecha: { personas: [...], m2Reportado: N, condicionDia, jornadaId } } }
+  // v8.18.0: jornadas con estado='programada' se marcan como programadas, no se duplican
   const gridProyectos = React.useMemo(() => {
     const g = {};
     jornadasSemana.forEach(j => {
@@ -9041,55 +9014,27 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto }) {
       const m2 = reportesSemana
         .filter(r => r.proyectoId === j.proyectoId && r.fecha === j.fecha)
         .reduce((s, r) => s + (Number(r.m2) || 0), 0);
+      const esProgramada = j.estado === 'programada';
       g[j.proyectoId][j.fecha] = {
         jornadaId: j.id,
         personas: personasIds.map(pid => {
           const p = data.personal.find(x => x.id === pid);
-          return p ? { id: pid, nombre: p.nombre, rol: p.roles?.includes('supervisor') ? 'Sup' : p.roles?.includes('maestro') ? 'Mae' : 'Ay' } : null;
+          if (!p) return null;
+          return {
+            id: pid, nombre: p.nombre,
+            rol: p.roles?.includes('supervisor') ? 'Sup' : p.roles?.includes('maestro') ? 'Mae' : 'Ay',
+            programada: esProgramada,
+          };
         }).filter(Boolean),
         m2Reportado: m2,
         hayReporte: m2 > 0,
         condicionDia: j.condicionDia,
+        esProgramada,
+        estado: j.estado,
       };
     });
-    // v8.9.26.1: sumar personas de asignaciones programadas
-    const asignaciones = (data.asignaciones || []).filter(a => a.estado !== 'cancelada');
-    const finInicioStr = fechaStr(dias[0]);
-    const finFinStr = fechaStr(dias[6]);
-    asignaciones.forEach(asig => {
-      if (asig.fechaDesde > finFinStr || asig.fechaHasta < finInicioStr) return;
-      dias.forEach(d => {
-        const fStr = fechaStr(d);
-        if (fStr < asig.fechaDesde || fStr > asig.fechaHasta) return;
-        if (!g[asig.proyectoId]) g[asig.proyectoId] = {};
-        if (!g[asig.proyectoId][fStr]) {
-          g[asig.proyectoId][fStr] = {
-            jornadaId: null,
-            personas: [],
-            m2Reportado: 0,
-            hayReporte: false,
-            condicionDia: null,
-            esProgramada: true,
-          };
-        }
-        // Agregar persona si no está ya
-        const yaExiste = g[asig.proyectoId][fStr].personas.some(pp => pp.id === asig.personaId);
-        if (!yaExiste) {
-          const p = data.personal.find(x => x.id === asig.personaId);
-          if (p) {
-            const rolCorto = asig.rol === 'maestro' ? 'Mae' : asig.rol === 'ayudante' ? 'Ay' : 'Sup';
-            g[asig.proyectoId][fStr].personas.push({
-              id: asig.personaId,
-              nombre: p.nombre,
-              rol: rolCorto,
-              programada: true,
-            });
-          }
-        }
-      });
-    });
     return g;
-  }, [jornadasSemana, reportesSemana, data.personal, data.asignaciones, dias]);
+  }, [jornadasSemana, reportesSemana, data.personal, dias]);
 
   // Personas a mostrar en vista por personal
   const personasActivas = React.useMemo(() => {
@@ -9161,25 +9106,14 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto }) {
 
   const confirmarAsignacion = async ({ proyectoId, personaId, fecha }) => {
     try {
-      // Buscar jornada existente
-      const existente = jornadasSemana.find(j => j.proyectoId === proyectoId && j.fecha === fecha);
-      if (existente) {
-        // Agregar persona a jornada existente si no está
-        if (!(existente.personasPresentesIds || []).includes(personaId)) {
-          await db.actualizarPersonasJornada(existente.id, [...(existente.personasPresentesIds || []), personaId]);
-        }
-      } else {
-        // Crear jornada nueva
-        await db.iniciarJornada({
-          id: 'j_' + Date.now() + Math.random(),
-          proyectoId, fecha,
-          horaInicio: `${fecha}T08:00:00.000Z`,
-          iniciadaPorId: 'planificacion', iniciadaPorNombre: 'Planificación (admin)',
-          inicioLat: null, inicioLng: null,
-          inicioPrecisionM: null, inicioDistanciaObraM: null,
-          personasPresentesIds: [personaId],
-        });
-      }
+      // v8.18.0: crearAsignacion materializa pre-jornadas (estado='programada')
+      // Si ya existe jornada en_curso/completada/no_asistio para (proyecto, fecha), no la toca.
+      await db.crearAsignacion({
+        personaId, proyectoId,
+        fechaDesde: fecha, fechaHasta: fecha,
+        notas: 'Asignación rápida desde grid',
+        creadoPorId: usuario.id,
+      });
       setModalAsignar(null);
       await cargar();
     } catch (e) { alert('Error: ' + (e.message || e)); }
@@ -9932,21 +9866,35 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
           </div>
         )}
 
-        {jornadaHoy?.horaInicio && jornadaHoy?.horaFin && (
+        {jornadaHoy?.estado === 'completada' && jornadaHoy?.horaFin && (
           <div className="bg-green-900/20 border border-green-700 p-2 text-xs text-green-300 text-center">
             ✓ Jornada cerrada · <span className="font-bold">{horasEntre(jornadaHoy.horaInicio, jornadaHoy.horaFin)?.toFixed(1)}h trabajadas</span> · {jornadaHoy.personasPresentesIds?.length || 0} personas
+          </div>
+        )}
+
+        {/* v8.18.0: Banner pre-jornada planificada */}
+        {jornadaHoy?.estado === 'programada' && (
+          <div className="bg-blue-900/20 border-2 border-blue-600 p-3 text-xs flex items-start gap-2">
+            <Calendar className="w-5 h-5 flex-shrink-0 text-blue-400" />
+            <div className="flex-1">
+              <div className="font-black uppercase tracking-wider text-blue-300">📅 Pre-jornada planificada</div>
+              <div className="text-blue-200 mt-1">
+                Esta jornada fue planificada con {jornadaHoy.personasPresentesIds?.length || 0} persona{jornadaHoy.personasPresentesIds?.length === 1 ? '' : 's'}.
+                Ajusta el listado si hace falta y toca "Iniciar Jornada" para confirmar la asistencia.
+              </div>
+            </div>
           </div>
         )}
 
         {/* Botones */}
         {puedeOperarHoy && (
           <>
-            {!jornadaHoy && (
+            {(!jornadaHoy || jornadaHoy.estado === 'programada') && (
               <button onClick={iniciarJornada} disabled={procesando === 'inicio' || personasSel.length === 0} className="w-full bg-green-600 hover:bg-green-700 disabled:bg-zinc-800 disabled:text-zinc-600 text-white font-black uppercase py-4 flex items-center justify-center gap-2">
-                {procesando === 'inicio' ? <><Loader2 className="w-4 h-4 animate-spin" /> Capturando GPS...</> : <><Play className="w-4 h-4" /> Iniciar Jornada</>}
+                {procesando === 'inicio' ? <><Loader2 className="w-4 h-4 animate-spin" /> Capturando GPS...</> : <><Play className="w-4 h-4" /> {jornadaHoy?.estado === 'programada' ? 'Confirmar e iniciar' : 'Iniciar Jornada'}</>}
               </button>
             )}
-            {jornadaHoy && !jornadaHoy.horaFin && (
+            {jornadaHoy?.estado === 'en_curso' && (
               <button onClick={() => setFinalizarModal(true)} disabled={procesando === 'fin'} className="w-full bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white font-black uppercase py-4 flex items-center justify-center gap-2">
                 {procesando === 'fin' ? <><Loader2 className="w-4 h-4 animate-spin" /> Capturando GPS...</> : <><Square className="w-4 h-4" /> Finalizar Jornada</>}
               </button>

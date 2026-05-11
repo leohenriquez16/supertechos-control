@@ -180,6 +180,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
         m[mov.personaId] = {
           personaId: mov.personaId,
           nombre: persona?.nombre || mov.personaId,
+          foto2x2: persona?.foto2x2 || null, // v8.17.11
           movimientos: [],
           totalEntregado: 0,
           totalGastado: 0,
@@ -452,6 +453,14 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
               {dx.compacto ? (
                 // Compacto: una sola fila con saldo + mini desglose en línea
                 <div className="flex items-center gap-2">
+                  {/* v8.17.11: avatar */}
+                  {p.foto2x2 ? (
+                    <img src={p.foto2x2} alt="" className="w-7 h-7 object-cover rounded-sm border border-zinc-700 shrink-0" />
+                  ) : (
+                    <div className="w-7 h-7 bg-zinc-800 border border-zinc-700 flex items-center justify-center text-zinc-500 text-[10px] font-bold shrink-0">
+                      {(p.nombre || '?').slice(0, 2).toUpperCase()}
+                    </div>
+                  )}
                   <div className="flex-1 min-w-0">
                     <div className="text-xs font-bold truncate flex items-center gap-1">
                       <span className="truncate">{p.nombre}</span>
@@ -487,21 +496,31 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
                 </div>
               ) : (
                 <>
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <div className="font-bold text-sm flex items-center gap-2">
-                        <span>{p.nombre}</span>
-                        {p.incompletos > 0 && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); setFiltroPersona(p.personaId); setFiltroProyecto(''); setSoloIncompletos(true); setTab('movimientos'); }}
-                            className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-amber-900/40 text-amber-300 border border-amber-700 hover:bg-amber-800/50"
-                            title="Click para ver solo los gastos con datos incompletos"
-                          >
-                            ⚠ {p.incompletos} faltan datos
-                          </button>
-                        )}
+                  <div className="flex justify-between items-start gap-3">
+                    <div className="flex items-start gap-2.5 min-w-0">
+                      {/* v8.17.11: avatar */}
+                      {p.foto2x2 ? (
+                        <img src={p.foto2x2} alt="" className="w-10 h-10 object-cover rounded-sm border border-zinc-700 shrink-0" />
+                      ) : (
+                        <div className="w-10 h-10 bg-zinc-800 border border-zinc-700 flex items-center justify-center text-zinc-500 text-xs font-bold shrink-0">
+                          {(p.nombre || '?').slice(0, 2).toUpperCase()}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <div className="font-bold text-sm flex items-center gap-2 flex-wrap">
+                          <span>{p.nombre}</span>
+                          {p.incompletos > 0 && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setFiltroPersona(p.personaId); setFiltroProyecto(''); setSoloIncompletos(true); setTab('movimientos'); }}
+                              className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-amber-900/40 text-amber-300 border border-amber-700 hover:bg-amber-800/50"
+                              title="Click para ver solo los gastos con datos incompletos"
+                            >
+                              ⚠ {p.incompletos} faltan datos
+                            </button>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-zinc-500 uppercase">{p.movimientos.length} movs · {p.pendientes} pend.</div>
                       </div>
-                      <div className="text-[10px] text-zinc-500 uppercase">{p.movimientos.length} movs · {p.pendientes} pend.</div>
                     </div>
                     <div className="text-right">
                       <div className={`text-lg font-black ${p.saldo >= 0 ? 'text-green-400' : 'text-red-400'}`}>RD$ {formatNum(p.saldo, 2)}</div>

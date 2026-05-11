@@ -217,18 +217,8 @@ export default function ModalReportarGasto({ usuario, proyectos = [], proyectoId
               <div className="text-[10px] text-zinc-500">Llena los datos del gasto manualmente. La oficina te pedirá la foto por WhatsApp.</div>
             </button>
 
-            {/* v8.16.1: gasto informal sin comprobante fiscal */}
-            <button
-              onClick={reportarSinFactura}
-              type="button"
-              className="w-full bg-zinc-950 border-2 border-zinc-800 hover:border-red-700 p-3 text-left transition"
-            >
-              <div className="flex items-center gap-2 mb-1">
-                <FileX className="w-4 h-4 text-red-500" />
-                <div className="text-xs font-bold">✍️ Sin factura — compra informal</div>
-              </div>
-              <div className="text-[10px] text-zinc-500">Para vendedor ambulante, ayudante ocasional, propina, etc. Sin RNC/NCF. El admin lo revisará con cuidado.</div>
-            </button>
+            {/* v8.17.4: el botón "Sin factura" se movió a su propio modal masivo en Mi Caja Chica
+                 (acceso directo desde la pantalla principal, soporta lote). */}
           </div>
         )}
 

@@ -14,6 +14,7 @@ import ModalExportarOdoo from './ModalExportarOdoo';
 import ModalCargaMasiva from './ModalCargaMasiva';
 import ModalDetalleMovimiento from './ModalDetalleMovimiento';
 import DashboardCajaChica from './DashboardCajaChica';
+import { imprimirCuadreIndividual } from './imprimirCuadre';
 
 const tieneRol = (p, r) => p?.roles?.includes(r);
 
@@ -60,6 +61,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
   const [verDetalle, setVerDetalle] = useState(null); // v8.15.1: movimiento abierto en modal de detalle (modo simple)
   const [indicePendiente, setIndicePendiente] = useState(null); // v8.15.5: índice del pendiente abierto en modo bandeja
   const [gruposColapsados, setGruposColapsados] = useState(() => new Set()); // v8.17.7: personaIds con grupo colapsado en bandeja
+  const [personasExpandidas, setPersonasExpandidas] = useState(() => new Set()); // v8.17.13: cards 'Por persona' que muestran sus movs
 
   const cargar = async () => {
     setLoading(true);
@@ -170,6 +172,39 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
   };
   const colapsarTodos = () => setGruposColapsados(new Set(pendientesPorPersona.map(g => g.personaId)));
   const expandirTodos = () => setGruposColapsados(new Set());
+
+  // v8.17.13: helpers para Por Persona — expandir card individual
+  const togglePersonaExpandida = (personaId) => {
+    setPersonasExpandidas(prev => {
+      const next = new Set(prev);
+      if (next.has(personaId)) next.delete(personaId); else next.add(personaId);
+      return next;
+    });
+  };
+
+  // v8.17.13: generar PDF directo del cuadre de una persona (default mes actual)
+  // Llamado SÍNCRONO desde el click → no se bloquea como popup
+  const imprimirCuadreDePersona = (personaId) => {
+    const persona = data.personal.find(p => p.id === personaId);
+    if (!persona) { toast.error('Persona no encontrada'); return; }
+    const hoy = new Date();
+    const fechaInicio = new Date(hoy.getFullYear(), hoy.getMonth(), 1).toISOString().split('T')[0];
+    const fechaFin = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).toISOString().split('T')[0];
+    const movs = movimientos.filter(m =>
+      m.personaId === personaId &&
+      m.fecha >= fechaInicio &&
+      m.fecha <= fechaFin
+    );
+    if (movs.length === 0) {
+      toast.warning(`Sin movimientos de ${persona.nombre} en el mes actual.`);
+      return;
+    }
+    try {
+      imprimirCuadreIndividual({ persona, movimientos: movs, fechaInicio, fechaFin, data });
+    } catch (e) {
+      toast.error('Error generando PDF: ' + (e?.message || e));
+    }
+  };
 
   // Por persona: agrupar movimientos + saldo
   const porPersona = useMemo(() => {
@@ -447,117 +482,130 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
 
       {tab === 'porPersona' && (
         <div className={dx.listGap}>
-          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Por persona ({porPersona.length})</div>
-          {porPersona.map(p => (
-            <div key={p.personaId} className={`bg-zinc-900 border border-zinc-800 ${dx.cardPad}`}>
-              {dx.compacto ? (
-                // Compacto: una sola fila con saldo + mini desglose en línea
-                <div className="flex items-center gap-2">
-                  {/* v8.17.11: avatar */}
+          {/* v8.17.13: header con conteo + acciones de expandir/colapsar */}
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Por persona ({porPersona.length})</div>
+            {porPersona.length > 1 && (
+              <div className="flex items-center gap-1 text-[10px]">
+                <button onClick={() => setPersonasExpandidas(new Set(porPersona.map(p => p.personaId)))} className="text-zinc-400 hover:text-white px-2 py-0.5 border border-zinc-800">Expandir todos</button>
+                <button onClick={() => setPersonasExpandidas(new Set())} className="text-zinc-400 hover:text-white px-2 py-0.5 border border-zinc-800">Colapsar todos</button>
+              </div>
+            )}
+          </div>
+
+          {porPersona.map(p => {
+            const expandida = personasExpandidas.has(p.personaId);
+            // Movimientos del mes actual ordenados por fecha desc (para la lista interna)
+            const hoy = new Date();
+            const mesInicio = new Date(hoy.getFullYear(), hoy.getMonth(), 1).toISOString().split('T')[0];
+            const mesFin = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).toISOString().split('T')[0];
+            const movsMes = p.movimientos
+              .filter(m => m.fecha >= mesInicio && m.fecha <= mesFin)
+              .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+
+            return (
+              <div key={p.personaId} className="bg-zinc-900 border border-zinc-800">
+                {/* Header clickeable para expandir/colapsar */}
+                <button
+                  onClick={() => togglePersonaExpandida(p.personaId)}
+                  className={`w-full flex items-center gap-2 ${dx.compacto ? 'p-1.5' : 'p-2.5'} hover:bg-zinc-900/70 text-left`}
+                >
+                  <span className="text-zinc-500 text-xs w-4 shrink-0">{expandida ? '▼' : '▶'}</span>
+                  {/* Avatar */}
                   {p.foto2x2 ? (
-                    <img src={p.foto2x2} alt="" className="w-7 h-7 object-cover rounded-sm border border-zinc-700 shrink-0" />
+                    <img src={p.foto2x2} alt="" className={`${dx.compacto ? 'w-7 h-7' : 'w-9 h-9'} object-cover rounded-sm border border-zinc-700 shrink-0`} />
                   ) : (
-                    <div className="w-7 h-7 bg-zinc-800 border border-zinc-700 flex items-center justify-center text-zinc-500 text-[10px] font-bold shrink-0">
+                    <div className={`${dx.compacto ? 'w-7 h-7 text-[10px]' : 'w-9 h-9 text-xs'} bg-zinc-800 border border-zinc-700 flex items-center justify-center text-zinc-500 font-bold shrink-0`}>
                       {(p.nombre || '?').slice(0, 2).toUpperCase()}
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
-                    <div className="text-xs font-bold truncate flex items-center gap-1">
+                    <div className={`font-bold ${dx.compacto ? 'text-xs' : 'text-sm'} flex items-center gap-2 flex-wrap`}>
                       <span className="truncate">{p.nombre}</span>
                       {p.incompletos > 0 && (
-                        <span className="text-[8px] font-black px-1 bg-amber-900/40 text-amber-300 border border-amber-700 shrink-0" title={`${p.incompletos} con datos incompletos`}>⚠{p.incompletos}</span>
+                        <span
+                          onClick={(e) => { e.stopPropagation(); setFiltroPersona(p.personaId); setFiltroProyecto(''); setSoloIncompletos(true); setTab('movimientos'); }}
+                          className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-amber-900/40 text-amber-300 border border-amber-700 hover:bg-amber-800/50 cursor-pointer"
+                          title="Click para ver solo los gastos con datos incompletos"
+                          role="button"
+                        >
+                          ⚠ {p.incompletos}
+                        </span>
                       )}
                     </div>
-                    <div className="text-[9px] text-zinc-500 truncate">
-                      <span className="text-green-400">+{formatNum(p.totalEntregado, 0)}</span>
-                      <span className="text-zinc-600 mx-1">·</span>
-                      <span className="text-orange-400">−{formatNum(p.totalGastado, 0)}</span>
-                      <span className="text-zinc-600 mx-1">·</span>
-                      <span className="text-blue-400">−{formatNum(p.totalDieta, 0)} dieta</span>
-                      {p.pendientes > 0 && <><span className="text-zinc-600 mx-1">·</span><span className="text-orange-300">{p.pendientes} pend</span></>}
+                    <div className="text-[10px] text-zinc-500">
+                      {p.movimientos.length} movs · {p.pendientes} pend
+                      <span className="hidden sm:inline">
+                        <span className="text-zinc-600 mx-1">·</span>
+                        <span className="text-green-400">+{formatNum(p.totalEntregado, 0)}</span>
+                        <span className="text-zinc-600 mx-1">·</span>
+                        <span className="text-orange-400">−{formatNum(p.totalGastado, 0)}</span>
+                        {p.totalDieta > 0 && <>
+                          <span className="text-zinc-600 mx-1">·</span>
+                          <span className="text-blue-400">−{formatNum(p.totalDieta, 0)} dieta</span>
+                        </>}
+                      </span>
                     </div>
                   </div>
                   <div className="text-right shrink-0">
-                    <div className={`font-black ${p.saldo >= 0 ? 'text-green-400' : 'text-red-400'} text-sm leading-tight`}>RD${formatNum(p.saldo, 0)}</div>
-                    {/* v8.17.5: disponible (-pendientes) si hay pendientes */}
+                    <div className={`${dx.compacto ? 'text-sm' : 'text-base'} font-black leading-tight ${p.saldo >= 0 ? 'text-green-400' : 'text-red-400'}`}>RD${formatNum(p.saldo, 0)}</div>
                     {p.montoPendiente > 0 && (
-                      <div className="text-[9px] text-orange-300 leading-tight">
-                        disp. RD${formatNum(p.saldoProyectado, 0)}
+                      <div className="text-[9px] text-orange-300 leading-tight">disp. RD${formatNum(p.saldoProyectado, 0)}</div>
+                    )}
+                  </div>
+                  {/* v8.17.13: botón PDF directo (click síncrono → no se bloquea por popup blocker) */}
+                  <span
+                    onClick={(e) => { e.stopPropagation(); imprimirCuadreDePersona(p.personaId); }}
+                    role="button"
+                    title="Generar cuadre PDF del mes actual"
+                    className="shrink-0 px-2 py-1.5 text-[9px] font-black uppercase tracking-wider bg-blue-900/40 text-blue-300 border border-blue-700 hover:bg-blue-800/50 cursor-pointer flex items-center gap-1"
+                  >
+                    <FileText className="w-3 h-3" /> PDF
+                  </span>
+                </button>
+
+                {/* Cuerpo expandido: movimientos del mes + accesos a movimientos completos */}
+                {expandida && (
+                  <div className="border-t border-zinc-800 p-2 space-y-2">
+                    <div className="flex items-center justify-between text-[10px] flex-wrap gap-2">
+                      <div className="text-zinc-400">
+                        Movimientos del mes actual ({movsMes.length})
+                      </div>
+                      <button
+                        onClick={() => { setFiltroPersona(p.personaId); setFiltroProyecto(''); setTab('movimientos'); }}
+                        className="text-red-400 hover:text-red-300 font-bold"
+                      >
+                        Ver todos los movimientos →
+                      </button>
+                    </div>
+                    {movsMes.length === 0 ? (
+                      <div className="text-center text-zinc-500 text-xs py-3">Sin movimientos este mes.</div>
+                    ) : (
+                      <div className={dx.listGap}>
+                        {movsMes.slice(0, 20).map(m => (
+                          <FilaMovimiento
+                            key={m.id}
+                            m={m}
+                            data={data}
+                            dx={dx}
+                            onAbrirDetalle={() => setVerDetalle(m)}
+                            onVerFoto={() => verFotoMov(m)}
+                            onEliminar={tieneRol(usuario, 'admin') ? () => eliminar(m) : null}
+                            onDesaprobar={tieneRol(usuario, 'admin') ? () => desaprobar(m) : null}
+                          />
+                        ))}
+                        {movsMes.length > 20 && (
+                          <div className="text-center text-[10px] text-zinc-500 py-1">
+                            Mostrando 20 de {movsMes.length}. Toca "Ver todos los movimientos →" para verlos todos.
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
-                  <button
-                    onClick={() => { setFiltroPersona(p.personaId); setFiltroProyecto(''); setTab('movimientos'); }}
-                    className="text-[9px] text-red-400 hover:text-red-300 shrink-0 px-1"
-                    title="Ver movimientos"
-                  >
-                    →
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <div className="flex justify-between items-start gap-3">
-                    <div className="flex items-start gap-2.5 min-w-0">
-                      {/* v8.17.11: avatar */}
-                      {p.foto2x2 ? (
-                        <img src={p.foto2x2} alt="" className="w-10 h-10 object-cover rounded-sm border border-zinc-700 shrink-0" />
-                      ) : (
-                        <div className="w-10 h-10 bg-zinc-800 border border-zinc-700 flex items-center justify-center text-zinc-500 text-xs font-bold shrink-0">
-                          {(p.nombre || '?').slice(0, 2).toUpperCase()}
-                        </div>
-                      )}
-                      <div className="min-w-0">
-                        <div className="font-bold text-sm flex items-center gap-2 flex-wrap">
-                          <span>{p.nombre}</span>
-                          {p.incompletos > 0 && (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); setFiltroPersona(p.personaId); setFiltroProyecto(''); setSoloIncompletos(true); setTab('movimientos'); }}
-                              className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-amber-900/40 text-amber-300 border border-amber-700 hover:bg-amber-800/50"
-                              title="Click para ver solo los gastos con datos incompletos"
-                            >
-                              ⚠ {p.incompletos} faltan datos
-                            </button>
-                          )}
-                        </div>
-                        <div className="text-[10px] text-zinc-500 uppercase">{p.movimientos.length} movs · {p.pendientes} pend.</div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className={`text-lg font-black ${p.saldo >= 0 ? 'text-green-400' : 'text-red-400'}`}>RD$ {formatNum(p.saldo, 2)}</div>
-                      <div className="text-[10px] text-zinc-500">saldo actual</div>
-                      {/* v8.17.5: disponible real si hay pendientes */}
-                      {p.montoPendiente > 0 && (
-                        <div className="mt-1 pt-1 border-t border-zinc-800">
-                          <div className={`text-sm font-black ${p.saldoProyectado >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>RD$ {formatNum(p.saldoProyectado, 2)}</div>
-                          <div className="text-[10px] text-orange-300">disponible (−{formatRD(p.montoPendiente)} pend.)</div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2 mt-2 text-[10px]">
-                    <div className="bg-zinc-950 border border-zinc-800 p-2">
-                      <div className="text-zinc-500">Entregado</div>
-                      <div className="text-green-400 font-bold">{formatRD(p.totalEntregado)}</div>
-                    </div>
-                    <div className="bg-zinc-950 border border-zinc-800 p-2">
-                      <div className="text-zinc-500">Gastado</div>
-                      <div className="text-orange-400 font-bold">{formatRD(p.totalGastado)}</div>
-                    </div>
-                    <div className="bg-zinc-950 border border-zinc-800 p-2">
-                      <div className="text-zinc-500">Dietas</div>
-                      <div className="text-blue-400 font-bold">{formatRD(p.totalDieta)}</div>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => { setFiltroPersona(p.personaId); setFiltroProyecto(''); setTab('movimientos'); }}
-                    className="mt-2 text-[10px] text-red-400 hover:text-red-300"
-                  >
-                    Ver todos los movimientos →
-                  </button>
-                </>
-              )}
-            </div>
-          ))}
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 

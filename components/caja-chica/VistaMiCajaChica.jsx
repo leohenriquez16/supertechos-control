@@ -97,13 +97,21 @@ export default function VistaMiCajaChica({ usuario, data, onVolver }) {
   const saldoProy = saldo?.saldoProyectado || 0;
   const pendientes = saldo?.pendientes || 0;
   const limite = usuario.limiteCajaChica != null ? Number(usuario.limiteCajaChica) : null;
-  // Estado del límite: ok | bajo (<20%) | consumido (<=0)
+  // v8.17.3: el "disponible para gastar" descuenta también los pendientes.
+  // Banner usa saldoProy (más conservador).
   let estadoLimite = 'ok';
   if (limite && limite > 0) {
-    if (saldoActual <= 0) estadoLimite = 'consumido';
-    else if (saldoActual < limite * 0.2) estadoLimite = 'bajo';
+    if (saldoProy <= 0) estadoLimite = 'consumido';
+    else if (saldoProy < limite * 0.2) estadoLimite = 'bajo';
   }
-  const pctUsado = limite && limite > 0 ? Math.max(0, Math.min(100, ((limite - saldoActual) / limite) * 100)) : 0;
+  // Composición del límite (para barra de 3 segmentos):
+  //   verde     = saldoProy / limite          → disponible real para gastar
+  //   naranja   = pendientes / limite         → gastos esperando aprobación
+  //   consumido = (limite - saldoActual) / limite → gastos ya aprobados (irreversibles)
+  const pctDisponible = limite && limite > 0 ? Math.max(0, Math.min(100, (saldoProy / limite) * 100)) : 0;
+  const pctPendiente = limite && limite > 0 ? Math.max(0, Math.min(100, (pendientes / limite) * 100)) : 0;
+  const pctConsumido = limite && limite > 0 ? Math.max(0, Math.min(100, ((limite - saldoActual) / limite) * 100)) : 0;
+  const consumidoMonto = limite && limite > 0 ? Math.max(0, limite - saldoActual) : 0;
 
   return (
     <div className="space-y-5">
@@ -116,43 +124,74 @@ export default function VistaMiCajaChica({ usuario, data, onVolver }) {
         <h1 className="text-3xl font-black tracking-tight">Balance</h1>
       </div>
 
-      {/* Hero: saldo actual */}
+      {/* Hero: disponible real (saldo - pendientes) */}
+      {/* v8.17.3: el número grande es lo que el maestro puede realmente gastar */}
       <div className={`p-6 text-white ${
         estadoLimite === 'consumido' ? 'bg-gradient-to-br from-red-700 to-red-900'
         : estadoLimite === 'bajo' ? 'bg-gradient-to-br from-yellow-600 to-yellow-800'
-        : saldoActual >= 0 ? 'bg-gradient-to-br from-green-700 to-green-900'
+        : saldoProy >= 0 ? 'bg-gradient-to-br from-green-700 to-green-900'
         : 'bg-gradient-to-br from-red-700 to-red-900'
       }`}>
-        <div className="text-[11px] tracking-widest uppercase text-white/80 font-bold">Saldo disponible</div>
-        <div className="text-4xl sm:text-5xl font-black mt-2">RD$ {formatNum(saldoActual, 2)}</div>
+        <div className="text-[11px] tracking-widest uppercase text-white/80 font-bold">Disponible para gastar</div>
+        <div className="text-4xl sm:text-5xl font-black mt-2">RD$ {formatNum(saldoProy, 2)}</div>
+        <div className="text-[11px] text-white/70 mt-1">Ya descontados tus gastos pendientes</div>
+
         {limite != null && limite > 0 && (
-          <div className="mt-3 space-y-1">
+          <div className="mt-4 space-y-2">
+            {/* Etiquetas superiores */}
             <div className="text-xs text-white/80 flex justify-between">
-              <span>Límite asignado</span>
-              <span>RD$ {formatNum(limite, 0)}</span>
+              <span>Tu caja chica</span>
+              <span className="font-bold">RD$ {formatNum(limite, 0)}</span>
             </div>
-            <div className="h-2 bg-black/30 overflow-hidden">
-              <div
-                className="h-full bg-white/70 transition-all"
-                style={{ width: `${pctUsado}%` }}
-              />
+
+            {/* Barra de 3 segmentos: disponible | pendiente | consumido */}
+            <div className="h-4 bg-black/40 overflow-hidden flex" title="Distribución de tu caja chica respecto al límite asignado">
+              <div className="h-full bg-emerald-400 transition-all" style={{ width: `${pctDisponible}%` }} />
+              <div className="h-full bg-orange-400 transition-all" style={{ width: `${pctPendiente}%` }} />
+              <div className="h-full bg-zinc-300/40 transition-all" style={{ width: `${pctConsumido}%` }} />
+            </div>
+
+            {/* Leyenda */}
+            <div className="grid grid-cols-3 gap-1 text-[10px] text-white/90">
+              <div className="flex items-center gap-1">
+                <span className="w-2 h-2 bg-emerald-400 shrink-0" />
+                <div className="min-w-0">
+                  <div className="font-bold truncate">Disponible</div>
+                  <div className="text-white/70">RD$ {formatNum(saldoProy, 0)}</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="w-2 h-2 bg-orange-400 shrink-0" />
+                <div className="min-w-0">
+                  <div className="font-bold truncate">Pendiente</div>
+                  <div className="text-white/70">RD$ {formatNum(pendientes, 0)}</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="w-2 h-2 bg-zinc-300/60 shrink-0" />
+                <div className="min-w-0">
+                  <div className="font-bold truncate">Consumido</div>
+                  <div className="text-white/70">RD$ {formatNum(consumidoMonto, 0)}</div>
+                </div>
+              </div>
             </div>
           </div>
         )}
-        {pendientes > 0 && (
-          <div className="text-sm text-white/80 mt-2">
-            ⏳ {pendientes} gasto{pendientes !== 1 ? 's' : ''} pendiente{pendientes !== 1 ? 's' : ''} · si se aprueban quedaría en <b>RD$ {formatNum(saldoProy, 2)}</b>
+
+        {pendientes > 0 && limite != null && limite > 0 && (
+          <div className="text-[11px] text-white/70 mt-2 pt-2 border-t border-white/15">
+            ⏳ Tienes RD$ {formatNum(pendientes, 0)} esperando aprobación. La oficina los reembolsará cuando los revise.
           </div>
         )}
       </div>
 
-      {/* Banners de estado de límite */}
+      {/* Banners de estado de límite (basados en disponible real, no en saldo aprobado) */}
       {estadoLimite === 'consumido' && (
         <div className="bg-red-900/30 border-2 border-red-600 p-3 text-xs text-red-200 flex items-start gap-2">
           <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-red-400" />
           <div>
-            <div className="font-bold text-red-300">Has consumido tu caja chica</div>
-            <div className="mt-0.5">La oficina debe revisar y aprobar tus gastos pendientes para reembolsar. Puedes seguir reportando gastos que ya hiciste, pero no recibirás más caja hasta cuadrar.</div>
+            <div className="font-bold text-red-300">Ya consumiste tu disponible</div>
+            <div className="mt-0.5">Sumando los pendientes, tu caja queda en cero. Puedes seguir reportando gastos hechos, pero no recibirás más caja hasta que la oficina apruebe y reembolse lo pendiente.</div>
           </div>
         </div>
       )}
@@ -160,8 +199,8 @@ export default function VistaMiCajaChica({ usuario, data, onVolver }) {
         <div className="bg-yellow-900/30 border-2 border-yellow-700 p-3 text-xs text-yellow-200 flex items-start gap-2">
           <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-yellow-400" />
           <div>
-            <div className="font-bold text-yellow-300">Estás cerca de tu límite</div>
-            <div className="mt-0.5">Quedan RD${formatNum(saldoActual, 0)} de RD${formatNum(limite, 0)}. Reporta tus gastos pendientes para que la oficina pueda reembolsar a tiempo.</div>
+            <div className="font-bold text-yellow-300">Tu disponible está bajo</div>
+            <div className="mt-0.5">Te quedan RD${formatNum(saldoProy, 0)} de RD${formatNum(limite, 0)} para gastar (ya descontando lo pendiente). Reporta lo que tengas para que la oficina apruebe y te reembolse.</div>
           </div>
         </div>
       )}

@@ -42,23 +42,40 @@ export default function ModalGenerarCuadre({ data, onCerrar }) {
   }, [presetPeriodo]);
 
   const generar = async () => {
+    if (tipo === 'individual' && !personaId) {
+      toast.warning('Selecciona la persona');
+      return;
+    }
+    // v8.17.15: abrir la ventana ANTES de cualquier await para que el navegador
+    // la asocie con el click del usuario y no la bloquee como popup.
+    const ventana = window.open('', '_blank');
+    if (!ventana) {
+      toast.error('Bloqueador de popups activo. Permite popups en este sitio para imprimir.');
+      return;
+    }
+    // Pintar un loader temporal mientras se cargan los movimientos
+    try {
+      ventana.document.write('<!DOCTYPE html><html><head><title>Generando cuadre…</title><style>body{background:#0a0a0a;color:#fafafa;font-family:system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;margin:0;gap:1rem;}.spinner{width:32px;height:32px;border:3px solid #27272a;border-top-color:#dc2626;border-radius:50%;animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}</style></head><body><div class="spinner"></div><div>Generando cuadre…</div></body></html>');
+      ventana.document.close();
+    } catch {}
+
     setGenerando(true);
     try {
       if (tipo === 'individual') {
-        if (!personaId) { toast.warning('Selecciona la persona'); setGenerando(false); return; }
         const persona = titulares.find(p => p.id === personaId);
         const movs = await db.listarMovimientosCajaChica({ personaId });
-        imprimirCuadreIndividual({ persona, movimientos: movs, fechaInicio, fechaFin, data });
+        imprimirCuadreIndividual({ persona, movimientos: movs, fechaInicio, fechaFin, data, ventana });
       } else {
         // Consolidado: cargar todos los movimientos en paralelo
         const movs = await Promise.all(
           titulares.map(t => db.listarMovimientosCajaChica({ personaId: t.id }).then(m => [t.id, m]))
         );
         const movimientosPorPersona = Object.fromEntries(movs);
-        imprimirCuadreConsolidado({ titulares, movimientosPorPersona, fechaInicio, fechaFin, data });
+        imprimirCuadreConsolidado({ titulares, movimientosPorPersona, fechaInicio, fechaFin, data, ventana });
       }
       onCerrar();
     } catch (e) {
+      try { ventana.close(); } catch {}
       toast.error('Error: ' + (e.message || e));
       setGenerando(false);
     }

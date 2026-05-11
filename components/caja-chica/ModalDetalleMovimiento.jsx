@@ -57,7 +57,9 @@ export default function ModalDetalleMovimiento({
   const [error, setError] = useState('');
   const [fotoUrl, setFotoUrl] = useState(null);
   const [cargandoFoto, setCargandoFoto] = useState(false);
-  const [rotacion, setRotacion] = useState(0);
+  // v8.17.15: la rotación se persiste en DB (rotacion_grados). Al abrir el modal
+  // arranca con el valor guardado; al rotar se actualiza en DB con debounce.
+  const [rotacion, setRotacion] = useState(movimiento.rotacionGrados ?? 0);
   const [verGrande, setVerGrande] = useState(false);
   // v8.15.2: auto-fill por RNC
   const [proveedorMatch, setProveedorMatch] = useState(null);
@@ -74,7 +76,18 @@ export default function ModalDetalleMovimiento({
   }, [movimiento.id, tieneFoto]);
 
   const set = (k, v) => setCampos(prev => ({ ...prev, [k]: v }));
-  const rotar = (delta) => setRotacion(r => (((r + delta) % 360) + 360) % 360);
+  // v8.17.15: rotar localmente + persistir en DB (fire-and-forget)
+  const rotar = (delta) => {
+    setRotacion(r => {
+      const nueva = (((r + delta) % 360) + 360) % 360;
+      // Persistir en DB sin bloquear la UI; los errores se loggean pero no rompen el flujo.
+      if (tieneFoto && !soloLectura) {
+        db.actualizarRotacionFotoCajaChica(movimiento.id, nueva)
+          .catch(e => console.warn('No se pudo guardar rotación:', e?.message));
+      }
+      return nueva;
+    });
+  };
 
   // v8.15.2: cuando cambia el RNC, buscar proveedor conocido y autocompletar razón social.
   // Debounced para no spamear queries mientras tipean.

@@ -16,6 +16,28 @@ import DashboardCajaChica from './DashboardCajaChica';
 
 const tieneRol = (p, r) => p?.roles?.includes(r);
 
+// v8.17.6: Detecta gastos con datos incompletos (necesitan que admin complete)
+// Solo aplica a gastos (gasto_factura). Entregas/dietas/ajustes nunca son "incompletos".
+// Devuelve { incompleto: bool, motivos: ['categoria'|'concepto'|'proveedor', ...] }
+function evaluarDatosIncompletos(m) {
+  if (m.tipo !== 'gasto_factura') return { incompleto: false, motivos: [] };
+  const sinFactura = !!m.datosIA?.sin_factura;
+  const motivos = [];
+  // Sin categoría: ni en m.categoria ni en datosIA.categoria_sugerida
+  if (!m.categoria && !m.datosIA?.categoria_sugerida) motivos.push('categoria');
+  // Concepto vacío o muy corto (<5 chars)
+  if ((m.concepto || '').trim().length < 5) motivos.push('concepto');
+  // Sin proveedor (no aplica a sin_factura porque ahí no hay proveedor formal)
+  if (!sinFactura && !m.proveedor) motivos.push('proveedor');
+  return { incompleto: motivos.length > 0, motivos };
+}
+
+const LABEL_MOTIVO = {
+  categoria: 'sin categoría',
+  concepto: 'concepto corto',
+  proveedor: 'sin proveedor',
+};
+
 // Vista admin del módulo Caja Chica.
 // Tabs: Bandeja (pendientes) · Por Persona · Por Proyecto · Movimientos
 export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProveedores, onIrACategorias }) {
@@ -28,6 +50,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
   const [rotacionFoto, setRotacionFoto] = useState(0); // v8.15.1: grados de rotación del visor de foto
   const [filtroPersona, setFiltroPersona] = useState('');
   const [filtroProyecto, setFiltroProyecto] = useState('');
+  const [soloIncompletos, setSoloIncompletos] = useState(false); // v8.17.6
   const [modalEntrega, setModalEntrega] = useState(false);
   const [modalCuadre, setModalCuadre] = useState(false);
   const [modalExport, setModalExport] = useState(false);
@@ -124,6 +147,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
           totalGastado: 0,
           totalDieta: 0,
           pendientes: 0,
+          incompletos: 0, // v8.17.6
         };
       }
       const g = m[mov.personaId];
@@ -131,7 +155,10 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
       if (mov.tipo === 'entrega') g.totalEntregado += mov.monto;
       else if (mov.tipo === 'gasto_factura' && mov.status === 'aprobado') g.totalGastado += mov.monto;
       else if (mov.tipo === 'dieta' && mov.status === 'aprobado') g.totalDieta += mov.monto;
-      if (mov.status === 'pendiente_revision') g.pendientes += 1;
+      if (mov.status === 'pendiente_revision') {
+        g.pendientes += 1;
+        if (evaluarDatosIncompletos(mov).incompleto) g.incompletos += 1;
+      }
     });
     Object.values(m).forEach(g => {
       const sal = saldosMap[g.personaId];
@@ -160,13 +187,19 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
     return Object.values(m).sort((a, b) => (b.totalGastado + b.totalDieta) - (a.totalGastado + a.totalDieta));
   }, [movimientos, data.proyectos]);
 
+  // v8.17.6: cuántos gastos tienen datos incompletos (para badge en tab)
+  const cantIncompletos = useMemo(() => {
+    return movimientos.filter(m => evaluarDatosIncompletos(m).incompleto && m.status === 'pendiente_revision').length;
+  }, [movimientos]);
+
   const movimientosFiltrados = useMemo(() => {
     return movimientos.filter(m => {
       if (filtroPersona && m.personaId !== filtroPersona) return false;
       if (filtroProyecto && m.proyectoId !== filtroProyecto) return false;
+      if (soloIncompletos && !evaluarDatosIncompletos(m).incompleto) return false;
       return true;
     });
-  }, [movimientos, filtroPersona, filtroProyecto]);
+  }, [movimientos, filtroPersona, filtroProyecto, soloIncompletos]);
 
   // KPIs globales
   const kpis = useMemo(() => {
@@ -275,7 +308,12 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
                 // Compacto: una sola fila con saldo + mini desglose en línea
                 <div className="flex items-center gap-2">
                   <div className="flex-1 min-w-0">
-                    <div className="text-xs font-bold truncate">{p.nombre}</div>
+                    <div className="text-xs font-bold truncate flex items-center gap-1">
+                      <span className="truncate">{p.nombre}</span>
+                      {p.incompletos > 0 && (
+                        <span className="text-[8px] font-black px-1 bg-amber-900/40 text-amber-300 border border-amber-700 shrink-0" title={`${p.incompletos} con datos incompletos`}>⚠{p.incompletos}</span>
+                      )}
+                    </div>
                     <div className="text-[9px] text-zinc-500 truncate">
                       <span className="text-green-400">+{formatNum(p.totalEntregado, 0)}</span>
                       <span className="text-zinc-600 mx-1">·</span>
@@ -306,7 +344,18 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
                 <>
                   <div className="flex justify-between items-start">
                     <div>
-                      <div className="font-bold text-sm">{p.nombre}</div>
+                      <div className="font-bold text-sm flex items-center gap-2">
+                        <span>{p.nombre}</span>
+                        {p.incompletos > 0 && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setFiltroPersona(p.personaId); setFiltroProyecto(''); setSoloIncompletos(true); setTab('movimientos'); }}
+                            className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-amber-900/40 text-amber-300 border border-amber-700 hover:bg-amber-800/50"
+                            title="Click para ver solo los gastos con datos incompletos"
+                          >
+                            ⚠ {p.incompletos} faltan datos
+                          </button>
+                        )}
+                      </div>
                       <div className="text-[10px] text-zinc-500 uppercase">{p.movimientos.length} movs · {p.pendientes} pend.</div>
                     </div>
                     <div className="text-right">
@@ -419,7 +468,12 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
               <option value="">Todos los proyectos</option>
               {data.proyectos.filter(p => !p.archivado).map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo || p.cliente}</option>)}
             </select>
-            {(filtroPersona || filtroProyecto) && <button onClick={() => { setFiltroPersona(''); setFiltroProyecto(''); }} className="text-red-400">Limpiar</button>}
+            {/* v8.17.6: filtro solo incompletos */}
+            <label className={`flex items-center gap-1 px-2 py-1 cursor-pointer border ${soloIncompletos ? 'bg-amber-900/30 border-amber-700 text-amber-300' : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-amber-300'}`}>
+              <input type="checkbox" checked={soloIncompletos} onChange={e => setSoloIncompletos(e.target.checked)} className="w-3 h-3 accent-amber-500" />
+              <span className="text-[10px] font-bold uppercase tracking-wider">⚠ Faltan datos {cantIncompletos > 0 && `(${cantIncompletos})`}</span>
+            </label>
+            {(filtroPersona || filtroProyecto || soloIncompletos) && <button onClick={() => { setFiltroPersona(''); setFiltroProyecto(''); setSoloIncompletos(false); }} className="text-red-400">Limpiar</button>}
             <div className="ml-auto text-[10px] text-zinc-500">{movimientosFiltrados.length} de {movimientos.length}</div>
           </div>
           {movimientosFiltrados.map(m => (
@@ -600,16 +654,21 @@ function FilaPendiente({ m, data, dx, onAprobar, onRechazar, onEliminar, onVerFo
   const proy = m.proyectoId ? data.proyectos.find(p => p.id === m.proyectoId) : null;
   const fotoPorWs = !!m.datosIA?.foto_por_ws && !m.tieneFoto;
   const sinFactura = !!m.datosIA?.sin_factura;
+  // v8.17.6: gasto con datos incompletos
+  const dInc = evaluarDatosIncompletos(m);
   // En compacto: 1 fila con todo en línea + botones íconos.
   if (dx?.compacto) {
     return (
-      <div onClick={onAbrirDetalle} className={`bg-zinc-900 border p-1.5 flex items-center gap-2 ${sinFactura ? 'border-red-800/60' : fotoPorWs ? 'border-yellow-700/60' : 'border-orange-800/50'} ${onAbrirDetalle ? 'cursor-pointer hover:border-red-600' : ''}`}>
+      <div onClick={onAbrirDetalle} className={`bg-zinc-900 border p-1.5 flex items-center gap-2 ${dInc.incompleto ? 'border-amber-700/60 border-l-2 border-l-amber-500' : sinFactura ? 'border-red-800/60' : fotoPorWs ? 'border-yellow-700/60' : 'border-orange-800/50'} ${onAbrirDetalle ? 'cursor-pointer hover:border-red-600' : ''}`}>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1 flex-wrap">
             <span className="text-[11px] font-bold truncate">{persona?.nombre || m.personaId}</span>
             <span className="text-[9px] text-zinc-500">{m.tipo === 'gasto_factura' ? '🧾' : m.tipo === 'dieta' ? '🍽️' : m.tipo}</span>
             {fotoPorWs && <span className="text-[9px] px-1 bg-yellow-900/40 text-yellow-300 border border-yellow-700">📱 WS</span>}
             {sinFactura && <span className="text-[9px] px-1 bg-red-900/40 text-red-300 border border-red-800 font-bold">✍ SIN FACTURA</span>}
+            {dInc.incompleto && (
+              <span className="text-[9px] px-1 bg-amber-900/40 text-amber-300 border border-amber-700 font-bold" title={`Faltan: ${dInc.motivos.map(x => LABEL_MOTIVO[x] || x).join(' · ')}`}>⚠ FALTAN DATOS</span>
+            )}
           </div>
           <div className="text-[9px] text-zinc-400 truncate">
             {formatFechaCorta(m.fecha)}
@@ -637,7 +696,7 @@ function FilaPendiente({ m, data, dx, onAprobar, onRechazar, onEliminar, onVerFo
     );
   }
   return (
-    <div onClick={onAbrirDetalle} className={`bg-zinc-900 border p-3 space-y-2 ${sinFactura ? 'border-red-800/60' : fotoPorWs ? 'border-yellow-700/60' : 'border-orange-800/50'} ${onAbrirDetalle ? 'cursor-pointer hover:border-red-600' : ''}`}>
+    <div onClick={onAbrirDetalle} className={`bg-zinc-900 border p-3 space-y-2 ${dInc.incompleto ? 'border-amber-700/60 border-l-2 border-l-amber-500' : sinFactura ? 'border-red-800/60' : fotoPorWs ? 'border-yellow-700/60' : 'border-orange-800/50'} ${onAbrirDetalle ? 'cursor-pointer hover:border-red-600' : ''}`}>
       <div className="flex items-start gap-2">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
@@ -650,6 +709,14 @@ function FilaPendiente({ m, data, dx, onAprobar, onRechazar, onEliminar, onVerFo
             {sinFactura && (
               <div className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-red-900/40 text-red-300 border border-red-800 flex items-center gap-1">
                 <FileX className="w-2.5 h-2.5" /> Sin factura
+              </div>
+            )}
+            {dInc.incompleto && (
+              <div
+                className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-amber-900/40 text-amber-300 border border-amber-700 flex items-center gap-1"
+                title={`Faltan: ${dInc.motivos.map(x => LABEL_MOTIVO[x] || x).join(' · ')}`}
+              >
+                <AlertCircle className="w-2.5 h-2.5" /> Faltan datos
               </div>
             )}
           </div>
@@ -702,11 +769,14 @@ function FilaMovimiento({ m, data, dx, onAbrirDetalle, onVerFoto, onEliminar, on
   const stmeta = STATUS[m.status];
   const fotoPorWs = !!m.datosIA?.foto_por_ws && !m.tieneFoto;
   const sinFactura = !!m.datosIA?.sin_factura;
+  // v8.17.6: gasto con datos incompletos (necesita atención del admin)
+  const dInc = evaluarDatosIncompletos(m);
+  const incompletoVisible = dInc.incompleto && m.status === 'pendiente_revision';
   const signo = m.tipo === 'entrega' ? '+' : (m.tipo === 'ajuste' ? (m.signoAjuste >= 0 ? '+' : '−') : '−');
   const cMonto = m.tipo === 'entrega' ? 'text-green-400' : (m.status === 'aprobado' ? 'text-orange-400' : 'text-zinc-500');
   const compacto = !!dx?.compacto;
   return (
-    <div className={`bg-zinc-900 border border-zinc-800 ${compacto ? 'p-1' : 'p-2'} flex items-center gap-2`}>
+    <div className={`bg-zinc-900 border ${incompletoVisible ? 'border-amber-700/60 border-l-2 border-l-amber-500' : 'border-zinc-800'} ${compacto ? 'p-1' : 'p-2'} flex items-center gap-2`}>
       <div className={`${compacto ? 'w-5 h-5 text-xs' : 'w-7 h-7'} shrink-0 flex items-center justify-center ${meta.bg}`}>{meta.icono}</div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1 flex-wrap">
@@ -714,6 +784,15 @@ function FilaMovimiento({ m, data, dx, onAbrirDetalle, onVerFoto, onEliminar, on
           <div className={`text-[9px] font-black uppercase tracking-wider px-1 ${stmeta.cls}`}>{stmeta.label}</div>
           {fotoPorWs && <div className="text-[9px] font-black uppercase tracking-wider px-1 bg-yellow-900/40 text-yellow-300 border border-yellow-700">📱 WS</div>}
           {sinFactura && <div className="text-[9px] font-black uppercase tracking-wider px-1 bg-red-900/40 text-red-300 border border-red-800">✍ SIN FACTURA</div>}
+          {/* v8.17.6: badge de datos incompletos */}
+          {incompletoVisible && (
+            <div
+              className="text-[9px] font-black uppercase tracking-wider px-1 bg-amber-900/40 text-amber-300 border border-amber-700"
+              title={`Faltan: ${dInc.motivos.map(x => LABEL_MOTIVO[x] || x).join(' · ')}`}
+            >
+              ⚠ FALTAN DATOS
+            </div>
+          )}
         </div>
         <div className={`${compacto ? 'text-[9px]' : 'text-[10px]'} text-zinc-400 truncate`}>
           {meta.label} · {formatFechaCorta(m.fecha)}{proy ? ` · ${proy.referenciaOdoo || proy.cliente}` : ''}

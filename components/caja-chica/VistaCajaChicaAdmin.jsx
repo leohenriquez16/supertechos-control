@@ -136,6 +136,9 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
     Object.values(m).forEach(g => {
       const sal = saldosMap[g.personaId];
       g.saldo = sal?.saldo || 0;
+      // v8.17.5: disponible = saldo - pendientes (lo que efectivamente le queda)
+      g.saldoProyectado = sal?.saldoProyectado || 0;
+      g.montoPendiente = sal?.pendientes || 0; // monto en RD$ esperando aprobación
     });
     return Object.values(m).sort((a, b) => b.saldo - a.saldo);
   }, [movimientos, saldosMap, data.personal]);
@@ -282,7 +285,15 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
                       {p.pendientes > 0 && <><span className="text-zinc-600 mx-1">·</span><span className="text-orange-300">{p.pendientes} pend</span></>}
                     </div>
                   </div>
-                  <div className={`font-black shrink-0 ${p.saldo >= 0 ? 'text-green-400' : 'text-red-400'} text-sm`}>RD${formatNum(p.saldo, 0)}</div>
+                  <div className="text-right shrink-0">
+                    <div className={`font-black ${p.saldo >= 0 ? 'text-green-400' : 'text-red-400'} text-sm leading-tight`}>RD${formatNum(p.saldo, 0)}</div>
+                    {/* v8.17.5: disponible (-pendientes) si hay pendientes */}
+                    {p.montoPendiente > 0 && (
+                      <div className="text-[9px] text-orange-300 leading-tight">
+                        disp. RD${formatNum(p.saldoProyectado, 0)}
+                      </div>
+                    )}
+                  </div>
                   <button
                     onClick={() => { setFiltroPersona(p.personaId); setFiltroProyecto(''); setTab('movimientos'); }}
                     className="text-[9px] text-red-400 hover:text-red-300 shrink-0 px-1"
@@ -301,6 +312,13 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
                     <div className="text-right">
                       <div className={`text-lg font-black ${p.saldo >= 0 ? 'text-green-400' : 'text-red-400'}`}>RD$ {formatNum(p.saldo, 2)}</div>
                       <div className="text-[10px] text-zinc-500">saldo actual</div>
+                      {/* v8.17.5: disponible real si hay pendientes */}
+                      {p.montoPendiente > 0 && (
+                        <div className="mt-1 pt-1 border-t border-zinc-800">
+                          <div className={`text-sm font-black ${p.saldoProyectado >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>RD$ {formatNum(p.saldoProyectado, 2)}</div>
+                          <div className="text-[10px] text-orange-300">disponible (−{formatRD(p.montoPendiente)} pend.)</div>
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="grid grid-cols-3 gap-2 mt-2 text-[10px]">
@@ -443,16 +461,26 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
         />
       )}
 
-      {verDetalle && (
-        <ModalDetalleMovimiento
-          usuario={usuario}
-          movimiento={verDetalle}
-          data={data}
-          movimientos={movimientos}
-          onCerrar={() => setVerDetalle(null)}
-          onActualizado={() => cargar()}
-        />
-      )}
+      {/* v8.17.5: el modal de detalle también navega con ← → entre los movimientos filtrados visibles */}
+      {verDetalle && (() => {
+        const idx = movimientosFiltrados.findIndex(m => m.id === verDetalle.id);
+        const total = movimientosFiltrados.length;
+        const tienePosicion = idx >= 0 && total > 1;
+        return (
+          <ModalDetalleMovimiento
+            key={verDetalle.id}
+            usuario={usuario}
+            movimiento={verDetalle}
+            data={data}
+            movimientos={movimientos}
+            posicion={tienePosicion ? { actual: idx, total } : null}
+            onAnterior={tienePosicion && idx > 0 ? () => setVerDetalle(movimientosFiltrados[idx - 1]) : null}
+            onSiguiente={tienePosicion && idx < total - 1 ? () => setVerDetalle(movimientosFiltrados[idx + 1]) : null}
+            onCerrar={() => setVerDetalle(null)}
+            onActualizado={() => cargar()}
+          />
+        );
+      })()}
 
       {/* v8.15.5: modo bandeja con navegación + aprobar/rechazar in-modal */}
       {indicePendiente !== null && pendientes[indicePendiente] && (

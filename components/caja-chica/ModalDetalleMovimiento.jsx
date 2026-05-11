@@ -375,9 +375,11 @@ export default function ModalDetalleMovimiento({
                   </div>
                 )}
               </div>
+              {/* v8.17.19: preview más grande — 60vh en mobile, 65vh en desktop.
+                  Antes era 35vh, dejaba mucho espacio negro alrededor de fotos
+                  verticales como facturas térmicas. */}
               <div
-                className="flex items-center justify-center p-2 overflow-hidden"
-                style={{ minHeight: '150px', maxHeight: '35vh' }}
+                className="flex items-center justify-center p-2 overflow-hidden min-h-[200px] max-h-[60vh] md:max-h-[65vh]"
               >
                 {cargandoFoto ? (
                   <Loader2 className="w-8 h-8 text-zinc-500 animate-spin" />
@@ -388,9 +390,9 @@ export default function ModalDetalleMovimiento({
                     className="object-contain transition-transform duration-200 cursor-zoom-in"
                     style={{
                       transform: `rotate(${rotacion}deg)`,
-                      // v8.17.17: invertir maxWidth/maxHeight cuando está rotada 90/270
-                      maxHeight: (rotacion === 90 || rotacion === 270) ? '100%' : '33vh',
-                      maxWidth: (rotacion === 90 || rotacion === 270) ? '33vh' : '100%',
+                      // Cuando rotada 90/270, intercambiar maxWidth/maxHeight
+                      maxHeight: (rotacion === 90 || rotacion === 270) ? '100%' : '60vh',
+                      maxWidth: (rotacion === 90 || rotacion === 270) ? '60vh' : '100%',
                     }}
                     onClick={() => setVerGrande(true)}
                   />

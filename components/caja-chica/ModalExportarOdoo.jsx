@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Download, Loader2, X, Receipt, ArrowLeftRight, Archive } from 'lucide-react';
 import * as db from '../../lib/db';
+import { toast } from '../../lib/toast';
 import Campo from '../common/Campo';
 import Input from '../common/Input';
 import { periodoSemana } from '../../lib/helpers/cuadreCajaChica';
@@ -95,11 +96,11 @@ export default function ModalExportarOdoo({ data, onCerrar }) {
         });
         descargarZip(blob, `caja-chica-facturas-${tag}.zip`);
         // Mensaje informativo después de descargar
-        setTimeout(() => alert(`ZIP descargado.\n\nFacturas: ${total}\nFotos incluidas: ${descargadas}\nSin foto: ${sinFoto}`), 200);
+        setTimeout(() => toast.success(`ZIP descargado · Facturas: ${total} · Fotos: ${descargadas} · Sin foto: ${sinFoto}`), 200);
       }
       onCerrar();
     } catch (e) {
-      alert('Error: ' + (e.message || e));
+      toast.error('Error: ' + (e.message || e));
       setGenerando(false);
       setProgresoZip(null);
     }

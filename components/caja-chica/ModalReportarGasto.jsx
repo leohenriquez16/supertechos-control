@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { Camera, Loader2, X, Sparkles, AlertTriangle, Check, MessageSquare, FileX } from 'lucide-react';
 import * as db from '../../lib/db';
+import { toast } from '../../lib/toast';
 import { comprimirImagen } from '../../lib/imports';
 import { formatRD } from '../../lib/helpers/formato';
 import Campo from '../common/Campo';
@@ -126,21 +127,21 @@ export default function ModalReportarGasto({ usuario, proyectos = [], proyectoId
 
   const guardar = async () => {
     const monto = parseFloat(datos.monto);
-    if (!monto || monto <= 0) { alert('Ingresa un monto válido'); return; }
-    if (!fotoData && !sinFoto && !sinFactura) { alert('Falta la foto de la factura (o marca "sin foto" / "sin factura")'); return; }
+    if (!monto || monto <= 0) { toast.warning('Ingresa un monto válido'); return; }
+    if (!fotoData && !sinFoto && !sinFactura) { toast.warning('Falta la foto de la factura (o marca "sin foto" / "sin factura")'); return; }
     // v8.16.1: validaciones especiales para sin factura
     if (sinFactura) {
-      if (!datos.categoria) { alert('La categoría es obligatoria para gastos sin factura.'); return; }
+      if (!datos.categoria) { toast.warning('La categoría es obligatoria para gastos sin factura.'); return; }
       const conceptoTrim = (datos.concepto || '').trim();
       if (conceptoTrim.length < 15) {
-        alert('Para gastos sin factura, el concepto debe tener al menos 15 caracteres. Explica con detalle qué se compró y por qué (ej: "Compra de cinta para cubrir filtración mientras llega el material").');
+        toast.warning('Para gastos sin factura, el concepto debe tener al menos 15 caracteres. Explica con detalle qué se compró y por qué.');
         return;
       }
     }
     // v8.13: regla de máximo por transacción (bloqueante)
     const maxTx = usuario?.maxTransaccionCajaChica;
     if (maxTx != null && maxTx > 0 && monto > maxTx) {
-      alert(`Este gasto (RD$${new Intl.NumberFormat('es-DO').format(monto)}) excede tu máximo permitido por transacción (RD$${new Intl.NumberFormat('es-DO').format(maxTx)}).\n\nPara gastos mayores debes pedir reembolso especial al admin.`);
+      toast.error(`Este gasto (RD$${new Intl.NumberFormat('es-DO').format(monto)}) excede tu máximo permitido por transacción (RD$${new Intl.NumberFormat('es-DO').format(maxTx)}). Pide reembolso especial al admin.`, { duration: 8000 });
       return;
     }
     setPaso('guardando');
@@ -169,7 +170,7 @@ export default function ModalReportarGasto({ usuario, proyectos = [], proyectoId
       });
       onGuardado();
     } catch (e) {
-      alert('Error guardando: ' + (e.message || e));
+      toast.error('Error guardando: ' + (e.message || e));
       setPaso('confirmar');
     }
   };

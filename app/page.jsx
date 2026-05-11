@@ -23,6 +23,7 @@ import { fileToBase64, cargarPdfLib, cortarPDFaPrimerasPaginas, extraerPDF } fro
 import Dashboard from '../components/dashboard/Dashboard';
 // v8.10.3: Sidebar extraído
 import Sidebar from '../components/sidebar/Sidebar';
+import ToastContainer from '../components/common/ToastContainer';
 // v8.10.4: Campo e Input extraídos
 import Campo from '../components/common/Campo';
 import Input from '../components/common/Input';
@@ -712,6 +713,8 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
+      {/* v8.17.10: Toasts globales */}
+      <ToastContainer />
       {/* v8.10.3: Sidebar extraído a components/sidebar/Sidebar.jsx */}
       <Sidebar
         usuario={usuario}

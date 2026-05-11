@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { ArrowLeft, Plus, Loader2, Save, Trash2, X, Edit2, Eye, EyeOff, Tag } from 'lucide-react';
 import * as db from '../../lib/db';
+import { toast } from '../../lib/toast';
 import Campo from '../common/Campo';
 import Input from '../common/Input';
 
@@ -43,7 +44,7 @@ export default function VistaCategoriasCajaChica({ onVolver, onCambio }) {
   };
 
   const guardar = async () => {
-    if (!form.nombre.trim()) { alert('El nombre es obligatorio'); return; }
+    if (!form.nombre.trim()) { toast.warning('El nombre es obligatorio'); return; }
     try {
       if (editando === 'new') {
         await db.crearCategoriaCajaChica({
@@ -67,7 +68,7 @@ export default function VistaCategoriasCajaChica({ onVolver, onCambio }) {
       cargar();
       if (onCambio) onCambio();
     } catch (e) {
-      alert('Error: ' + (e.message || e));
+      toast.error('Error: ' + (e.message || e));
     }
   };
 
@@ -76,17 +77,17 @@ export default function VistaCategoriasCajaChica({ onVolver, onCambio }) {
       await db.actualizarCategoriaCajaChica(c.id, { activa: !c.activa });
       cargar();
       if (onCambio) onCambio();
-    } catch (e) { alert('Error: ' + (e.message || e)); }
+    } catch (e) { toast.error('Error: ' + (e.message || e)); }
   };
 
   const eliminar = async (c) => {
-    if (c.isDefault) { alert('Las categorías por defecto solo se pueden desactivar, no eliminar.'); return; }
+    if (c.isDefault) { toast.warning('Las categorías por defecto solo se pueden desactivar, no eliminar.'); return; }
     if (!confirm(`¿Eliminar categoría "${c.nombre}"? Los gastos viejos con esta categoría seguirán existiendo pero perderán el etiquetado.`)) return;
     try {
       await db.eliminarCategoriaCajaChica(c.id);
       cargar();
       if (onCambio) onCambio();
-    } catch (e) { alert('Error: ' + (e.message || e)); }
+    } catch (e) { toast.error('Error: ' + (e.message || e)); }
   };
 
   if (loading) return <div className="text-center py-8"><Loader2 className="w-6 h-6 text-red-500 animate-spin mx-auto" /></div>;

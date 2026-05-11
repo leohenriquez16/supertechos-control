@@ -8,6 +8,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Upload, X, Loader2, Check, AlertCircle, Sparkles, Trash2, FileWarning, Send } from 'lucide-react';
 import * as db from '../../lib/db';
+import { toast } from '../../lib/toast';
 import { comprimirImagen } from '../../lib/imports';
 import {
   procesarConConcurrencia,
@@ -182,7 +183,7 @@ export default function ModalCargaMasiva({ usuario, data, onCerrar, onListo }) {
     const seleccionados = borradores.filter(b => b.seleccionado && b.status === 'listo');
     const conErrores = seleccionados.filter(b => validarBorrador(b).length > 0);
     if (conErrores.length > 0) {
-      alert(`${conErrores.length} factura${conErrores.length > 1 ? 's tienen' : ' tiene'} datos incompletos. Revísalas antes de enviar.`);
+      toast.warning(`${conErrores.length} factura${conErrores.length > 1 ? 's tienen' : ' tiene'} datos incompletos. Revísalas antes de enviar.`);
       return;
     }
 

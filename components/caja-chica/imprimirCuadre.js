@@ -3,6 +3,7 @@
 // de nómina: window.open + window.print() con CSS A4/Letter.
 
 import { calcularCuadre, TIPO_LABEL, CATEGORIA_LABEL } from '../../lib/helpers/cuadreCajaChica';
+import { toast } from '../../lib/toast';
 
 const fmt = (n) => new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n) || 0);
 const fmtFecha = (s) => {
@@ -315,7 +316,7 @@ export function imprimirCuadreConsolidado({ titulares, movimientosPorPersona, fe
 
 function abrirPrint(html) {
   const w = window.open('', '_blank');
-  if (!w) { alert('Bloqueador de popups activo. Permite popups para imprimir.'); return; }
+  if (!w) { toast.error('Bloqueador de popups activo. Permite popups para imprimir.'); return; }
   w.document.open();
   w.document.write(html);
   w.document.close();

@@ -9123,15 +9123,24 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto }) {
   }, [gridPersonas, data.personal, proyectosVisibles, filtroRol, filtroProyecto, soloConProyecto]);
 
   // Proyectos a mostrar en vista por proyecto
+  // v8.17.1: primero los que tienen personal asignado en la semana, después los vacíos al final
   const proyectosActivos = React.useMemo(() => {
     let ps = proyectosVisibles;
     if (filtroProyecto) ps = ps.filter(p => p.id === filtroProyecto);
+    const tienePersonalEnSemana = (proyId) => {
+      const porFecha = gridProyectos[proyId];
+      if (!porFecha) return false;
+      return Object.values(porFecha).some(info => (info.personas?.length || 0) > 0);
+    };
     return ps.slice().sort((a, b) => {
+      const ta = tienePersonalEnSemana(a.id);
+      const tb = tienePersonalEnSemana(b.id);
+      if (ta !== tb) return ta ? -1 : 1; // los que tienen personal primero
       const ra = a.referenciaOdoo || a.cliente;
       const rb = b.referenciaOdoo || b.cliente;
       return ra.localeCompare(rb);
     });
-  }, [proyectosVisibles, filtroProyecto]);
+  }, [proyectosVisibles, filtroProyecto, gridProyectos]);
 
   // Colores consistentes por proyecto
   const coloresProyecto = React.useMemo(() => {
@@ -9346,7 +9355,8 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto }) {
           <table className="w-full text-xs">
             <thead className="bg-zinc-950">
               <tr>
-                <th className="p-2 text-left border-r border-zinc-800 sticky left-0 bg-zinc-950 z-10 min-w-[160px]">Proyecto</th>
+                <th className="p-1.5 text-left border-r border-zinc-800 sticky left-0 bg-zinc-950 z-10 w-[70px] min-w-[70px] max-w-[70px] text-[10px] uppercase tracking-wider">Ref</th>
+                <th className="p-1.5 text-left border-r border-zinc-800 sticky left-[70px] bg-zinc-950 z-10 w-[140px] min-w-[140px] max-w-[140px] text-[10px] uppercase tracking-wider">Proyecto</th>
                 {dias.map(d => {
                   const s = fechaStr(d);
                   const esHoy = s === hoy;
@@ -9361,13 +9371,15 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto }) {
             </thead>
             <tbody>
               {proyectosActivos.length === 0 && (
-                <tr><td colSpan={8} className="p-8 text-center text-zinc-500 text-sm">No hay proyectos.</td></tr>
+                <tr><td colSpan={9} className="p-8 text-center text-zinc-500 text-sm">No hay proyectos.</td></tr>
               )}
               {proyectosActivos.map(proy => (
                 <tr key={proy.id} className="border-t border-zinc-800">
-                  <td className="p-2 border-r border-zinc-800 sticky left-0 bg-zinc-900 z-10">
-                    <div className="text-[10px] font-mono text-zinc-500">{proy.referenciaOdoo}</div>
-                    <button onClick={() => onVerProyecto(proy)} className="font-bold truncate text-left hover:text-red-400">{proy.cliente}</button>
+                  <td className="p-1.5 border-r border-zinc-800 sticky left-0 bg-zinc-900 z-10 w-[70px] min-w-[70px] max-w-[70px]">
+                    <div className="text-[10px] font-mono text-zinc-400 leading-tight">{proy.referenciaOdoo}</div>
+                  </td>
+                  <td className="p-1.5 border-r border-zinc-800 sticky left-[70px] bg-zinc-900 z-10 w-[140px] min-w-[140px] max-w-[140px]">
+                    <button onClick={() => onVerProyecto(proy)} className="font-bold text-[10px] leading-tight text-left hover:text-red-400 whitespace-normal break-words block w-full">{proy.cliente}</button>
                   </td>
                   {dias.map(d => {
                     const fechaStrDia = fechaStr(d);

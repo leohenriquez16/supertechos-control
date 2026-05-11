@@ -240,19 +240,21 @@ function htmlBase(titulo, cuerpo) {
 // ============================================================
 // Cuadre INDIVIDUAL
 // ============================================================
-export function imprimirCuadreIndividual({ persona, movimientos, fechaInicio, fechaFin, data }) {
+// v8.17.15: ahora acepta `ventana` ya abierta (síncronamente desde el click)
+// para evitar el bloqueador de popups cuando hay awaits antes de imprimir.
+export function imprimirCuadreIndividual({ persona, movimientos, fechaInicio, fechaFin, data, ventana = null }) {
   const cuadre = calcularCuadre({ movimientos, fechaInicio, fechaFin });
   const cuerpo = `
     <h1>Cuadre de Caja Chica · Individual</h1>
     ${bloqueTitular({ persona, cuadre, fechaInicio, fechaFin, data, conSignaturas: true, esConsolidado: false })}
   `;
-  abrirPrint(htmlBase(`Cuadre Caja Chica — ${persona?.nombre || ''}`, cuerpo));
+  abrirPrint(htmlBase(`Cuadre Caja Chica — ${persona?.nombre || ''}`, cuerpo), ventana);
 }
 
 // ============================================================
 // Cuadre CONSOLIDADO (todas las cajas en un solo PDF)
 // ============================================================
-export function imprimirCuadreConsolidado({ titulares, movimientosPorPersona, fechaInicio, fechaFin, data }) {
+export function imprimirCuadreConsolidado({ titulares, movimientosPorPersona, fechaInicio, fechaFin, data, ventana = null }) {
   // Página de portada con totales
   let totGral = { entregas: 0, gastos: 0, dietas: 0, saldoFinal: 0, ajustes: 0, pendientes: 0 };
   const cuadres = titulares.map(p => {
@@ -311,11 +313,14 @@ export function imprimirCuadreConsolidado({ titulares, movimientosPorPersona, fe
     bloqueTitular({ persona: c.persona, cuadre: c.cuadre, fechaInicio, fechaFin, data, conSignaturas: true, esConsolidado: i < cuadres.length - 1 })
   ).join('');
 
-  abrirPrint(htmlBase(`Cuadre Consolidado ${fechaInicio} → ${fechaFin}`, portada + bloques));
+  abrirPrint(htmlBase(`Cuadre Consolidado ${fechaInicio} → ${fechaFin}`, portada + bloques), ventana);
 }
 
-function abrirPrint(html) {
-  const w = window.open('', '_blank');
+// v8.17.15: si `ventanaExistente` se pasa (abierta síncronamente desde el click,
+// antes de cualquier await), la usamos. Sino se intenta abrir aquí — pero esto
+// suele fallar por el bloqueador de popups si hubo awaits antes.
+function abrirPrint(html, ventanaExistente = null) {
+  const w = ventanaExistente || window.open('', '_blank');
   if (!w) { toast.error('Bloqueador de popups activo. Permite popups para imprimir.'); return; }
   w.document.open();
   w.document.write(html);

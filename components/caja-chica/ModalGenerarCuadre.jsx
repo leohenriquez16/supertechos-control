@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { FileText, Loader2, X, Users, User } from 'lucide-react';
 import * as db from '../../lib/db';
+import { toast } from '../../lib/toast';
 import Campo from '../common/Campo';
 import Input from '../common/Input';
 import { periodoSemana } from '../../lib/helpers/cuadreCajaChica';
@@ -44,7 +45,7 @@ export default function ModalGenerarCuadre({ data, onCerrar }) {
     setGenerando(true);
     try {
       if (tipo === 'individual') {
-        if (!personaId) { alert('Selecciona la persona'); setGenerando(false); return; }
+        if (!personaId) { toast.warning('Selecciona la persona'); setGenerando(false); return; }
         const persona = titulares.find(p => p.id === personaId);
         const movs = await db.listarMovimientosCajaChica({ personaId });
         imprimirCuadreIndividual({ persona, movimientos: movs, fechaInicio, fechaFin, data });
@@ -58,7 +59,7 @@ export default function ModalGenerarCuadre({ data, onCerrar }) {
       }
       onCerrar();
     } catch (e) {
-      alert('Error: ' + (e.message || e));
+      toast.error('Error: ' + (e.message || e));
       setGenerando(false);
     }
   };

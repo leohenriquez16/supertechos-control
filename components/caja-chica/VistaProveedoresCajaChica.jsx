@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { ArrowLeft, Loader2, Search, Edit2, Save, X, Trash2, Sparkles } from 'lucide-react';
 import * as db from '../../lib/db';
+import { toast } from '../../lib/toast';
 import { formatRD, formatNum, formatFechaCorta } from '../../lib/helpers/formato';
 import Campo from '../common/Campo';
 import Input from '../common/Input';
@@ -52,7 +53,7 @@ export default function VistaProveedoresCajaChica({ usuario, data, onVolver }) {
       });
       setEditando(null);
       cargar();
-    } catch (e) { alert('Error: ' + (e.message || e)); }
+    } catch (e) { toast.error('Error: ' + (e.message || e)); }
   };
 
   const eliminar = async (p) => {
@@ -60,7 +61,7 @@ export default function VistaProveedoresCajaChica({ usuario, data, onVolver }) {
     try {
       await db.eliminarProveedorCajaChica(p.id);
       cargar();
-    } catch (e) { alert('Error: ' + (e.message || e)); }
+    } catch (e) { toast.error('Error: ' + (e.message || e)); }
   };
 
   if (loading) return <div className="text-center py-8"><Loader2 className="w-6 h-6 text-red-500 animate-spin mx-auto" /></div>;

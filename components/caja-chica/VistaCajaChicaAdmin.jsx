@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { ArrowLeft, Loader2, Plus, Wallet, AlertCircle, Eye, Check, X, Trash2, FileText, Filter, Sparkles, MessageSquare, Camera, RotateCcw, RotateCw, Info, FileX } from 'lucide-react';
 import * as db from '../../lib/db';
+import { toast } from '../../lib/toast';
 import { formatRD, formatNum, formatFechaCorta } from '../../lib/helpers/formato';
 import { comprimirImagen } from '../../lib/imports';
 import Campo from '../common/Campo';
@@ -95,21 +96,21 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
     try {
       await db.actualizarStatusMovimientoCajaChica(mov.id, { status: 'aprobado', aprobadoPorId: usuario.id });
       cargar();
-    } catch (e) { alert('Error: ' + (e.message || e)); }
+    } catch (e) { toast.error('Error: ' + (e.message || e)); }
   };
   const rechazar = async (mov) => {
     const motivo = prompt('Motivo del rechazo (opcional):') || '';
     try {
       await db.actualizarStatusMovimientoCajaChica(mov.id, { status: 'rechazado', motivoRechazo: motivo });
       cargar();
-    } catch (e) { alert('Error: ' + (e.message || e)); }
+    } catch (e) { toast.error('Error: ' + (e.message || e)); }
   };
   const eliminar = async (mov) => {
     if (!confirm(`¿Eliminar este movimiento de ${mov.tipo}?`)) return;
     try {
       await db.eliminarMovimientoCajaChica(mov.id);
       cargar();
-    } catch (e) { alert('Error: ' + (e.message || e)); }
+    } catch (e) { toast.error('Error: ' + (e.message || e)); }
   };
   // v8.15.1: revertir aprobación o rechazo → vuelve a la bandeja como pendiente.
   const desaprobar = async (mov) => {
@@ -118,7 +119,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
     try {
       await db.actualizarStatusMovimientoCajaChica(mov.id, { status: 'pendiente_revision' });
       cargar();
-    } catch (e) { alert('Error: ' + (e.message || e)); }
+    } catch (e) { toast.error('Error: ' + (e.message || e)); }
   };
 
   // Adjuntar una foto a un movimiento que se reportó "sin foto" (admin recibe la foto por WS).
@@ -129,7 +130,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
       await db.adjuntarFotoAMovimiento(mov.id, dataUrl);
       cargar();
     } catch (e) {
-      alert('Error adjuntando foto: ' + (e.message || e));
+      toast.error('Error adjuntando foto: ' + (e.message || e));
     }
   };
 
@@ -1038,8 +1039,8 @@ function ModalEntregarCaja({ usuario, data, onCerrar, onGuardado, saldosMap = {}
   const personaEnLimite = personaSel && limiteSel != null && limiteSel > 0 && saldoSel < 0;
 
   const guardar = async () => {
-    if (!personaId) { alert('Selecciona la persona'); return; }
-    if (!montoNum || montoNum <= 0) { alert('Ingresa un monto válido'); return; }
+    if (!personaId) { toast.warning('Selecciona la persona'); return; }
+    if (!montoNum || montoNum <= 0) { toast.warning('Ingresa un monto válido'); return; }
     if (excedeLimite) {
       const msg = `⚠️ Esta entrega haría que ${personaSel.nombre} tenga RD$${new Intl.NumberFormat('es-DO').format(saldoTrasEntrega)} en caja chica, excediendo su límite de RD$${new Intl.NumberFormat('es-DO').format(limiteSel)}.\n\n¿Confirmas la entrega de todos modos?`;
       if (!confirm(msg)) return;
@@ -1055,7 +1056,7 @@ function ModalEntregarCaja({ usuario, data, onCerrar, onGuardado, saldosMap = {}
       });
       onGuardado();
     } catch (e) {
-      alert('Error: ' + (e.message || e));
+      toast.error('Error: ' + (e.message || e));
       setGuardando(false);
     }
   };

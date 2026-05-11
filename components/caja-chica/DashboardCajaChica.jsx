@@ -11,9 +11,20 @@ import BarChartHorizontal from '../common/BarChartHorizontal';
 
 // Dashboard gráfico del módulo Caja Chica (admin).
 // Muestra KPIs + donut de categorías + top proveedores + por persona + tendencia diaria.
+// v8.17.12: helper para detectar datos incompletos (alineado con VistaCajaChicaAdmin)
+function tieneDatosIncompletos(m) {
+  if (m.tipo !== 'gasto_factura') return false;
+  const sinFactura = !!m.datosIA?.sin_factura;
+  if (!m.categoria && !m.datosIA?.categoria_sugerida) return true;
+  if ((m.concepto || '').trim().length < 5) return true;
+  if (!sinFactura && !m.proveedor) return true;
+  return false;
+}
+
 export default function DashboardCajaChica({ data }) {
   const [presetPeriodo, setPresetPeriodo] = useState('mes_actual');
   const [movimientos, setMovimientos] = useState([]);
+  const [movimientos8Sem, setMovimientos8Sem] = useState([]); // v8.17.12
   const [loading, setLoading] = useState(true);
 
   const semanaPasada = periodoSemana({ pasada: true });
@@ -44,6 +55,61 @@ export default function DashboardCajaChica({ data }) {
   };
   useEffect(() => { cargar(); }, [presetPeriodo]);
 
+  // v8.17.12: cargar últimas 8 semanas (independiente del filtro de período)
+  useEffect(() => {
+    const desde = new Date();
+    desde.setDate(desde.getDate() - 56);
+    desde.setHours(0, 0, 0, 0);
+    const hasta = new Date();
+    hasta.setHours(23, 59, 59, 999);
+    db.listarMovimientosCajaChica({
+      fechaDesde: desde.toISOString().split('T')[0],
+      fechaHasta: hasta.toISOString().split('T')[0],
+    }).then(setMovimientos8Sem).catch(() => {});
+  }, []);
+
+  // v8.17.12: barras semanales (8 últimas semanas con sus totales de gastos aprobados)
+  const semanas = useMemo(() => {
+    const out = [];
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+    const lunes = (d) => { const x = new Date(d); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; };
+    for (let i = 7; i >= 0; i--) {
+      const inicio = lunes(hoy);
+      inicio.setDate(inicio.getDate() - i * 7);
+      const fin = new Date(inicio);
+      fin.setDate(fin.getDate() + 6);
+      const inicioStr = inicio.toISOString().split('T')[0];
+      const finStr = fin.toISOString().split('T')[0];
+      const total = movimientos8Sem
+        .filter(m => m.tipo === 'gasto_factura' && m.status === 'aprobado')
+        .filter(m => m.fecha >= inicioStr && m.fecha <= finStr)
+        .reduce((s, m) => s + (m.monto || 0), 0);
+      out.push({
+        inicio, fin, total,
+        label: `${inicio.getDate()}/${inicio.getMonth() + 1}`,
+        esActual: i === 0,
+      });
+    }
+    return out;
+  }, [movimientos8Sem]);
+
+  // v8.17.12: alertas para el banner top
+  const alertas = useMemo(() => {
+    const tresDias = new Date();
+    tresDias.setDate(tresDias.getDate() - 3);
+    tresDias.setHours(0, 0, 0, 0);
+    const pendientesAntiguos = movimientos.filter(m =>
+      m.status === 'pendiente_revision' &&
+      m.createdAt &&
+      new Date(m.createdAt) < tresDias
+    ).length;
+    const conDatosIncompletos = movimientos.filter(m =>
+      m.status === 'pendiente_revision' && tieneDatosIncompletos(m)
+    ).length;
+    return { pendientesAntiguos, conDatosIncompletos };
+  }, [movimientos]);
+
   const dash = useMemo(
     () => calcDashboard({ movimientos, data, fechaInicio: periodo.fechaInicio, fechaFin: periodo.fechaFin }),
     [movimientos, data, periodo.fechaInicio, periodo.fechaFin],
@@ -53,6 +119,25 @@ export default function DashboardCajaChica({ data }) {
 
   return (
     <div className="space-y-4">
+      {/* v8.17.12: banner de alertas */}
+      {(alertas.pendientesAntiguos > 0 || alertas.conDatosIncompletos > 0) && (
+        <div className="bg-gradient-to-r from-amber-950/40 to-orange-950/40 border border-amber-700 p-3 flex flex-wrap items-center gap-3">
+          <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
+          <div className="flex-1 min-w-0 text-xs space-y-0.5">
+            {alertas.pendientesAntiguos > 0 && (
+              <div className="text-amber-200">
+                <strong>{alertas.pendientesAntiguos} gasto{alertas.pendientesAntiguos !== 1 ? 's' : ''}</strong> pendiente{alertas.pendientesAntiguos !== 1 ? 's' : ''} esperando hace más de 3 días
+              </div>
+            )}
+            {alertas.conDatosIncompletos > 0 && (
+              <div className="text-amber-200">
+                <strong>{alertas.conDatosIncompletos} gasto{alertas.conDatosIncompletos !== 1 ? 's' : ''}</strong> con datos incompletos a completar
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Selector de período */}
       <div className="flex gap-1 bg-zinc-900 border border-zinc-800 p-1 flex-wrap">
         <PeriodoBtn activo={presetPeriodo === 'semana_pasada'} onClick={() => setPresetPeriodo('semana_pasada')}>Semana pasada</PeriodoBtn>
@@ -67,6 +152,17 @@ export default function DashboardCajaChica({ data }) {
         <KPI icono={<Receipt className="w-3 h-3" />} label="Gastos aprobados" valor={formatRD(dash.totalGastosAprob)} sub={`${dash.countAprobados} factura${dash.countAprobados !== 1 ? 's' : ''} · ticket prom. ${formatRD(dash.ticketPromedio)}`} color="orange" />
         <KPI icono={<ShoppingBag className="w-3 h-3" />} label="Dietas" valor={formatRD(dash.totalDietas)} sub="aprobadas" color="blue" />
         <KPI icono={<AlertCircle className="w-3 h-3" />} label={`Pendientes (${dash.countPendientes})`} valor={formatRD(dash.totalPendientes)} sub="por aprobar" color={dash.countPendientes > 0 ? 'yellow' : 'zinc'} highlight={dash.countPendientes > 0} />
+      </div>
+
+      {/* v8.17.12: Gastos por semana (últimas 8 semanas, independiente del filtro de período) */}
+      <div className="bg-zinc-900 border border-zinc-800 p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Gastos por semana · últimas 8 semanas</div>
+          <div className="text-[10px] text-zinc-500">
+            Promedio: <span className="text-white font-bold">{formatRD(semanas.reduce((s, w) => s + w.total, 0) / Math.max(1, semanas.filter(w => w.total > 0).length))}</span>
+          </div>
+        </div>
+        <BarrasSemanales semanas={semanas} />
       </div>
 
       {/* Donut de categorías + leyenda */}
@@ -151,6 +247,42 @@ function KPI({ icono, label, valor, sub, color, highlight }) {
       <div className="flex items-center gap-1 text-[10px] tracking-widest uppercase text-zinc-500 font-bold">{icono}{label}</div>
       <div className={`text-base sm:text-lg font-black mt-1 ${colors[color] || colors.zinc}`}>{valor}</div>
       {sub && <div className="text-[10px] text-zinc-500 mt-0.5">{sub}</div>}
+    </div>
+  );
+}
+
+// v8.17.12: barras verticales para las últimas 8 semanas
+function BarrasSemanales({ semanas }) {
+  if (!semanas || semanas.length === 0) return null;
+  const max = Math.max(...semanas.map(s => s.total), 1);
+  return (
+    <div className="space-y-2">
+      <div className="flex items-end gap-1.5 h-32 sm:h-40">
+        {semanas.map((s, i) => {
+          const pct = (s.total / max) * 100;
+          const tieneData = s.total > 0;
+          return (
+            <div key={i} className="flex-1 flex flex-col items-center gap-1 min-w-0">
+              <div className="flex-1 w-full flex flex-col justify-end relative group">
+                <div
+                  className={`w-full transition-all ${s.esActual ? 'bg-red-500' : 'bg-red-600/70 group-hover:bg-red-500'}`}
+                  style={{ height: tieneData ? `${pct}%` : '2px', minHeight: '2px' }}
+                  title={`Sem del ${s.label} — ${formatRD(s.total)}`}
+                />
+                {tieneData && (
+                  <div className="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] font-bold text-zinc-300 whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity">
+                    {formatRD(s.total)}
+                  </div>
+                )}
+              </div>
+              <div className={`text-[9px] uppercase tracking-wider truncate w-full text-center ${s.esActual ? 'text-red-400 font-bold' : 'text-zinc-500'}`}>
+                {s.label}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="text-[10px] text-zinc-500 text-center">Hover sobre cada barra para ver el monto. Última semana en rojo intenso.</div>
     </div>
   );
 }

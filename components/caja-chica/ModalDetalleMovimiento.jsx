@@ -229,8 +229,9 @@ export default function ModalDetalleMovimiento({
 
   return (
     <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-2 sm:p-4" onClick={onCerrar}>
+      {/* v8.17.9: desktop side-by-side — foto izquierda, datos derecha */}
       <div
-        className="bg-zinc-900 border-2 border-zinc-800 w-full max-w-2xl flex flex-col"
+        className="bg-zinc-900 border-2 border-zinc-800 w-full max-w-2xl md:max-w-5xl flex flex-col"
         style={{ maxHeight: 'calc(100vh - 1rem)' }}
         onClick={e => e.stopPropagation()}
       >
@@ -272,8 +273,10 @@ export default function ModalDetalleMovimiento({
           </button>
         </div>
 
-        {/* CUERPO scrolleable */}
-        <div className="flex-1 overflow-y-auto">
+        {/* v8.17.9: en desktop, foto + datos lado a lado. En mobile sigue siendo vertical (scroll en el outer). */}
+        <div className="flex-1 overflow-y-auto md:overflow-hidden md:grid md:grid-cols-[400px_1fr]">
+          {/* Columna izquierda: banners + foto. En desktop scroll independiente. */}
+          <div className="md:overflow-y-auto md:border-r md:border-zinc-800">
           {/* Banners según rol y status */}
           {soloLectura && (
             <div className="bg-zinc-950 border-b-2 border-yellow-700 px-4 py-3 flex items-start gap-2">
@@ -408,6 +411,10 @@ export default function ModalDetalleMovimiento({
               )}
             </div>
           )}
+
+          </div>
+          {/* Columna derecha: datos editables. En desktop scroll independiente. */}
+          <div className="md:overflow-y-auto">
 
           {/* DATOS editables */}
           <div className="p-4 space-y-3">
@@ -561,6 +568,7 @@ export default function ModalDetalleMovimiento({
               <div>{error}</div>
             </div>
           )}
+          </div>
         </div>
 
         {/* FOOTER fijo */}

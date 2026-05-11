@@ -4026,6 +4026,7 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
   const [capacidadesDe, setCapacidadesDe] = useState(null); // v8.9.23
   const [accesosDe, setAccesosDe] = useState(null); // v8.17.0: gestionar accesos/credenciales por persona
   const [filtroAccesoCliente, setFiltroAccesoCliente] = useState(''); // v8.17.0
+  const [busqueda, setBusqueda] = useState(''); // v8.17.2: buscador por nombre/PIN/teléfono
   const [modalInvitar, setModalInvitar] = useState(false); // v8.14: invitar maestro al app
   const [activando, setActivando] = useState(null); // v8.14.1: persona existente a activar para app
 
@@ -4067,6 +4068,19 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
       </div>
       {modalInvitar && <ModalInvitarMaestro usuario={usuario} onCerrar={() => setModalInvitar(false)} onInvitado={() => { onRecargar?.(); }} />}
       {activando && <ModalInvitarMaestro usuario={usuario} personaExistente={activando} onCerrar={() => setActivando(null)} onInvitado={() => { onRecargar?.(); }} />}
+
+      {/* v8.17.2: Buscador por nombre / PIN / teléfono */}
+      <div className="bg-zinc-950 border border-zinc-800 p-2 flex items-center gap-2 text-xs">
+        <span className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">🔍 Buscar:</span>
+        <input
+          type="text"
+          value={busqueda}
+          onChange={e => setBusqueda(e.target.value)}
+          placeholder="Nombre, PIN o teléfono…"
+          className="flex-1 bg-zinc-900 border border-zinc-800 px-2 py-1 text-xs text-white outline-none focus:border-red-500"
+        />
+        {busqueda && <button onClick={() => setBusqueda('')} className="text-zinc-500 hover:text-white px-2"><X className="w-3 h-3" /></button>}
+      </div>
 
       {/* v8.17.0: Filtro por acceso a cliente */}
       {data && (data.clientes || []).length > 0 && (
@@ -4162,6 +4176,12 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
           if (filtroAccesoCliente && data) {
             const ac = personaTieneAccesoCliente(p.id, filtroAccesoCliente, data);
             if (!ac.acceso) return false;
+          }
+          // v8.17.2: búsqueda por nombre, PIN o teléfono
+          if (busqueda) {
+            const q = busqueda.toLowerCase().trim();
+            const haystack = `${p.nombre || ''} ${p.pin || ''} ${p.telefono || ''} ${p.whatsapp || ''}`.toLowerCase();
+            if (!haystack.includes(q)) return false;
           }
           if (rol === 'admin') return tieneRol(p, 'admin');
           if (rol === 'supervisor') return tieneRol(p, 'supervisor') && !tieneRol(p, 'admin');
@@ -8921,6 +8941,7 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto }) {
   // v8.9.17: Maestros ven a todo su equipo por defecto (filtro vacío)
   const [filtroRol, setFiltroRol] = useState(esAdmin ? 'maestro' : '');
   const [filtroProyecto, setFiltroProyecto] = useState('');
+  const [filtroSupervisor, setFiltroSupervisor] = useState(''); // v8.17.2
   const [soloConProyecto, setSoloConProyecto] = useState(true); // v8.7 default
   const [celdaSeleccionada, setCeldaSeleccionada] = useState(null);
   const [modalAsignar, setModalAsignar] = useState(null);
@@ -8954,12 +8975,25 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto }) {
     return propios;
   }, [esAdmin, usuario, data.proyectos]);
 
+  // v8.17.2: Proyectos filtrados por supervisor (subconjunto de proyectosVisibles)
+  const proyectosFiltrados = React.useMemo(() => {
+    if (!filtroSupervisor) return proyectosVisibles;
+    return proyectosVisibles.filter(p => p.supervisorId === filtroSupervisor);
+  }, [proyectosVisibles, filtroSupervisor]);
+
+  // v8.17.2: Lista de supervisores para el dropdown
+  const supervisores = React.useMemo(() => {
+    return (data.personal || [])
+      .filter(p => !p.archivado && tieneRol(p, 'supervisor'))
+      .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+  }, [data.personal]);
+
   const cargar = async () => {
     setCargando(true);
     const finInicio = fechaStr(dias[0]);
     const finFin = fechaStr(dias[6]);
     const todasJornadas = [];
-    for (const p of proyectosVisibles) {
+    for (const p of proyectosFiltrados) {
       if (p.archivado) continue;
       try {
         const lista = await db.listarJornadasProyecto(p.id);
@@ -8975,7 +9009,7 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto }) {
     setCargando(false);
   };
 
-  useEffect(() => { cargar(); }, [semanaRef, proyectosVisibles.length]);
+  useEffect(() => { cargar(); }, [semanaRef, proyectosFiltrados.length]);
 
   // Grid por persona: { personaId: { fecha: [proyectos] } }
   const gridPersonas = React.useMemo(() => {
@@ -9094,7 +9128,7 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto }) {
   // Personas a mostrar en vista por personal
   const personasActivas = React.useMemo(() => {
     const ids = new Set(Object.keys(gridPersonas));
-    proyectosVisibles.forEach(p => {
+    proyectosFiltrados.forEach(p => {
       if (filtroProyecto && p.id !== filtroProyecto) return;
       if (p.maestroId) ids.add(p.maestroId);
       (p.ayudantesIds || []).forEach(a => ids.add(a));
@@ -9112,7 +9146,7 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto }) {
     if (filtroRol) personas = personas.filter(p => p.roles?.includes(filtroRol));
     // v8.7: filtro "solo con proyecto asignado"
     if (soloConProyecto) {
-      personas = personas.filter(p => proyectosVisibles.some(pr => pr.maestroId === p.id || (pr.ayudantesIds || []).includes(p.id)));
+      personas = personas.filter(p => proyectosFiltrados.some(pr => pr.maestroId === p.id || (pr.ayudantesIds || []).includes(p.id)));
     }
     return personas.sort((a, b) => {
       const orden = (r) => r?.includes('maestro') ? 1 : 2;
@@ -9120,12 +9154,12 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto }) {
       if (oa !== ob) return oa - ob;
       return a.nombre.localeCompare(b.nombre);
     });
-  }, [gridPersonas, data.personal, proyectosVisibles, filtroRol, filtroProyecto, soloConProyecto]);
+  }, [gridPersonas, data.personal, proyectosFiltrados, filtroRol, filtroProyecto, soloConProyecto]);
 
   // Proyectos a mostrar en vista por proyecto
   // v8.17.1: primero los que tienen personal asignado en la semana, después los vacíos al final
   const proyectosActivos = React.useMemo(() => {
-    let ps = proyectosVisibles;
+    let ps = proyectosFiltrados;
     if (filtroProyecto) ps = ps.filter(p => p.id === filtroProyecto);
     const tienePersonalEnSemana = (proyId) => {
       const porFecha = gridProyectos[proyId];
@@ -9140,7 +9174,7 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto }) {
       const rb = b.referenciaOdoo || b.cliente;
       return ra.localeCompare(rb);
     });
-  }, [proyectosVisibles, filtroProyecto, gridProyectos]);
+  }, [proyectosFiltrados, filtroProyecto, gridProyectos]);
 
   // Colores consistentes por proyecto
   const coloresProyecto = React.useMemo(() => {
@@ -9256,9 +9290,16 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto }) {
         )}
         <select value={filtroProyecto} onChange={e => setFiltroProyecto(e.target.value)} className="bg-zinc-900 border border-zinc-800 px-3 py-1.5 text-xs text-white">
           <option value="">Todos los proyectos</option>
-          {proyectosVisibles.map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo ? p.referenciaOdoo + ' · ' : ''}{p.cliente}</option>)}
+          {proyectosFiltrados.map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo ? p.referenciaOdoo + ' · ' : ''}{p.cliente}</option>)}
         </select>
-        {(filtroRol || filtroProyecto || !soloConProyecto) && <button onClick={() => { setFiltroRol(esAdmin ? 'maestro' : ''); setFiltroProyecto(''); setSoloConProyecto(true); }} className="text-xs text-zinc-500 hover:text-red-500">Restablecer</button>}
+        {/* v8.17.2: filtro por supervisor */}
+        {esAdmin && supervisores.length > 0 && (
+          <select value={filtroSupervisor} onChange={e => { setFiltroSupervisor(e.target.value); setFiltroProyecto(''); }} className="bg-zinc-900 border border-zinc-800 px-3 py-1.5 text-xs text-white" title="Filtrar por supervisor">
+            <option value="">Todos los supervisores</option>
+            {supervisores.map(s => <option key={s.id} value={s.id}>👁️ {s.nombre}</option>)}
+          </select>
+        )}
+        {(filtroRol || filtroProyecto || filtroSupervisor || !soloConProyecto) && <button onClick={() => { setFiltroRol(esAdmin ? 'maestro' : ''); setFiltroProyecto(''); setFiltroSupervisor(''); setSoloConProyecto(true); }} className="text-xs text-zinc-500 hover:text-red-500">Restablecer</button>}
         {vistaModo === 'proyecto' && diasSinReporte > 0 && (
           <div className="ml-auto bg-yellow-900/30 border border-yellow-700 text-yellow-400 px-3 py-1.5 text-xs">
             ⚠️ {diasSinReporte} día{diasSinReporte !== 1 ? 's' : ''} con jornada sin reporte de m²

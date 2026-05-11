@@ -388,8 +388,9 @@ export default function ModalDetalleMovimiento({
                     className="object-contain transition-transform duration-200 cursor-zoom-in"
                     style={{
                       transform: `rotate(${rotacion}deg)`,
-                      maxHeight: '33vh',
-                      maxWidth: '100%',
+                      // v8.17.17: invertir maxWidth/maxHeight cuando está rotada 90/270
+                      maxHeight: (rotacion === 90 || rotacion === 270) ? '100%' : '33vh',
+                      maxWidth: (rotacion === 90 || rotacion === 270) ? '33vh' : '100%',
                     }}
                     onClick={() => setVerGrande(true)}
                   />
@@ -658,12 +659,19 @@ export default function ModalDetalleMovimiento({
             <button onClick={() => setVerGrande(false)} className="bg-red-600 hover:bg-red-700 text-white px-3 py-2 text-xs font-black uppercase flex items-center gap-1"><X className="w-4 h-4" /> Cerrar</button>
           </div>
         </div>
+        {/* v8.17.17: cuando la foto está rotada 90/270, la rotación CSS no cambia
+            el bounding box. Hay que invertir maxWidth/maxHeight para que la imagen
+            rotada quepa dentro del visor sin que la cabecera la tape. */}
         <div className="flex-1 flex items-center justify-center overflow-auto p-4" onClick={e => e.stopPropagation()}>
           <img
             src={fotoUrl}
             alt=""
-            className="max-w-full max-h-full object-contain transition-transform duration-200"
-            style={{ transform: `rotate(${rotacion}deg)` }}
+            className="object-contain transition-transform duration-200"
+            style={{
+              transform: `rotate(${rotacion}deg)`,
+              maxWidth: (rotacion === 90 || rotacion === 270) ? 'calc(100vh - 100px)' : 'calc(100vw - 32px)',
+              maxHeight: (rotacion === 90 || rotacion === 270) ? 'calc(100vw - 32px)' : 'calc(100vh - 100px)',
+            }}
           />
         </div>
       </div>

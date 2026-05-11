@@ -57,6 +57,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
   const [modalCargaMasiva, setModalCargaMasiva] = useState(false); // v8.15
   const [verDetalle, setVerDetalle] = useState(null); // v8.15.1: movimiento abierto en modal de detalle (modo simple)
   const [indicePendiente, setIndicePendiente] = useState(null); // v8.15.5: índice del pendiente abierto en modo bandeja
+  const [gruposColapsados, setGruposColapsados] = useState(() => new Set()); // v8.17.7: personaIds con grupo colapsado en bandeja
 
   const cargar = async () => {
     setLoading(true);
@@ -132,6 +133,41 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
   };
 
   const pendientes = useMemo(() => movimientos.filter(m => m.status === 'pendiente_revision'), [movimientos]);
+
+  // v8.17.7: agrupar pendientes por persona — preserva el índice plano para el carrusel
+  const pendientesPorPersona = useMemo(() => {
+    const grupos = new Map(); // personaId -> { persona, items: [{m, idxPlano}], total, incompletos }
+    pendientes.forEach((m, idxPlano) => {
+      const personaId = m.personaId;
+      if (!grupos.has(personaId)) {
+        const persona = data.personal.find(p => p.id === personaId);
+        grupos.set(personaId, {
+          personaId,
+          persona,
+          nombre: persona?.nombre || personaId,
+          items: [],
+          total: 0,
+          incompletos: 0,
+        });
+      }
+      const g = grupos.get(personaId);
+      g.items.push({ m, idxPlano });
+      g.total += m.monto || 0;
+      if (evaluarDatosIncompletos(m).incompleto) g.incompletos += 1;
+    });
+    // Ordenar grupos por monto descendente (los que más deben revisar primero)
+    return Array.from(grupos.values()).sort((a, b) => b.total - a.total);
+  }, [pendientes, data.personal]);
+
+  const toggleGrupo = (personaId) => {
+    setGruposColapsados(prev => {
+      const next = new Set(prev);
+      if (next.has(personaId)) next.delete(personaId); else next.add(personaId);
+      return next;
+    });
+  };
+  const colapsarTodos = () => setGruposColapsados(new Set(pendientesPorPersona.map(g => g.personaId)));
+  const expandirTodos = () => setGruposColapsados(new Set());
 
   // Por persona: agrupar movimientos + saldo
   const porPersona = useMemo(() => {
@@ -277,24 +313,74 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
 
       {tab === 'bandeja' && (
         <div className={dx.listGap}>
-          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Pendientes de aprobación ({pendientes.length})</div>
+          {/* v8.17.7: header con conteo + acciones de colapsar/expandir todos */}
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">
+              Pendientes de aprobación ({pendientes.length}{pendientes.length > 0 && pendientesPorPersona.length > 1 ? ` · ${pendientesPorPersona.length} personas` : ''})
+            </div>
+            {pendientesPorPersona.length > 1 && (
+              <div className="flex items-center gap-1 text-[10px]">
+                <button onClick={expandirTodos} className="text-zinc-400 hover:text-white px-2 py-0.5 border border-zinc-800">Expandir todos</button>
+                <button onClick={colapsarTodos} className="text-zinc-400 hover:text-white px-2 py-0.5 border border-zinc-800">Colapsar todos</button>
+              </div>
+            )}
+          </div>
+
           {pendientes.length === 0 ? (
             <div className="text-center py-10 text-zinc-500 text-sm">✓ Sin pendientes. Todo aprobado.</div>
           ) : (
-            pendientes.map((m, idx) => (
-              <FilaPendiente
-                key={m.id}
-                m={m}
-                data={data}
-                dx={dx}
-                onAprobar={() => aprobar(m)}
-                onRechazar={() => rechazar(m)}
-                onEliminar={() => eliminar(m)}
-                onVerFoto={() => verFotoMov(m)}
-                onAdjuntarFoto={(file) => adjuntarFoto(m, file)}
-                onAbrirDetalle={() => setIndicePendiente(idx)}
-              />
-            ))
+            pendientesPorPersona.map(grupo => {
+              const colapsado = gruposColapsados.has(grupo.personaId);
+              return (
+                <div key={grupo.personaId} className="bg-zinc-950 border border-zinc-800">
+                  {/* Header del grupo */}
+                  <button
+                    onClick={() => toggleGrupo(grupo.personaId)}
+                    className="w-full flex items-center gap-2 p-2 hover:bg-zinc-900/50 text-left"
+                  >
+                    <span className="text-zinc-500 text-xs w-4 shrink-0">{colapsado ? '▶' : '▼'}</span>
+                    {grupo.persona?.foto2x2 ? (
+                      <img src={grupo.persona.foto2x2} alt="" className="w-7 h-7 object-cover rounded-sm border border-zinc-700 shrink-0" />
+                    ) : (
+                      <div className="w-7 h-7 bg-zinc-800 border border-zinc-700 flex items-center justify-center text-zinc-500 text-[10px] font-bold shrink-0">
+                        {(grupo.nombre || '?').slice(0, 2).toUpperCase()}
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-bold truncate">{grupo.nombre}</div>
+                      <div className="text-[10px] text-zinc-500">
+                        {grupo.items.length} pendiente{grupo.items.length !== 1 ? 's' : ''}
+                        {grupo.incompletos > 0 && <span className="text-amber-400"> · ⚠ {grupo.incompletos} faltan datos</span>}
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-sm font-black text-orange-400">{formatRD(grupo.total)}</div>
+                      <div className="text-[9px] text-zinc-500">total</div>
+                    </div>
+                  </button>
+
+                  {/* Filas del grupo */}
+                  {!colapsado && (
+                    <div className={`${dx.listGap} p-2 pt-0`}>
+                      {grupo.items.map(({ m, idxPlano }) => (
+                        <FilaPendiente
+                          key={m.id}
+                          m={m}
+                          data={data}
+                          dx={dx}
+                          onAprobar={() => aprobar(m)}
+                          onRechazar={() => rechazar(m)}
+                          onEliminar={() => eliminar(m)}
+                          onVerFoto={() => verFotoMov(m)}
+                          onAdjuntarFoto={(file) => adjuntarFoto(m, file)}
+                          onAbrirDetalle={() => setIndicePendiente(idxPlano)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })
           )}
         </div>
       )}

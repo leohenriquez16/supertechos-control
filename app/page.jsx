@@ -9970,6 +9970,16 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
             {jornadaHoy?.inicioDistanciaObraM != null && (
               <div className={`text-[10px] mt-1 ${lejosInicio ? 'text-yellow-400' : 'text-green-400'}`}>📍 {formatDistancia(jornadaHoy.inicioDistanciaObraM)} de la obra</div>
             )}
+            {/* v8.17.21: link a la coordenada exacta donde marcó la entrada */}
+            {jornadaHoy?.inicioLat != null && jornadaHoy?.inicioLng != null && (
+              <button
+                onClick={() => abrirEnMapa(jornadaHoy.inicioLat, jornadaHoy.inicioLng)}
+                className="text-[10px] mt-0.5 text-blue-400 hover:text-blue-300 flex items-center gap-1 underline"
+                title="Abrir en Google Maps la ubicación donde se marcó la entrada"
+              >
+                <ExternalLink className="w-3 h-3" /> Ver dónde marcó
+              </button>
+            )}
           </div>
           <div className="bg-zinc-950 border border-zinc-800 p-3">
             <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold mb-1 flex items-center gap-1"><Square className="w-3 h-3 text-red-400" /> Salida</div>
@@ -9977,6 +9987,16 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
             {jornadaHoy?.finalizadaPorNombre && <div className="text-[10px] text-zinc-500 truncate">{jornadaHoy.finalizadaPorNombre}</div>}
             {jornadaHoy?.finDistanciaObraM != null && (
               <div className={`text-[10px] mt-1 ${lejosFin ? 'text-yellow-400' : 'text-green-400'}`}>📍 {formatDistancia(jornadaHoy.finDistanciaObraM)}</div>
+            )}
+            {/* v8.17.21: link a la coordenada exacta donde marcó la salida */}
+            {jornadaHoy?.finLat != null && jornadaHoy?.finLng != null && (
+              <button
+                onClick={() => abrirEnMapa(jornadaHoy.finLat, jornadaHoy.finLng)}
+                className="text-[10px] mt-0.5 text-blue-400 hover:text-blue-300 flex items-center gap-1 underline"
+                title="Abrir en Google Maps la ubicación donde se marcó la salida"
+              >
+                <ExternalLink className="w-3 h-3" /> Ver dónde marcó
+              </button>
             )}
           </div>
         </div>
@@ -10074,10 +10094,37 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
                   </div>
                   {j.condicionNota && <div className="text-[10px] text-blue-400 mt-1 italic">"{j.condicionNota}"</div>}
                   {(j.inicioDistanciaObraM != null || j.finDistanciaObraM != null) && (
-                    <div className="text-[10px] text-zinc-600 mt-1">
-                      {j.inicioDistanciaObraM != null && <>entrada {formatDistancia(j.inicioDistanciaObraM)}</>}
-                      {j.inicioDistanciaObraM != null && j.finDistanciaObraM != null && ' · '}
-                      {j.finDistanciaObraM != null && <>salida {formatDistancia(j.finDistanciaObraM)}</>}
+                    <div className="text-[10px] text-zinc-600 mt-1 flex items-center gap-2 flex-wrap">
+                      {j.inicioDistanciaObraM != null && (
+                        <span>
+                          entrada {formatDistancia(j.inicioDistanciaObraM)}
+                          {/* v8.17.21: link a la coord de entrada */}
+                          {j.inicioLat != null && j.inicioLng != null && (
+                            <button
+                              onClick={() => abrirEnMapa(j.inicioLat, j.inicioLng)}
+                              className="text-blue-400 hover:text-blue-300 underline ml-1"
+                              title="Ver en Google Maps"
+                            >
+                              ver
+                            </button>
+                          )}
+                        </span>
+                      )}
+                      {j.inicioDistanciaObraM != null && j.finDistanciaObraM != null && <span className="text-zinc-700">·</span>}
+                      {j.finDistanciaObraM != null && (
+                        <span>
+                          salida {formatDistancia(j.finDistanciaObraM)}
+                          {j.finLat != null && j.finLng != null && (
+                            <button
+                              onClick={() => abrirEnMapa(j.finLat, j.finLng)}
+                              className="text-blue-400 hover:text-blue-300 underline ml-1"
+                              title="Ver en Google Maps"
+                            >
+                              ver
+                            </button>
+                          )}
+                        </span>
+                      )}
                     </div>
                   )}
                   {esAdmin && (

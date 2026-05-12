@@ -157,6 +157,8 @@ export default function ModalReportarGasto({ usuario, proyectos = [], proyectoId
         proveedor: sinFactura ? null : (datos.proveedor || null),
         rnc: sinFactura ? null : (datos.rnc || null),
         concepto: datos.concepto || null,
+        // v8.17.25: empresa receptora (detectada por AI; null si sin_factura)
+        empresaReceptora: sinFactura ? null : (datosIA?.empresa_receptora || null),
         datosIA: {
           ...(datosIA || {}),
           categoria_sugerida: datos.categoria || (datosIA?.categoria_sugerida || null),

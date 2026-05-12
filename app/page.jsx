@@ -4603,25 +4603,73 @@ function RolToggle({ active, onClick, children }) {
 // ============================================================
 function MisProyectos({ usuario, data, onIrAReportar, onVerDetalle }) {
   const misProyectos = data.proyectos.filter(p => proyectoVisible(usuario, p));
+  // v8.17.22: colapsar los terminados (100%) abajo, separados del resto
+  const [terminadosAbiertos, setTerminadosAbiertos] = useState(false);
+
   if (misProyectos.length === 0) return <div className="text-center py-20 text-zinc-500">No tienes proyectos asignados.</div>;
+
+  // Calcular avance una vez y separar en curso / terminados
+  const conAvance = misProyectos.map(p => {
+    const sistema = data.sistemas[p.sistema];
+    if (!sistema) return null;
+    const { porcentaje, m2Total } = calcAvanceProyecto(p, data.reportes, sistema, data.sistemas);
+    return { p, porcentaje, m2Total };
+  }).filter(Boolean);
+  // Terminados = porcentaje >= 100
+  const enCurso = conAvance
+    .filter(x => x.porcentaje < 100)
+    .sort((a, b) => b.porcentaje - a.porcentaje); // más cerca de terminar arriba
+  const terminados = conAvance
+    .filter(x => x.porcentaje >= 100)
+    .sort((a, b) => (a.p.cliente || '').localeCompare(b.p.cliente || ''));
+
+  const renderCard = ({ p, porcentaje, m2Total }) => (
+    <div key={p.id} className={`bg-zinc-900 border border-zinc-800 p-4 ${porcentaje >= 100 ? 'opacity-80' : ''}`}>
+      <div className="flex justify-between items-start mb-2">
+        <div className="min-w-0 flex-1 mr-2">
+          <div className="text-[10px] font-mono text-zinc-500">{p.referenciaOdoo}</div>
+          <div className="font-bold truncate">{p.cliente}</div>
+          <div className="text-xs text-zinc-500 uppercase tracking-wider truncate">{p.referenciaProyecto || p.nombre} · {formatNum(m2Total)} m²</div>
+        </div>
+        <div className="text-right flex-shrink-0"><div className={`text-2xl font-black ${porcentaje >= 100 ? 'text-green-400' : ''}`}>{porcentaje.toFixed(1)}<span className="text-sm">%</span></div></div>
+      </div>
+      <div className="h-2 bg-zinc-800 relative overflow-hidden mb-3"><div className={`absolute inset-y-0 left-0 ${porcentaje >= 100 ? 'bg-green-500' : 'bg-red-600'}`} style={{ width: `${Math.min(100, porcentaje)}%` }} /></div>
+      <div className="flex gap-2"><button onClick={() => onVerDetalle(p)} className="flex-1 bg-zinc-800 text-zinc-300 font-bold uppercase text-xs py-3">Ver</button><button onClick={() => onIrAReportar(p)} className="flex-1 bg-red-600 text-white font-black uppercase text-xs py-3">+ Reportar</button></div>
+    </div>
+  );
+
   return (
     <div className="space-y-4">
       <div><div className="text-xs tracking-widest uppercase text-red-500 font-bold">Hola, {usuario.nombre.split(' ')[0]}</div><h1 className="text-2xl font-black tracking-tight">Tus Proyectos</h1></div>
-      <div className="space-y-3">{misProyectos.map(p => {
-        const sistema = data.sistemas[p.sistema];
-        if (!sistema) return null;
-        const { porcentaje, m2Total } = calcAvanceProyecto(p, data.reportes, sistema, data.sistemas);
-        return (
-          <div key={p.id} className="bg-zinc-900 border border-zinc-800 p-4">
-            <div className="flex justify-between items-start mb-2">
-              <div className="min-w-0 flex-1 mr-2"><div className="text-[10px] font-mono text-zinc-500">{p.referenciaOdoo}</div><div className="font-bold truncate">{p.cliente}</div><div className="text-xs text-zinc-500 uppercase tracking-wider truncate">{p.referenciaProyecto || p.nombre} · {formatNum(m2Total)} m²</div></div>
-              <div className="text-right flex-shrink-0"><div className="text-2xl font-black">{porcentaje.toFixed(1)}<span className="text-sm">%</span></div></div>
+
+      {/* En curso */}
+      {enCurso.length > 0 && (
+        <div className="space-y-3">
+          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">En curso ({enCurso.length})</div>
+          {enCurso.map(renderCard)}
+        </div>
+      )}
+
+      {/* Terminados (colapsable, default cerrado) */}
+      {terminados.length > 0 && (
+        <div className="space-y-3">
+          <button
+            onClick={() => setTerminadosAbiertos(!terminadosAbiertos)}
+            className="w-full flex items-center justify-between bg-zinc-950 border border-zinc-800 px-3 py-2 hover:bg-zinc-900/50"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-zinc-500 text-xs w-3">{terminadosAbiertos ? '▼' : '▶'}</span>
+              <span className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">✓ Terminados ({terminados.length})</span>
             </div>
-            <div className="h-2 bg-zinc-800 relative overflow-hidden mb-3"><div className="absolute inset-y-0 left-0 bg-red-600" style={{ width: `${porcentaje}%` }} /></div>
-            <div className="flex gap-2"><button onClick={() => onVerDetalle(p)} className="flex-1 bg-zinc-800 text-zinc-300 font-bold uppercase text-xs py-3">Ver</button><button onClick={() => onIrAReportar(p)} className="flex-1 bg-red-600 text-white font-black uppercase text-xs py-3">+ Reportar</button></div>
-          </div>
-        );
-      })}</div>
+            <span className="text-[10px] text-green-400">100% completados</span>
+          </button>
+          {terminadosAbiertos && <div className="space-y-3">{terminados.map(renderCard)}</div>}
+        </div>
+      )}
+
+      {enCurso.length === 0 && terminados.length === 0 && (
+        <div className="text-center py-12 text-zinc-500">Sin proyectos.</div>
+      )}
     </div>
   );
 }

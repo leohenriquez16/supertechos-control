@@ -7,6 +7,7 @@ import { formatRD, formatNum, formatFechaCorta } from '../../lib/helpers/formato
 import ModalReportarGasto from './ModalReportarGasto';
 import ModalReportarGastosMasivo from './ModalReportarGastosMasivo';
 import ModalReportarSinFacturaMasivo from './ModalReportarSinFacturaMasivo';
+import ModalDetalleMovimiento from './ModalDetalleMovimiento';
 
 // Vista para el maestro/supervisor titular de una caja chica.
 // Muestra: saldo actual, saldo proyectado (si aprueban todo lo pendiente),
@@ -20,6 +21,7 @@ export default function VistaMiCajaChica({ usuario, data, onVolver }) {
   const [modalMasivo, setModalMasivo] = useState(false); // v8.16: carga masiva celular
   const [modalSinFactura, setModalSinFactura] = useState(false); // v8.17.4: sin factura en lote
   const [verFoto, setVerFoto] = useState(null); // {id, fotoData}
+  const [verDetalle, setVerDetalle] = useState(null); // v8.17.26: modal de detalle del movimiento (editable si pendiente)
 
   const cargar = async () => {
     setLoading(true);
@@ -280,7 +282,17 @@ export default function VistaMiCajaChica({ usuario, data, onVolver }) {
         {movimientos.length === 0 ? (
           <div className="text-center py-8 text-zinc-500 text-sm">Aún no hay movimientos.</div>
         ) : (
-          movimientos.map(m => <MovimientoRow key={m.id} m={m} data={data} onVerFoto={() => verFotoMov(m)} />)
+          movimientos.map(m => (
+            <MovimientoRow
+              key={m.id}
+              m={m}
+              data={data}
+              onVerFoto={() => verFotoMov(m)}
+              /* v8.17.26: el maestro puede abrir el detalle SOLO de gastos suyos.
+                 El modal internamente bloquea edición si ya está aprobado/rechazado */
+              onAbrirDetalle={m.tipo === 'gasto_factura' ? () => setVerDetalle(m) : null}
+            />
+          ))
         )}
       </div>
 
@@ -314,6 +326,20 @@ export default function VistaMiCajaChica({ usuario, data, onVolver }) {
         />
       )}
 
+      {/* v8.17.26: maestro puede abrir el detalle. El modal bloquea edición
+          si ya está aprobado/rechazado (solo lectura). */}
+      {verDetalle && (
+        <ModalDetalleMovimiento
+          key={verDetalle.id}
+          usuario={usuario}
+          movimiento={verDetalle}
+          data={data}
+          movimientos={movimientos}
+          onCerrar={() => setVerDetalle(null)}
+          onActualizado={() => cargar()}
+        />
+      )}
+
       {verFoto && (
         <div className="fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-4" onClick={() => setVerFoto(null)}>
           <div className="relative max-w-3xl w-full" onClick={e => e.stopPropagation()}>
@@ -330,7 +356,7 @@ export default function VistaMiCajaChica({ usuario, data, onVolver }) {
   );
 }
 
-function MovimientoRow({ m, data, onVerFoto }) {
+function MovimientoRow({ m, data, onVerFoto, onAbrirDetalle }) {
   const proy = m.proyectoId ? data.proyectos.find(p => p.id === m.proyectoId) : null;
   const meta = TIPOS[m.tipo] || TIPOS.ajuste;
   const statusMeta = STATUS[m.status] || STATUS.pendiente_revision;
@@ -339,9 +365,16 @@ function MovimientoRow({ m, data, onVerFoto }) {
   const signo = m.tipo === 'entrega' ? '+' : (m.tipo === 'ajuste' ? (m.signoAjuste >= 0 ? '+' : '−') : '−');
   const colorMonto = m.tipo === 'entrega' ? 'text-green-400'
     : (m.tipo === 'ajuste' ? (m.signoAjuste >= 0 ? 'text-green-400' : 'text-red-400') : 'text-orange-400');
+  // v8.17.26: si el maestro puede abrir/editar este gasto, hacer la fila clickeable
+  const editable = onAbrirDetalle && m.status === 'pendiente_revision';
+
+  const stop = (fn) => (e) => { e.stopPropagation(); fn?.(); };
 
   return (
-    <div className="bg-zinc-900 border border-zinc-800 p-3 flex items-start gap-3">
+    <div
+      className={`bg-zinc-900 border ${editable ? 'border-zinc-800 hover:border-red-600 cursor-pointer' : 'border-zinc-800'} p-3 flex items-start gap-3`}
+      onClick={onAbrirDetalle || undefined}
+    >
       <div className={`w-9 h-9 shrink-0 flex items-center justify-center ${meta.bg}`}>
         <span className="text-base">{meta.icono}</span>
       </div>
@@ -354,6 +387,9 @@ function MovimientoRow({ m, data, onVerFoto }) {
           )}
           {sinFactura && (
             <div className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-red-900/40 text-red-300 border border-red-800">✍ Sin factura</div>
+          )}
+          {editable && (
+            <div className="text-[9px] uppercase tracking-wider text-zinc-500 italic">· Toca para editar</div>
           )}
         </div>
         <div className="text-xs text-zinc-400 mt-0.5 truncate">
@@ -370,7 +406,7 @@ function MovimientoRow({ m, data, onVerFoto }) {
       <div className="text-right shrink-0">
         <div className={`text-base font-black ${colorMonto}`}>{signo}{formatRD(m.monto)}</div>
         {m.tieneFoto && (
-          <button onClick={onVerFoto} className="text-[10px] text-zinc-500 hover:text-red-400 flex items-center gap-1 ml-auto mt-1">
+          <button onClick={stop(onVerFoto)} className="text-[10px] text-zinc-500 hover:text-red-400 flex items-center gap-1 ml-auto mt-1">
             <Eye className="w-3 h-3" /> Ver foto
           </button>
         )}

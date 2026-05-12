@@ -147,6 +147,10 @@ export default function ModalReportarGasto({ usuario, proyectos = [], proyectoId
     }
     setPaso('guardando');
     try {
+      // v8.17.29: si la categoría tiene aplica_a (dieta/hospedaje), el gasto no se reembolsa,
+      // consume el presupuesto fijo. El badge y la lógica de saldo dependen de esto.
+      const catSel = categoriasActivas.find(c => c.id === datos.categoria);
+      const aplicaA = catSel?.aplicaA || null;
       await db.crearMovimientoCajaChica({
         personaId: usuario.id,
         proyectoId: datos.proyectoId || null,
@@ -160,6 +164,8 @@ export default function ModalReportarGasto({ usuario, proyectos = [], proyectoId
         concepto: datos.concepto || null,
         // v8.17.25: empresa receptora (detectada por AI; null si sin_factura)
         empresaReceptora: sinFactura ? null : (datosIA?.empresa_receptora || null),
+        // v8.17.29: heredar partida (dieta/hospedaje) de la categoría
+        aplicaA,
         datosIA: {
           ...(datosIA || {}),
           categoria_sugerida: datos.categoria || (datosIA?.categoria_sugerida || null),

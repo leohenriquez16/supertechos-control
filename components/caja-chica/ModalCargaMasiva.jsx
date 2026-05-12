@@ -194,26 +194,31 @@ export default function ModalCargaMasiva({ usuario, data, onCerrar, onListo }) {
     }
 
     setEnviando(true);
-    const tareas = seleccionados.map(b => () => db.crearMovimientoCajaChica({
-      personaId: b.datos.personaId,
-      proyectoId: b.datos.proyectoId || null,
-      fecha: b.datos.fecha,
-      tipo: 'gasto_factura',
-      monto: Number(b.datos.monto),
-      fotoDataUrl: b.dataUrl,
-      proveedor: b.datos.proveedor || null,
-      rnc: b.datos.rnc || null,
-      concepto: b.datos.concepto || null,
-      // v8.17.25: empresa receptora detectada por AI (override manual también soportado en b.datos)
-      empresaReceptora: b.datos.empresaReceptora || b.datosIA?.empresa_receptora || null,
-      datosIA: {
-        ...(b.datosIA || {}),
-        ncf: b.datos.ncf || null,
-        categoria_sugerida: b.datos.categoria || null,
-        cargado_en_lote: true,
-      },
-      creadoPorId: usuario.id,
-    }));
+    const tareas = seleccionados.map(b => () => {
+      // v8.17.29: heredar aplica_a de la categoría
+      const cat = categoriasActivas.find(c => c.id === b.datos.categoria);
+      return db.crearMovimientoCajaChica({
+        personaId: b.datos.personaId,
+        proyectoId: b.datos.proyectoId || null,
+        fecha: b.datos.fecha,
+        tipo: 'gasto_factura',
+        monto: Number(b.datos.monto),
+        fotoDataUrl: b.dataUrl,
+        proveedor: b.datos.proveedor || null,
+        rnc: b.datos.rnc || null,
+        concepto: b.datos.concepto || null,
+        // v8.17.25: empresa receptora detectada por AI (override manual también soportado en b.datos)
+        empresaReceptora: b.datos.empresaReceptora || b.datosIA?.empresa_receptora || null,
+        aplicaA: cat?.aplicaA || null,
+        datosIA: {
+          ...(b.datosIA || {}),
+          ncf: b.datos.ncf || null,
+          categoria_sugerida: b.datos.categoria || null,
+          cargado_en_lote: true,
+        },
+        creadoPorId: usuario.id,
+      });
+    });
 
     const resultados = await procesarConConcurrencia(tareas, MAX_CONCURRENCIA);
     const okCount = resultados.filter(r => r.ok).length;

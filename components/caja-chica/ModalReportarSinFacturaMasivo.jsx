@@ -77,6 +77,8 @@ export default function ModalReportarSinFacturaMasivo({ usuario, proyectos, cate
 
     for (const f of filas) {
       try {
+        // v8.17.29: heredar partida (dieta/hospedaje) de la categoría
+        const cat = categoriasActivas.find(c => c.id === f.categoria);
         await db.crearMovimientoCajaChica({
           personaId: usuario.id,
           proyectoId,
@@ -87,6 +89,7 @@ export default function ModalReportarSinFacturaMasivo({ usuario, proyectos, cate
           proveedor: null,
           rnc: null,
           concepto: (f.concepto || '').trim(),
+          aplicaA: cat?.aplicaA || null,
           datosIA: {
             sin_factura: true,
             categoria_sugerida: f.categoria || null,

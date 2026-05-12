@@ -163,8 +163,16 @@ export default function ModalDetalleMovimiento({
         categoria_sugerida: campos.categoria || null,
       };
     }
+    // v8.17.29: si la categoría cambió, recalcular aplica_a desde la categoría seleccionada
+    if (campos.categoria !== catActual && Array.isArray(data?.categoriasCajaChica)) {
+      const catNueva = data.categoriasCajaChica.find(c => c.id === campos.categoria);
+      const aplicaANueva = catNueva?.aplicaA || null;
+      if ((movimiento.aplicaA || null) !== aplicaANueva) {
+        d.aplicaA = aplicaANueva;
+      }
+    }
     return d;
-  }, [campos, movimiento]);
+  }, [campos, movimiento, data]);
 
   const hayCambios = Object.keys(diff).length > 0;
 

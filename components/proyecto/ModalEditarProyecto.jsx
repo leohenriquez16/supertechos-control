@@ -66,6 +66,9 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
     // v8.12: Dieta diaria pagada desde caja chica
     dietaDiariaRd: proyecto.dietaDiariaRd || 0,
     dietaModo: proyecto.dietaModo || 'manual', // 'auto' | 'manual' | 'desactivada'
+    // v8.17.29: nuevos toggles a nivel proyecto (sub-tipos desayuno/comida/cena/hotel)
+    aplicaDieta: !!proyecto.aplicaDieta,
+    aplicaHospedaje: !!proyecto.aplicaHospedaje,
     tipoAvance: proyecto.tipoAvance || 'tradicional',
     estructuraUnidades: proyecto.estructuraUnidades || [],
     areas: proyecto.areas ? proyecto.areas.map(a => ({ ...a })) : [],
@@ -676,6 +679,28 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
               )}
             </div>
           )}
+        </div>
+
+        {/* v8.17.29: Toggles Dieta + Hospedaje granular (sub-tipos desayuno/comida/cena/hotel)
+            Cuando aplica_dieta + persona.dieta_habilitada = true, el maestro marca al cerrar
+            jornada qué comidas consumió (cada una con su monto fijo desde config_dieta). */}
+        <div className="space-y-3 border-t border-zinc-800 pt-3">
+          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">🥪 Dieta granular + 🛏 Hospedaje (interior)</div>
+          <div className="text-[10px] text-zinc-500">Activa estos toggles si el proyecto está en el interior y la empresa paga comida/hotel a maestros/supervisores. Solo se aplica a personas que también tengan el toggle activo en su perfil.</div>
+          <label className="flex items-center gap-2 cursor-pointer bg-zinc-950 border border-zinc-800 p-3">
+            <input type="checkbox" checked={!!form.aplicaDieta} onChange={e => setForm({ ...form, aplicaDieta: e.target.checked })} className="w-4 h-4 accent-red-600" />
+            <div className="flex-1">
+              <div className="text-xs font-bold">🍽 Aplica dieta granular</div>
+              <div className="text-[10px] text-zinc-500">El maestro marca al cerrar jornada qué comidas consumió (desayuno/comida/cena). Las facturas de comida ya no se reembolsan: consumen el presupuesto de dieta.</div>
+            </div>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer bg-zinc-950 border border-zinc-800 p-3">
+            <input type="checkbox" checked={!!form.aplicaHospedaje} onChange={e => setForm({ ...form, aplicaHospedaje: e.target.checked })} className="w-4 h-4 accent-red-600" />
+            <div className="flex-1">
+              <div className="text-xs font-bold">🛏 Aplica hospedaje</div>
+              <div className="text-[10px] text-zinc-500">Si la persona durmió fuera, se le paga el monto de hotel configurado. Las facturas de hospedaje consumen este presupuesto.</div>
+            </div>
+          </label>
         </div>
 
         <div className="sticky bottom-0 bg-zinc-900 pt-3 border-t border-zinc-800 space-y-2">

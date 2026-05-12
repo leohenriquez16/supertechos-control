@@ -19,6 +19,16 @@ import {
   calcEstadoPagoProyecto,
 } from '../lib/helpers/calculos';
 import { fileToBase64, cargarPdfLib, cortarPDFaPrimerasPaginas, extraerPDF } from '../lib/helpers/pdf';
+// v8.17.29: helpers de dieta + hospedaje
+import {
+  buildMovimientosDieta,
+  dietaAplicaA,
+  hospedajeAplicaA,
+  TODOS_SUB_TIPOS,
+  LABEL_SUB_TIPO,
+  EMOJI_SUB_TIPO,
+  montoDelSubTipo,
+} from '../lib/helpers/dietaHospedaje';
 // v8.10.2: Dashboard extraído (ya importa los 4 modales internamente)
 import Dashboard from '../components/dashboard/Dashboard';
 // v8.10.3: Sidebar extraído
@@ -776,7 +786,7 @@ export default function App() {
         {vista === 'miCajaChica' && (tieneRol(usuario, 'maestro') || tieneRol(usuario, 'supervisor')) && usuario.cajaChicaHabilitada && <VistaMiCajaChica usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} />}
         {vista === 'cajaChica' && esAdmin && <VistaCajaChicaAdmin usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onIrAProveedores={() => setVista('proveedoresCajaChica')} onIrACategorias={() => setVista('categoriasCajaChica')} />}
         {vista === 'proveedoresCajaChica' && esAdmin && <VistaProveedoresCajaChica usuario={usuario} data={data} onVolver={() => setVista('cajaChica')} />}
-        {vista === 'categoriasCajaChica' && esAdmin && <VistaCategoriasCajaChica onVolver={() => setVista('cajaChica')} onCambio={() => recargar()} />}
+        {vista === 'categoriasCajaChica' && esAdmin && <VistaCategoriasCajaChica usuario={usuario} onVolver={() => setVista('cajaChica')} onCambio={() => recargar()} />}
         {vista === 'estadisticasPersonal' && esAdmin && <VistaEstadisticasPersonal data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'categorias' && esAdmin && <VistaCategorias data={data} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
         {vista === 'disponibilidad' && esAdmin && <VistaDisponibilidad usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} onRecargar={recargar} />}
@@ -4167,6 +4177,27 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
                   </div>
                 </div>
               )}
+            </div>
+          )}
+          {/* v8.17.29: Toggles Dieta + Hospedaje a nivel persona (solo aplican si el proyecto también los tiene activos) */}
+          {(form.roles.includes('maestro') || form.roles.includes('supervisor')) && (
+            <div className="bg-zinc-950 border border-zinc-800 p-3 space-y-2">
+              <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">Dieta y Hospedaje en proyectos del interior</div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={!!form.dietaHabilitada} onChange={e => setForm({ ...form, dietaHabilitada: e.target.checked })} className="w-4 h-4 accent-red-600" />
+                <div className="flex-1">
+                  <div className="text-xs font-bold flex items-center gap-1">🍽 Dieta habilitada</div>
+                  <div className="text-[10px] text-zinc-500">Recibe presupuesto diario de comida (desayuno/comida/cena) cuando va al interior</div>
+                </div>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={!!form.hospedajeHabilitado} onChange={e => setForm({ ...form, hospedajeHabilitado: e.target.checked })} className="w-4 h-4 accent-red-600" />
+                <div className="flex-1">
+                  <div className="text-xs font-bold flex items-center gap-1">🛏 Hospedaje habilitado</div>
+                  <div className="text-[10px] text-zinc-500">Recibe presupuesto de hotel cuando duerme fuera</div>
+                </div>
+              </label>
+              <div className="text-[10px] text-zinc-500 pt-1 border-t border-zinc-800">Solo se aplica si el proyecto también tiene estos toggles activos.</div>
             </div>
           )}
           <div className="flex gap-2 pt-2"><button onClick={() => { setEditando(null); setForm(null); }} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button><button onClick={guardar} disabled={!form.nombre} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-3 flex items-center justify-center gap-1"><Save className="w-3 h-3" /> Guardar</button></div>
@@ -9842,6 +9873,13 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
   const [finalizarModal, setFinalizarModal] = useState(false);
   const [programarModal, setProgramarModal] = useState(false);
   const [verHistorial, setVerHistorial] = useState(false);
+  // v8.17.29: config global de dieta para mostrar montos en el modal de cierre
+  const [configDieta, setConfigDieta] = useState({ desayunoRd: 200, comidaRd: 350, cenaRd: 350, hotelRd: 900 });
+  useEffect(() => {
+    (async () => {
+      try { setConfigDieta(await db.obtenerConfigDieta()); } catch (e) { /* defaults */ }
+    })();
+  }, []);
 
   const recargar = async () => {
     setLoading(true);
@@ -9896,7 +9934,7 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
     setProcesando(null);
   };
 
-  const finalizarJornada = async (condicionDia = 'normal', condicionNota = '') => {
+  const finalizarJornada = async (condicionDia = 'normal', condicionNota = '', dietaPorPersona = {}) => {
     if (!jornadaHoy) return;
     setProcesando('fin');
     const ubi = await obtenerUbicacion();
@@ -9914,6 +9952,24 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
         condicionDia,
         condicionNota,
       });
+      // v8.17.29: registrar dieta/hospedaje marcados al cerrar la jornada.
+      // dietaPorPersona = { [personaId]: ['desayuno','comida','hotel',...] }
+      const movs = [];
+      Object.entries(dietaPorPersona || {}).forEach(([personaId, subTipos]) => {
+        if (!subTipos || subTipos.length === 0) return;
+        movs.push(...buildMovimientosDieta({
+          subTipos,
+          personaId,
+          proyectoId: proyecto.id,
+          fecha: jornadaHoy.fecha || hoy,
+          configDieta,
+          creadoPorId: usuario.id,
+        }));
+      });
+      for (const m of movs) {
+        try { await db.crearMovimientoCajaChica(m); }
+        catch (e) { console.warn('No se pudo crear movimiento de dieta:', e?.message); }
+      }
       setFinalizarModal(false);
       await recargar();
     } catch (e) { alert('Error: ' + e.message); }
@@ -10212,12 +10268,15 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
         )}
       </div>
 
-      {/* Modal finalizar jornada con condición del día (v8.3) */}
+      {/* Modal finalizar jornada con condición del día (v8.3) + dieta/hospedaje (v8.17.29) */}
       {finalizarModal && (
         <ModalFinalizarJornada
           onCerrar={() => setFinalizarModal(false)}
           onConfirmar={finalizarJornada}
           procesando={procesando === 'fin'}
+          proyecto={proyecto}
+          personasPresentes={(jornadaHoy?.personasPresentesIds || personasSel || []).map(id => getPersona(personal, id)).filter(Boolean)}
+          configDieta={configDieta}
         />
       )}
 
@@ -10236,12 +10295,36 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
   );
 }
 
-function ModalFinalizarJornada({ onCerrar, onConfirmar, procesando }) {
+function ModalFinalizarJornada({ onCerrar, onConfirmar, procesando, proyecto, personasPresentes = [], configDieta }) {
   const [condicion, setCondicion] = useState('normal');
   const [nota, setNota] = useState('');
+  // v8.17.29: dietaPorPersona = { [personaId]: ['desayuno','comida','cena','hotel'] }
+  const [dietaPorPersona, setDietaPorPersona] = useState({});
+
+  // Personas elegibles para dieta/hospedaje en ESTE proyecto (opt-in 2 niveles)
+  const elegibles = (personasPresentes || []).map(p => {
+    const conDieta = dietaAplicaA(p, proyecto);
+    const conHospedaje = hospedajeAplicaA(p, proyecto);
+    return { persona: p, conDieta, conHospedaje };
+  }).filter(e => e.conDieta || e.conHospedaje);
+
+  const toggleSubTipo = (personaId, subTipo) => {
+    setDietaPorPersona(prev => {
+      const actuales = prev[personaId] || [];
+      const ya = actuales.includes(subTipo);
+      const nuevo = ya ? actuales.filter(x => x !== subTipo) : [...actuales, subTipo];
+      return { ...prev, [personaId]: nuevo };
+    });
+  };
+
+  const totalDietaEstimado = elegibles.reduce((acc, e) => {
+    const sts = dietaPorPersona[e.persona.id] || [];
+    return acc + sts.reduce((s, st) => s + montoDelSubTipo(st, configDieta), 0);
+  }, 0);
+
   return (
-    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-      <div className="bg-zinc-900 border-2 border-red-600 max-w-md w-full p-5 space-y-4">
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-y-auto">
+      <div className="bg-zinc-900 border-2 border-red-600 max-w-md w-full p-5 space-y-4 my-8 max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-start">
           <div className="text-xs tracking-widest uppercase text-red-500 font-bold">Finalizar Jornada</div>
           <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
@@ -10298,10 +10381,54 @@ function ModalFinalizarJornada({ onCerrar, onConfirmar, procesando }) {
           </div>
         )}
 
+        {/* v8.17.29: Dieta + Hospedaje al cerrar jornada. Solo aparece si:
+            - proyecto.aplicaDieta o proyecto.aplicaHospedaje
+            - hay al menos 1 persona presente con la habilitación correspondiente
+        */}
+        {elegibles.length > 0 && (
+          <div className="border-t border-zinc-800 pt-3">
+            <div className="text-[11px] tracking-widest uppercase text-orange-400 font-bold mb-2">🍽 Dieta + Hospedaje de hoy</div>
+            <div className="text-[10px] text-zinc-500 mb-2">Marca lo que cada persona consumió. Cada marca debita el monto fijo del presupuesto y NO requiere factura.</div>
+            <div className="space-y-2">
+              {elegibles.map(({ persona, conDieta, conHospedaje }) => (
+                <div key={persona.id} className="bg-zinc-950 border border-zinc-800 p-2.5 space-y-1.5">
+                  <div className="text-xs font-bold truncate">{persona.nombre}</div>
+                  <div className="flex flex-wrap gap-1">
+                    {TODOS_SUB_TIPOS.map(st => {
+                      const esHotel = st === 'hotel';
+                      const habilita = esHotel ? conHospedaje : conDieta;
+                      if (!habilita) return null;
+                      const activo = (dietaPorPersona[persona.id] || []).includes(st);
+                      const monto = montoDelSubTipo(st, configDieta);
+                      return (
+                        <button
+                          key={st}
+                          type="button"
+                          onClick={() => toggleSubTipo(persona.id, st)}
+                          className={`flex flex-col items-center text-[10px] font-bold uppercase px-2 py-1.5 border-2 ${activo ? (esHotel ? 'bg-purple-700 border-purple-500 text-white' : 'bg-orange-700 border-orange-500 text-white') : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:border-zinc-600'}`}
+                        >
+                          <span>{EMOJI_SUB_TIPO[st]} {LABEL_SUB_TIPO[st]}</span>
+                          <span className={`text-[9px] ${activo ? 'opacity-80' : 'text-zinc-500'}`}>RD$ {monto.toLocaleString()}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+            {totalDietaEstimado > 0 && (
+              <div className="mt-2 text-[10px] bg-zinc-950 border border-orange-900/50 p-2 flex justify-between">
+                <span className="text-zinc-400">Total a debitar del presupuesto:</span>
+                <span className="text-orange-300 font-bold">RD$ {totalDietaEstimado.toLocaleString()}</span>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="flex gap-2 pt-1">
           <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button>
           <button
-            onClick={() => onConfirmar(condicion, nota)}
+            onClick={() => onConfirmar(condicion, nota, dietaPorPersona)}
             disabled={procesando || (condicion === 'otro' && !nota.trim())}
             className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-3 flex items-center justify-center gap-2"
           >

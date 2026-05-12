@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { ArrowLeft, Loader2, Plus, Wallet, AlertCircle, Eye, Check, X, Trash2, FileText, Filter, Sparkles, MessageSquare, Camera, RotateCcw, RotateCw, Info, FileX } from 'lucide-react';
+import { ArrowLeft, Loader2, Plus, Wallet, AlertCircle, Eye, Check, X, Trash2, FileText, Filter, Sparkles, MessageSquare, Camera, RotateCcw, RotateCw, Info, FileX, HelpCircle } from 'lucide-react';
 import * as db from '../../lib/db';
 import { toast } from '../../lib/toast';
 import { EMPRESAS_RECEPTORAS } from '../../lib/constants';
@@ -14,6 +14,7 @@ import ModalGenerarCuadre from './ModalGenerarCuadre';
 import ModalExportarOdoo from './ModalExportarOdoo';
 import ModalCargaMasiva from './ModalCargaMasiva';
 import ModalDetalleMovimiento from './ModalDetalleMovimiento';
+import ModalAyudaDieta from './ModalAyudaDieta'; // v8.17.29
 import DashboardCajaChica from './DashboardCajaChica';
 import { imprimirCuadreIndividual } from './imprimirCuadre';
 
@@ -63,16 +64,21 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
   const [indicePendiente, setIndicePendiente] = useState(null); // v8.15.5: índice del pendiente abierto en modo bandeja
   const [gruposColapsados, setGruposColapsados] = useState(() => new Set()); // v8.17.7: personaIds con grupo colapsado en bandeja
   const [personasExpandidas, setPersonasExpandidas] = useState(() => new Set()); // v8.17.13: cards 'Por persona' que muestran sus movs
+  // v8.17.29: modal de ayuda Dieta + Hospedaje + config global
+  const [modalAyuda, setModalAyuda] = useState(false);
+  const [configDieta, setConfigDieta] = useState({ desayunoRd: 200, comidaRd: 350, cenaRd: 350, hotelRd: 900 });
 
   const cargar = async () => {
     setLoading(true);
     try {
-      const [movs, sal] = await Promise.all([
+      const [movs, sal, cd] = await Promise.all([
         db.listarMovimientosCajaChica({}),
         db.obtenerSaldoCajaChica(),
+        db.obtenerConfigDieta().catch(() => null), // v8.17.29
       ]);
       setMovimientos(movs);
       setSaldosMap(sal || {});
+      if (cd) setConfigDieta(cd);
     } catch (e) {
       console.error(e);
     }
@@ -377,6 +383,9 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
               <Sparkles className="w-3 h-3 text-yellow-400" /> Proveedores
             </button>
           )}
+          <button onClick={() => setModalAyuda(true)} className="bg-zinc-900 border border-zinc-800 hover:border-orange-500 text-zinc-300 text-xs font-bold uppercase px-3 py-2 flex items-center gap-1" title="Manual de Dieta + Hospedaje">
+            <HelpCircle className="w-3 h-3 text-orange-400" /> Dieta
+          </button>
           <button onClick={() => setModalCargaMasiva(true)} className="bg-zinc-900 border border-zinc-800 hover:border-green-500 text-zinc-300 text-xs font-bold uppercase px-3 py-2 flex items-center gap-1" title="Sube varias facturas a la vez con AI procesándolas en paralelo">
             <Sparkles className="w-3 h-3 text-green-400" /> Carga masiva
           </button>
@@ -766,6 +775,15 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
           data={data}
           onCerrar={() => setModalCargaMasiva(false)}
           onListo={() => { setModalCargaMasiva(false); setTab('bandeja'); cargar(); }}
+        />
+      )}
+
+      {/* v8.17.29: Manual Dieta + Hospedaje (vista admin por default) */}
+      {modalAyuda && (
+        <ModalAyudaDieta
+          vista="admin"
+          configDieta={configDieta}
+          onCerrar={() => setModalAyuda(false)}
         />
       )}
 

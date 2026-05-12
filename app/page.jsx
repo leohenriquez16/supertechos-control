@@ -4603,22 +4603,28 @@ function RolToggle({ active, onClick, children }) {
 // ============================================================
 function MisProyectos({ usuario, data, onIrAReportar, onVerDetalle }) {
   const misProyectos = data.proyectos.filter(p => proyectoVisible(usuario, p));
-  // v8.17.22: colapsar los terminados (100%) abajo, separados del resto
+  // v8.17.22: colapsar terminados; v8.17.23: + aprobados (sin empezar) colapsables arriba
+  const [aprobadosAbiertos, setAprobadosAbiertos] = useState(false);
   const [terminadosAbiertos, setTerminadosAbiertos] = useState(false);
 
   if (misProyectos.length === 0) return <div className="text-center py-20 text-zinc-500">No tienes proyectos asignados.</div>;
 
-  // Calcular avance una vez y separar en curso / terminados
+  // Calcular avance una vez y separar en 3 grupos: aprobados / en curso / terminados
   const conAvance = misProyectos.map(p => {
     const sistema = data.sistemas[p.sistema];
     if (!sistema) return null;
     const { porcentaje, m2Total } = calcAvanceProyecto(p, data.reportes, sistema, data.sistemas);
     return { p, porcentaje, m2Total };
   }).filter(Boolean);
-  // Terminados = porcentaje >= 100
+  // v8.17.23: 'Aprobados' = estado='aprobado' o porcentaje===0 (sin empezar a reportar)
+  const aprobados = conAvance
+    .filter(x => x.p.estado === 'aprobado' && x.porcentaje === 0)
+    .sort((a, b) => (a.p.cliente || '').localeCompare(b.p.cliente || ''));
+  // En curso = no es aprobado-sin-empezar y porcentaje < 100
   const enCurso = conAvance
-    .filter(x => x.porcentaje < 100)
-    .sort((a, b) => b.porcentaje - a.porcentaje); // más cerca de terminar arriba
+    .filter(x => !(x.p.estado === 'aprobado' && x.porcentaje === 0) && x.porcentaje < 100)
+    .sort((a, b) => b.porcentaje - a.porcentaje);
+  // Terminados = porcentaje >= 100
   const terminados = conAvance
     .filter(x => x.porcentaje >= 100)
     .sort((a, b) => (a.p.cliente || '').localeCompare(b.p.cliente || ''));
@@ -4650,6 +4656,23 @@ function MisProyectos({ usuario, data, onIrAReportar, onVerDetalle }) {
         </div>
       )}
 
+      {/* v8.17.23: Aprobados sin empezar (colapsable, default cerrado) */}
+      {aprobados.length > 0 && (
+        <div className="space-y-3">
+          <button
+            onClick={() => setAprobadosAbiertos(!aprobadosAbiertos)}
+            className="w-full flex items-center justify-between bg-zinc-950 border border-blue-700/50 px-3 py-2 hover:bg-zinc-900/50"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-zinc-500 text-xs w-3">{aprobadosAbiertos ? '▼' : '▶'}</span>
+              <span className="text-[11px] tracking-widest uppercase text-blue-300 font-bold">📋 Aprobados sin empezar ({aprobados.length})</span>
+            </div>
+            <span className="text-[10px] text-blue-400">por iniciar</span>
+          </button>
+          {aprobadosAbiertos && <div className="space-y-3">{aprobados.map(renderCard)}</div>}
+        </div>
+      )}
+
       {/* Terminados (colapsable, default cerrado) */}
       {terminados.length > 0 && (
         <div className="space-y-3">
@@ -4667,7 +4690,7 @@ function MisProyectos({ usuario, data, onIrAReportar, onVerDetalle }) {
         </div>
       )}
 
-      {enCurso.length === 0 && terminados.length === 0 && (
+      {enCurso.length === 0 && terminados.length === 0 && aprobados.length === 0 && (
         <div className="text-center py-12 text-zinc-500">Sin proyectos.</div>
       )}
     </div>

@@ -11,6 +11,7 @@ import * as db from '../../lib/db';
 import { formatFechaCorta } from '../../lib/helpers/formato';
 import { calcularAlertasSinFactura } from '../../lib/helpers/alertasSinFactura';
 import { EMPRESAS_RECEPTORAS } from '../../lib/constants';
+import ProyectoSelector from '../common/ProyectoSelector';
 
 const tieneRol = (p, r) => p?.roles?.includes(r);
 
@@ -26,6 +27,26 @@ export default function ModalDetalleMovimiento({
   const persona = data.personal.find(p => p.id === movimiento.personaId);
   const proyectosActivos = (data.proyectos || []).filter(p => !p.archivado);
   const categoriasActivas = (data.categoriasCajaChica || []).filter(c => c.activa);
+
+  // v8.17.27: proyectos ordenados por último uso en caja chica (más recientes primero)
+  const proyectosOrdenados = useMemo(() => {
+    const ultimoUso = {};
+    (movimientos || []).forEach(m => {
+      if (m.tipo !== 'gasto_factura' || !m.proyectoId) return;
+      const f = m.fecha;
+      if (!ultimoUso[m.proyectoId] || f > ultimoUso[m.proyectoId]) {
+        ultimoUso[m.proyectoId] = f;
+      }
+    });
+    return proyectosActivos.slice().sort((a, b) => {
+      const ua = ultimoUso[a.id] || '';
+      const ub = ultimoUso[b.id] || '';
+      if (ua && ub) return ub.localeCompare(ua); // desc por fecha
+      if (ua && !ub) return -1;
+      if (!ua && ub) return 1;
+      return (a.cliente || '').localeCompare(b.cliente || '');
+    });
+  }, [proyectosActivos, movimientos]);
 
   // v8.16.1: alertas detectivas para gastos sin factura
   const sinFactura = !!movimiento.datosIA?.sin_factura;
@@ -592,19 +613,14 @@ export default function ModalDetalleMovimiento({
               </div>
             )}
 
-            <select
+            {/* v8.17.27: selector con buscador + orden por últimos usados */}
+            <ProyectoSelector
               value={campos.proyectoId}
-              onChange={e => set('proyectoId', e.target.value)}
+              onChange={(id) => set('proyectoId', id)}
+              proyectos={proyectosOrdenados}
               disabled={soloLectura}
-              className={`w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-3 py-2 text-white text-sm ${soloLectura ? 'cursor-not-allowed opacity-60' : ''}`}
-            >
-              <option value="">— Sin proyecto —</option>
-              {proyectosActivos.map(p => (
-                <option key={p.id} value={p.id}>
-                  {p.nombre}{p.cliente ? ` · ${p.cliente}` : ''}{p.referenciaOdoo ? ` · ${p.referenciaOdoo}` : ''}
-                </option>
-              ))}
-            </select>
+              etiquetaVacio="— Sin proyecto —"
+            />
           </div>
 
           {error && (

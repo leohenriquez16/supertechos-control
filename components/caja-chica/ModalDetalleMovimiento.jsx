@@ -10,6 +10,7 @@ import { X, Loader2, Save, Camera, AlertCircle, Building2, FileText, User as Use
 import * as db from '../../lib/db';
 import { formatFechaCorta } from '../../lib/helpers/formato';
 import { calcularAlertasSinFactura } from '../../lib/helpers/alertasSinFactura';
+import { EMPRESAS_RECEPTORAS } from '../../lib/constants';
 
 const tieneRol = (p, r) => p?.roles?.includes(r);
 
@@ -51,6 +52,7 @@ export default function ModalDetalleMovimiento({
     categoria: movimiento.datosIA?.categoria_sugerida || '',
     concepto: movimiento.concepto || '',
     proyectoId: movimiento.proyectoId || '',
+    empresaReceptora: movimiento.empresaReceptora || '', // v8.17.25
   });
 
   const [guardando, setGuardando] = useState(false);
@@ -127,6 +129,10 @@ export default function ModalDetalleMovimiento({
     if ((campos.rnc || '') !== (movimiento.rnc || '')) d.rnc = campos.rnc;
     if ((campos.concepto || '') !== (movimiento.concepto || '')) d.concepto = campos.concepto;
     if ((campos.proyectoId || '') !== (movimiento.proyectoId || '')) d.proyectoId = campos.proyectoId || null;
+    // v8.17.25: empresa receptora editable por admin
+    if ((campos.empresaReceptora || '') !== (movimiento.empresaReceptora || '')) {
+      d.empresaReceptora = campos.empresaReceptora || null;
+    }
     const ncfActual = movimiento.datosIA?.ncf || '';
     const catActual = movimiento.datosIA?.categoria_sugerida || '';
     if (campos.ncf !== ncfActual || campos.categoria !== catActual) {
@@ -463,6 +469,28 @@ export default function ModalDetalleMovimiento({
                 />
               </Field>
             </div>
+
+            {/* v8.17.25: Empresa receptora (cliente en la factura) — clave para el 606 */}
+            {!movimiento.datosIA?.sin_factura && (
+              <Field label="Empresa receptora · ¿a nombre de quién está esta factura?">
+                <select
+                  value={campos.empresaReceptora || ''}
+                  onChange={e => set('empresaReceptora', e.target.value)}
+                  disabled={soloLectura}
+                  className={`w-full bg-zinc-950 border ${campos.empresaReceptora ? 'border-zinc-700' : 'border-amber-700'} focus:border-red-600 outline-none px-2 py-2 text-white text-sm ${soloLectura ? 'cursor-not-allowed opacity-60' : ''}`}
+                >
+                  <option value="">— Sin asignar — (admin debe elegir)</option>
+                  {Object.entries(EMPRESAS_RECEPTORAS).map(([key, meta]) => (
+                    <option key={key} value={key}>{meta.label} (RNC {meta.rnc})</option>
+                  ))}
+                </select>
+                {!campos.empresaReceptora && !soloLectura && (
+                  <div className="text-[10px] text-amber-400 mt-0.5 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" /> Asigna a Prouco o Super Techos para que el 606 salga bien.
+                  </div>
+                )}
+              </Field>
+            )}
 
             <Field label="Proveedor (razón social)">
               <input

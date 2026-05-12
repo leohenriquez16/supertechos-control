@@ -5,6 +5,7 @@ import { Camera, Loader2, X, Sparkles, AlertTriangle, Check, MessageSquare, File
 import * as db from '../../lib/db';
 import { toast } from '../../lib/toast';
 import { comprimirImagen } from '../../lib/imports';
+import ProyectoSelector from '../common/ProyectoSelector';
 import { formatRD } from '../../lib/helpers/formato';
 import Campo from '../common/Campo';
 import Input from '../common/Input';
@@ -157,6 +158,8 @@ export default function ModalReportarGasto({ usuario, proyectos = [], proyectoId
         proveedor: sinFactura ? null : (datos.proveedor || null),
         rnc: sinFactura ? null : (datos.rnc || null),
         concepto: datos.concepto || null,
+        // v8.17.25: empresa receptora (detectada por AI; null si sin_factura)
+        empresaReceptora: sinFactura ? null : (datosIA?.empresa_receptora || null),
         datosIA: {
           ...(datosIA || {}),
           categoria_sugerida: datos.categoria || (datosIA?.categoria_sugerida || null),
@@ -344,35 +347,12 @@ export default function ModalReportarGasto({ usuario, proyectos = [], proyectoId
             </div>
 
             <Campo label="Proyecto (opcional)">
-              <select
+              {/* v8.17.25: selector con buscador + orden por últimos usados */}
+              <ProyectoSelector
                 value={datos.proyectoId}
-                onChange={e => setDatos({ ...datos, proyectoId: e.target.value })}
-                className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm"
-              >
-                <option value="">— Sin proyecto / gasto general —</option>
-                {(() => {
-                  const activos = proyectos.filter(p => !p.archivado);
-                  const archivados = proyectos.filter(p => p.archivado);
-                  return (
-                    <>
-                      {activos.length > 0 && (
-                        <optgroup label="Tus proyectos activos">
-                          {activos.map(p => (
-                            <option key={p.id} value={p.id}>{p.referenciaOdoo ? `${p.referenciaOdoo} · ` : ''}{p.cliente || p.nombre}</option>
-                          ))}
-                        </optgroup>
-                      )}
-                      {archivados.length > 0 && (
-                        <optgroup label="Proyectos pasados (archivados)">
-                          {archivados.map(p => (
-                            <option key={p.id} value={p.id}>{p.referenciaOdoo ? `${p.referenciaOdoo} · ` : ''}{p.cliente || p.nombre}</option>
-                          ))}
-                        </optgroup>
-                      )}
-                    </>
-                  );
-                })()}
-              </select>
+                onChange={(id) => setDatos({ ...datos, proyectoId: id })}
+                proyectos={proyectos}
+              />
               {proyectos.length === 0 && (
                 <div className="text-[10px] text-zinc-500 mt-1">
                   No estás asignado a ningún proyecto aún. Solo aparecen proyectos donde estás o estuviste como maestro, supervisor o ayudante.

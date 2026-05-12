@@ -4,6 +4,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { ArrowLeft, Loader2, Plus, Wallet, AlertCircle, Eye, Check, X, Trash2, FileText, Filter, Sparkles, MessageSquare, Camera, RotateCcw, RotateCw, Info, FileX } from 'lucide-react';
 import * as db from '../../lib/db';
 import { toast } from '../../lib/toast';
+import { EMPRESAS_RECEPTORAS } from '../../lib/constants';
 import { formatRD, formatNum, formatFechaCorta } from '../../lib/helpers/formato';
 import { comprimirImagen } from '../../lib/imports';
 import Campo from '../common/Campo';
@@ -909,6 +910,8 @@ function FilaPendiente({ m, data, dx, onAprobar, onRechazar, onEliminar, onVerFo
   const sinFactura = !!m.datosIA?.sin_factura;
   // v8.17.6: gasto con datos incompletos
   const dInc = evaluarDatosIncompletos(m);
+  // v8.17.25: badge de empresa receptora
+  const empresa = m.empresaReceptora ? EMPRESAS_RECEPTORAS[m.empresaReceptora] : null;
   // En compacto: 1 fila con todo en línea + botones íconos.
   if (dx?.compacto) {
     return (
@@ -919,6 +922,11 @@ function FilaPendiente({ m, data, dx, onAprobar, onRechazar, onEliminar, onVerFo
             <span className="text-[9px] text-zinc-500">{m.tipo === 'gasto_factura' ? '🧾' : m.tipo === 'dieta' ? '🍽️' : m.tipo}</span>
             {fotoPorWs && <span className="text-[9px] px-1 bg-yellow-900/40 text-yellow-300 border border-yellow-700">📱 WS</span>}
             {sinFactura && <span className="text-[9px] px-1 bg-red-900/40 text-red-300 border border-red-800 font-bold">✍ SIN FACTURA</span>}
+            {/* v8.17.25: badge empresa receptora */}
+            {empresa && <span className={`text-[9px] px-1 ${empresa.color} text-white border ${empresa.borderColor} font-bold`} title={`Factura a nombre de ${empresa.label}`}>{empresa.short}</span>}
+            {!sinFactura && !m.empresaReceptora && m.tipo === 'gasto_factura' && (
+              <span className="text-[9px] px-1 bg-zinc-800 text-zinc-400 border border-zinc-700 font-bold" title="Sin empresa receptora asignada">❓</span>
+            )}
             {dInc.incompleto && (
               <span className="text-[9px] px-1 bg-amber-900/40 text-amber-300 border border-amber-700 font-bold" title={`Faltan: ${dInc.motivos.map(x => LABEL_MOTIVO[x] || x).join(' · ')}`}>⚠ FALTAN DATOS</span>
             )}
@@ -962,6 +970,17 @@ function FilaPendiente({ m, data, dx, onAprobar, onRechazar, onEliminar, onVerFo
             {sinFactura && (
               <div className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-red-900/40 text-red-300 border border-red-800 flex items-center gap-1">
                 <FileX className="w-2.5 h-2.5" /> Sin factura
+              </div>
+            )}
+            {/* v8.17.25: badge empresa receptora */}
+            {empresa && (
+              <div className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 ${empresa.color} text-white border ${empresa.borderColor}`} title={`Factura a nombre de ${empresa.label}`}>
+                {empresa.label}
+              </div>
+            )}
+            {!sinFactura && !m.empresaReceptora && m.tipo === 'gasto_factura' && (
+              <div className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-zinc-800 text-zinc-400 border border-zinc-700" title="Sin empresa receptora asignada">
+                ❓ Empresa
               </div>
             )}
             {dInc.incompleto && (
@@ -1025,6 +1044,8 @@ function FilaMovimiento({ m, data, dx, onAbrirDetalle, onVerFoto, onEliminar, on
   // v8.17.6: gasto con datos incompletos (necesita atención del admin)
   const dInc = evaluarDatosIncompletos(m);
   const incompletoVisible = dInc.incompleto && m.status === 'pendiente_revision';
+  // v8.17.25: badge empresa receptora
+  const empresa = m.empresaReceptora ? EMPRESAS_RECEPTORAS[m.empresaReceptora] : null;
   const signo = m.tipo === 'entrega' ? '+' : (m.tipo === 'ajuste' ? (m.signoAjuste >= 0 ? '+' : '−') : '−');
   const cMonto = m.tipo === 'entrega' ? 'text-green-400' : (m.status === 'aprobado' ? 'text-orange-400' : 'text-zinc-500');
   const compacto = !!dx?.compacto;
@@ -1037,6 +1058,11 @@ function FilaMovimiento({ m, data, dx, onAbrirDetalle, onVerFoto, onEliminar, on
           <div className={`text-[9px] font-black uppercase tracking-wider px-1 ${stmeta.cls}`}>{stmeta.label}</div>
           {fotoPorWs && <div className="text-[9px] font-black uppercase tracking-wider px-1 bg-yellow-900/40 text-yellow-300 border border-yellow-700">📱 WS</div>}
           {sinFactura && <div className="text-[9px] font-black uppercase tracking-wider px-1 bg-red-900/40 text-red-300 border border-red-800">✍ SIN FACTURA</div>}
+          {/* v8.17.25: empresa receptora */}
+          {empresa && <div className={`text-[9px] font-black uppercase tracking-wider px-1 ${empresa.color} text-white border ${empresa.borderColor}`} title={`Factura a ${empresa.label}`}>{empresa.short}</div>}
+          {!sinFactura && !m.empresaReceptora && m.tipo === 'gasto_factura' && (
+            <div className="text-[9px] font-black uppercase tracking-wider px-1 bg-zinc-800 text-zinc-400 border border-zinc-700" title="Sin empresa receptora asignada">❓</div>
+          )}
           {/* v8.17.6: badge de datos incompletos */}
           {incompletoVisible && (
             <div

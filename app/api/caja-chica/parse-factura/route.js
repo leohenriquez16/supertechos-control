@@ -34,7 +34,9 @@ Devuelve EXCLUSIVAMENTE un JSON con esta estructura, sin texto antes ni después
   "subtotal": number | null,
   "itbis": number | null,
   "propina_legal": number | null,
-  "rnc": string | null,
+  "rnc": string | null,            // RNC del PROVEEDOR (quien EMITE la factura)
+  "rnc_cliente": string | null,    // RNC del CLIENTE (a quien va dirigida la factura)
+  "empresa_receptora": string | null, // 'super_techos' si rnc_cliente == 130774331, 'prouco' si == 131515541, sino null
   "fecha": string | null,        // formato YYYY-MM-DD si se identifica, null si no
   "proveedor": string | null,    // nombre de la empresa que emite
   "ncf": string | null,          // número comprobante fiscal si visible (ej: B0100012345)
@@ -52,10 +54,16 @@ ${descripcionesCategorias}
 
 IDs válidos: ${ids}
 
+EMPRESAS RECEPTORAS conocidas (el RNC del CLIENTE en la factura):
+- "super_techos" → RNC 130774331 (LH SUPER TECHOS SRL)
+- "prouco" → RNC 131515541 (PROUCO GROUP DOMINICANA SRL)
+
 Reglas:
 - Si un campo no se ve claro, usa null en lugar de inventar.
 - monto_total siempre es el TOTAL final (después de ITBIS y propina si aplican).
-- RNC dominicano: 9 u 11 dígitos, puede tener formato 130-77433-1.
+- RNC dominicano: 9 u 11 dígitos, puede tener formato 130-77433-1. Normaliza a solo dígitos.
+- El campo "rnc" es del PROVEEDOR (vendedor). El "rnc_cliente" es del cliente (Super Techos o Prouco), suele aparecer abajo en la sección "Cliente:" o "Datos del Receptor".
+- Si rnc_cliente NO coincide con ninguno de los 2 RNCs conocidos, deja "empresa_receptora" en null.
 - Si la imagen NO es una factura/recibo, devuelve confianza="baja" y todos los campos null excepto advertencias.
 - "categoria_sugerida" DEBE ser uno de los IDs listados — no inventes nuevas categorías.
 - No incluyas explicaciones fuera del JSON.`;

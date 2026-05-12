@@ -204,6 +204,8 @@ export default function ModalCargaMasiva({ usuario, data, onCerrar, onListo }) {
       proveedor: b.datos.proveedor || null,
       rnc: b.datos.rnc || null,
       concepto: b.datos.concepto || null,
+      // v8.17.25: empresa receptora detectada por AI (override manual también soportado en b.datos)
+      empresaReceptora: b.datos.empresaReceptora || b.datosIA?.empresa_receptora || null,
       datosIA: {
         ...(b.datosIA || {}),
         ncf: b.datos.ncf || null,

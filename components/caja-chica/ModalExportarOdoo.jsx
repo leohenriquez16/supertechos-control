@@ -7,7 +7,7 @@ import { toast } from '../../lib/toast';
 import Campo from '../common/Campo';
 import Input from '../common/Input';
 import { periodoSemana } from '../../lib/helpers/cuadreCajaChica';
-import { exportarPagosOdooCSV, exportarFacturasOdooCSV, descargarCSV } from '../../lib/helpers/exportOdooCSV';
+import { exportarPagosOdooCSV, exportarFacturasOdooCSV, descargarCSV, generarFacturasSeparadasPorEmpresa, descargarFacturasSeparadasZIP } from '../../lib/helpers/exportOdooCSV';
 import { generarZipFacturas, descargarZip } from '../../lib/helpers/exportFacturasZIP';
 
 const tieneRol = (p, r) => p?.roles?.includes(r);
@@ -88,6 +88,22 @@ export default function ModalExportarOdoo({ data, onCerrar }) {
       } else if (tipo === 'facturas') {
         const csv = exportarFacturasOdooCSV({ movimientos: movs, data });
         descargarCSV(csv, `caja-chica-facturas-${tag}.csv`);
+      } else if (tipo === 'facturas_separadas') {
+        // v8.17.25: 3 CSVs separados por empresa receptora + sin comprobante
+        const resultado = generarFacturasSeparadasPorEmpresa({ movimientos: movs, data, fechaInicio, fechaFin });
+        await descargarFacturasSeparadasZIP({
+          csvSuperTechos: resultado.csvSuperTechos,
+          csvProuco: resultado.csvProuco,
+          csvSinComprobante: resultado.csvSinComprobante,
+          fechaInicio, fechaFin,
+        });
+        const { counts, sinAsignar } = resultado;
+        const msg = `ZIP descargado · ST: ${counts.superTechos} · Prouco: ${counts.prouco} · Sin compr.: ${counts.sinComprobante}`;
+        if (sinAsignar.length > 0) {
+          setTimeout(() => toast.warning(`${msg} · ⚠ ${sinAsignar.length} factura${sinAsignar.length !== 1 ? 's' : ''} sin empresa asignada (no incluidas)`, { duration: 10000 }), 200);
+        } else {
+          setTimeout(() => toast.success(msg), 200);
+        }
       } else if (tipo === 'facturas_zip') {
         const { blob, descargadas, sinFoto, total } = await generarZipFacturas({
           movimientos: movs,
@@ -135,6 +151,15 @@ export default function ModalExportarOdoo({ data, onCerrar }) {
             >
               <div className="flex items-center gap-2 mb-1"><Receipt className="w-4 h-4" /><span className="text-xs font-bold">CSV Facturas con cuenta analítica</span></div>
               <div className="text-[10px] text-zinc-500">Solo gastos aprobados, con cuenta analítica = referencia Odoo del proyecto. Para crear facturas proveedor</div>
+            </button>
+            {/* v8.17.25: nuevo export separado por empresa receptora */}
+            <button
+              type="button"
+              onClick={() => setTipo('facturas_separadas')}
+              className={`p-3 border-2 text-left transition ${tipo === 'facturas_separadas' ? 'bg-red-600/10 border-red-600 text-white' : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:border-zinc-700'}`}
+            >
+              <div className="flex items-center gap-2 mb-1"><Archive className="w-4 h-4" /><span className="text-xs font-bold">📦 ZIP separado por empresa (606)</span></div>
+              <div className="text-[10px] text-zinc-500">3 CSVs en ZIP: facturas a Super Techos · facturas a Prouco · gastos sin comprobante. Listo para enviar al contador / 606. Las facturas sin empresa asignada quedan fuera y se avisa al final.</div>
             </button>
             <button
               type="button"

@@ -194,6 +194,8 @@ export default function ModalReportarGastosMasivo({ usuario, proyectos, categori
         proveedor: b.datos.proveedor || null,
         rnc: b.datos.rnc || null,
         concepto: b.datos.concepto || null,
+        // v8.17.25: empresa receptora detectada por AI
+        empresaReceptora: b.datosIA?.empresa_receptora || null,
         datosIA: {
           ...(b.datosIA || {}),
           ncf: b.datos.ncf || null,

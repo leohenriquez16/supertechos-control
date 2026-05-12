@@ -663,14 +663,17 @@ export default function ModalDetalleMovimiento({
             <button onClick={() => setVerGrande(false)} className="bg-red-600 hover:bg-red-700 text-white px-3 py-2 text-xs font-black uppercase flex items-center gap-1"><X className="w-4 h-4" /> Cerrar</button>
           </div>
         </div>
-        <div className="w-full h-full flex items-center justify-center" onClick={e => e.stopPropagation()}>
+        {/* v8.17.20: click en CUALQUIER parte (incluida la foto) cierra el visor.
+            Antes el contenedor tenía stopPropagation, lo que dejaba al usuario
+            atrapado sin zona clickable para cerrar (la foto ocupa todo). */}
+        <div className="w-full h-full flex items-center justify-center cursor-zoom-out">
           <img
             src={fotoUrl}
             alt=""
             className="object-contain transition-transform duration-200"
             style={{
               transform: `rotate(${rotacion}deg)`,
-              // v8.17.18: usa viewport completo dejando ~8px de holgura, e invierte
+              // Usa viewport completo dejando ~8px de holgura, e invierte
               // ancho/alto cuando la rotación es lateral (90/270)
               maxWidth: (rotacion === 90 || rotacion === 270) ? 'calc(100vh - 8px)' : 'calc(100vw - 8px)',
               maxHeight: (rotacion === 90 || rotacion === 270) ? 'calc(100vw - 8px)' : 'calc(100vh - 8px)',

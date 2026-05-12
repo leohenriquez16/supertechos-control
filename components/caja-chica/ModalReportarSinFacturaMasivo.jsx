@@ -11,6 +11,7 @@
 import React, { useState, useMemo } from 'react';
 import { X, Plus, Trash2, Loader2, FileWarning, Send, Check, AlertCircle } from 'lucide-react';
 import * as db from '../../lib/db';
+import ProyectoSelector from '../common/ProyectoSelector';
 
 const PROYECTO_GENERICO = '__generico__';
 
@@ -150,20 +151,18 @@ export default function ModalReportarSinFacturaMasivo({ usuario, proyectos, cate
           <button onClick={onCerrar} disabled={enviando} className="text-zinc-500 hover:text-white disabled:opacity-30"><X className="w-4 h-4" /></button>
         </div>
 
-        {/* Proyecto común */}
+        {/* Proyecto común — v8.17.25: con buscador + orden por últimos usados */}
         <div className="px-4 pt-4 pb-2 border-b border-zinc-800">
           <label className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">Proyecto (común a todos los gastos)</label>
-          <select
-            value={proyectoComunId}
-            onChange={e => setProyectoComunId(e.target.value)}
-            disabled={enviando}
-            className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm text-white mt-1 disabled:opacity-40"
-          >
-            <option value={PROYECTO_GENERICO}>🏢 Gasto genérico (sin proyecto)</option>
-            {(proyectos || []).filter(p => !p.archivado).map(p => (
-              <option key={p.id} value={p.id}>{p.referenciaOdoo ? p.referenciaOdoo + ' · ' : ''}{p.cliente || p.nombre}</option>
-            ))}
-          </select>
+          <div className="mt-1">
+            <ProyectoSelector
+              value={proyectoComunId === PROYECTO_GENERICO ? '' : proyectoComunId}
+              onChange={(id) => setProyectoComunId(id || PROYECTO_GENERICO)}
+              proyectos={proyectos || []}
+              etiquetaVacio="🏢 Gasto genérico (sin proyecto)"
+              disabled={enviando}
+            />
+          </div>
           <div className="text-[10px] text-zinc-500 mt-1">¿Mezcla de proyectos? Reporta en lotes separados.</div>
         </div>
 

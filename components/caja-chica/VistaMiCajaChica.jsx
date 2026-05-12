@@ -40,6 +40,8 @@ export default function VistaMiCajaChica({ usuario, data, onVolver }) {
   // Proyectos a los que el usuario está o estuvo asignado.
   // Restricción intencional: un maestro no puede asociar un gasto a un proyecto
   // donde nunca ha trabajado.
+  // v8.17.25: ordenar por último uso del usuario en caja chica (más reciente primero).
+  // Si nunca lo ha usado en caja chica → al final de los activos. Archivados al fondo.
   const proyectosDelUsuario = useMemo(() => {
     const ids = new Set();
 
@@ -61,14 +63,36 @@ export default function VistaMiCajaChica({ usuario, data, onVolver }) {
       }
     });
 
-    // Devolvemos los objetos completos, ordenados con activos primero
+    // 3. Calcular el último uso del usuario en caja chica por proyecto (más reciente gana)
+    const ultimoUsoCaja = {};
+    movimientos.forEach(m => {
+      if (m.tipo !== 'gasto_factura' || !m.proyectoId) return;
+      const f = m.fecha;
+      if (!ultimoUsoCaja[m.proyectoId] || f > ultimoUsoCaja[m.proyectoId]) {
+        ultimoUsoCaja[m.proyectoId] = f;
+      }
+    });
+
+    // Devolvemos los objetos completos, ordenados:
+    //   1) Activos con uso reciente en caja → primero (orden desc por última fecha)
+    //   2) Activos sin uso en caja → alfabético
+    //   3) Archivados → al fondo
     return (data.proyectos || [])
       .filter(p => ids.has(p.id))
       .sort((a, b) => {
-        if (!!a.archivado === !!b.archivado) return 0;
-        return a.archivado ? 1 : -1;
+        // Archivados siempre al final
+        if (!!a.archivado !== !!b.archivado) return a.archivado ? 1 : -1;
+        const ua = ultimoUsoCaja[a.id] || '';
+        const ub = ultimoUsoCaja[b.id] || '';
+        // Si ambos tienen uso, ordenar desc por fecha
+        if (ua && ub) return ub.localeCompare(ua);
+        // Uno tiene uso y otro no → el que tiene uso primero
+        if (ua && !ub) return -1;
+        if (!ua && ub) return 1;
+        // Ninguno tiene uso → alfabético por cliente
+        return (a.cliente || '').localeCompare(b.cliente || '');
       });
-  }, [data.proyectos, data.reportes, usuario.id]);
+  }, [data.proyectos, data.reportes, usuario.id, movimientos]);
 
   const verFotoMov = async (mov) => {
     if (!mov.tieneFoto) return;

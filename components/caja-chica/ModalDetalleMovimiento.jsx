@@ -396,7 +396,7 @@ export default function ModalDetalleMovimiento({
                     <button onClick={() => rotar(90)} className="bg-zinc-800 hover:bg-zinc-700 text-white p-1.5" title="Rotar a la derecha">
                       <RotateCw className="w-3.5 h-3.5" />
                     </button>
-                    <button onClick={() => setVerGrande(true)} className="bg-zinc-800 hover:bg-zinc-700 text-white p-1.5" title="Ver foto en grande">
+                    <button onClick={(e) => { e.stopPropagation(); setVerGrande(true); }} className="bg-zinc-800 hover:bg-zinc-700 text-white p-1.5" title="Ver foto en grande">
                       <Maximize2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
@@ -421,7 +421,7 @@ export default function ModalDetalleMovimiento({
                       maxHeight: (rotacion === 90 || rotacion === 270) ? '100%' : '60vh',
                       maxWidth: (rotacion === 90 || rotacion === 270) ? '60vh' : '100%',
                     }}
-                    onClick={() => setVerGrande(true)}
+                    onClick={(e) => { e.stopPropagation(); setVerGrande(true); }}
                   />
                 ) : (
                   <div className="text-zinc-500 text-xs py-12">No se pudo cargar la foto</div>
@@ -430,7 +430,7 @@ export default function ModalDetalleMovimiento({
               {fotoUrl && (
                 <div className="px-3 py-1.5 bg-zinc-950 border-t border-zinc-800 text-center">
                   <button
-                    onClick={() => setVerGrande(true)}
+                    onClick={(e) => { e.stopPropagation(); setVerGrande(true); }}
                     className="text-[10px] text-blue-400 hover:text-blue-300 uppercase tracking-widest font-bold flex items-center gap-1 mx-auto"
                   >
                     <Maximize2 className="w-3 h-3" /> Toca para ver en grande

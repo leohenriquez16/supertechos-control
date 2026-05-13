@@ -1368,9 +1368,13 @@ function TablaMovimientos({ movimientos: movsTabla, todosMovimientos, data, sort
       return next;
     });
   };
-  // Si no se pasa columnasVisibles, mostrar todas las default
-  const showCol = (k) => !columnasVisibles || columnasVisibles.has(k);
-  const movimientos = movsTabla;
+  // v8.17.34: defensa — si columnasVisibles es null/undefined o un Set vacío,
+  // mostrar todas las columnas para que la tabla nunca quede totalmente en blanco.
+  const showCol = (k) => {
+    if (!columnasVisibles || columnasVisibles.size === 0) return true;
+    return columnasVisibles.has(k);
+  };
+  const movimientos = movsTabla || [];
 
   const Th = ({ k, align = 'left', children }) => {
     const activo = sort.key === k;

@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useEffect, useState, useMemo } from 'react';
-import { ArrowLeft, Loader2, Plus, Wallet, AlertCircle, Eye, Check, X, Trash2, FileText, Filter, Sparkles, MessageSquare, Camera, RotateCcw, RotateCw, Info, FileX, HelpCircle } from 'lucide-react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
+import { ArrowLeft, Loader2, Plus, Wallet, AlertCircle, Eye, Check, X, Trash2, FileText, Filter, Sparkles, MessageSquare, Camera, RotateCcw, RotateCw, Info, FileX, HelpCircle, Columns3, PanelRight, ChevronLeft, ChevronRight, Edit2, Image as ImageIcon } from 'lucide-react';
 import * as db from '../../lib/db';
 import { toast } from '../../lib/toast';
 import { EMPRESAS_RECEPTORAS } from '../../lib/constants';
@@ -70,6 +70,44 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
   // v8.17.30: sort de la tabla Movimientos en desktop + feedback al guardar inline edits
   const [sortMov, setSortMov] = useState({ key: 'fecha', dir: 'desc' });
   const [guardandoMovId, setGuardandoMovId] = useState(null);
+  // v8.17.32: column picker (qué columnas mostrar) + viewer panel (foto + navegación)
+  const COLUMNAS_DISPONIBLES = [
+    { k: 'fecha',       label: 'Fecha',       fija: true  },
+    { k: 'persona',     label: 'Persona',     fija: true  },
+    { k: 'tipo',        label: 'Tipo' },
+    { k: 'proyecto',    label: 'Proyecto' },
+    { k: 'concepto',    label: 'Concepto / Proveedor' },
+    { k: 'rnc',         label: 'RNC' },
+    { k: 'ncf',         label: 'NCF' },
+    { k: 'categoria',   label: 'Categoría' },
+    { k: 'aplicaA',     label: 'Aplica a (dieta/hospedaje)' },
+    { k: 'subTipo',     label: 'Sub-tipo' },
+    { k: 'empresa',     label: 'Empresa' },
+    { k: 'aprobadoPor', label: 'Aprobado por' },
+    { k: 'creadoAt',    label: 'Creado el' },
+    { k: 'status',      label: 'Status' },
+    { k: 'monto',       label: 'Monto',       fija: true  },
+    { k: 'accion',      label: 'Acción',      fija: true  },
+  ];
+  const COLUMNAS_DEFAULT = ['fecha', 'persona', 'tipo', 'proyecto', 'concepto', 'empresa', 'status', 'monto', 'accion'];
+  const [columnasVisibles, setColumnasVisibles] = useState(() => {
+    if (typeof window === 'undefined') return new Set(COLUMNAS_DEFAULT);
+    try {
+      const saved = JSON.parse(window.localStorage.getItem('cc_mov_cols') || 'null');
+      if (Array.isArray(saved) && saved.length > 0) return new Set(saved);
+    } catch {}
+    return new Set(COLUMNAS_DEFAULT);
+  });
+  useEffect(() => {
+    try { window.localStorage.setItem('cc_mov_cols', JSON.stringify([...columnasVisibles])); } catch {}
+  }, [columnasVisibles]);
+  const [colPickerAbierto, setColPickerAbierto] = useState(false);
+
+  const [viewerAbierto, setViewerAbierto] = useState(false);
+  const [viewerMovId, setViewerMovId] = useState(null);
+  const [viewerFotoUrl, setViewerFotoUrl] = useState(null);
+  const [viewerFotoLoading, setViewerFotoLoading] = useState(false);
+  const [viewerRotacion, setViewerRotacion] = useState(0);
 
   const cargar = async () => {
     setLoading(true);
@@ -144,6 +182,28 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
     } catch (e) { toast.error('Error: ' + (e.message || e)); }
     setGuardandoMovId(null);
   };
+
+  // v8.17.32: cargar foto al cambiar de movimiento en el visor lateral.
+  useEffect(() => {
+    if (!viewerAbierto || !viewerMovId) { setViewerFotoUrl(null); return; }
+    let cancelado = false;
+    setViewerRotacion(0);
+    setViewerFotoUrl(null);
+    const mov = movimientos.find(m => m.id === viewerMovId);
+    if (!mov || !mov.tieneFoto) return;
+    setViewerFotoLoading(true);
+    db.obtenerFotoFacturaCajaChica(viewerMovId)
+      .then(url => { if (!cancelado) setViewerFotoUrl(url); })
+      .catch(e => { console.warn('Foto visor:', e); })
+      .finally(() => { if (!cancelado) setViewerFotoLoading(false); });
+    return () => { cancelado = true; };
+  }, [viewerMovId, viewerAbierto, movimientos]);
+
+  const toggleColumna = (k) => setColumnasVisibles(s => {
+    const next = new Set(s);
+    if (next.has(k)) next.delete(k); else next.add(k);
+    return next;
+  });
 
   // Adjuntar una foto a un movimiento que se reportó "sin foto" (admin recibe la foto por WS).
   const adjuntarFoto = async (mov, file) => {
@@ -738,6 +798,58 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
               </label>
               {(filtroPersona || filtroProyecto || soloIncompletos || busqueda) && <button onClick={() => { setFiltroPersona(''); setFiltroProyecto(''); setSoloIncompletos(false); setBusqueda(''); }} className="text-red-400">Limpiar</button>}
               <div className="ml-auto text-[10px] text-zinc-500">{movimientosFiltrados.length} de {movimientos.length}</div>
+              {/* v8.17.32: column picker + viewer toggle (solo desktop) */}
+              <div className="hidden md:flex items-center gap-1 ml-1 relative">
+                <button
+                  onClick={() => setColPickerAbierto(o => !o)}
+                  className={`flex items-center gap-1 px-2 py-1 border text-[10px] font-bold uppercase tracking-wider ${colPickerAbierto ? 'bg-red-600 border-red-600 text-white' : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'}`}
+                  title="Mostrar / ocultar columnas"
+                >
+                  <Columns3 className="w-3 h-3" /> Columnas
+                </button>
+                <button
+                  onClick={() => {
+                    setViewerAbierto(v => {
+                      const nuevo = !v;
+                      if (nuevo && !viewerMovId && movimientosSorted.length > 0) {
+                        setViewerMovId(movimientosSorted[0].id);
+                      }
+                      return nuevo;
+                    });
+                  }}
+                  className={`flex items-center gap-1 px-2 py-1 border text-[10px] font-bold uppercase tracking-wider ${viewerAbierto ? 'bg-blue-600 border-blue-600 text-white' : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'}`}
+                  title="Visor de factura (panel lateral con foto y navegación)"
+                >
+                  <PanelRight className="w-3 h-3" /> Visor
+                </button>
+                {colPickerAbierto && (
+                  <div
+                    className="absolute top-full right-0 mt-1 z-20 bg-zinc-900 border border-zinc-700 p-2 w-56 shadow-xl max-h-[60vh] overflow-y-auto"
+                    onMouseLeave={() => setColPickerAbierto(false)}
+                  >
+                    <div className="text-[9px] uppercase tracking-widest text-zinc-500 font-bold mb-1 pb-1 border-b border-zinc-800">Columnas visibles</div>
+                    {COLUMNAS_DISPONIBLES.map(c => (
+                      <label key={c.k} className={`flex items-center gap-2 py-1 px-1 text-xs ${c.fija ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-zinc-800'}`}>
+                        <input
+                          type="checkbox"
+                          checked={columnasVisibles.has(c.k)}
+                          onChange={() => !c.fija && toggleColumna(c.k)}
+                          disabled={c.fija}
+                          className="w-3 h-3 accent-red-600"
+                        />
+                        <span>{c.label}</span>
+                        {c.fija && <span className="text-[8px] text-zinc-600 ml-auto">fija</span>}
+                      </label>
+                    ))}
+                    <button
+                      onClick={() => setColumnasVisibles(new Set(COLUMNAS_DEFAULT))}
+                      className="w-full mt-2 pt-2 border-t border-zinc-800 text-[10px] text-zinc-500 hover:text-red-400 text-left"
+                    >
+                      ↺ Restablecer default
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
             {/* Buscador libre */}
             <div className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 px-2 py-1">
@@ -769,21 +881,45 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
             </div>
           ) : (
             <>
-              {/* DESKTOP: tabla */}
-              <div className="hidden md:block bg-zinc-900 border border-zinc-800 overflow-x-auto">
-                <TablaMovimientos
-                  movimientos={movimientosSorted}
-                  data={data}
-                  sort={sortMov}
-                  setSort={setSortMov}
-                  dx={dx}
-                  guardandoId={guardandoMovId}
-                  onEditarCampo={editarCampoMov}
-                  onAbrirDetalle={(m) => setVerDetalle(m)}
-                  onVerFoto={(m) => verFotoMov(m)}
-                  onEliminar={tieneRol(usuario, 'admin') ? eliminar : null}
-                  onDesaprobar={tieneRol(usuario, 'admin') ? desaprobar : null}
-                />
+              {/* DESKTOP: tabla (con visor lateral opcional) */}
+              <div className="hidden md:flex gap-3">
+                <div className={`bg-zinc-900 border border-zinc-800 overflow-x-auto ${viewerAbierto ? 'flex-1 min-w-0' : 'w-full'}`}>
+                  <TablaMovimientos
+                    movimientos={movimientosSorted}
+                    data={data}
+                    sort={sortMov}
+                    setSort={setSortMov}
+                    dx={dx}
+                    guardandoId={guardandoMovId}
+                    columnasVisibles={columnasVisibles}
+                    filaSeleccionada={viewerAbierto ? viewerMovId : null}
+                    onEditarCampo={editarCampoMov}
+                    onAbrirDetalle={(m) => setVerDetalle(m)}
+                    onVerFoto={(m) => verFotoMov(m)}
+                    onSeleccionar={(m) => viewerAbierto ? setViewerMovId(m.id) : setVerDetalle(m)}
+                    onEliminar={tieneRol(usuario, 'admin') ? eliminar : null}
+                    onDesaprobar={tieneRol(usuario, 'admin') ? desaprobar : null}
+                  />
+                </div>
+                {viewerAbierto && (
+                  <PanelVisorFactura
+                    movimientos={movimientosSorted}
+                    movId={viewerMovId}
+                    setMovId={setViewerMovId}
+                    data={data}
+                    fotoUrl={viewerFotoUrl}
+                    fotoLoading={viewerFotoLoading}
+                    rotacion={viewerRotacion}
+                    setRotacion={setViewerRotacion}
+                    onCerrar={() => setViewerAbierto(false)}
+                    onAprobar={aprobar}
+                    onRechazar={rechazar}
+                    onDesaprobar={tieneRol(usuario, 'admin') ? desaprobar : null}
+                    onEditarCampo={editarCampoMov}
+                    onAbrirDetalle={(m) => setVerDetalle(m)}
+                    guardandoId={guardandoMovId}
+                  />
+                )}
               </div>
 
               {/* MOBILE: cards agrupados por fecha (layout original) */}
@@ -1181,10 +1317,13 @@ function FilaMovimiento({ m, data, dx, onAbrirDetalle, onVerFoto, onEliminar, on
 
 // v8.17.30: tabla de movimientos para desktop. Mismo patrón que la tabla de Proyectos:
 // sticky header, sort por columna, inline edit (proyecto, empresa), color band por status.
-function TablaMovimientos({ movimientos, data, sort, setSort, dx, guardandoId, onEditarCampo, onAbrirDetalle, onVerFoto, onEliminar, onDesaprobar }) {
+// v8.17.32: columnas configurables + selección sincronizada con el visor lateral.
+function TablaMovimientos({ movimientos, data, sort, setSort, dx, guardandoId, columnasVisibles, filaSeleccionada, onEditarCampo, onAbrirDetalle, onVerFoto, onEliminar, onDesaprobar, onSeleccionar }) {
   const compacto = !!dx?.compacto;
   const rowPad = compacto ? 'py-1 px-2' : 'py-2 px-2';
   const proyectosActivos = (data.proyectos || []).filter(p => !p.archivado);
+  // Si no se pasa columnasVisibles, mostrar todas las default
+  const showCol = (k) => !columnasVisibles || columnasVisibles.has(k);
 
   const Th = ({ k, align = 'left', children }) => {
     const activo = sort.key === k;
@@ -1211,15 +1350,22 @@ function TablaMovimientos({ movimientos, data, sort, setSort, dx, guardandoId, o
       <thead className="bg-zinc-950 border-b border-zinc-800 sticky top-0 z-10">
         <tr>
           <th className="w-1" />
-          <Th k="fecha">Fecha</Th>
-          <Th k="persona">Persona</Th>
-          <Th k="tipo">Tipo</Th>
-          <Th k="proyecto">Proyecto</Th>
-          <Th k="concepto">Concepto / Proveedor</Th>
-          <Th k="empresa">Empresa</Th>
-          <Th k="status">Status</Th>
-          <Th k="monto" align="right">Monto</Th>
-          <th className={`${rowPad} text-right text-[10px] uppercase tracking-wider text-zinc-500 font-bold`}>Acción</th>
+          {showCol('fecha')      && <Th k="fecha">Fecha</Th>}
+          {showCol('persona')    && <Th k="persona">Persona</Th>}
+          {showCol('tipo')       && <Th k="tipo">Tipo</Th>}
+          {showCol('proyecto')   && <Th k="proyecto">Proyecto</Th>}
+          {showCol('concepto')   && <Th k="concepto">Concepto / Proveedor</Th>}
+          {showCol('rnc')        && <th className={`${rowPad} text-left text-[10px] uppercase tracking-wider text-zinc-500 font-bold`}>RNC</th>}
+          {showCol('ncf')        && <th className={`${rowPad} text-left text-[10px] uppercase tracking-wider text-zinc-500 font-bold`}>NCF</th>}
+          {showCol('categoria')  && <th className={`${rowPad} text-left text-[10px] uppercase tracking-wider text-zinc-500 font-bold`}>Categoría</th>}
+          {showCol('aplicaA')    && <th className={`${rowPad} text-left text-[10px] uppercase tracking-wider text-zinc-500 font-bold`}>Aplica a</th>}
+          {showCol('subTipo')    && <th className={`${rowPad} text-left text-[10px] uppercase tracking-wider text-zinc-500 font-bold`}>Sub-tipo</th>}
+          {showCol('empresa')    && <Th k="empresa">Empresa</Th>}
+          {showCol('aprobadoPor')&& <th className={`${rowPad} text-left text-[10px] uppercase tracking-wider text-zinc-500 font-bold`}>Aprobado por</th>}
+          {showCol('creadoAt')   && <th className={`${rowPad} text-left text-[10px] uppercase tracking-wider text-zinc-500 font-bold`}>Creado</th>}
+          {showCol('status')     && <Th k="status">Status</Th>}
+          {showCol('monto')      && <Th k="monto" align="right">Monto</Th>}
+          {showCol('accion')     && <th className={`${rowPad} text-right text-[10px] uppercase tracking-wider text-zinc-500 font-bold`}>Acción</th>}
         </tr>
       </thead>
       <tbody>
@@ -1239,107 +1385,339 @@ function TablaMovimientos({ movimientos, data, sort, setSort, dx, guardandoId, o
           const puedeEditarProy = m.tipo !== 'entrega';
           const puedeEditarEmpresa = m.tipo === 'gasto_factura' && !sinFactura;
 
+          // v8.17.32: categoría desde datosIA.categoria_sugerida (cuando aplica)
+          const catId = m.datosIA?.categoria_sugerida;
+          const cat = catId ? (data.categoriasCajaChica || []).find(c => c.id === catId) : null;
+          const aprobador = m.aprobadoPorId ? data.personal.find(p => p.id === m.aprobadoPorId) : null;
+          const ncf = m.datosIA?.ncf || null;
+          const seleccionada = filaSeleccionada === m.id;
           return (
             <tr
               key={m.id}
-              onClick={() => onAbrirDetalle && m.tipo !== 'entrega' && onAbrirDetalle(m)}
-              className={`border-b border-zinc-800 hover:bg-zinc-800/40 ${m.tipo !== 'entrega' ? 'cursor-pointer' : ''} ${guardandoId === m.id ? 'opacity-60' : ''} ${incompletoVisible ? 'bg-amber-900/10' : ''}`}
+              onClick={() => {
+                // Si hay onSeleccionar (visor abierto), sincronizamos selección; si no, abrimos detalle.
+                if (onSeleccionar) onSeleccionar(m);
+                else if (m.tipo !== 'entrega' && onAbrirDetalle) onAbrirDetalle(m);
+              }}
+              className={`border-b border-zinc-800 ${seleccionada ? 'bg-blue-900/30 hover:bg-blue-900/40' : 'hover:bg-zinc-800/40'} ${m.tipo !== 'entrega' ? 'cursor-pointer' : 'cursor-default'} ${guardandoId === m.id ? 'opacity-60' : ''} ${incompletoVisible && !seleccionada ? 'bg-amber-900/10' : ''}`}
             >
               {/* color band por status */}
               <td className={`${colorBandStatus(m.status)} w-1`} style={{ padding: 0 }} />
-              <td className={`${rowPad} text-zinc-400 whitespace-nowrap text-xs`}>{formatFechaCorta(m.fecha)}</td>
-              <td className={`${rowPad} font-bold max-w-[140px] truncate text-xs`}>{persona?.nombre || m.personaId}</td>
-              <td className={rowPad}>
-                <div className="flex items-center gap-1.5">
-                  <span className={`${compacto ? 'w-4 h-4 text-[10px]' : 'w-5 h-5 text-xs'} shrink-0 flex items-center justify-center ${meta.bg}`}>{meta.icono}</span>
-                  <span className="text-xs text-zinc-400">{meta.label}</span>
-                  {m.subTipo && (
-                    <span className="text-[9px] uppercase tracking-wider px-1 bg-zinc-800 text-zinc-300 border border-zinc-700" title={`Sub-tipo: ${m.subTipo}`}>{m.subTipo}</span>
+              {showCol('fecha') && <td className={`${rowPad} text-zinc-400 whitespace-nowrap text-xs`}>{formatFechaCorta(m.fecha)}</td>}
+              {showCol('persona') && <td className={`${rowPad} font-bold max-w-[140px] truncate text-xs`}>{persona?.nombre || m.personaId}</td>}
+              {showCol('tipo') && (
+                <td className={rowPad}>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`${compacto ? 'w-4 h-4 text-[10px]' : 'w-5 h-5 text-xs'} shrink-0 flex items-center justify-center ${meta.bg}`}>{meta.icono}</span>
+                    <span className="text-xs text-zinc-400">{meta.label}</span>
+                  </div>
+                </td>
+              )}
+              {showCol('proyecto') && (
+                <td className={rowPad} onClick={e => e.stopPropagation()}>
+                  {puedeEditarProy ? (
+                    <select
+                      value={m.proyectoId || ''}
+                      onChange={e => onEditarCampo(m, { proyectoId: e.target.value || null })}
+                      className="bg-zinc-950 border border-zinc-800 hover:border-red-600 focus:border-red-600 outline-none px-1.5 py-1 text-xs text-white max-w-[160px]"
+                      title={proy?.cliente || 'Sin proyecto'}
+                    >
+                      <option value="">— Sin —</option>
+                      {proyectosActivos.map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo || p.cliente}</option>)}
+                    </select>
+                  ) : (
+                    <span className="text-zinc-500 text-xs">{proy?.referenciaOdoo || proy?.cliente || '—'}</span>
                   )}
-                  {m.aplicaA && (
-                    <span className={`text-[9px] uppercase tracking-wider px-1 ${m.aplicaA === 'dieta' ? 'bg-orange-900/40 text-orange-300 border border-orange-700' : 'bg-purple-900/40 text-purple-300 border border-purple-700'}`} title={`Cuenta a ${m.aplicaA}`}>{m.aplicaA === 'dieta' ? '🍽' : '🛏'}</span>
+                </td>
+              )}
+              {showCol('concepto') && (
+                <td className={`${rowPad} max-w-[200px]`}>
+                  <div className="truncate text-xs text-zinc-300" title={`${m.proveedor || ''}${m.proveedor && m.concepto ? ' · ' : ''}${m.concepto || ''}`}>
+                    {m.proveedor && <span className="font-bold">{m.proveedor}</span>}
+                    {m.proveedor && m.concepto && <span className="text-zinc-500"> · </span>}
+                    {m.concepto && <span className="text-zinc-400">{m.concepto}</span>}
+                    {!m.proveedor && !m.concepto && <span className="text-zinc-600">—</span>}
+                  </div>
+                  <div className="flex gap-1 mt-0.5 flex-wrap">
+                    {sinFactura && <span className="text-[8px] font-black uppercase tracking-wider px-1 bg-red-900/40 text-red-300 border border-red-800">SIN FACTURA</span>}
+                    {fotoPorWs && <span className="text-[8px] font-black uppercase tracking-wider px-1 bg-yellow-900/40 text-yellow-300 border border-yellow-700">📱 WS</span>}
+                    {incompletoVisible && <span className="text-[8px] font-black uppercase tracking-wider px-1 bg-amber-900/40 text-amber-300 border border-amber-700" title={`Faltan: ${dInc.motivos.map(x => LABEL_MOTIVO[x] || x).join(' · ')}`}>⚠ FALTAN</span>}
+                    {!showCol('rnc') && m.rnc && <span className="text-[9px] text-zinc-500 font-mono">RNC {m.rnc}</span>}
+                  </div>
+                </td>
+              )}
+              {showCol('rnc') && <td className={`${rowPad} text-zinc-400 text-xs font-mono whitespace-nowrap`}>{m.rnc || '—'}</td>}
+              {showCol('ncf') && <td className={`${rowPad} text-zinc-400 text-xs font-mono whitespace-nowrap`}>{ncf || '—'}</td>}
+              {showCol('categoria') && <td className={`${rowPad} text-xs`}>{cat ? <span className="px-1.5 py-0.5 text-[10px]" style={{ background: (cat.color || '#71717a') + '40', borderLeft: `2px solid ${cat.color || '#71717a'}` }}>{cat.icono} {cat.nombre}</span> : <span className="text-zinc-600">—</span>}</td>}
+              {showCol('aplicaA') && (
+                <td className={rowPad}>
+                  {m.aplicaA === 'dieta' && <span className="text-[9px] uppercase tracking-wider px-1 bg-orange-900/40 text-orange-300 border border-orange-700">🍽 Dieta</span>}
+                  {m.aplicaA === 'hospedaje' && <span className="text-[9px] uppercase tracking-wider px-1 bg-purple-900/40 text-purple-300 border border-purple-700">🛏 Hospedaje</span>}
+                  {!m.aplicaA && <span className="text-zinc-600 text-xs">—</span>}
+                </td>
+              )}
+              {showCol('subTipo') && <td className={`${rowPad} text-xs text-zinc-400`}>{m.subTipo || '—'}</td>}
+              {showCol('empresa') && (
+                <td className={rowPad} onClick={e => e.stopPropagation()}>
+                  {puedeEditarEmpresa ? (
+                    <select
+                      value={m.empresaReceptora || ''}
+                      onChange={e => onEditarCampo(m, { empresaReceptora: e.target.value || null })}
+                      className={`border outline-none px-1.5 py-1 text-xs ${m.empresaReceptora ? 'bg-zinc-950 border-zinc-800 hover:border-red-600' : 'bg-amber-950/40 border-amber-700/60 text-amber-300'}`}
+                      title="Empresa receptora de la factura"
+                    >
+                      <option value="">—</option>
+                      {Object.entries(EMPRESAS_RECEPTORAS).map(([k, e]) => <option key={k} value={k}>{e.label}</option>)}
+                    </select>
+                  ) : empresa ? (
+                    <span className={`text-[9px] font-black uppercase tracking-wider px-1 ${empresa.color} text-white border ${empresa.borderColor}`}>{empresa.short}</span>
+                  ) : (
+                    <span className="text-zinc-600 text-xs">—</span>
                   )}
-                </div>
-              </td>
-              <td className={rowPad} onClick={e => e.stopPropagation()}>
-                {puedeEditarProy ? (
-                  <select
-                    value={m.proyectoId || ''}
-                    onChange={e => onEditarCampo(m, { proyectoId: e.target.value || null })}
-                    className="bg-zinc-950 border border-zinc-800 hover:border-red-600 focus:border-red-600 outline-none px-1.5 py-1 text-xs text-white max-w-[160px]"
-                    title={proy?.cliente || 'Sin proyecto'}
-                  >
-                    <option value="">— Sin —</option>
-                    {proyectosActivos.map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo || p.cliente}</option>)}
-                  </select>
-                ) : (
-                  <span className="text-zinc-500 text-xs">{proy?.referenciaOdoo || proy?.cliente || '—'}</span>
-                )}
-              </td>
-              <td className={`${rowPad} max-w-[200px]`}>
-                <div className="truncate text-xs text-zinc-300" title={`${m.proveedor || ''}${m.proveedor && m.concepto ? ' · ' : ''}${m.concepto || ''}`}>
-                  {m.proveedor && <span className="font-bold">{m.proveedor}</span>}
-                  {m.proveedor && m.concepto && <span className="text-zinc-500"> · </span>}
-                  {m.concepto && <span className="text-zinc-400">{m.concepto}</span>}
-                  {!m.proveedor && !m.concepto && <span className="text-zinc-600">—</span>}
-                </div>
-                <div className="flex gap-1 mt-0.5 flex-wrap">
-                  {sinFactura && <span className="text-[8px] font-black uppercase tracking-wider px-1 bg-red-900/40 text-red-300 border border-red-800">SIN FACTURA</span>}
-                  {fotoPorWs && <span className="text-[8px] font-black uppercase tracking-wider px-1 bg-yellow-900/40 text-yellow-300 border border-yellow-700">📱 WS</span>}
-                  {incompletoVisible && <span className="text-[8px] font-black uppercase tracking-wider px-1 bg-amber-900/40 text-amber-300 border border-amber-700" title={`Faltan: ${dInc.motivos.map(x => LABEL_MOTIVO[x] || x).join(' · ')}`}>⚠ FALTAN</span>}
-                  {m.rnc && <span className="text-[9px] text-zinc-500 font-mono">RNC {m.rnc}</span>}
-                </div>
-              </td>
-              <td className={rowPad} onClick={e => e.stopPropagation()}>
-                {puedeEditarEmpresa ? (
-                  <select
-                    value={m.empresaReceptora || ''}
-                    onChange={e => onEditarCampo(m, { empresaReceptora: e.target.value || null })}
-                    className={`border outline-none px-1.5 py-1 text-xs ${m.empresaReceptora ? 'bg-zinc-950 border-zinc-800 hover:border-red-600' : 'bg-amber-950/40 border-amber-700/60 text-amber-300'}`}
-                    title="Empresa receptora de la factura"
-                  >
-                    <option value="">—</option>
-                    {Object.entries(EMPRESAS_RECEPTORAS).map(([k, e]) => <option key={k} value={k}>{e.label}</option>)}
-                  </select>
-                ) : empresa ? (
-                  <span className={`text-[9px] font-black uppercase tracking-wider px-1 ${empresa.color} text-white border ${empresa.borderColor}`}>{empresa.short}</span>
-                ) : (
-                  <span className="text-zinc-600 text-xs">—</span>
-                )}
-              </td>
-              <td className={rowPad}>
-                <span className={`text-[9px] font-black uppercase tracking-wider px-1 ${stmeta.cls}`}>{stmeta.label}</span>
-              </td>
-              <td className={`${rowPad} text-right tabular-nums font-black whitespace-nowrap ${cMonto}`}>{signo}{formatRD(m.monto)}</td>
-              <td className={`${rowPad} text-right whitespace-nowrap`} onClick={e => e.stopPropagation()}>
-                <div className="inline-flex gap-1">
-                  {m.tipo !== 'entrega' && (
-                    <button onClick={() => onAbrirDetalle && onAbrirDetalle(m)} className="text-zinc-500 hover:text-blue-400 p-0.5" title="Ver detalle">
-                      <Info className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                  {m.tieneFoto && (
-                    <button onClick={() => onVerFoto && onVerFoto(m)} className="text-zinc-500 hover:text-red-400 p-0.5" title="Ver foto">
-                      <Eye className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                  {onDesaprobar && m.tipo !== 'entrega' && (m.status === 'aprobado' || m.status === 'rechazado') && (
-                    <button onClick={() => onDesaprobar(m)} className="text-zinc-500 hover:text-yellow-400 p-0.5" title={m.status === 'aprobado' ? 'Desaprobar' : 'Reabrir'}>
-                      <RotateCcw className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                  {onEliminar && (
-                    <button onClick={() => onEliminar(m)} className="text-zinc-500 hover:text-red-400 p-0.5" title="Eliminar">
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-              </td>
+                </td>
+              )}
+              {showCol('aprobadoPor') && <td className={`${rowPad} text-xs text-zinc-400`}>{aprobador?.nombre || '—'}</td>}
+              {showCol('creadoAt') && <td className={`${rowPad} text-xs text-zinc-500 whitespace-nowrap`}>{m.createdAt ? formatFechaCorta(m.createdAt.split('T')[0]) : '—'}</td>}
+              {showCol('status') && (
+                <td className={rowPad}>
+                  <span className={`text-[9px] font-black uppercase tracking-wider px-1 ${stmeta.cls}`}>{stmeta.label}</span>
+                </td>
+              )}
+              {showCol('monto') && <td className={`${rowPad} text-right tabular-nums font-black whitespace-nowrap ${cMonto}`}>{signo}{formatRD(m.monto)}</td>}
+              {showCol('accion') && (
+                <td className={`${rowPad} text-right whitespace-nowrap`} onClick={e => e.stopPropagation()}>
+                  <div className="inline-flex gap-1">
+                    {m.tipo !== 'entrega' && (
+                      <button onClick={() => onAbrirDetalle && onAbrirDetalle(m)} className="text-zinc-500 hover:text-blue-400 p-0.5" title="Ver detalle (modal)">
+                        <Info className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    {m.tieneFoto && (
+                      <button onClick={() => onVerFoto && onVerFoto(m)} className="text-zinc-500 hover:text-red-400 p-0.5" title="Ver foto">
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    {onDesaprobar && m.tipo !== 'entrega' && (m.status === 'aprobado' || m.status === 'rechazado') && (
+                      <button onClick={() => onDesaprobar(m)} className="text-zinc-500 hover:text-yellow-400 p-0.5" title={m.status === 'aprobado' ? 'Desaprobar' : 'Reabrir'}>
+                        <RotateCcw className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    {onEliminar && (
+                      <button onClick={() => onEliminar(m)} className="text-zinc-500 hover:text-red-400 p-0.5" title="Eliminar">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </td>
+              )}
             </tr>
           );
         })}
       </tbody>
     </table>
+  );
+}
+
+// v8.17.32: Panel lateral con foto de factura + datos editables + acciones + navegación.
+// Sustituye el flujo de "abrir modal por cada uno": el admin puede navegar todas las facturas
+// secuencialmente sin perder el contexto de la tabla.
+function PanelVisorFactura({ movimientos, movId, setMovId, data, fotoUrl, fotoLoading, rotacion, setRotacion, onCerrar, onAprobar, onRechazar, onDesaprobar, onEditarCampo, onAbrirDetalle, guardandoId }) {
+  const idx = movimientos.findIndex(m => m.id === movId);
+  const mov = idx >= 0 ? movimientos[idx] : null;
+  const proyectosActivos = (data.proyectos || []).filter(p => !p.archivado);
+
+  const irAnterior = () => { if (idx > 0) setMovId(movimientos[idx - 1].id); };
+  const irSiguiente = () => { if (idx < movimientos.length - 1) setMovId(movimientos[idx + 1].id); };
+
+  // Atajos de teclado: ← → para navegar, Esc para cerrar.
+  useEffect(() => {
+    const handle = (e) => {
+      if (e.target?.tagName === 'INPUT' || e.target?.tagName === 'SELECT' || e.target?.tagName === 'TEXTAREA') return;
+      if (e.key === 'ArrowLeft') irAnterior();
+      else if (e.key === 'ArrowRight') irSiguiente();
+      else if (e.key === 'Escape') onCerrar();
+    };
+    window.addEventListener('keydown', handle);
+    return () => window.removeEventListener('keydown', handle);
+  }, [idx, movimientos]);
+
+  if (!mov) {
+    return (
+      <div className="w-[400px] flex-shrink-0 bg-zinc-900 border border-zinc-800 p-4 text-center text-zinc-500 text-sm">
+        Selecciona una fila para verla aquí.
+        <button onClick={onCerrar} className="block mx-auto mt-3 text-[10px] uppercase text-red-400 hover:text-red-300">Cerrar visor</button>
+      </div>
+    );
+  }
+
+  const persona = data.personal.find(p => p.id === mov.personaId);
+  const proy = mov.proyectoId ? data.proyectos.find(p => p.id === mov.proyectoId) : null;
+  const empresa = mov.empresaReceptora ? EMPRESAS_RECEPTORAS[mov.empresaReceptora] : null;
+  const stmeta = STATUS[mov.status] || STATUS.pendiente_revision;
+  const sinFactura = !!mov.datosIA?.sin_factura;
+  const fotoPorWs = !!mov.datosIA?.foto_por_ws && !mov.tieneFoto;
+  const dInc = evaluarDatosIncompletos(mov);
+  const incompletoVisible = dInc.incompleto && mov.status === 'pendiente_revision';
+  const guardando = guardandoId === mov.id;
+
+  return (
+    <div className="w-[440px] flex-shrink-0 bg-zinc-900 border border-zinc-800 flex flex-col" style={{ maxHeight: '85vh', position: 'sticky', top: '1rem' }}>
+      {/* Header */}
+      <div className="px-3 py-2 border-b border-zinc-800 flex items-center gap-2">
+        <div className="flex-1 min-w-0">
+          <div className="text-[10px] uppercase tracking-widest text-blue-400 font-bold flex items-center gap-1"><PanelRight className="w-3 h-3" /> Visor de factura</div>
+          <div className="text-[10px] text-zinc-500">{idx + 1} de {movimientos.length}</div>
+        </div>
+        <button onClick={irAnterior} disabled={idx === 0} className="p-1 text-zinc-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed" title="Anterior (←)"><ChevronLeft className="w-4 h-4" /></button>
+        <button onClick={irSiguiente} disabled={idx >= movimientos.length - 1} className="p-1 text-zinc-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed" title="Siguiente (→)"><ChevronRight className="w-4 h-4" /></button>
+        <button onClick={onCerrar} className="p-1 text-zinc-500 hover:text-white" title="Cerrar visor (Esc)"><X className="w-4 h-4" /></button>
+      </div>
+
+      {/* Cuerpo scrolleable */}
+      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+        {/* Foto / placeholder */}
+        <div className="bg-zinc-950 border border-zinc-800 relative" style={{ minHeight: 220 }}>
+          {fotoLoading ? (
+            <div className="absolute inset-0 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-blue-400" /></div>
+          ) : fotoUrl ? (
+            <>
+              <div className="overflow-auto" style={{ maxHeight: '50vh' }}>
+                <img
+                  src={fotoUrl}
+                  alt="Factura"
+                  className="w-full"
+                  style={{ transform: `rotate(${rotacion}deg)`, transition: 'transform 0.2s' }}
+                />
+              </div>
+              <div className="absolute top-1 right-1 flex gap-0.5 bg-black/60 p-0.5">
+                <button onClick={() => setRotacion(r => ((r - 90) % 360 + 360) % 360)} className="p-1 text-white hover:text-blue-300" title="Rotar izquierda"><RotateCcw className="w-3.5 h-3.5" /></button>
+                <button onClick={() => setRotacion(r => (r + 90) % 360)} className="p-1 text-white hover:text-blue-300" title="Rotar derecha"><RotateCw className="w-3.5 h-3.5" /></button>
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-10 text-zinc-600 text-xs gap-2">
+              {sinFactura ? <><FileX className="w-8 h-8" /> Sin factura (gasto informal)</>
+                : fotoPorWs ? <><Camera className="w-8 h-8 text-yellow-400" /> Foto pendiente por WhatsApp</>
+                : <><ImageIcon className="w-8 h-8" /> Sin foto</>}
+            </div>
+          )}
+        </div>
+
+        {/* Header info */}
+        <div className="space-y-1">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="font-bold text-sm">{persona?.nombre || mov.personaId}</div>
+            <span className={`text-[9px] font-black uppercase tracking-wider px-1 ${stmeta.cls}`}>{stmeta.label}</span>
+          </div>
+          <div className="text-[10px] text-zinc-500">{TIPOS[mov.tipo]?.label || mov.tipo} · {formatFechaCorta(mov.fecha)}</div>
+          {incompletoVisible && (
+            <div className="text-[10px] bg-amber-900/30 border border-amber-700 px-2 py-1 text-amber-300">
+              ⚠ Faltan: {dInc.motivos.map(x => LABEL_MOTIVO[x] || x).join(' · ')}
+            </div>
+          )}
+        </div>
+
+        {/* Datos editables inline */}
+        <div className="space-y-2 text-xs">
+          <div>
+            <div className="text-[9px] uppercase tracking-widest text-zinc-500 mb-0.5">Proyecto</div>
+            <select
+              value={mov.proyectoId || ''}
+              onChange={e => onEditarCampo(mov, { proyectoId: e.target.value || null })}
+              disabled={guardando || mov.tipo === 'entrega'}
+              className="w-full bg-zinc-950 border border-zinc-800 hover:border-red-600 focus:border-red-600 outline-none px-2 py-1.5 text-white text-xs disabled:opacity-50"
+            >
+              <option value="">— Sin proyecto —</option>
+              {proyectosActivos.map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo || p.cliente}</option>)}
+            </select>
+          </div>
+          {mov.tipo === 'gasto_factura' && (
+            <div>
+              <div className="text-[9px] uppercase tracking-widest text-zinc-500 mb-0.5">Empresa receptora</div>
+              <select
+                value={mov.empresaReceptora || ''}
+                onChange={e => onEditarCampo(mov, { empresaReceptora: e.target.value || null })}
+                disabled={guardando || sinFactura}
+                className={`w-full border outline-none px-2 py-1.5 text-xs disabled:opacity-50 ${mov.empresaReceptora ? 'bg-zinc-950 border-zinc-800 hover:border-red-600' : 'bg-amber-950/40 border-amber-700/60 text-amber-300'}`}
+              >
+                <option value="">— Sin asignar —</option>
+                {Object.entries(EMPRESAS_RECEPTORAS).map(([k, e]) => <option key={k} value={k}>{e.label}</option>)}
+              </select>
+            </div>
+          )}
+          {mov.proveedor && (
+            <div>
+              <div className="text-[9px] uppercase tracking-widest text-zinc-500 mb-0.5">Proveedor</div>
+              <div className="text-xs font-bold text-zinc-200 truncate">{mov.proveedor}</div>
+            </div>
+          )}
+          {mov.rnc && (
+            <div className="flex gap-3">
+              <div>
+                <div className="text-[9px] uppercase tracking-widest text-zinc-500 mb-0.5">RNC</div>
+                <div className="text-xs font-mono text-zinc-300">{mov.rnc}</div>
+              </div>
+              {mov.datosIA?.ncf && (
+                <div>
+                  <div className="text-[9px] uppercase tracking-widest text-zinc-500 mb-0.5">NCF</div>
+                  <div className="text-xs font-mono text-zinc-300">{mov.datosIA.ncf}</div>
+                </div>
+              )}
+            </div>
+          )}
+          {mov.concepto && (
+            <div>
+              <div className="text-[9px] uppercase tracking-widest text-zinc-500 mb-0.5">Concepto</div>
+              <div className="text-xs text-zinc-300">{mov.concepto}</div>
+            </div>
+          )}
+          <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
+            <div className="text-[9px] uppercase tracking-widest text-zinc-500">Monto</div>
+            <div className={`text-lg font-black ${mov.tipo === 'entrega' ? 'text-green-400' : mov.status === 'aprobado' ? 'text-orange-400' : 'text-zinc-300'}`}>
+              {mov.tipo === 'entrega' ? '+' : '−'}{formatRD(mov.monto)}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Acciones */}
+      <div className="border-t border-zinc-800 p-2 space-y-1.5">
+        {mov.status === 'pendiente_revision' && mov.tipo !== 'entrega' && (
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
+              onClick={async () => { await onAprobar(mov); irSiguiente(); }}
+              disabled={guardando}
+              className="bg-green-700 hover:bg-green-600 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-2 flex items-center justify-center gap-1"
+            >
+              <Check className="w-3.5 h-3.5" /> Aprobar
+            </button>
+            <button
+              onClick={async () => { await onRechazar(mov); irSiguiente(); }}
+              disabled={guardando}
+              className="bg-red-700 hover:bg-red-600 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-2 flex items-center justify-center gap-1"
+            >
+              <X className="w-3.5 h-3.5" /> Rechazar
+            </button>
+          </div>
+        )}
+        {mov.status !== 'pendiente_revision' && mov.tipo !== 'entrega' && onDesaprobar && (
+          <button
+            onClick={() => onDesaprobar(mov)}
+            disabled={guardando}
+            className="w-full bg-yellow-700 hover:bg-yellow-600 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-2 flex items-center justify-center gap-1"
+          >
+            <RotateCcw className="w-3.5 h-3.5" /> {mov.status === 'aprobado' ? 'Desaprobar' : 'Reabrir'} (volver a bandeja)
+          </button>
+        )}
+        <button
+          onClick={() => onAbrirDetalle(mov)}
+          className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-bold uppercase py-2 flex items-center justify-center gap-1"
+        >
+          <Edit2 className="w-3 h-3" /> Editar todos los campos (modal)
+        </button>
+        <div className="text-[9px] text-zinc-600 text-center">← → para navegar · Esc para cerrar</div>
+      </div>
+    </div>
   );
 }
 

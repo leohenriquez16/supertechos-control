@@ -67,6 +67,9 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
   // v8.17.29: modal de ayuda Dieta + Hospedaje + config global
   const [modalAyuda, setModalAyuda] = useState(false);
   const [configDieta, setConfigDieta] = useState({ desayunoRd: 200, comidaRd: 350, cenaRd: 350, hotelRd: 900 });
+  // v8.17.30: sort de la tabla Movimientos en desktop + feedback al guardar inline edits
+  const [sortMov, setSortMov] = useState({ key: 'fecha', dir: 'desc' });
+  const [guardandoMovId, setGuardandoMovId] = useState(null);
 
   const cargar = async () => {
     setLoading(true);
@@ -129,6 +132,17 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
       await db.actualizarStatusMovimientoCajaChica(mov.id, { status: 'pendiente_revision' });
       cargar();
     } catch (e) { toast.error('Error: ' + (e.message || e)); }
+  };
+
+  // v8.17.30: inline-edit en la tabla. Guarda y recarga para reflejar el cambio.
+  // Usado para proyecto y empresa receptora en la vista tabla de Movimientos.
+  const editarCampoMov = async (mov, campos) => {
+    setGuardandoMovId(mov.id);
+    try {
+      await db.actualizarMovimientoCajaChica(mov.id, campos);
+      await cargar();
+    } catch (e) { toast.error('Error: ' + (e.message || e)); }
+    setGuardandoMovId(null);
   };
 
   // Adjuntar una foto a un movimiento que se reportó "sin foto" (admin recibe la foto por WS).
@@ -293,6 +307,32 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
       return true;
     });
   }, [movimientos, filtroPersona, filtroProyecto, soloIncompletos, busqueda, data.personal, data.proyectos]);
+
+  // v8.17.30: sort para la tabla desktop. Devuelve copia ordenada según sortMov.
+  // (movimientosAgrupados sigue siendo para móvil — agrupa por fecha y mantiene orden desc.)
+  const movimientosSorted = useMemo(() => {
+    const k = sortMov.key, dir = sortMov.dir === 'asc' ? 1 : -1;
+    const get = (m) => {
+      switch (k) {
+        case 'fecha': return m.fecha || '';
+        case 'persona': return (data.personal.find(p => p.id === m.personaId)?.nombre || '').toLowerCase();
+        case 'tipo': return m.tipo || '';
+        case 'proyecto': return (data.proyectos.find(p => p.id === m.proyectoId)?.referenciaOdoo
+                                  || data.proyectos.find(p => p.id === m.proyectoId)?.cliente || '').toLowerCase();
+        case 'concepto': return (m.proveedor || m.concepto || '').toLowerCase();
+        case 'empresa': return m.empresaReceptora || '';
+        case 'status': return m.status || '';
+        case 'monto': return Number(m.monto || 0);
+        default: return '';
+      }
+    };
+    return movimientosFiltrados.slice().sort((a, b) => {
+      const va = get(a), vb = get(b);
+      if (va < vb) return -1 * dir;
+      if (va > vb) return 1 * dir;
+      return 0;
+    });
+  }, [movimientosFiltrados, sortMov, data.personal, data.proyectos]);
 
   // v8.17.8: agrupar movimientos filtrados por fecha
   const movimientosAgrupados = useMemo(() => {
@@ -722,25 +762,47 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
             )}
           </div>
 
-          {/* v8.17.8: lista agrupada por fecha */}
-          {movimientosAgrupados.length === 0 ? (
+          {/* v8.17.30: DESKTOP — tabla con sticky header, sort, inline edit. MOBILE — cards agrupados. */}
+          {movimientosFiltrados.length === 0 ? (
             <div className="text-center py-10 text-zinc-500 text-sm">
               {busqueda ? `Sin resultados para "${busqueda}"` : 'Sin movimientos.'}
             </div>
           ) : (
-            movimientosAgrupados.map(grupo => (
-              <div key={grupo.label} className="space-y-1">
-                <div className="sticky top-0 z-10 bg-zinc-950 px-2 py-1 flex items-center justify-between border-b border-zinc-800">
-                  <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">{grupo.label} · {grupo.items.length}</div>
-                  {grupo.totalGasto > 0 && (
-                    <div className="text-[10px] text-orange-400 font-bold">−{formatRD(grupo.totalGasto)}</div>
-                  )}
-                </div>
-                {grupo.items.map(m => (
-                  <FilaMovimiento key={m.id} m={m} data={data} dx={dx} onAbrirDetalle={() => setVerDetalle(m)} onVerFoto={() => verFotoMov(m)} onEliminar={tieneRol(usuario, 'admin') ? () => eliminar(m) : null} onDesaprobar={tieneRol(usuario, 'admin') ? () => desaprobar(m) : null} />
+            <>
+              {/* DESKTOP: tabla */}
+              <div className="hidden md:block bg-zinc-900 border border-zinc-800 overflow-x-auto">
+                <TablaMovimientos
+                  movimientos={movimientosSorted}
+                  data={data}
+                  sort={sortMov}
+                  setSort={setSortMov}
+                  dx={dx}
+                  guardandoId={guardandoMovId}
+                  onEditarCampo={editarCampoMov}
+                  onAbrirDetalle={(m) => setVerDetalle(m)}
+                  onVerFoto={(m) => verFotoMov(m)}
+                  onEliminar={tieneRol(usuario, 'admin') ? eliminar : null}
+                  onDesaprobar={tieneRol(usuario, 'admin') ? desaprobar : null}
+                />
+              </div>
+
+              {/* MOBILE: cards agrupados por fecha (layout original) */}
+              <div className={`md:hidden ${dx.listGap}`}>
+                {movimientosAgrupados.map(grupo => (
+                  <div key={grupo.label} className="space-y-1">
+                    <div className="sticky top-0 z-10 bg-zinc-950 px-2 py-1 flex items-center justify-between border-b border-zinc-800">
+                      <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">{grupo.label} · {grupo.items.length}</div>
+                      {grupo.totalGasto > 0 && (
+                        <div className="text-[10px] text-orange-400 font-bold">−{formatRD(grupo.totalGasto)}</div>
+                      )}
+                    </div>
+                    {grupo.items.map(m => (
+                      <FilaMovimiento key={m.id} m={m} data={data} dx={dx} onAbrirDetalle={() => setVerDetalle(m)} onVerFoto={() => verFotoMov(m)} onEliminar={tieneRol(usuario, 'admin') ? () => eliminar(m) : null} onDesaprobar={tieneRol(usuario, 'admin') ? () => desaprobar(m) : null} />
+                    ))}
+                  </div>
                 ))}
               </div>
-            ))
+            </>
           )}
         </div>
       )}
@@ -1117,10 +1179,175 @@ function FilaMovimiento({ m, data, dx, onAbrirDetalle, onVerFoto, onEliminar, on
   );
 }
 
+// v8.17.30: tabla de movimientos para desktop. Mismo patrón que la tabla de Proyectos:
+// sticky header, sort por columna, inline edit (proyecto, empresa), color band por status.
+function TablaMovimientos({ movimientos, data, sort, setSort, dx, guardandoId, onEditarCampo, onAbrirDetalle, onVerFoto, onEliminar, onDesaprobar }) {
+  const compacto = !!dx?.compacto;
+  const rowPad = compacto ? 'py-1 px-2' : 'py-2 px-2';
+  const proyectosActivos = (data.proyectos || []).filter(p => !p.archivado);
+
+  const Th = ({ k, align = 'left', children }) => {
+    const activo = sort.key === k;
+    const dirIcono = activo ? (sort.dir === 'asc' ? '▲' : '▼') : '';
+    const handle = () => setSort(s => ({ key: k, dir: s.key === k && s.dir === 'asc' ? 'desc' : 'asc' }));
+    return (
+      <th className={`${rowPad} font-bold ${align === 'right' ? 'text-right' : 'text-left'}`}>
+        <button onClick={handle} className={`inline-flex items-center gap-1 text-[10px] uppercase tracking-wider ${activo ? 'text-red-400' : 'text-zinc-500 hover:text-zinc-300'}`}>
+          {children}{activo && <span className="text-[8px]">{dirIcono}</span>}
+        </button>
+      </th>
+    );
+  };
+
+  // Color band: por status (lo que más le importa al admin)
+  const colorBandStatus = (status) => {
+    if (status === 'aprobado') return 'bg-green-600';
+    if (status === 'rechazado') return 'bg-red-600';
+    return 'bg-orange-500'; // pendiente_revision
+  };
+
+  return (
+    <table className="w-full text-sm">
+      <thead className="bg-zinc-950 border-b border-zinc-800 sticky top-0 z-10">
+        <tr>
+          <th className="w-1" />
+          <Th k="fecha">Fecha</Th>
+          <Th k="persona">Persona</Th>
+          <Th k="tipo">Tipo</Th>
+          <Th k="proyecto">Proyecto</Th>
+          <Th k="concepto">Concepto / Proveedor</Th>
+          <Th k="empresa">Empresa</Th>
+          <Th k="status">Status</Th>
+          <Th k="monto" align="right">Monto</Th>
+          <th className={`${rowPad} text-right text-[10px] uppercase tracking-wider text-zinc-500 font-bold`}>Acción</th>
+        </tr>
+      </thead>
+      <tbody>
+        {movimientos.map(m => {
+          const persona = data.personal.find(p => p.id === m.personaId);
+          const proy = m.proyectoId ? data.proyectos.find(p => p.id === m.proyectoId) : null;
+          const meta = TIPOS[m.tipo] || TIPOS.ajuste;
+          const stmeta = STATUS[m.status] || STATUS.pendiente_revision;
+          const fotoPorWs = !!m.datosIA?.foto_por_ws && !m.tieneFoto;
+          const sinFactura = !!m.datosIA?.sin_factura;
+          const dInc = evaluarDatosIncompletos(m);
+          const incompletoVisible = dInc.incompleto && m.status === 'pendiente_revision';
+          const empresa = m.empresaReceptora ? EMPRESAS_RECEPTORAS[m.empresaReceptora] : null;
+          const signo = m.tipo === 'entrega' ? '+' : (m.tipo === 'ajuste' ? (m.signoAjuste >= 0 ? '+' : '−') : '−');
+          const cMonto = m.tipo === 'entrega' ? 'text-green-400' : (m.status === 'aprobado' ? 'text-orange-400' : 'text-zinc-500');
+          // Inline edit solo para gasto_factura, dieta, hospedaje (no para entregas/ajustes que tienen lógica especial)
+          const puedeEditarProy = m.tipo !== 'entrega';
+          const puedeEditarEmpresa = m.tipo === 'gasto_factura' && !sinFactura;
+
+          return (
+            <tr
+              key={m.id}
+              onClick={() => onAbrirDetalle && m.tipo !== 'entrega' && onAbrirDetalle(m)}
+              className={`border-b border-zinc-800 hover:bg-zinc-800/40 ${m.tipo !== 'entrega' ? 'cursor-pointer' : ''} ${guardandoId === m.id ? 'opacity-60' : ''} ${incompletoVisible ? 'bg-amber-900/10' : ''}`}
+            >
+              {/* color band por status */}
+              <td className={`${colorBandStatus(m.status)} w-1`} style={{ padding: 0 }} />
+              <td className={`${rowPad} text-zinc-400 whitespace-nowrap text-xs`}>{formatFechaCorta(m.fecha)}</td>
+              <td className={`${rowPad} font-bold max-w-[140px] truncate text-xs`}>{persona?.nombre || m.personaId}</td>
+              <td className={rowPad}>
+                <div className="flex items-center gap-1.5">
+                  <span className={`${compacto ? 'w-4 h-4 text-[10px]' : 'w-5 h-5 text-xs'} shrink-0 flex items-center justify-center ${meta.bg}`}>{meta.icono}</span>
+                  <span className="text-xs text-zinc-400">{meta.label}</span>
+                  {m.subTipo && (
+                    <span className="text-[9px] uppercase tracking-wider px-1 bg-zinc-800 text-zinc-300 border border-zinc-700" title={`Sub-tipo: ${m.subTipo}`}>{m.subTipo}</span>
+                  )}
+                  {m.aplicaA && (
+                    <span className={`text-[9px] uppercase tracking-wider px-1 ${m.aplicaA === 'dieta' ? 'bg-orange-900/40 text-orange-300 border border-orange-700' : 'bg-purple-900/40 text-purple-300 border border-purple-700'}`} title={`Cuenta a ${m.aplicaA}`}>{m.aplicaA === 'dieta' ? '🍽' : '🛏'}</span>
+                  )}
+                </div>
+              </td>
+              <td className={rowPad} onClick={e => e.stopPropagation()}>
+                {puedeEditarProy ? (
+                  <select
+                    value={m.proyectoId || ''}
+                    onChange={e => onEditarCampo(m, { proyectoId: e.target.value || null })}
+                    className="bg-zinc-950 border border-zinc-800 hover:border-red-600 focus:border-red-600 outline-none px-1.5 py-1 text-xs text-white max-w-[160px]"
+                    title={proy?.cliente || 'Sin proyecto'}
+                  >
+                    <option value="">— Sin —</option>
+                    {proyectosActivos.map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo || p.cliente}</option>)}
+                  </select>
+                ) : (
+                  <span className="text-zinc-500 text-xs">{proy?.referenciaOdoo || proy?.cliente || '—'}</span>
+                )}
+              </td>
+              <td className={`${rowPad} max-w-[200px]`}>
+                <div className="truncate text-xs text-zinc-300" title={`${m.proveedor || ''}${m.proveedor && m.concepto ? ' · ' : ''}${m.concepto || ''}`}>
+                  {m.proveedor && <span className="font-bold">{m.proveedor}</span>}
+                  {m.proveedor && m.concepto && <span className="text-zinc-500"> · </span>}
+                  {m.concepto && <span className="text-zinc-400">{m.concepto}</span>}
+                  {!m.proveedor && !m.concepto && <span className="text-zinc-600">—</span>}
+                </div>
+                <div className="flex gap-1 mt-0.5 flex-wrap">
+                  {sinFactura && <span className="text-[8px] font-black uppercase tracking-wider px-1 bg-red-900/40 text-red-300 border border-red-800">SIN FACTURA</span>}
+                  {fotoPorWs && <span className="text-[8px] font-black uppercase tracking-wider px-1 bg-yellow-900/40 text-yellow-300 border border-yellow-700">📱 WS</span>}
+                  {incompletoVisible && <span className="text-[8px] font-black uppercase tracking-wider px-1 bg-amber-900/40 text-amber-300 border border-amber-700" title={`Faltan: ${dInc.motivos.map(x => LABEL_MOTIVO[x] || x).join(' · ')}`}>⚠ FALTAN</span>}
+                  {m.rnc && <span className="text-[9px] text-zinc-500 font-mono">RNC {m.rnc}</span>}
+                </div>
+              </td>
+              <td className={rowPad} onClick={e => e.stopPropagation()}>
+                {puedeEditarEmpresa ? (
+                  <select
+                    value={m.empresaReceptora || ''}
+                    onChange={e => onEditarCampo(m, { empresaReceptora: e.target.value || null })}
+                    className={`border outline-none px-1.5 py-1 text-xs ${m.empresaReceptora ? 'bg-zinc-950 border-zinc-800 hover:border-red-600' : 'bg-amber-950/40 border-amber-700/60 text-amber-300'}`}
+                    title="Empresa receptora de la factura"
+                  >
+                    <option value="">—</option>
+                    {Object.entries(EMPRESAS_RECEPTORAS).map(([k, e]) => <option key={k} value={k}>{e.label}</option>)}
+                  </select>
+                ) : empresa ? (
+                  <span className={`text-[9px] font-black uppercase tracking-wider px-1 ${empresa.color} text-white border ${empresa.borderColor}`}>{empresa.short}</span>
+                ) : (
+                  <span className="text-zinc-600 text-xs">—</span>
+                )}
+              </td>
+              <td className={rowPad}>
+                <span className={`text-[9px] font-black uppercase tracking-wider px-1 ${stmeta.cls}`}>{stmeta.label}</span>
+              </td>
+              <td className={`${rowPad} text-right tabular-nums font-black whitespace-nowrap ${cMonto}`}>{signo}{formatRD(m.monto)}</td>
+              <td className={`${rowPad} text-right whitespace-nowrap`} onClick={e => e.stopPropagation()}>
+                <div className="inline-flex gap-1">
+                  {m.tipo !== 'entrega' && (
+                    <button onClick={() => onAbrirDetalle && onAbrirDetalle(m)} className="text-zinc-500 hover:text-blue-400 p-0.5" title="Ver detalle">
+                      <Info className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  {m.tieneFoto && (
+                    <button onClick={() => onVerFoto && onVerFoto(m)} className="text-zinc-500 hover:text-red-400 p-0.5" title="Ver foto">
+                      <Eye className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  {onDesaprobar && m.tipo !== 'entrega' && (m.status === 'aprobado' || m.status === 'rechazado') && (
+                    <button onClick={() => onDesaprobar(m)} className="text-zinc-500 hover:text-yellow-400 p-0.5" title={m.status === 'aprobado' ? 'Desaprobar' : 'Reabrir'}>
+                      <RotateCcw className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  {onEliminar && (
+                    <button onClick={() => onEliminar(m)} className="text-zinc-500 hover:text-red-400 p-0.5" title="Eliminar">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
 const TIPOS = {
   entrega:        { label: 'Entrega',  icono: '💵', bg: 'bg-green-900/40 border border-green-800' },
   gasto_factura:  { label: 'Gasto',    icono: '🧾', bg: 'bg-orange-900/40 border border-orange-800' },
   dieta:          { label: 'Dieta',    icono: '🍽️', bg: 'bg-blue-900/40 border border-blue-800' },
+  hospedaje:      { label: 'Hosped.',  icono: '🛏', bg: 'bg-purple-900/40 border border-purple-800' },
   ajuste:         { label: 'Ajuste',   icono: '⚙️', bg: 'bg-zinc-800 border border-zinc-700' },
 };
 

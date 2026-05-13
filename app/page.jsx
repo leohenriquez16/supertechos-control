@@ -760,10 +760,10 @@ export default function App() {
         </div>
       </header>
 
-      {/* v8.17.37: en pantalla grande usar todo el ancho disponible.
-          - lg (1024+): se quita el max-w para que el contenido llene la pantalla.
-          - hasta lg: mantener max-w-6xl centrado (más legible en tablet/laptop chico). */}
-      <main className="md:ml-60 max-w-6xl md:mx-auto lg:max-w-none lg:mx-0 px-4 lg:px-6 py-6">
+      {/* v8.17.37 / v8.17.38: el sidebar es fixed left:0 w-60, así que md:ml-60
+          en el outer reserva 240px a la izquierda en md+. El inner contiene la
+          lógica de max-width: en <lg max-w-6xl centrado; en lg+ full-width. */}
+      <main className="md:ml-60 px-4 lg:px-6 py-6"><div className="max-w-6xl mx-auto lg:max-w-none lg:mx-0">
         {syncing && <div className="hidden md:block fixed top-2 right-4 z-30"><Loader2 className="w-4 h-4 text-red-500 animate-spin" /></div>}
         {esAdmin && vista === 'dashboard' && <Dashboard data={data} tareas={tareas} jornadasHoy={jornadasHoy} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} onNuevoProyecto={() => setVista('nuevoProyecto')} onImportarOdoo={() => setModalOdooAbierto(true)} onCompletarTarea={async (id) => withSync(async () => { await db.completarTarea(id, usuario.id); })} onCambiarEstadoRapido={async (proyId, estadoNuevo) => withSync(async () => { await db.cambiarEstadoProyecto(proyId, estadoNuevo, usuario, 'Cambio rápido desde Kanban'); })} />}
         {/* v8.10.23: Modal importar desde Odoo */}
@@ -1169,7 +1169,7 @@ export default function App() {
 
         {/* v8.9.20: Asistente IA para admin */}
         {esAdmin && <AsistenteIA usuario={usuario} data={data} />}
-      </main>
+      </div></main>
     </div>
   );
 }

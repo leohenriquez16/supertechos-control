@@ -108,6 +108,8 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
   const [viewerFotoUrl, setViewerFotoUrl] = useState(null);
   const [viewerFotoLoading, setViewerFotoLoading] = useState(false);
   const [viewerRotacion, setViewerRotacion] = useState(0);
+  // v8.17.36: modo edición global (todas las filas pendientes editables al mismo tiempo)
+  const [editandoTodos, setEditandoTodos] = useState(false);
 
   const cargar = async () => {
     setLoading(true);
@@ -798,8 +800,16 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
               </label>
               {(filtroPersona || filtroProyecto || soloIncompletos || busqueda) && <button onClick={() => { setFiltroPersona(''); setFiltroProyecto(''); setSoloIncompletos(false); setBusqueda(''); }} className="text-red-400">Limpiar</button>}
               <div className="ml-auto text-[10px] text-zinc-500">{movimientosFiltrados.length} de {movimientos.length}</div>
-              {/* v8.17.32: column picker + viewer toggle (solo desktop) */}
+              {/* v8.17.32: column picker + viewer toggle (solo desktop)
+                  v8.17.36: + toggle global de edición */}
               <div className="hidden md:flex items-center gap-1 ml-1 relative">
+                <button
+                  onClick={() => setEditandoTodos(e => !e)}
+                  className={`flex items-center gap-1 px-2 py-1 border text-[10px] font-bold uppercase tracking-wider ${editandoTodos ? 'bg-red-600 border-red-600 text-white' : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'}`}
+                  title="Habilitar edición inline en TODAS las filas pendientes"
+                >
+                  <Edit2 className="w-3 h-3" /> {editandoTodos ? 'Editando' : 'Editar'}
+                </button>
                 <button
                   onClick={() => setColPickerAbierto(o => !o)}
                   className={`flex items-center gap-1 px-2 py-1 border text-[10px] font-bold uppercase tracking-wider ${colPickerAbierto ? 'bg-red-600 border-red-600 text-white' : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'}`}
@@ -894,6 +904,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
                     guardandoId={guardandoMovId}
                     columnasVisibles={columnasVisibles}
                     filaSeleccionada={viewerAbierto ? viewerMovId : null}
+                    editAllMode={editandoTodos}
                     onEditarCampo={editarCampoMov}
                     onAbrirDetalle={(m) => setVerDetalle(m)}
                     onVerFoto={(m) => verFotoMov(m)}
@@ -1344,7 +1355,7 @@ function proyectosOrdenadosPorUsoCaja(proyectos, movimientos) {
 // v8.17.32: columnas configurables + selección sincronizada con el visor lateral.
 // v8.17.33: edición inline bloqueada por default — solo se habilita al click en ✏️ Editar.
 //           Pendientes pueden entrar a modo edición; aprobados/rechazados NO (solo modal).
-function TablaMovimientos({ movimientos: movsTabla, todosMovimientos, data, sort, setSort, dx, guardandoId, columnasVisibles, filaSeleccionada, onEditarCampo, onAbrirDetalle, onVerFoto, onEliminar, onDesaprobar, onSeleccionar }) {
+function TablaMovimientos({ movimientos: movsTabla, todosMovimientos, data, sort, setSort, dx, guardandoId, columnasVisibles, filaSeleccionada, editAllMode, onEditarCampo, onAbrirDetalle, onVerFoto, onEliminar, onDesaprobar, onSeleccionar }) {
   const compacto = !!dx?.compacto;
   const rowPad = compacto ? 'py-1 px-2' : 'py-2 px-2';
   // v8.17.33: proyectos ordenados por uso más reciente en caja chica (incluye todos los movs, no solo los filtrados)
@@ -1353,8 +1364,9 @@ function TablaMovimientos({ movimientos: movsTabla, todosMovimientos, data, sort
     [data.proyectos, todosMovimientos, movsTabla]
   );
   // v8.17.33: ids de filas que el admin habilitó para edición. Solo pendientes.
+  // v8.17.36: editAllMode (toggle global) habilita TODAS las pendientes a la vez.
   const [editingIds, setEditingIds] = useState(() => new Set());
-  const isEditing = (id) => editingIds.has(id);
+  const isEditing = (id) => editAllMode || editingIds.has(id);
   const toggleEdit = (id) => setEditingIds(prev => {
     const next = new Set(prev);
     if (next.has(id)) next.delete(id); else next.add(id);
@@ -1434,11 +1446,12 @@ function TablaMovimientos({ movimientos: movsTabla, todosMovimientos, data, sort
           const cMonto = m.tipo === 'entrega' ? 'text-green-400' : (m.status === 'aprobado' ? 'text-orange-400' : 'text-zinc-500');
           // v8.17.33: edición inline SOLO disponible si:
           // - el movimiento NO está cerrado (aprobado/rechazado), y
-          // - el admin habilitó modo edición en esta fila (botón ✏️).
+          // - el admin habilitó modo edición en esta fila (botón ✏️) o el toggle global.
           // Para entregas no aplica.
           const puedeEditarProy = m.tipo !== 'entrega' && m.status === 'pendiente_revision' && isEditing(m.id);
           const puedeEditarEmpresa = m.tipo === 'gasto_factura' && !sinFactura && m.status === 'pendiente_revision' && isEditing(m.id);
-          const puedeMostrarBotonEditar = m.tipo !== 'entrega' && m.status === 'pendiente_revision';
+          // v8.17.36: ocultar el ✏️ per-row cuando el toggle global está activo (redundante)
+          const puedeMostrarBotonEditar = !editAllMode && m.tipo !== 'entrega' && m.status === 'pendiente_revision';
 
           // v8.17.32: categoría desde datosIA.categoria_sugerida (cuando aplica)
           const catId = m.datosIA?.categoria_sugerida;

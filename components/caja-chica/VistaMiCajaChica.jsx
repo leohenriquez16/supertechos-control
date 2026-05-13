@@ -1,13 +1,15 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { ArrowLeft, Plus, Loader2, Camera, Wallet, Clock, CircleCheck, X, AlertTriangle, Eye, Sparkles, FileWarning } from 'lucide-react';
+import { ArrowLeft, Plus, Loader2, Camera, Wallet, Clock, CircleCheck, X, AlertTriangle, Eye, Sparkles, FileWarning, HelpCircle, UtensilsCrossed } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatRD, formatNum, formatFechaCorta } from '../../lib/helpers/formato';
+import { resumenDietaHospedaje, LABEL_SUB_TIPO, EMOJI_SUB_TIPO } from '../../lib/helpers/dietaHospedaje';
 import ModalReportarGasto from './ModalReportarGasto';
 import ModalReportarGastosMasivo from './ModalReportarGastosMasivo';
 import ModalReportarSinFacturaMasivo from './ModalReportarSinFacturaMasivo';
 import ModalDetalleMovimiento from './ModalDetalleMovimiento';
+import ModalAyudaDieta from './ModalAyudaDieta';
 
 // Vista para el maestro/supervisor titular de una caja chica.
 // Muestra: saldo actual, saldo proyectado (si aprueban todo lo pendiente),
@@ -22,22 +24,45 @@ export default function VistaMiCajaChica({ usuario, data, onVolver }) {
   const [modalSinFactura, setModalSinFactura] = useState(false); // v8.17.4: sin factura en lote
   const [verFoto, setVerFoto] = useState(null); // {id, fotoData}
   const [verDetalle, setVerDetalle] = useState(null); // v8.17.26: modal de detalle del movimiento (editable si pendiente)
+  // v8.17.29: dieta + hospedaje
+  const [configDieta, setConfigDieta] = useState({ desayunoRd: 200, comidaRd: 350, cenaRd: 350, hotelRd: 900 });
+  const [modalAyuda, setModalAyuda] = useState(false);
 
   const cargar = async () => {
     setLoading(true);
     try {
-      const [movs, sal] = await Promise.all([
+      const [movs, sal, cd] = await Promise.all([
         db.listarMovimientosCajaChica({ personaId: usuario.id }),
         db.obtenerSaldoCajaChica(usuario.id),
+        db.obtenerConfigDieta().catch(() => null), // v8.17.29
       ]);
       setMovimientos(movs);
       setSaldo(sal);
+      if (cd) setConfigDieta(cd);
     } catch (e) {
       console.error(e);
     }
     setLoading(false);
   };
   useEffect(() => { cargar(); }, [usuario.id]);
+
+  // v8.17.29: resumen del mes en curso (presupuesto vs consumido)
+  const resumenMes = useMemo(() => {
+    const ahora = new Date();
+    const desde = new Date(ahora.getFullYear(), ahora.getMonth(), 1).toISOString().split('T')[0];
+    const hasta = new Date(ahora.getFullYear(), ahora.getMonth() + 1, 0).toISOString().split('T')[0];
+    return resumenDietaHospedaje({
+      personaId: usuario.id,
+      desde,
+      hasta,
+      movimientos,
+      configDieta,
+    });
+  }, [movimientos, configDieta, usuario.id]);
+
+  const tieneAlgunPresupuestoOConsumo =
+    resumenMes.dieta.presupuesto > 0 || resumenMes.dieta.consumido > 0 ||
+    resumenMes.hospedaje.presupuesto > 0 || resumenMes.hospedaje.consumido > 0;
 
   // Proyectos a los que el usuario está o estuvo asignado.
   // Restricción intencional: un maestro no puede asociar un gasto a un proyecto
@@ -276,6 +301,61 @@ export default function VistaMiCajaChica({ usuario, data, onVolver }) {
         </div>
       </div>
 
+      {/* v8.17.29: Dieta + Hospedaje del mes — solo aparece si la persona está habilitada o ya tiene movimientos */}
+      {(usuario.dietaHabilitada || usuario.hospedajeHabilitado || tieneAlgunPresupuestoOConsumo) && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-[11px] tracking-widest uppercase text-orange-400 font-bold flex items-center gap-1">
+              <UtensilsCrossed className="w-3 h-3" /> Dieta + Hospedaje · este mes
+            </div>
+            <button onClick={() => setModalAyuda(true)} className="text-zinc-500 hover:text-orange-400 flex items-center gap-1 text-[10px]">
+              <HelpCircle className="w-3 h-3" /> ¿Cómo funciona?
+            </button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+            {/* Dieta */}
+            <div className="bg-gradient-to-br from-orange-950/60 to-zinc-950 border border-orange-900/40 p-3 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <div className="text-[10px] uppercase tracking-widest text-orange-400 font-bold">🍽 Dieta</div>
+                <div className={`text-[10px] font-bold ${resumenMes.dieta.holgura >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  {resumenMes.dieta.holgura >= 0 ? '+' : ''}RD$ {formatNum(resumenMes.dieta.holgura, 0)}
+                </div>
+              </div>
+              <div className="text-[10px] text-zinc-400 flex justify-between"><span>Presupuesto</span><span className="font-bold text-orange-300">RD$ {formatNum(resumenMes.dieta.presupuesto, 0)}</span></div>
+              <div className="text-[10px] text-zinc-400 flex justify-between"><span>Facturas que descuentan</span><span className="font-bold text-zinc-300">RD$ {formatNum(resumenMes.dieta.consumido, 0)}</span></div>
+              {(resumenMes.dieta.detalle.desayuno > 0 || resumenMes.dieta.detalle.comida > 0 || resumenMes.dieta.detalle.cena > 0) && (
+                <div className="text-[9px] text-zinc-500 pt-1 border-t border-zinc-800 flex gap-2 flex-wrap">
+                  {resumenMes.dieta.detalle.desayuno > 0 && <span>{EMOJI_SUB_TIPO.desayuno} {LABEL_SUB_TIPO.desayuno}: RD${formatNum(resumenMes.dieta.detalle.desayuno, 0)}</span>}
+                  {resumenMes.dieta.detalle.comida > 0 && <span>{EMOJI_SUB_TIPO.comida} {LABEL_SUB_TIPO.comida}: RD${formatNum(resumenMes.dieta.detalle.comida, 0)}</span>}
+                  {resumenMes.dieta.detalle.cena > 0 && <span>{EMOJI_SUB_TIPO.cena} {LABEL_SUB_TIPO.cena}: RD${formatNum(resumenMes.dieta.detalle.cena, 0)}</span>}
+                </div>
+              )}
+              <div className="text-[9px] text-orange-300/70 pt-1 italic">
+                {resumenMes.dieta.holgura > 0 && 'Te sobró presupuesto: la diferencia es tuya.'}
+                {resumenMes.dieta.holgura < 0 && 'Las facturas excedieron el presupuesto: habla con la oficina.'}
+                {resumenMes.dieta.holgura === 0 && resumenMes.dieta.presupuesto === 0 && 'Aún no se ha registrado dieta este mes.'}
+              </div>
+            </div>
+            {/* Hospedaje */}
+            <div className="bg-gradient-to-br from-purple-950/60 to-zinc-950 border border-purple-900/40 p-3 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <div className="text-[10px] uppercase tracking-widest text-purple-400 font-bold">🛏 Hospedaje</div>
+                <div className={`text-[10px] font-bold ${resumenMes.hospedaje.holgura >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  {resumenMes.hospedaje.holgura >= 0 ? '+' : ''}RD$ {formatNum(resumenMes.hospedaje.holgura, 0)}
+                </div>
+              </div>
+              <div className="text-[10px] text-zinc-400 flex justify-between"><span>Presupuesto</span><span className="font-bold text-purple-300">RD$ {formatNum(resumenMes.hospedaje.presupuesto, 0)}</span></div>
+              <div className="text-[10px] text-zinc-400 flex justify-between"><span>Facturas que descuentan</span><span className="font-bold text-zinc-300">RD$ {formatNum(resumenMes.hospedaje.consumido, 0)}</span></div>
+              <div className="text-[9px] text-purple-300/70 pt-1 italic">
+                {resumenMes.hospedaje.holgura > 0 && 'Te sobró presupuesto: la diferencia es tuya.'}
+                {resumenMes.hospedaje.holgura < 0 && 'Las facturas excedieron: habla con la oficina.'}
+                {resumenMes.hospedaje.holgura === 0 && resumenMes.hospedaje.presupuesto === 0 && 'Aún no se ha registrado hospedaje este mes.'}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Lista de movimientos */}
       <div className="space-y-2">
         <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Movimientos ({movimientos.length})</div>
@@ -352,6 +432,15 @@ export default function VistaMiCajaChica({ usuario, data, onVolver }) {
           </div>
         </div>
       )}
+
+      {/* v8.17.29: Modal de ayuda Dieta + Hospedaje */}
+      {modalAyuda && (
+        <ModalAyudaDieta
+          vista="maestro"
+          configDieta={configDieta}
+          onCerrar={() => setModalAyuda(false)}
+        />
+      )}
     </div>
   );
 }
@@ -387,6 +476,16 @@ function MovimientoRow({ m, data, onVerFoto, onAbrirDetalle }) {
           )}
           {sinFactura && (
             <div className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-red-900/40 text-red-300 border border-red-800">✍ Sin factura</div>
+          )}
+          {/* v8.17.29: badge si el movimiento cuenta a partida (no es reembolsable) */}
+          {m.aplicaA === 'dieta' && (
+            <div className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-orange-900/40 text-orange-300 border border-orange-700" title="Esta factura descuenta del presupuesto de dieta, no se reembolsa">🍽 Dieta</div>
+          )}
+          {m.aplicaA === 'hospedaje' && (
+            <div className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-purple-900/40 text-purple-300 border border-purple-700" title="Esta factura descuenta del presupuesto de hospedaje, no se reembolsa">🛏 Hospedaje</div>
+          )}
+          {m.subTipo && (
+            <div className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-zinc-800 text-zinc-300 border border-zinc-700">{EMOJI_SUB_TIPO[m.subTipo] || ''} {LABEL_SUB_TIPO[m.subTipo] || m.subTipo}</div>
           )}
           {editable && (
             <div className="text-[9px] uppercase tracking-wider text-zinc-500 italic">· Toca para editar</div>

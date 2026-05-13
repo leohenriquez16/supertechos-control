@@ -184,6 +184,8 @@ export default function ModalReportarGastosMasivo({ usuario, proyectos, categori
       const cotizacionManual = proySel === PROYECTO_OTRO ? b.datos.cotizacionManual.trim() : null;
       const esGenerico = proySel === PROYECTO_GENERICO;
 
+      // v8.17.29: heredar aplica_a de la categoría
+      const cat = categoriasActivas.find(c => c.id === b.datos.categoria);
       return await db.crearMovimientoCajaChica({
         personaId: usuario.id,
         proyectoId,
@@ -196,6 +198,7 @@ export default function ModalReportarGastosMasivo({ usuario, proyectos, categori
         concepto: b.datos.concepto || null,
         // v8.17.25: empresa receptora detectada por AI
         empresaReceptora: b.datosIA?.empresa_receptora || null,
+        aplicaA: cat?.aplicaA || null,
         datosIA: {
           ...(b.datosIA || {}),
           ncf: b.datos.ncf || null,

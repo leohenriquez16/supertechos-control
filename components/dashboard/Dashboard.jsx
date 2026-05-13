@@ -9,6 +9,7 @@ import ModalDetalleEnEjecucion from './ModalDetalleEnEjecucion';
 import ModalDetallePersonalAhora from './ModalDetallePersonalAhora';
 import ModalDetalleProduccion from './ModalDetalleProduccion';
 import ModalDetalleAprobados from './ModalDetalleAprobados';
+import AutoFitText from '../common/AutoFitText'; // v8.17.30: ajustar números a celda
 
 export default function Dashboard({ data, onVerProyecto, onNuevoProyecto, onImportarOdoo, tareas, onCompletarTarea, jornadasHoy, onCambiarEstadoRapido }) {
   const hoy = new Date().toISOString().split('T')[0];
@@ -249,40 +250,50 @@ export default function Dashboard({ data, onVerProyecto, onNuevoProyecto, onImpo
         </div>
       </div>
 
-      {/* HERO: Métricas ejecutivas del periodo - v8.9.29: 4 tarjetas nuevas */}
+      {/* HERO: Métricas ejecutivas del periodo - v8.9.29: 4 tarjetas
+          v8.17.30: AutoFitText para que números no se salgan del cuadro en móvil,
+          labels con leading-tight y subtext truncado. */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-        <button onClick={() => setModalDetalle('enEjecucion')} className="bg-gradient-to-br from-red-600 to-red-800 p-4 text-left hover:brightness-110 transition-all cursor-pointer">
-          <div className="flex items-center justify-between">
-            <div className="text-[10px] tracking-widest uppercase text-red-200">En Ejecución</div>
-            <ChevronRight className="w-3 h-3 text-red-200" />
+        <button onClick={() => setModalDetalle('enEjecucion')} className="bg-gradient-to-br from-red-600 to-red-800 p-3 sm:p-4 text-left hover:brightness-110 transition-all cursor-pointer overflow-hidden">
+          <div className="flex items-start justify-between gap-1">
+            <div className="text-[10px] tracking-widest uppercase text-red-200 leading-tight">En Ejecución</div>
+            <ChevronRight className="w-3 h-3 text-red-200 flex-shrink-0 mt-0.5" />
           </div>
-          <div className="text-3xl font-black mt-1">{proyectosEjecutando.length}</div>
-          <div className="text-[10px] text-red-200">proyecto{proyectosEjecutando.length !== 1 ? 's' : ''} activo{proyectosEjecutando.length !== 1 ? 's' : ''}</div>
+          <div className="mt-1">
+            <AutoFitText maxSize={32} minSize={18} className="font-black">{proyectosEjecutando.length}</AutoFitText>
+          </div>
+          <div className="text-[10px] text-red-200 truncate">proyecto{proyectosEjecutando.length !== 1 ? 's' : ''} activo{proyectosEjecutando.length !== 1 ? 's' : ''}</div>
         </button>
-        <button onClick={() => setModalDetalle('personalAhora')} className="bg-gradient-to-br from-blue-600 to-blue-800 p-4 text-left hover:brightness-110 transition-all cursor-pointer">
-          <div className="flex items-center justify-between">
-            <div className="text-[10px] tracking-widest uppercase text-blue-200">Personal en Obra Ahora</div>
-            <ChevronRight className="w-3 h-3 text-blue-200" />
+        <button onClick={() => setModalDetalle('personalAhora')} className="bg-gradient-to-br from-blue-600 to-blue-800 p-3 sm:p-4 text-left hover:brightness-110 transition-all cursor-pointer overflow-hidden">
+          <div className="flex items-start justify-between gap-1">
+            <div className="text-[10px] tracking-widest uppercase text-blue-200 leading-tight">Personal en obra ahora</div>
+            <ChevronRight className="w-3 h-3 text-blue-200 flex-shrink-0 mt-0.5" />
           </div>
-          <div className="text-3xl font-black mt-1">{personalEnObraAhora.size}</div>
-          <div className="text-[10px] text-blue-200">persona{personalEnObraAhora.size !== 1 ? 's' : ''} · {personalPorProyecto.length} obra{personalPorProyecto.length !== 1 ? 's' : ''}</div>
+          <div className="mt-1">
+            <AutoFitText maxSize={32} minSize={18} className="font-black">{personalEnObraAhora.size}</AutoFitText>
+          </div>
+          <div className="text-[10px] text-blue-200 truncate">{personalEnObraAhora.size} persona{personalEnObraAhora.size !== 1 ? 's' : ''} · {personalPorProyecto.length} obra{personalPorProyecto.length !== 1 ? 's' : ''}</div>
         </button>
-        <button onClick={() => setModalDetalle('produccion')} className="bg-zinc-900 border border-zinc-800 hover:border-green-600 p-4 text-left cursor-pointer transition-all">
-          <div className="flex items-center justify-between">
-            <div className="text-[10px] tracking-widest uppercase text-zinc-500">Producción</div>
-            <ChevronRight className="w-3 h-3 text-zinc-600" />
+        <button onClick={() => setModalDetalle('produccion')} className="bg-zinc-900 border border-zinc-800 hover:border-green-600 p-3 sm:p-4 text-left cursor-pointer transition-all overflow-hidden">
+          <div className="flex items-start justify-between gap-1">
+            <div className="text-[10px] tracking-widest uppercase text-zinc-500 leading-tight">Producción</div>
+            <ChevronRight className="w-3 h-3 text-zinc-600 flex-shrink-0 mt-0.5" />
           </div>
-          <div className="text-2xl font-black text-green-400 mt-1">{formatRD(prodPeriodo)}</div>
-          {deltaProd !== null && <div className={`text-[10px] ${deltaProd >= 0 ? 'text-green-500' : 'text-red-400'}`}>{deltaProd >= 0 ? '↑' : '↓'} {Math.abs(deltaProd).toFixed(0)}% vs anterior</div>}
-          {deltaProd === null && <div className="text-[10px] text-zinc-600">{formatRD(prodAnt)} anterior</div>}
+          <div className="mt-1">
+            <AutoFitText maxSize={24} minSize={12} className="font-black text-green-400">{formatRD(prodPeriodo)}</AutoFitText>
+          </div>
+          {deltaProd !== null && <div className={`text-[10px] truncate ${deltaProd >= 0 ? 'text-green-500' : 'text-red-400'}`}>{deltaProd >= 0 ? '↑' : '↓'} {Math.abs(deltaProd).toFixed(0)}% vs anterior</div>}
+          {deltaProd === null && <div className="text-[10px] text-zinc-600 truncate">{formatRD(prodAnt)} anterior</div>}
         </button>
-        <button onClick={() => setModalDetalle('aprobados')} className="bg-zinc-900 border border-zinc-800 hover:border-cyan-600 p-4 text-left cursor-pointer transition-all">
-          <div className="flex items-center justify-between">
-            <div className="text-[10px] tracking-widest uppercase text-zinc-500">Aprobados</div>
-            <ChevronRight className="w-3 h-3 text-zinc-600" />
+        <button onClick={() => setModalDetalle('aprobados')} className="bg-zinc-900 border border-zinc-800 hover:border-cyan-600 p-3 sm:p-4 text-left cursor-pointer transition-all overflow-hidden">
+          <div className="flex items-start justify-between gap-1">
+            <div className="text-[10px] tracking-widest uppercase text-zinc-500 leading-tight">Aprobados</div>
+            <ChevronRight className="w-3 h-3 text-zinc-600 flex-shrink-0 mt-0.5" />
           </div>
-          <div className="text-2xl font-black text-cyan-400 mt-1">{formatRD(montoAprobadosPeriodo)}</div>
-          <div className="text-[10px] text-zinc-600">{aprobadosPeriodo.length} proyecto{aprobadosPeriodo.length !== 1 ? 's' : ''}</div>
+          <div className="mt-1">
+            <AutoFitText maxSize={24} minSize={12} className="font-black text-cyan-400">{formatRD(montoAprobadosPeriodo)}</AutoFitText>
+          </div>
+          <div className="text-[10px] text-zinc-600 truncate">{aprobadosPeriodo.length} proyecto{aprobadosPeriodo.length !== 1 ? 's' : ''}</div>
         </button>
       </div>
 

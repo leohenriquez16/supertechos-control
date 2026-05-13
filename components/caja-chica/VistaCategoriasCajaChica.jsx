@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, Plus, Loader2, Save, Trash2, X, Edit2, Eye, EyeOff, Tag } from 'lucide-react';
+import { ArrowLeft, Plus, Loader2, Save, Trash2, X, Edit2, Eye, EyeOff, Tag, Settings } from 'lucide-react';
 import * as db from '../../lib/db';
 import { toast } from '../../lib/toast';
 import Campo from '../common/Campo';
@@ -20,27 +20,55 @@ const COLORES = [
   { hex: '#71717a', label: 'Gris' },
 ];
 
-const FORM_VACIO = { nombre: '', color: '#3b82f6', icono: '', descripcion: '', orden: 50 };
+const FORM_VACIO = { nombre: '', color: '#3b82f6', icono: '', descripcion: '', orden: 50, aplicaA: '' };
 
-export default function VistaCategoriasCajaChica({ onVolver, onCambio }) {
+export default function VistaCategoriasCajaChica({ onVolver, onCambio, usuario }) {
   const [categorias, setCategorias] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editando, setEditando] = useState(null); // 'new' | id
   const [form, setForm] = useState(FORM_VACIO);
 
+  // v8.17.29: config global de montos de dieta + hospedaje
+  const [configDieta, setConfigDieta] = useState({ desayunoRd: 200, comidaRd: 350, cenaRd: 350, hotelRd: 900 });
+  const [editandoDieta, setEditandoDieta] = useState(false);
+  const [formDieta, setFormDieta] = useState(configDieta);
+  const [guardandoDieta, setGuardandoDieta] = useState(false);
+
   const cargar = async () => {
     setLoading(true);
     try {
       setCategorias(await db.listarCategoriasCajaChica());
+      const cd = await db.obtenerConfigDieta();
+      setConfigDieta(cd);
+      setFormDieta(cd);
     } catch (e) { console.error(e); }
     setLoading(false);
   };
   useEffect(() => { cargar(); }, []);
 
+  const guardarDieta = async () => {
+    setGuardandoDieta(true);
+    try {
+      const cd = await db.actualizarConfigDieta({
+        desayunoRd: parseFloat(formDieta.desayunoRd) || 0,
+        comidaRd: parseFloat(formDieta.comidaRd) || 0,
+        cenaRd: parseFloat(formDieta.cenaRd) || 0,
+        hotelRd: parseFloat(formDieta.hotelRd) || 0,
+        updatedPorId: usuario?.id || null,
+      });
+      setConfigDieta(cd);
+      setFormDieta(cd);
+      setEditandoDieta(false);
+      toast.success('Montos de dieta actualizados');
+      if (onCambio) onCambio();
+    } catch (e) { toast.error('Error: ' + (e.message || e)); }
+    setGuardandoDieta(false);
+  };
+
   const empezarNueva = () => { setEditando('new'); setForm(FORM_VACIO); };
   const empezarEditar = (c) => {
     setEditando(c.id);
-    setForm({ nombre: c.nombre, color: c.color, icono: c.icono || '', descripcion: c.descripcion || '', orden: c.orden });
+    setForm({ nombre: c.nombre, color: c.color, icono: c.icono || '', descripcion: c.descripcion || '', orden: c.orden, aplicaA: c.aplicaA || '' });
   };
 
   const guardar = async () => {
@@ -53,6 +81,7 @@ export default function VistaCategoriasCajaChica({ onVolver, onCambio }) {
           icono: form.icono?.trim() || null,
           descripcion: form.descripcion?.trim() || null,
           orden: parseInt(form.orden) || 50,
+          aplicaA: form.aplicaA || null, // v8.17.29
         });
       } else {
         await db.actualizarCategoriaCajaChica(editando, {
@@ -61,6 +90,7 @@ export default function VistaCategoriasCajaChica({ onVolver, onCambio }) {
           icono: form.icono?.trim() || null,
           descripcion: form.descripcion?.trim() || null,
           orden: parseInt(form.orden) || 50,
+          aplicaA: form.aplicaA || null, // v8.17.29
         });
       }
       setEditando(null);
@@ -119,6 +149,76 @@ export default function VistaCategoriasCajaChica({ onVolver, onCambio }) {
         💡 Las categorías se usan para clasificar gastos. La AI las usa al interpretar facturas — entre más descriptiva la "Descripción", mejor decide. Las categorías por defecto se pueden editar/desactivar pero no eliminar.
       </div>
 
+      {/* v8.17.29: Config global de montos de dieta + hospedaje */}
+      <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <div className="text-xs tracking-widest uppercase text-orange-400 font-bold flex items-center gap-2">
+              <Settings className="w-3 h-3" /> Montos de dieta + hospedaje
+            </div>
+            <div className="text-[10px] text-zinc-500 mt-0.5">Lo que la empresa paga por día a maestros/supervisores en proyectos del interior</div>
+          </div>
+          {!editandoDieta && (
+            <button onClick={() => { setFormDieta(configDieta); setEditandoDieta(true); }} className="text-[10px] uppercase tracking-wider bg-zinc-800 hover:bg-zinc-700 text-white px-3 py-1.5 font-bold flex items-center gap-1">
+              <Edit2 className="w-3 h-3" /> Editar
+            </button>
+          )}
+        </div>
+        {!editandoDieta ? (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+            <div className="bg-zinc-950 border border-zinc-800 p-2 text-center">
+              <div className="text-[10px] uppercase text-zinc-500">Desayuno</div>
+              <div className="font-black text-orange-300">RD$ {configDieta.desayunoRd.toLocaleString()}</div>
+            </div>
+            <div className="bg-zinc-950 border border-zinc-800 p-2 text-center">
+              <div className="text-[10px] uppercase text-zinc-500">Comida</div>
+              <div className="font-black text-orange-300">RD$ {configDieta.comidaRd.toLocaleString()}</div>
+            </div>
+            <div className="bg-zinc-950 border border-zinc-800 p-2 text-center">
+              <div className="text-[10px] uppercase text-zinc-500">Cena</div>
+              <div className="font-black text-orange-300">RD$ {configDieta.cenaRd.toLocaleString()}</div>
+            </div>
+            <div className="bg-zinc-950 border border-zinc-800 p-2 text-center">
+              <div className="text-[10px] uppercase text-zinc-500">Hotel</div>
+              <div className="font-black text-purple-300">RD$ {configDieta.hotelRd.toLocaleString()}</div>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              {[
+                { key: 'desayunoRd', label: 'Desayuno', color: 'orange' },
+                { key: 'comidaRd', label: 'Comida', color: 'orange' },
+                { key: 'cenaRd', label: 'Cena', color: 'orange' },
+                { key: 'hotelRd', label: 'Hotel', color: 'purple' },
+              ].map(({ key, label }) => (
+                <div key={key} className="bg-zinc-950 border border-zinc-800 p-2">
+                  <div className="text-[10px] uppercase text-zinc-500">{label}</div>
+                  <div className="flex items-center gap-1 mt-1">
+                    <span className="text-[10px] text-zinc-500">RD$</span>
+                    <input
+                      type="number"
+                      value={formDieta[key]}
+                      onChange={e => setFormDieta({ ...formDieta, [key]: e.target.value })}
+                      className="flex-1 bg-zinc-900 border border-zinc-800 px-1.5 py-1 text-white text-xs text-right font-bold"
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2 pt-2 border-t border-zinc-800">
+              <button onClick={() => { setEditandoDieta(false); setFormDieta(configDieta); }} className="px-3 bg-zinc-800 text-zinc-400 text-[10px] font-bold uppercase py-2">Cancelar</button>
+              <button onClick={guardarDieta} disabled={guardandoDieta} className="flex-1 bg-orange-600 hover:bg-orange-700 disabled:bg-zinc-800 text-white text-[10px] font-black uppercase py-2 flex items-center justify-center gap-1">
+                {guardandoDieta ? <Loader2 className="w-3 h-3 animate-spin" /> : <><Save className="w-3 h-3" /> Guardar montos</>}
+              </button>
+            </div>
+            <div className="text-[10px] text-zinc-500">
+              Estos montos se descuentan del presupuesto cuando el maestro marca "consumí desayuno/comida/cena/hotel" al cerrar jornada. También definen el techo de las facturas de comida/hospedaje que se cargan a estas partidas.
+            </div>
+          </div>
+        )}
+      </div>
+
       {editando && (
         <div className="bg-zinc-900 border-2 border-red-600 p-4 space-y-3">
           <div className="flex justify-between items-center">
@@ -157,6 +257,22 @@ export default function VistaCategoriasCajaChica({ onVolver, onCambio }) {
           <Campo label="Orden (más bajo aparece primero)">
             <Input type="number" value={form.orden} onChange={v => setForm({ ...form, orden: v })} />
           </Campo>
+          {/* v8.17.29: aplica_a — vincula la categoría al presupuesto de dieta u hospedaje */}
+          <div className="space-y-1">
+            <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">Cuenta a presupuesto de…</div>
+            <select
+              value={form.aplicaA || ''}
+              onChange={e => setForm({ ...form, aplicaA: e.target.value })}
+              className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-xs"
+            >
+              <option value="">— Ninguna (gasto normal reembolsable) —</option>
+              <option value="dieta">🍽 Dieta (desayuno/comida/cena)</option>
+              <option value="hospedaje">🛏 Hospedaje (hotel)</option>
+            </select>
+            <div className="text-[10px] text-zinc-500">
+              Si seleccionas una partida, los gastos en esta categoría <b>no se reembolsan</b>: consumen el presupuesto fijo de dieta u hospedaje del maestro.
+            </div>
+          </div>
           <div className="flex gap-2 pt-2 border-t border-zinc-800">
             <button onClick={() => { setEditando(null); setForm(FORM_VACIO); }} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2.5">Cancelar</button>
             <button onClick={guardar} className="flex-1 bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase py-2.5 flex items-center justify-center gap-1">
@@ -177,6 +293,8 @@ export default function VistaCategoriasCajaChica({ onVolver, onCambio }) {
                 <span className="text-sm font-bold">{c.nombre}</span>
                 {c.isDefault && <span className="text-[9px] uppercase tracking-wider px-1 bg-zinc-800 border border-zinc-700 text-zinc-400">Default</span>}
                 {!c.activa && <span className="text-[9px] uppercase tracking-wider px-1 bg-red-900/40 text-red-300 border border-red-800">Inactiva</span>}
+                {c.aplicaA === 'dieta' && <span className="text-[9px] uppercase tracking-wider px-1 bg-orange-900/40 text-orange-300 border border-orange-800" title="Consume presupuesto de dieta">🍽 Dieta</span>}
+                {c.aplicaA === 'hospedaje' && <span className="text-[9px] uppercase tracking-wider px-1 bg-purple-900/40 text-purple-300 border border-purple-800" title="Consume presupuesto de hospedaje">🛏 Hospedaje</span>}
               </div>
               <div className="text-[10px] text-zinc-500 font-mono">{c.id}</div>
               {c.descripcion && <div className="text-[10px] text-zinc-400 mt-0.5">{c.descripcion}</div>}

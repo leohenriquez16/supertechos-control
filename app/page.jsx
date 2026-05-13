@@ -19,6 +19,16 @@ import {
   calcEstadoPagoProyecto,
 } from '../lib/helpers/calculos';
 import { fileToBase64, cargarPdfLib, cortarPDFaPrimerasPaginas, extraerPDF } from '../lib/helpers/pdf';
+// v8.17.29: helpers de dieta + hospedaje
+import {
+  buildMovimientosDieta,
+  dietaAplicaA,
+  hospedajeAplicaA,
+  TODOS_SUB_TIPOS,
+  LABEL_SUB_TIPO,
+  EMOJI_SUB_TIPO,
+  montoDelSubTipo,
+} from '../lib/helpers/dietaHospedaje';
 // v8.10.2: Dashboard extraído (ya importa los 4 modales internamente)
 import Dashboard from '../components/dashboard/Dashboard';
 // v8.10.3: Sidebar extraído
@@ -29,6 +39,8 @@ import Campo from '../components/common/Campo';
 import Input from '../components/common/Input';
 // v8.10.10: AutoFitText para números que se autoajustan al ancho
 import AutoFitText from '../components/common/AutoFitText';
+// v8.17.30: toggle de densidad para listas/tablas
+import ToggleDensidad, { useDensidad } from '../components/common/ToggleDensidad';
 // v8.10.4: ModalEditarReporte extraído
 import ModalEditarReporte from '../components/proyecto/modales/ModalEditarReporte';
 // v8.10.4: ModalReporteAvancePDF extraído (incluye ReportePDFContenido)
@@ -748,7 +760,10 @@ export default function App() {
         </div>
       </header>
 
-      <main className="md:ml-60 max-w-6xl md:mx-auto px-4 py-6">
+      {/* v8.17.37 / v8.17.38: el sidebar es fixed left:0 w-60, así que md:ml-60
+          en el outer reserva 240px a la izquierda en md+. El inner contiene la
+          lógica de max-width: en <lg max-w-6xl centrado; en lg+ full-width. */}
+      <main className="md:ml-60 px-4 lg:px-6 py-6"><div className="max-w-6xl mx-auto lg:max-w-none lg:mx-0">
         {syncing && <div className="hidden md:block fixed top-2 right-4 z-30"><Loader2 className="w-4 h-4 text-red-500 animate-spin" /></div>}
         {esAdmin && vista === 'dashboard' && <Dashboard data={data} tareas={tareas} jornadasHoy={jornadasHoy} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} onNuevoProyecto={() => setVista('nuevoProyecto')} onImportarOdoo={() => setModalOdooAbierto(true)} onCompletarTarea={async (id) => withSync(async () => { await db.completarTarea(id, usuario.id); })} onCambiarEstadoRapido={async (proyId, estadoNuevo) => withSync(async () => { await db.cambiarEstadoProyecto(proyId, estadoNuevo, usuario, 'Cambio rápido desde Kanban'); })} />}
         {/* v8.10.23: Modal importar desde Odoo */}
@@ -760,10 +775,15 @@ export default function App() {
               <div className="text-xl font-black">Todos los proyectos</div>
             </div>
             <ListaProyectosMultivista
+              usuario={usuario}
               data={data}
               onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }}
               onNuevoProyecto={() => setVista('nuevoProyecto')}
               onCambiarEstadoRapido={async (proyId, estadoNuevo) => withSync(async () => { await db.cambiarEstadoProyecto(proyId, estadoNuevo, usuario, 'Cambio rápido desde Kanban'); })}
+              onActualizarProyecto={async (proy) => withSync(async () => { await db.actualizarProyecto(proy); })}
+              onArchivarProyecto={async (id) => withSync(async () => { await db.archivarProyecto(id, usuario.id); })}
+              onEliminarProyecto={esAdmin ? async (id) => withSync(async () => { await db.eliminarProyecto(id); }) : undefined}
+              onRecargar={recargar}
             />
           </div>
         )}
@@ -776,7 +796,7 @@ export default function App() {
         {vista === 'miCajaChica' && (tieneRol(usuario, 'maestro') || tieneRol(usuario, 'supervisor')) && usuario.cajaChicaHabilitada && <VistaMiCajaChica usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} />}
         {vista === 'cajaChica' && esAdmin && <VistaCajaChicaAdmin usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onIrAProveedores={() => setVista('proveedoresCajaChica')} onIrACategorias={() => setVista('categoriasCajaChica')} />}
         {vista === 'proveedoresCajaChica' && esAdmin && <VistaProveedoresCajaChica usuario={usuario} data={data} onVolver={() => setVista('cajaChica')} />}
-        {vista === 'categoriasCajaChica' && esAdmin && <VistaCategoriasCajaChica onVolver={() => setVista('cajaChica')} onCambio={() => recargar()} />}
+        {vista === 'categoriasCajaChica' && esAdmin && <VistaCategoriasCajaChica usuario={usuario} onVolver={() => setVista('cajaChica')} onCambio={() => recargar()} />}
         {vista === 'estadisticasPersonal' && esAdmin && <VistaEstadisticasPersonal data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'categorias' && esAdmin && <VistaCategorias data={data} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
         {vista === 'disponibilidad' && esAdmin && <VistaDisponibilidad usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} onRecargar={recargar} />}
@@ -1149,7 +1169,7 @@ export default function App() {
 
         {/* v8.9.20: Asistente IA para admin */}
         {esAdmin && <AsistenteIA usuario={usuario} data={data} />}
-      </main>
+      </div></main>
     </div>
   );
 }
@@ -4169,6 +4189,27 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
               )}
             </div>
           )}
+          {/* v8.17.29: Toggles Dieta + Hospedaje a nivel persona (solo aplican si el proyecto también los tiene activos) */}
+          {(form.roles.includes('maestro') || form.roles.includes('supervisor')) && (
+            <div className="bg-zinc-950 border border-zinc-800 p-3 space-y-2">
+              <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">Dieta y Hospedaje en proyectos del interior</div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={!!form.dietaHabilitada} onChange={e => setForm({ ...form, dietaHabilitada: e.target.checked })} className="w-4 h-4 accent-red-600" />
+                <div className="flex-1">
+                  <div className="text-xs font-bold flex items-center gap-1">🍽 Dieta habilitada</div>
+                  <div className="text-[10px] text-zinc-500">Recibe presupuesto diario de comida (desayuno/comida/cena) cuando va al interior</div>
+                </div>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={!!form.hospedajeHabilitado} onChange={e => setForm({ ...form, hospedajeHabilitado: e.target.checked })} className="w-4 h-4 accent-red-600" />
+                <div className="flex-1">
+                  <div className="text-xs font-bold flex items-center gap-1">🛏 Hospedaje habilitado</div>
+                  <div className="text-[10px] text-zinc-500">Recibe presupuesto de hotel cuando duerme fuera</div>
+                </div>
+              </label>
+              <div className="text-[10px] text-zinc-500 pt-1 border-t border-zinc-800">Solo se aplica si el proyecto también tiene estos toggles activos.</div>
+            </div>
+          )}
           <div className="flex gap-2 pt-2"><button onClick={() => { setEditando(null); setForm(null); }} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button><button onClick={guardar} disabled={!form.nombre} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-3 flex items-center justify-center gap-1"><Save className="w-3 h-3" /> Guardar</button></div>
         </div>
       )}
@@ -4707,7 +4748,7 @@ function MisProyectos({ usuario, data, onIrAReportar, onVerDetalle }) {
 // ============================================================
 // LISTA PROYECTOS MULTIVISTA (v8.1) — Kanban / Lista / Mapa
 // ============================================================
-function ListaProyectosMultivista({ data, onVerProyecto, onNuevoProyecto, onCambiarEstadoRapido }) {
+function ListaProyectosMultivista({ usuario, data, onVerProyecto, onNuevoProyecto, onCambiarEstadoRapido, onActualizarProyecto, onArchivarProyecto, onEliminarProyecto, onRecargar }) {
   const [vista, setVista] = useState('kanban'); // kanban | lista | mapa
   const [filtroEstado, setFiltroEstado] = useState('');
   const [filtroMaestro, setFiltroMaestro] = useState('');
@@ -4716,6 +4757,10 @@ function ListaProyectosMultivista({ data, onVerProyecto, onNuevoProyecto, onCamb
   const [filtroSistema, setFiltroSistema] = useState('');
   const [busqueda, setBusqueda] = useState('');
   const [filtrosAbiertos, setFiltrosAbiertos] = useState(false);
+  // v8.17.30: modal de editar proyecto desde la lista (botón Edit en la tabla)
+  const [modalEditar, setModalEditar] = useState(null); // proyecto o null
+  // v8.17.30: densidad compacta/detallada (persiste en localStorage)
+  const [densidad, setDensidad, dx] = useDensidad('lista-proyectos');
 
   const proyectosFiltrados = data.proyectos.filter(p => {
     if (p.estado === 'facturado' && vista === 'kanban') return false;
@@ -4743,6 +4788,8 @@ function ListaProyectosMultivista({ data, onVerProyecto, onNuevoProyecto, onCamb
       <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
         <h2 className="text-xs tracking-widest uppercase text-zinc-400 font-bold">Proyectos ({proyectosFiltrados.length})</h2>
         <div className="flex items-center gap-2">
+          {/* v8.17.30: toggle de densidad solo en vista Lista (en desktop tiene sentido) */}
+          {vista === 'lista' && <div className="hidden md:block"><ToggleDensidad valor={densidad} onChange={setDensidad} /></div>}
           <div className="flex bg-zinc-900 border border-zinc-800">
             <button onClick={() => setVista('kanban')} className={`px-2 py-1 text-xs font-bold uppercase ${vista === 'kanban' ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>Kanban</button>
             <button onClick={() => setVista('lista')} className={`px-2 py-1 text-xs font-bold uppercase ${vista === 'lista' ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>Lista</button>
@@ -4768,8 +4815,33 @@ function ListaProyectosMultivista({ data, onVerProyecto, onNuevoProyecto, onCamb
       )}
 
       {vista === 'kanban' && <VistaKanban proyectos={proyectosFiltrados} data={data} onVerProyecto={onVerProyecto} onCambiarEstadoRapido={onCambiarEstadoRapido} />}
-      {vista === 'lista' && <VistaLista proyectos={proyectosFiltrados} data={data} onVerProyecto={onVerProyecto} />}
+      {vista === 'lista' && (
+        <VistaLista
+          proyectos={proyectosFiltrados}
+          data={data}
+          densidad={densidad}
+          dx={dx}
+          onVerProyecto={onVerProyecto}
+          onActualizarProyecto={onActualizarProyecto}
+          onAbrirModalEditar={(p) => setModalEditar(p)}
+          onArchivarProyecto={onArchivarProyecto}
+          onRecargar={onRecargar}
+        />
+      )}
       {vista === 'mapa' && <VistaMapa proyectos={proyectosFiltrados} data={data} onVerProyecto={onVerProyecto} />}
+
+      {/* v8.17.30: modal de editar proyecto, disparado desde la columna de acciones de la tabla */}
+      {modalEditar && (
+        <ModalEditarProyecto
+          proyecto={modalEditar}
+          data={data}
+          usuario={usuario}
+          onCerrar={() => setModalEditar(null)}
+          onGuardar={async (proy) => { await onActualizarProyecto(proy); if (onRecargar) await onRecargar(); }}
+          onArchivar={async (id) => { await onArchivarProyecto(id); if (onRecargar) await onRecargar(); }}
+          onEliminar={onEliminarProyecto}
+        />
+      )}
     </div>
   );
 }
@@ -4860,10 +4932,37 @@ function VistaKanban({ proyectos, data, onVerProyecto, onCambiarEstadoRapido }) 
   );
 }
 
-function VistaLista({ proyectos, data, onVerProyecto }) {
+// v8.17.30: helper para calcular días en el estado actual.
+// Usa la fecha más relevante según el estado (aprobado→fechaAprobacion, etc).
+// Fallback a createdAt o null si no hay nada.
+function diasEnEstado(p) {
+  const map = {
+    cubicacion: p.fechaCubicacion,
+    aprobado: p.fechaAprobacion,
+    en_ejecucion: p.fecha_inicio,
+    finalizado_recibido_conforme: p.fechaMedicion,
+    facturado: p.fechaFacturacion,
+    cobrado: p.fechaCobro,
+  };
+  const fRef = map[p.estado] || p.fecha_inicio || p.createdAt;
+  if (!fRef) return null;
+  const dRef = new Date(fRef + (fRef.length === 10 ? 'T12:00:00' : ''));
+  const ahora = new Date();
+  return Math.max(0, Math.floor((ahora - dRef) / 86400000));
+}
+
+function VistaLista({ proyectos, data, densidad = 'detallado', dx, onVerProyecto, onActualizarProyecto, onAbrirModalEditar, onArchivarProyecto, onRecargar }) {
   // v8.10.12: Agrupar por estado, colapsable, con totales
+  // v8.17.30: en desktop (md:) se renderiza como tabla con sticky header, sort, inline edit, acciones.
+  //           En móvil (<md) mantiene el layout de cards (más legible en pantalla chica).
   const [colapsados, setColapsados] = useState({});
+  const [guardandoId, setGuardandoId] = useState(null); // id del proyecto siendo guardado (feedback visual)
+  const [sort, setSort] = useState({ key: 'cliente', dir: 'asc' });
   const toggle = (estado) => setColapsados(c => ({ ...c, [estado]: !c[estado] }));
+  const supervisores = getSupervisores(data.personal);
+  const maestros = getMaestros(data.personal);
+  const compacto = densidad === 'compacto';
+  const rowPad = compacto ? 'py-1 px-2' : 'py-2 px-2';
 
   if (proyectos.length === 0) return <div className="text-center py-10 text-zinc-500 text-sm">No hay proyectos con estos filtros.</div>;
 
@@ -4875,16 +4974,79 @@ function VistaLista({ proyectos, data, onVerProyecto }) {
     const { porcentaje } = sistema ? calcAvanceProyecto(p, data.reportes, sistema, data.sistemas) : { porcentaje: 0 };
     const supervisor = getPersona(data.personal, p.supervisorId);
     const maestro = getPersona(data.personal, p.maestroId);
-    return { p, sistema, m2Total, valor, porcentaje, supervisor, maestro };
+    const dias = diasEnEstado(p);
+    return { p, sistema, m2Total, valor, porcentaje, supervisor, maestro, dias };
   });
 
-  // Agrupar por estado, respetando ORDEN_ESTADOS
+  // Función de comparación para sort. Trata strings (case-insensitive) y números.
+  const cmpItems = (a, b) => {
+    const k = sort.key;
+    const get = (item) => {
+      switch (k) {
+        case 'refOdoo': return (item.p.referenciaOdoo || '').toLowerCase();
+        case 'cliente': return (item.p.cliente || '').toLowerCase();
+        case 'proyecto': return (item.p.referenciaProyecto || item.p.nombre || '').toLowerCase();
+        case 'sistema': return (item.sistema?.nombre || '').toLowerCase();
+        case 'm2': return item.m2Total || 0;
+        case 'avance': return item.porcentaje || 0;
+        case 'dias': return item.dias ?? -1;
+        case 'supervisor': return (item.supervisor?.nombre || '').toLowerCase();
+        case 'maestro': return (item.maestro?.nombre || '').toLowerCase();
+        case 'valor': return item.valor || 0;
+        default: return 0;
+      }
+    };
+    const va = get(a); const vb = get(b);
+    if (va < vb) return sort.dir === 'asc' ? -1 : 1;
+    if (va > vb) return sort.dir === 'asc' ? 1 : -1;
+    return 0;
+  };
+
+  // Agrupar por estado, respetando ORDEN_ESTADOS. Cada grupo se ordena por el sort key.
   const grupos = ORDEN_ESTADOS.map(estado => {
-    const items = proyectosConDatos.filter(d => d.p.estado === estado);
+    const items = proyectosConDatos.filter(d => d.p.estado === estado).sort(cmpItems);
     const totalValor = items.reduce((s, d) => s + d.valor, 0);
     const totalM2 = items.reduce((s, d) => s + d.m2Total, 0);
     return { estado, items, totalValor, totalM2 };
   }).filter(g => g.items.length > 0);
+
+  // Helper para inline-edit. Hace stopPropagation para no abrir el detalle al cambiar el select.
+  const editarCampo = async (proy, campo, valor) => {
+    if (!onActualizarProyecto) return;
+    setGuardandoId(proy.id);
+    try {
+      await onActualizarProyecto({ ...proy, [campo]: valor || null });
+      if (onRecargar) await onRecargar();
+    } catch (e) { alert('Error guardando: ' + (e.message || e)); }
+    setGuardandoId(null);
+  };
+
+  const archivar = async (proy, e) => {
+    e.stopPropagation();
+    if (!onArchivarProyecto) return;
+    if (!confirm(`¿Archivar el proyecto "${proy.cliente}"? Ya no aparecerá en las listas, pero podemos restaurarlo después.`)) return;
+    setGuardandoId(proy.id);
+    try {
+      await onArchivarProyecto(proy.id);
+      if (onRecargar) await onRecargar();
+    } catch (err) { alert('Error: ' + (err.message || err)); }
+    setGuardandoId(null);
+  };
+
+  // Header de columna ordenable
+  const Th = ({ k, align = 'left', children, className = '' }) => {
+    const activo = sort.key === k;
+    const dirIcono = activo ? (sort.dir === 'asc' ? '▲' : '▼') : '';
+    const handle = () => setSort(s => ({ key: k, dir: s.key === k && s.dir === 'asc' ? 'desc' : 'asc' }));
+    const just = align === 'right' ? 'justify-end' : 'justify-start';
+    return (
+      <th className={`${rowPad} font-bold ${align === 'right' ? 'text-right' : 'text-left'} ${className}`}>
+        <button onClick={handle} className={`inline-flex items-center gap-1 ${just} text-[10px] uppercase tracking-wider ${activo ? 'text-red-400' : 'text-zinc-500 hover:text-zinc-300'}`}>
+          {children}{activo && <span className="text-[8px]">{dirIcono}</span>}
+        </button>
+      </th>
+    );
+  };
 
   return (
     <div className="space-y-3">
@@ -4906,42 +5068,138 @@ function VistaLista({ proyectos, data, onVerProyecto }) {
               </div>
             </button>
 
-            {!colapsado && items.map(({ p, sistema, m2Total, valor, porcentaje, supervisor, maestro }) => (
-              <button key={p.id} onClick={() => onVerProyecto(p)} className="w-full bg-zinc-900 border border-zinc-800 hover:border-red-600 p-3 text-left flex items-center gap-3">
-                <div className={`w-1 self-stretch ${estadoColor(p.estado)}`} />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <div className="text-[10px] font-mono text-zinc-500">{p.referenciaOdoo}</div>
-                  </div>
-                  <div className="font-bold text-sm truncate">{p.cliente}</div>
-                  <div className="text-[10px] text-zinc-500 truncate">{p.referenciaProyecto || p.nombre} · {sistema?.nombre} · {formatNum(m2Total)} m²</div>
-                  <div className="text-[9px] text-zinc-600 mt-0.5 flex flex-wrap gap-x-2">
-                    {supervisor && <span>👔 {supervisor.nombre.split(' ')[0]}</span>}
-                    {maestro && <span>🔨 {maestro.nombre.split(' ')[0]}</span>}
-                  </div>
+            {!colapsado && (
+              <>
+                {/* v8.17.30: DESKTOP — tabla con sticky header, sort, inline edit, acciones */}
+                <div className="hidden md:block bg-zinc-900 border border-zinc-800 overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-zinc-950 border-b border-zinc-800 sticky top-0 z-10">
+                      <tr>
+                        <th className="w-1" /> {/* color band */}
+                        <Th k="refOdoo">Ref Odoo</Th>
+                        <Th k="cliente">Cliente</Th>
+                        <Th k="proyecto">Proyecto</Th>
+                        <Th k="sistema">Sistema</Th>
+                        <Th k="m2" align="right">M²</Th>
+                        <Th k="avance" align="right">Avance</Th>
+                        <Th k="dias" align="right">Días</Th>
+                        <Th k="supervisor">Supervisor</Th>
+                        <Th k="maestro">Maestro</Th>
+                        <Th k="valor" align="right">Valor</Th>
+                        <th className={`${rowPad} text-right text-[10px] uppercase tracking-wider text-zinc-500 font-bold`}>Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items.map(({ p, sistema, m2Total, valor, porcentaje, supervisor, maestro, dias }) => {
+                        const colorDias = dias != null && dias > 14 ? 'text-orange-400' : dias != null && dias > 30 ? 'text-red-400' : 'text-zinc-500';
+                        return (
+                          <tr
+                            key={p.id}
+                            onClick={() => onVerProyecto(p)}
+                            className={`border-b border-zinc-800 hover:bg-zinc-800/40 cursor-pointer ${guardandoId === p.id ? 'opacity-60' : ''}`}
+                          >
+                            {/* v8.17.30: bandita de color del estado a la izquierda */}
+                            <td className={`${estadoColor(p.estado)} w-1`} style={{ padding: 0 }} />
+                            <td className={`${rowPad} font-mono text-[11px] text-zinc-500 whitespace-nowrap`}>{p.referenciaOdoo || '—'}</td>
+                            <td className={`${rowPad} font-bold max-w-[180px] truncate`}>{p.cliente}</td>
+                            <td className={`${rowPad} text-zinc-400 max-w-[180px] truncate text-xs`}>{p.referenciaProyecto || p.nombre || '—'}</td>
+                            <td className={`${rowPad} text-zinc-400 text-xs`}>{sistema?.nombre || '—'}</td>
+                            <td className={`${rowPad} text-right tabular-nums`}>{formatNum(m2Total)}</td>
+                            <td className={`${rowPad} text-right tabular-nums`}>
+                              <span className={porcentaje >= 75 ? 'text-green-400' : porcentaje >= 40 ? 'text-yellow-400' : 'text-zinc-500'}>
+                                {porcentaje.toFixed(0)}%
+                              </span>
+                            </td>
+                            <td className={`${rowPad} text-right tabular-nums ${colorDias} text-xs`} title="Días desde la última fecha relevante para el estado actual">{dias != null ? `${dias}d` : '—'}</td>
+                            <td className={rowPad} onClick={e => e.stopPropagation()}>
+                              <select
+                                value={p.supervisorId || ''}
+                                onChange={e => editarCampo(p, 'supervisorId', e.target.value)}
+                                className="bg-zinc-950 border border-zinc-800 hover:border-red-600 focus:border-red-600 outline-none px-1.5 py-1 text-xs text-white max-w-[140px]"
+                                title={supervisor?.nombre || 'Sin supervisor'}
+                              >
+                                <option value="">— Sin —</option>
+                                {supervisores.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+                              </select>
+                            </td>
+                            <td className={rowPad} onClick={e => e.stopPropagation()}>
+                              <select
+                                value={p.maestroId || ''}
+                                onChange={e => editarCampo(p, 'maestroId', e.target.value)}
+                                className="bg-zinc-950 border border-zinc-800 hover:border-red-600 focus:border-red-600 outline-none px-1.5 py-1 text-xs text-white max-w-[140px]"
+                                title={maestro?.nombre || 'Sin maestro'}
+                              >
+                                <option value="">— Sin —</option>
+                                {maestros.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}
+                              </select>
+                            </td>
+                            <td className={`${rowPad} text-right tabular-nums font-black text-green-400 whitespace-nowrap`}>{formatRD(valor)}</td>
+                            <td className={`${rowPad} text-right whitespace-nowrap`} onClick={e => e.stopPropagation()}>
+                              <div className="inline-flex gap-1">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); onAbrirModalEditar?.(p); }}
+                                  className="text-zinc-500 hover:text-red-400 p-1"
+                                  title="Editar (modal completo)"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={(e) => archivar(p, e)}
+                                  className="text-zinc-500 hover:text-yellow-400 p-1"
+                                  title="Archivar"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
-                {/* v8.10.14: Mini-mapa thumbnail si tiene ubicación */}
-                {p.ubicacionLat != null && p.ubicacionLng != null && (
-                  <div className="flex-shrink-0 relative overflow-hidden border border-zinc-700" style={{ width: 64, height: 64, borderRadius: 3 }}>
-                    <img
-                      src={`https://staticmap.openstreetmap.de/staticmap.php?center=${p.ubicacionLat},${p.ubicacionLng}&zoom=15&size=128x128&maptype=mapnik&markers=${p.ubicacionLat},${p.ubicacionLng},red`}
-                      alt="Mapa"
-                      width={64}
-                      height={64}
-                      style={{ objectFit: 'cover', width: '100%', height: '100%', opacity: 0.85 }}
-                      onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
-                    />
-                    <div style={{ display: 'none', width: '100%', height: '100%', background: '#27272a', alignItems: 'center', justifyContent: 'center', position: 'absolute', top: 0, left: 0 }}>
-                      <MapPin style={{ width: 16, height: 16, color: '#dc2626' }} />
-                    </div>
-                  </div>
-                )}
-                <div className="text-right flex-shrink-0">
-                  <div className="text-sm font-black text-green-400">{formatRD(valor)}</div>
-                  <div className="text-[10px] text-zinc-500">{porcentaje.toFixed(0)}%</div>
+
+                {/* v8.17.30: MOBILE — cards (layout original) */}
+                <div className="md:hidden space-y-2">
+                  {items.map(({ p, sistema, m2Total, valor, porcentaje, supervisor, maestro }) => (
+                    <button key={p.id} onClick={() => onVerProyecto(p)} className="w-full bg-zinc-900 border border-zinc-800 hover:border-red-600 p-3 text-left flex items-center gap-3">
+                      <div className={`w-1 self-stretch ${estadoColor(p.estado)}`} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <div className="text-[10px] font-mono text-zinc-500">{p.referenciaOdoo}</div>
+                        </div>
+                        <div className="font-bold text-sm truncate">{p.cliente}</div>
+                        <div className="text-[10px] text-zinc-500 truncate">{p.referenciaProyecto || p.nombre} · {sistema?.nombre} · {formatNum(m2Total)} m²</div>
+                        <div className="text-[9px] text-zinc-600 mt-0.5 flex flex-wrap gap-x-2">
+                          {supervisor && <span>👔 {supervisor.nombre.split(' ')[0]}</span>}
+                          {maestro && <span>🔨 {maestro.nombre.split(' ')[0]}</span>}
+                        </div>
+                      </div>
+                      {/* v8.10.14: Mini-mapa thumbnail si tiene ubicación */}
+                      {p.ubicacionLat != null && p.ubicacionLng != null && (
+                        <div className="flex-shrink-0 relative overflow-hidden border border-zinc-700" style={{ width: 64, height: 64, borderRadius: 3 }}>
+                          <img
+                            src={`https://staticmap.openstreetmap.de/staticmap.php?center=${p.ubicacionLat},${p.ubicacionLng}&zoom=15&size=128x128&maptype=mapnik&markers=${p.ubicacionLat},${p.ubicacionLng},red`}
+                            alt="Mapa"
+                            width={64}
+                            height={64}
+                            style={{ objectFit: 'cover', width: '100%', height: '100%', opacity: 0.85 }}
+                            onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
+                          />
+                          <div style={{ display: 'none', width: '100%', height: '100%', background: '#27272a', alignItems: 'center', justifyContent: 'center', position: 'absolute', top: 0, left: 0 }}>
+                            <MapPin style={{ width: 16, height: 16, color: '#dc2626' }} />
+                          </div>
+                        </div>
+                      )}
+                      <div className="text-right flex-shrink-0">
+                        <div className="text-sm font-black text-green-400">{formatRD(valor)}</div>
+                        <div className="text-[10px] text-zinc-500">{porcentaje.toFixed(0)}%</div>
+                      </div>
+                    </button>
+                  ))}
                 </div>
-              </button>
-            ))}
+              </>
+            )}
           </div>
         );
       })}
@@ -9842,6 +10100,13 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
   const [finalizarModal, setFinalizarModal] = useState(false);
   const [programarModal, setProgramarModal] = useState(false);
   const [verHistorial, setVerHistorial] = useState(false);
+  // v8.17.29: config global de dieta para mostrar montos en el modal de cierre
+  const [configDieta, setConfigDieta] = useState({ desayunoRd: 200, comidaRd: 350, cenaRd: 350, hotelRd: 900 });
+  useEffect(() => {
+    (async () => {
+      try { setConfigDieta(await db.obtenerConfigDieta()); } catch (e) { /* defaults */ }
+    })();
+  }, []);
 
   const recargar = async () => {
     setLoading(true);
@@ -9896,7 +10161,7 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
     setProcesando(null);
   };
 
-  const finalizarJornada = async (condicionDia = 'normal', condicionNota = '') => {
+  const finalizarJornada = async (condicionDia = 'normal', condicionNota = '', dietaPorPersona = {}) => {
     if (!jornadaHoy) return;
     setProcesando('fin');
     const ubi = await obtenerUbicacion();
@@ -9914,6 +10179,24 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
         condicionDia,
         condicionNota,
       });
+      // v8.17.29: registrar dieta/hospedaje marcados al cerrar la jornada.
+      // dietaPorPersona = { [personaId]: ['desayuno','comida','hotel',...] }
+      const movs = [];
+      Object.entries(dietaPorPersona || {}).forEach(([personaId, subTipos]) => {
+        if (!subTipos || subTipos.length === 0) return;
+        movs.push(...buildMovimientosDieta({
+          subTipos,
+          personaId,
+          proyectoId: proyecto.id,
+          fecha: jornadaHoy.fecha || hoy,
+          configDieta,
+          creadoPorId: usuario.id,
+        }));
+      });
+      for (const m of movs) {
+        try { await db.crearMovimientoCajaChica(m); }
+        catch (e) { console.warn('No se pudo crear movimiento de dieta:', e?.message); }
+      }
       setFinalizarModal(false);
       await recargar();
     } catch (e) { alert('Error: ' + e.message); }
@@ -10212,12 +10495,15 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
         )}
       </div>
 
-      {/* Modal finalizar jornada con condición del día (v8.3) */}
+      {/* Modal finalizar jornada con condición del día (v8.3) + dieta/hospedaje (v8.17.29) */}
       {finalizarModal && (
         <ModalFinalizarJornada
           onCerrar={() => setFinalizarModal(false)}
           onConfirmar={finalizarJornada}
           procesando={procesando === 'fin'}
+          proyecto={proyecto}
+          personasPresentes={(jornadaHoy?.personasPresentesIds || personasSel || []).map(id => getPersona(personal, id)).filter(Boolean)}
+          configDieta={configDieta}
         />
       )}
 
@@ -10236,12 +10522,36 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
   );
 }
 
-function ModalFinalizarJornada({ onCerrar, onConfirmar, procesando }) {
+function ModalFinalizarJornada({ onCerrar, onConfirmar, procesando, proyecto, personasPresentes = [], configDieta }) {
   const [condicion, setCondicion] = useState('normal');
   const [nota, setNota] = useState('');
+  // v8.17.29: dietaPorPersona = { [personaId]: ['desayuno','comida','cena','hotel'] }
+  const [dietaPorPersona, setDietaPorPersona] = useState({});
+
+  // Personas elegibles para dieta/hospedaje en ESTE proyecto (opt-in 2 niveles)
+  const elegibles = (personasPresentes || []).map(p => {
+    const conDieta = dietaAplicaA(p, proyecto);
+    const conHospedaje = hospedajeAplicaA(p, proyecto);
+    return { persona: p, conDieta, conHospedaje };
+  }).filter(e => e.conDieta || e.conHospedaje);
+
+  const toggleSubTipo = (personaId, subTipo) => {
+    setDietaPorPersona(prev => {
+      const actuales = prev[personaId] || [];
+      const ya = actuales.includes(subTipo);
+      const nuevo = ya ? actuales.filter(x => x !== subTipo) : [...actuales, subTipo];
+      return { ...prev, [personaId]: nuevo };
+    });
+  };
+
+  const totalDietaEstimado = elegibles.reduce((acc, e) => {
+    const sts = dietaPorPersona[e.persona.id] || [];
+    return acc + sts.reduce((s, st) => s + montoDelSubTipo(st, configDieta), 0);
+  }, 0);
+
   return (
-    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-      <div className="bg-zinc-900 border-2 border-red-600 max-w-md w-full p-5 space-y-4">
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-y-auto">
+      <div className="bg-zinc-900 border-2 border-red-600 max-w-md w-full p-5 space-y-4 my-8 max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-start">
           <div className="text-xs tracking-widest uppercase text-red-500 font-bold">Finalizar Jornada</div>
           <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
@@ -10298,10 +10608,54 @@ function ModalFinalizarJornada({ onCerrar, onConfirmar, procesando }) {
           </div>
         )}
 
+        {/* v8.17.29: Dieta + Hospedaje al cerrar jornada. Solo aparece si:
+            - proyecto.aplicaDieta o proyecto.aplicaHospedaje
+            - hay al menos 1 persona presente con la habilitación correspondiente
+        */}
+        {elegibles.length > 0 && (
+          <div className="border-t border-zinc-800 pt-3">
+            <div className="text-[11px] tracking-widest uppercase text-orange-400 font-bold mb-2">🍽 Dieta + Hospedaje de hoy</div>
+            <div className="text-[10px] text-zinc-500 mb-2">Marca lo que cada persona consumió. Cada marca debita el monto fijo del presupuesto y NO requiere factura.</div>
+            <div className="space-y-2">
+              {elegibles.map(({ persona, conDieta, conHospedaje }) => (
+                <div key={persona.id} className="bg-zinc-950 border border-zinc-800 p-2.5 space-y-1.5">
+                  <div className="text-xs font-bold truncate">{persona.nombre}</div>
+                  <div className="flex flex-wrap gap-1">
+                    {TODOS_SUB_TIPOS.map(st => {
+                      const esHotel = st === 'hotel';
+                      const habilita = esHotel ? conHospedaje : conDieta;
+                      if (!habilita) return null;
+                      const activo = (dietaPorPersona[persona.id] || []).includes(st);
+                      const monto = montoDelSubTipo(st, configDieta);
+                      return (
+                        <button
+                          key={st}
+                          type="button"
+                          onClick={() => toggleSubTipo(persona.id, st)}
+                          className={`flex flex-col items-center text-[10px] font-bold uppercase px-2 py-1.5 border-2 ${activo ? (esHotel ? 'bg-purple-700 border-purple-500 text-white' : 'bg-orange-700 border-orange-500 text-white') : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:border-zinc-600'}`}
+                        >
+                          <span>{EMOJI_SUB_TIPO[st]} {LABEL_SUB_TIPO[st]}</span>
+                          <span className={`text-[9px] ${activo ? 'opacity-80' : 'text-zinc-500'}`}>RD$ {monto.toLocaleString()}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+            {totalDietaEstimado > 0 && (
+              <div className="mt-2 text-[10px] bg-zinc-950 border border-orange-900/50 p-2 flex justify-between">
+                <span className="text-zinc-400">Total a debitar del presupuesto:</span>
+                <span className="text-orange-300 font-bold">RD$ {totalDietaEstimado.toLocaleString()}</span>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="flex gap-2 pt-1">
           <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button>
           <button
-            onClick={() => onConfirmar(condicion, nota)}
+            onClick={() => onConfirmar(condicion, nota, dietaPorPersona)}
             disabled={procesando || (condicion === 'otro' && !nota.trim())}
             className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-3 flex items-center justify-center gap-2"
           >

@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useEffect, useState, useMemo } from 'react';
-import { ArrowLeft, Loader2, Plus, Wallet, AlertCircle, Eye, Check, X, Trash2, FileText, Filter, Sparkles, MessageSquare, Camera, RotateCcw, RotateCw, Info, FileX } from 'lucide-react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
+import { ArrowLeft, Loader2, Plus, Wallet, AlertCircle, Eye, Check, X, Trash2, FileText, Filter, Sparkles, MessageSquare, Camera, RotateCcw, RotateCw, Info, FileX, HelpCircle, Columns3, PanelRight, ChevronLeft, ChevronRight, Edit2, Image as ImageIcon } from 'lucide-react';
 import * as db from '../../lib/db';
 import { toast } from '../../lib/toast';
 import { EMPRESAS_RECEPTORAS } from '../../lib/constants';
@@ -14,6 +14,7 @@ import ModalGenerarCuadre from './ModalGenerarCuadre';
 import ModalExportarOdoo from './ModalExportarOdoo';
 import ModalCargaMasiva from './ModalCargaMasiva';
 import ModalDetalleMovimiento from './ModalDetalleMovimiento';
+import ModalAyudaDieta from './ModalAyudaDieta'; // v8.17.29
 import DashboardCajaChica from './DashboardCajaChica';
 import { imprimirCuadreIndividual } from './imprimirCuadre';
 
@@ -63,16 +64,64 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
   const [indicePendiente, setIndicePendiente] = useState(null); // v8.15.5: índice del pendiente abierto en modo bandeja
   const [gruposColapsados, setGruposColapsados] = useState(() => new Set()); // v8.17.7: personaIds con grupo colapsado en bandeja
   const [personasExpandidas, setPersonasExpandidas] = useState(() => new Set()); // v8.17.13: cards 'Por persona' que muestran sus movs
+  // v8.17.29: modal de ayuda Dieta + Hospedaje + config global
+  const [modalAyuda, setModalAyuda] = useState(false);
+  const [configDieta, setConfigDieta] = useState({ desayunoRd: 200, comidaRd: 350, cenaRd: 350, hotelRd: 900 });
+  // v8.17.30: sort de la tabla Movimientos en desktop + feedback al guardar inline edits
+  const [sortMov, setSortMov] = useState({ key: 'fecha', dir: 'desc' });
+  const [guardandoMovId, setGuardandoMovId] = useState(null);
+  // v8.17.32: column picker (qué columnas mostrar) + viewer panel (foto + navegación)
+  const COLUMNAS_DISPONIBLES = [
+    { k: 'fecha',       label: 'Fecha',       fija: true  },
+    { k: 'persona',     label: 'Persona',     fija: true  },
+    { k: 'tipo',        label: 'Tipo' },
+    { k: 'proyecto',    label: 'Proyecto' },
+    { k: 'concepto',    label: 'Concepto / Proveedor' },
+    { k: 'rnc',         label: 'RNC' },
+    { k: 'ncf',         label: 'NCF' },
+    { k: 'categoria',   label: 'Categoría' },
+    { k: 'aplicaA',     label: 'Aplica a (dieta/hospedaje)' },
+    { k: 'subTipo',     label: 'Sub-tipo' },
+    { k: 'empresa',     label: 'Empresa' },
+    { k: 'aprobadoPor', label: 'Aprobado por' },
+    { k: 'creadoAt',    label: 'Creado el' },
+    { k: 'status',      label: 'Status' },
+    { k: 'monto',       label: 'Monto',       fija: true  },
+    { k: 'accion',      label: 'Acción',      fija: true  },
+  ];
+  const COLUMNAS_DEFAULT = ['fecha', 'persona', 'tipo', 'proyecto', 'concepto', 'empresa', 'status', 'monto', 'accion'];
+  const [columnasVisibles, setColumnasVisibles] = useState(() => {
+    if (typeof window === 'undefined') return new Set(COLUMNAS_DEFAULT);
+    try {
+      const saved = JSON.parse(window.localStorage.getItem('cc_mov_cols') || 'null');
+      if (Array.isArray(saved) && saved.length > 0) return new Set(saved);
+    } catch {}
+    return new Set(COLUMNAS_DEFAULT);
+  });
+  useEffect(() => {
+    try { window.localStorage.setItem('cc_mov_cols', JSON.stringify([...columnasVisibles])); } catch {}
+  }, [columnasVisibles]);
+  const [colPickerAbierto, setColPickerAbierto] = useState(false);
+
+  const [viewerAbierto, setViewerAbierto] = useState(false);
+  const [viewerMovId, setViewerMovId] = useState(null);
+  const [viewerFotoUrl, setViewerFotoUrl] = useState(null);
+  const [viewerFotoLoading, setViewerFotoLoading] = useState(false);
+  const [viewerRotacion, setViewerRotacion] = useState(0);
+  // v8.17.36: modo edición global (todas las filas pendientes editables al mismo tiempo)
+  const [editandoTodos, setEditandoTodos] = useState(false);
 
   const cargar = async () => {
     setLoading(true);
     try {
-      const [movs, sal] = await Promise.all([
+      const [movs, sal, cd] = await Promise.all([
         db.listarMovimientosCajaChica({}),
         db.obtenerSaldoCajaChica(),
+        db.obtenerConfigDieta().catch(() => null), // v8.17.29
       ]);
       setMovimientos(movs);
       setSaldosMap(sal || {});
+      if (cd) setConfigDieta(cd);
     } catch (e) {
       console.error(e);
     }
@@ -124,6 +173,39 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
       cargar();
     } catch (e) { toast.error('Error: ' + (e.message || e)); }
   };
+
+  // v8.17.30: inline-edit en la tabla. Guarda y recarga para reflejar el cambio.
+  // Usado para proyecto y empresa receptora en la vista tabla de Movimientos.
+  const editarCampoMov = async (mov, campos) => {
+    setGuardandoMovId(mov.id);
+    try {
+      await db.actualizarMovimientoCajaChica(mov.id, campos);
+      await cargar();
+    } catch (e) { toast.error('Error: ' + (e.message || e)); }
+    setGuardandoMovId(null);
+  };
+
+  // v8.17.32: cargar foto al cambiar de movimiento en el visor lateral.
+  useEffect(() => {
+    if (!viewerAbierto || !viewerMovId) { setViewerFotoUrl(null); return; }
+    let cancelado = false;
+    setViewerRotacion(0);
+    setViewerFotoUrl(null);
+    const mov = movimientos.find(m => m.id === viewerMovId);
+    if (!mov || !mov.tieneFoto) return;
+    setViewerFotoLoading(true);
+    db.obtenerFotoFacturaCajaChica(viewerMovId)
+      .then(url => { if (!cancelado) setViewerFotoUrl(url); })
+      .catch(e => { console.warn('Foto visor:', e); })
+      .finally(() => { if (!cancelado) setViewerFotoLoading(false); });
+    return () => { cancelado = true; };
+  }, [viewerMovId, viewerAbierto, movimientos]);
+
+  const toggleColumna = (k) => setColumnasVisibles(s => {
+    const next = new Set(s);
+    if (next.has(k)) next.delete(k); else next.add(k);
+    return next;
+  });
 
   // Adjuntar una foto a un movimiento que se reportó "sin foto" (admin recibe la foto por WS).
   const adjuntarFoto = async (mov, file) => {
@@ -288,6 +370,32 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
     });
   }, [movimientos, filtroPersona, filtroProyecto, soloIncompletos, busqueda, data.personal, data.proyectos]);
 
+  // v8.17.30: sort para la tabla desktop. Devuelve copia ordenada según sortMov.
+  // (movimientosAgrupados sigue siendo para móvil — agrupa por fecha y mantiene orden desc.)
+  const movimientosSorted = useMemo(() => {
+    const k = sortMov.key, dir = sortMov.dir === 'asc' ? 1 : -1;
+    const get = (m) => {
+      switch (k) {
+        case 'fecha': return m.fecha || '';
+        case 'persona': return (data.personal.find(p => p.id === m.personaId)?.nombre || '').toLowerCase();
+        case 'tipo': return m.tipo || '';
+        case 'proyecto': return (data.proyectos.find(p => p.id === m.proyectoId)?.referenciaOdoo
+                                  || data.proyectos.find(p => p.id === m.proyectoId)?.cliente || '').toLowerCase();
+        case 'concepto': return (m.proveedor || m.concepto || '').toLowerCase();
+        case 'empresa': return m.empresaReceptora || '';
+        case 'status': return m.status || '';
+        case 'monto': return Number(m.monto || 0);
+        default: return '';
+      }
+    };
+    return movimientosFiltrados.slice().sort((a, b) => {
+      const va = get(a), vb = get(b);
+      if (va < vb) return -1 * dir;
+      if (va > vb) return 1 * dir;
+      return 0;
+    });
+  }, [movimientosFiltrados, sortMov, data.personal, data.proyectos]);
+
   // v8.17.8: agrupar movimientos filtrados por fecha
   const movimientosAgrupados = useMemo(() => {
     if (movimientosFiltrados.length === 0) return [];
@@ -377,6 +485,9 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
               <Sparkles className="w-3 h-3 text-yellow-400" /> Proveedores
             </button>
           )}
+          <button onClick={() => setModalAyuda(true)} className="bg-zinc-900 border border-zinc-800 hover:border-orange-500 text-zinc-300 text-xs font-bold uppercase px-3 py-2 flex items-center gap-1" title="Manual de Dieta + Hospedaje">
+            <HelpCircle className="w-3 h-3 text-orange-400" /> Dieta
+          </button>
           <button onClick={() => setModalCargaMasiva(true)} className="bg-zinc-900 border border-zinc-800 hover:border-green-500 text-zinc-300 text-xs font-bold uppercase px-3 py-2 flex items-center gap-1" title="Sube varias facturas a la vez con AI procesándolas en paralelo">
             <Sparkles className="w-3 h-3 text-green-400" /> Carga masiva
           </button>
@@ -689,6 +800,66 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
               </label>
               {(filtroPersona || filtroProyecto || soloIncompletos || busqueda) && <button onClick={() => { setFiltroPersona(''); setFiltroProyecto(''); setSoloIncompletos(false); setBusqueda(''); }} className="text-red-400">Limpiar</button>}
               <div className="ml-auto text-[10px] text-zinc-500">{movimientosFiltrados.length} de {movimientos.length}</div>
+              {/* v8.17.32: column picker + viewer toggle (solo desktop)
+                  v8.17.36: + toggle global de edición */}
+              <div className="hidden md:flex items-center gap-1 ml-1 relative">
+                <button
+                  onClick={() => setEditandoTodos(e => !e)}
+                  className={`flex items-center gap-1 px-2 py-1 border text-[10px] font-bold uppercase tracking-wider ${editandoTodos ? 'bg-red-600 border-red-600 text-white' : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'}`}
+                  title="Habilitar edición inline en TODAS las filas pendientes"
+                >
+                  <Edit2 className="w-3 h-3" /> {editandoTodos ? 'Editando' : 'Editar'}
+                </button>
+                <button
+                  onClick={() => setColPickerAbierto(o => !o)}
+                  className={`flex items-center gap-1 px-2 py-1 border text-[10px] font-bold uppercase tracking-wider ${colPickerAbierto ? 'bg-red-600 border-red-600 text-white' : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'}`}
+                  title="Mostrar / ocultar columnas"
+                >
+                  <Columns3 className="w-3 h-3" /> Columnas
+                </button>
+                <button
+                  onClick={() => {
+                    setViewerAbierto(v => {
+                      const nuevo = !v;
+                      if (nuevo && !viewerMovId && movimientosSorted.length > 0) {
+                        setViewerMovId(movimientosSorted[0].id);
+                      }
+                      return nuevo;
+                    });
+                  }}
+                  className={`flex items-center gap-1 px-2 py-1 border text-[10px] font-bold uppercase tracking-wider ${viewerAbierto ? 'bg-blue-600 border-blue-600 text-white' : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'}`}
+                  title="Visor de factura (panel lateral con foto y navegación)"
+                >
+                  <PanelRight className="w-3 h-3" /> Visor
+                </button>
+                {colPickerAbierto && (
+                  <div
+                    className="absolute top-full right-0 mt-1 z-20 bg-zinc-900 border border-zinc-700 p-2 w-56 shadow-xl max-h-[60vh] overflow-y-auto"
+                    onMouseLeave={() => setColPickerAbierto(false)}
+                  >
+                    <div className="text-[9px] uppercase tracking-widest text-zinc-500 font-bold mb-1 pb-1 border-b border-zinc-800">Columnas visibles</div>
+                    {COLUMNAS_DISPONIBLES.map(c => (
+                      <label key={c.k} className={`flex items-center gap-2 py-1 px-1 text-xs ${c.fija ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-zinc-800'}`}>
+                        <input
+                          type="checkbox"
+                          checked={columnasVisibles.has(c.k)}
+                          onChange={() => !c.fija && toggleColumna(c.k)}
+                          disabled={c.fija}
+                          className="w-3 h-3 accent-red-600"
+                        />
+                        <span>{c.label}</span>
+                        {c.fija && <span className="text-[8px] text-zinc-600 ml-auto">fija</span>}
+                      </label>
+                    ))}
+                    <button
+                      onClick={() => setColumnasVisibles(new Set(COLUMNAS_DEFAULT))}
+                      className="w-full mt-2 pt-2 border-t border-zinc-800 text-[10px] text-zinc-500 hover:text-red-400 text-left"
+                    >
+                      ↺ Restablecer default
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
             {/* Buscador libre */}
             <div className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 px-2 py-1">
@@ -713,25 +884,74 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
             )}
           </div>
 
-          {/* v8.17.8: lista agrupada por fecha */}
-          {movimientosAgrupados.length === 0 ? (
+          {/* v8.17.30: DESKTOP — tabla con sticky header, sort, inline edit. MOBILE — cards agrupados. */}
+          {movimientosFiltrados.length === 0 ? (
             <div className="text-center py-10 text-zinc-500 text-sm">
               {busqueda ? `Sin resultados para "${busqueda}"` : 'Sin movimientos.'}
             </div>
           ) : (
-            movimientosAgrupados.map(grupo => (
-              <div key={grupo.label} className="space-y-1">
-                <div className="sticky top-0 z-10 bg-zinc-950 px-2 py-1 flex items-center justify-between border-b border-zinc-800">
-                  <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">{grupo.label} · {grupo.items.length}</div>
-                  {grupo.totalGasto > 0 && (
-                    <div className="text-[10px] text-orange-400 font-bold">−{formatRD(grupo.totalGasto)}</div>
-                  )}
+            <>
+              {/* DESKTOP: tabla (con visor lateral opcional) */}
+              <div className="hidden md:flex gap-3">
+                <div className={`bg-zinc-900 border border-zinc-800 overflow-x-auto ${viewerAbierto ? 'flex-1 min-w-0' : 'w-full'}`}>
+                  <TablaMovimientos
+                    movimientos={movimientosSorted}
+                    todosMovimientos={movimientos}
+                    data={data}
+                    sort={sortMov}
+                    setSort={setSortMov}
+                    dx={dx}
+                    guardandoId={guardandoMovId}
+                    columnasVisibles={columnasVisibles}
+                    filaSeleccionada={viewerAbierto ? viewerMovId : null}
+                    editAllMode={editandoTodos}
+                    onEditarCampo={editarCampoMov}
+                    onAbrirDetalle={(m) => setVerDetalle(m)}
+                    onVerFoto={(m) => verFotoMov(m)}
+                    onSeleccionar={(m) => viewerAbierto ? setViewerMovId(m.id) : (m.tipo !== 'entrega' && setVerDetalle(m))}
+                    onEliminar={tieneRol(usuario, 'admin') ? eliminar : null}
+                    onDesaprobar={tieneRol(usuario, 'admin') ? desaprobar : null}
+                  />
                 </div>
-                {grupo.items.map(m => (
-                  <FilaMovimiento key={m.id} m={m} data={data} dx={dx} onAbrirDetalle={() => setVerDetalle(m)} onVerFoto={() => verFotoMov(m)} onEliminar={tieneRol(usuario, 'admin') ? () => eliminar(m) : null} onDesaprobar={tieneRol(usuario, 'admin') ? () => desaprobar(m) : null} />
+                {viewerAbierto && (
+                  <PanelVisorFactura
+                    movimientos={movimientosSorted}
+                    todosMovimientos={movimientos}
+                    movId={viewerMovId}
+                    setMovId={setViewerMovId}
+                    data={data}
+                    fotoUrl={viewerFotoUrl}
+                    fotoLoading={viewerFotoLoading}
+                    rotacion={viewerRotacion}
+                    setRotacion={setViewerRotacion}
+                    onCerrar={() => setViewerAbierto(false)}
+                    onAprobar={aprobar}
+                    onRechazar={rechazar}
+                    onDesaprobar={tieneRol(usuario, 'admin') ? desaprobar : null}
+                    onEditarCampo={editarCampoMov}
+                    onAbrirDetalle={(m) => setVerDetalle(m)}
+                    guardandoId={guardandoMovId}
+                  />
+                )}
+              </div>
+
+              {/* MOBILE: cards agrupados por fecha (layout original) */}
+              <div className={`md:hidden ${dx.listGap}`}>
+                {movimientosAgrupados.map(grupo => (
+                  <div key={grupo.label} className="space-y-1">
+                    <div className="sticky top-0 z-10 bg-zinc-950 px-2 py-1 flex items-center justify-between border-b border-zinc-800">
+                      <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">{grupo.label} · {grupo.items.length}</div>
+                      {grupo.totalGasto > 0 && (
+                        <div className="text-[10px] text-orange-400 font-bold">−{formatRD(grupo.totalGasto)}</div>
+                      )}
+                    </div>
+                    {grupo.items.map(m => (
+                      <FilaMovimiento key={m.id} m={m} data={data} dx={dx} onAbrirDetalle={() => setVerDetalle(m)} onVerFoto={() => verFotoMov(m)} onEliminar={tieneRol(usuario, 'admin') ? () => eliminar(m) : null} onDesaprobar={tieneRol(usuario, 'admin') ? () => desaprobar(m) : null} />
+                    ))}
+                  </div>
                 ))}
               </div>
-            ))
+            </>
           )}
         </div>
       )}
@@ -766,6 +986,15 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
           data={data}
           onCerrar={() => setModalCargaMasiva(false)}
           onListo={() => { setModalCargaMasiva(false); setTab('bandeja'); cargar(); }}
+        />
+      )}
+
+      {/* v8.17.29: Manual Dieta + Hospedaje (vista admin por default) */}
+      {modalAyuda && (
+        <ModalAyudaDieta
+          vista="admin"
+          configDieta={configDieta}
+          onCerrar={() => setModalAyuda(false)}
         />
       )}
 
@@ -1099,10 +1328,511 @@ function FilaMovimiento({ m, data, dx, onAbrirDetalle, onVerFoto, onEliminar, on
   );
 }
 
+// v8.17.33: helper — ordena proyectos por uso más reciente en caja chica.
+// Activos primero (orden desc por última fecha de movimiento), después activos sin uso (alfabético),
+// después archivados al final.
+function proyectosOrdenadosPorUsoCaja(proyectos, movimientos) {
+  const ultimoUso = new Map();
+  (movimientos || []).forEach(m => {
+    if (!m.proyectoId) return;
+    const f = m.fecha;
+    const prev = ultimoUso.get(m.proyectoId);
+    if (!prev || f > prev) ultimoUso.set(m.proyectoId, f);
+  });
+  return (proyectos || []).slice().sort((a, b) => {
+    if (!!a.archivado !== !!b.archivado) return a.archivado ? 1 : -1;
+    const ua = ultimoUso.get(a.id) || '';
+    const ub = ultimoUso.get(b.id) || '';
+    if (ua && ub) return ub.localeCompare(ua);
+    if (ua && !ub) return -1;
+    if (!ua && ub) return 1;
+    return (a.cliente || '').localeCompare(b.cliente || '');
+  });
+}
+
+// v8.17.30: tabla de movimientos para desktop. Mismo patrón que la tabla de Proyectos:
+// sticky header, sort por columna, color band por status.
+// v8.17.32: columnas configurables + selección sincronizada con el visor lateral.
+// v8.17.33: edición inline bloqueada por default — solo se habilita al click en ✏️ Editar.
+//           Pendientes pueden entrar a modo edición; aprobados/rechazados NO (solo modal).
+function TablaMovimientos({ movimientos: movsTabla, todosMovimientos, data, sort, setSort, dx, guardandoId, columnasVisibles, filaSeleccionada, editAllMode, onEditarCampo, onAbrirDetalle, onVerFoto, onEliminar, onDesaprobar, onSeleccionar }) {
+  const compacto = !!dx?.compacto;
+  const rowPad = compacto ? 'py-1 px-2' : 'py-2 px-2';
+  // v8.17.33: proyectos ordenados por uso más reciente en caja chica (incluye todos los movs, no solo los filtrados)
+  const proyectosOrdenados = useMemo(
+    () => proyectosOrdenadosPorUsoCaja((data.proyectos || []).filter(p => !p.archivado), todosMovimientos || movsTabla),
+    [data.proyectos, todosMovimientos, movsTabla]
+  );
+  // v8.17.33: ids de filas que el admin habilitó para edición. Solo pendientes.
+  // v8.17.36: editAllMode (toggle global) habilita TODAS las pendientes a la vez.
+  const [editingIds, setEditingIds] = useState(() => new Set());
+  const isEditing = (id) => editAllMode || editingIds.has(id);
+  const toggleEdit = (id) => setEditingIds(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const saveAndExit = async (mov, campos) => {
+    await onEditarCampo(mov, campos);
+    setEditingIds(prev => {
+      const next = new Set(prev);
+      next.delete(mov.id);
+      return next;
+    });
+  };
+  // v8.17.34: defensa — si columnasVisibles es null/undefined o un Set vacío,
+  // mostrar todas las columnas para que la tabla nunca quede totalmente en blanco.
+  const showCol = (k) => {
+    if (!columnasVisibles || columnasVisibles.size === 0) return true;
+    return columnasVisibles.has(k);
+  };
+  const movimientos = movsTabla || [];
+
+  const Th = ({ k, align = 'left', children }) => {
+    const activo = sort.key === k;
+    const dirIcono = activo ? (sort.dir === 'asc' ? '▲' : '▼') : '';
+    const handle = () => setSort(s => ({ key: k, dir: s.key === k && s.dir === 'asc' ? 'desc' : 'asc' }));
+    return (
+      <th className={`${rowPad} font-bold ${align === 'right' ? 'text-right' : 'text-left'}`}>
+        <button onClick={handle} className={`inline-flex items-center gap-1 text-[10px] uppercase tracking-wider ${activo ? 'text-red-400' : 'text-zinc-500 hover:text-zinc-300'}`}>
+          {children}{activo && <span className="text-[8px]">{dirIcono}</span>}
+        </button>
+      </th>
+    );
+  };
+
+  // Color band: por status (lo que más le importa al admin)
+  const colorBandStatus = (status) => {
+    if (status === 'aprobado') return 'bg-green-600';
+    if (status === 'rechazado') return 'bg-red-600';
+    return 'bg-orange-500'; // pendiente_revision
+  };
+
+  return (
+    <table className="w-full text-sm">
+      <thead className="bg-zinc-950 border-b border-zinc-800 sticky top-0 z-10">
+        <tr>
+          <th className="w-1" />
+          {showCol('fecha')      && <Th k="fecha">Fecha</Th>}
+          {showCol('persona')    && <Th k="persona">Persona</Th>}
+          {showCol('tipo')       && <Th k="tipo">Tipo</Th>}
+          {showCol('proyecto')   && <Th k="proyecto">Proyecto</Th>}
+          {showCol('concepto')   && <Th k="concepto">Concepto / Proveedor</Th>}
+          {showCol('rnc')        && <th className={`${rowPad} text-left text-[10px] uppercase tracking-wider text-zinc-500 font-bold`}>RNC</th>}
+          {showCol('ncf')        && <th className={`${rowPad} text-left text-[10px] uppercase tracking-wider text-zinc-500 font-bold`}>NCF</th>}
+          {showCol('categoria')  && <th className={`${rowPad} text-left text-[10px] uppercase tracking-wider text-zinc-500 font-bold`}>Categoría</th>}
+          {showCol('aplicaA')    && <th className={`${rowPad} text-left text-[10px] uppercase tracking-wider text-zinc-500 font-bold`}>Aplica a</th>}
+          {showCol('subTipo')    && <th className={`${rowPad} text-left text-[10px] uppercase tracking-wider text-zinc-500 font-bold`}>Sub-tipo</th>}
+          {showCol('empresa')    && <Th k="empresa">Empresa</Th>}
+          {showCol('aprobadoPor')&& <th className={`${rowPad} text-left text-[10px] uppercase tracking-wider text-zinc-500 font-bold`}>Aprobado por</th>}
+          {showCol('creadoAt')   && <th className={`${rowPad} text-left text-[10px] uppercase tracking-wider text-zinc-500 font-bold`}>Creado</th>}
+          {showCol('status')     && <Th k="status">Status</Th>}
+          {showCol('monto')      && <Th k="monto" align="right">Monto</Th>}
+          {showCol('accion')     && <th className={`${rowPad} text-right text-[10px] uppercase tracking-wider text-zinc-500 font-bold`}>Acción</th>}
+        </tr>
+      </thead>
+      <tbody>
+        {movimientos.map(m => {
+          const persona = data.personal.find(p => p.id === m.personaId);
+          const proy = m.proyectoId ? data.proyectos.find(p => p.id === m.proyectoId) : null;
+          const meta = TIPOS[m.tipo] || TIPOS.ajuste;
+          const stmeta = STATUS[m.status] || STATUS.pendiente_revision;
+          const fotoPorWs = !!m.datosIA?.foto_por_ws && !m.tieneFoto;
+          const sinFactura = !!m.datosIA?.sin_factura;
+          const dInc = evaluarDatosIncompletos(m);
+          const incompletoVisible = dInc.incompleto && m.status === 'pendiente_revision';
+          const empresa = m.empresaReceptora ? EMPRESAS_RECEPTORAS[m.empresaReceptora] : null;
+          const signo = m.tipo === 'entrega' ? '+' : (m.tipo === 'ajuste' ? (m.signoAjuste >= 0 ? '+' : '−') : '−');
+          const cMonto = m.tipo === 'entrega' ? 'text-green-400' : (m.status === 'aprobado' ? 'text-orange-400' : 'text-zinc-500');
+          // v8.17.33: edición inline SOLO disponible si:
+          // - el movimiento NO está cerrado (aprobado/rechazado), y
+          // - el admin habilitó modo edición en esta fila (botón ✏️) o el toggle global.
+          // Para entregas no aplica.
+          const puedeEditarProy = m.tipo !== 'entrega' && m.status === 'pendiente_revision' && isEditing(m.id);
+          const puedeEditarEmpresa = m.tipo === 'gasto_factura' && !sinFactura && m.status === 'pendiente_revision' && isEditing(m.id);
+          // v8.17.36: ocultar el ✏️ per-row cuando el toggle global está activo (redundante)
+          const puedeMostrarBotonEditar = !editAllMode && m.tipo !== 'entrega' && m.status === 'pendiente_revision';
+
+          // v8.17.32: categoría desde datosIA.categoria_sugerida (cuando aplica)
+          const catId = m.datosIA?.categoria_sugerida;
+          const cat = catId ? (data.categoriasCajaChica || []).find(c => c.id === catId) : null;
+          const aprobador = m.aprobadoPorId ? data.personal.find(p => p.id === m.aprobadoPorId) : null;
+          const ncf = m.datosIA?.ncf || null;
+          const seleccionada = filaSeleccionada === m.id;
+          return (
+            <tr
+              key={m.id}
+              onClick={() => {
+                // Si hay onSeleccionar (visor abierto), sincronizamos selección; si no, abrimos detalle.
+                if (onSeleccionar) onSeleccionar(m);
+                else if (m.tipo !== 'entrega' && onAbrirDetalle) onAbrirDetalle(m);
+              }}
+              className={`border-b border-zinc-800 ${seleccionada ? 'bg-blue-900/30 hover:bg-blue-900/40' : 'hover:bg-zinc-800/40'} ${m.tipo !== 'entrega' ? 'cursor-pointer' : 'cursor-default'} ${guardandoId === m.id ? 'opacity-60' : ''} ${incompletoVisible && !seleccionada ? 'bg-amber-900/10' : ''}`}
+            >
+              {/* color band por status */}
+              <td className={`${colorBandStatus(m.status)} w-1`} style={{ padding: 0 }} />
+              {showCol('fecha') && <td className={`${rowPad} text-zinc-400 whitespace-nowrap text-xs`}>{formatFechaCorta(m.fecha)}</td>}
+              {showCol('persona') && <td className={`${rowPad} font-bold max-w-[140px] truncate text-xs`}>{persona?.nombre || m.personaId}</td>}
+              {showCol('tipo') && (
+                <td className={rowPad}>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`${compacto ? 'w-4 h-4 text-[10px]' : 'w-5 h-5 text-xs'} shrink-0 flex items-center justify-center ${meta.bg}`}>{meta.icono}</span>
+                    <span className="text-xs text-zinc-400">{meta.label}</span>
+                  </div>
+                </td>
+              )}
+              {showCol('proyecto') && (
+                <td className={rowPad} onClick={e => e.stopPropagation()}>
+                  {puedeEditarProy ? (
+                    <select
+                      value={m.proyectoId || ''}
+                      onChange={e => saveAndExit(m, { proyectoId: e.target.value || null })}
+                      autoFocus
+                      className="bg-zinc-950 border-2 border-red-600 outline-none px-1.5 py-1 text-xs text-white max-w-[160px]"
+                      title={proy?.cliente || 'Sin proyecto'}
+                    >
+                      <option value="">— Sin —</option>
+                      {proyectosOrdenados.map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo || p.cliente}</option>)}
+                    </select>
+                  ) : (
+                    <span className="text-zinc-300 text-xs">{proy?.referenciaOdoo || proy?.cliente || <span className="text-zinc-600">—</span>}</span>
+                  )}
+                </td>
+              )}
+              {showCol('concepto') && (
+                <td className={`${rowPad} max-w-[200px]`}>
+                  <div className="truncate text-xs text-zinc-300" title={`${m.proveedor || ''}${m.proveedor && m.concepto ? ' · ' : ''}${m.concepto || ''}`}>
+                    {m.proveedor && <span className="font-bold">{m.proveedor}</span>}
+                    {m.proveedor && m.concepto && <span className="text-zinc-500"> · </span>}
+                    {m.concepto && <span className="text-zinc-400">{m.concepto}</span>}
+                    {!m.proveedor && !m.concepto && <span className="text-zinc-600">—</span>}
+                  </div>
+                  <div className="flex gap-1 mt-0.5 flex-wrap">
+                    {sinFactura && <span className="text-[8px] font-black uppercase tracking-wider px-1 bg-red-900/40 text-red-300 border border-red-800">SIN FACTURA</span>}
+                    {fotoPorWs && <span className="text-[8px] font-black uppercase tracking-wider px-1 bg-yellow-900/40 text-yellow-300 border border-yellow-700">📱 WS</span>}
+                    {incompletoVisible && <span className="text-[8px] font-black uppercase tracking-wider px-1 bg-amber-900/40 text-amber-300 border border-amber-700" title={`Faltan: ${dInc.motivos.map(x => LABEL_MOTIVO[x] || x).join(' · ')}`}>⚠ FALTAN</span>}
+                    {!showCol('rnc') && m.rnc && <span className="text-[9px] text-zinc-500 font-mono">RNC {m.rnc}</span>}
+                  </div>
+                </td>
+              )}
+              {showCol('rnc') && <td className={`${rowPad} text-zinc-400 text-xs font-mono whitespace-nowrap`}>{m.rnc || '—'}</td>}
+              {showCol('ncf') && <td className={`${rowPad} text-zinc-400 text-xs font-mono whitespace-nowrap`}>{ncf || '—'}</td>}
+              {showCol('categoria') && <td className={`${rowPad} text-xs`}>{cat ? <span className="px-1.5 py-0.5 text-[10px]" style={{ background: (cat.color || '#71717a') + '40', borderLeft: `2px solid ${cat.color || '#71717a'}` }}>{cat.icono} {cat.nombre}</span> : <span className="text-zinc-600">—</span>}</td>}
+              {showCol('aplicaA') && (
+                <td className={rowPad}>
+                  {m.aplicaA === 'dieta' && <span className="text-[9px] uppercase tracking-wider px-1 bg-orange-900/40 text-orange-300 border border-orange-700">🍽 Dieta</span>}
+                  {m.aplicaA === 'hospedaje' && <span className="text-[9px] uppercase tracking-wider px-1 bg-purple-900/40 text-purple-300 border border-purple-700">🛏 Hospedaje</span>}
+                  {!m.aplicaA && <span className="text-zinc-600 text-xs">—</span>}
+                </td>
+              )}
+              {showCol('subTipo') && <td className={`${rowPad} text-xs text-zinc-400`}>{m.subTipo || '—'}</td>}
+              {showCol('empresa') && (
+                <td className={rowPad} onClick={e => e.stopPropagation()}>
+                  {puedeEditarEmpresa ? (
+                    <select
+                      value={m.empresaReceptora || ''}
+                      onChange={e => saveAndExit(m, { empresaReceptora: e.target.value || null })}
+                      autoFocus
+                      className="border-2 border-red-600 outline-none px-1.5 py-1 text-xs bg-zinc-950 text-white"
+                      title="Empresa receptora de la factura"
+                    >
+                      <option value="">—</option>
+                      {Object.entries(EMPRESAS_RECEPTORAS).map(([k, e]) => <option key={k} value={k}>{e.label}</option>)}
+                    </select>
+                  ) : empresa ? (
+                    <span className={`text-[9px] font-black uppercase tracking-wider px-1 ${empresa.color} text-white border ${empresa.borderColor}`}>{empresa.short}</span>
+                  ) : (
+                    <span className="text-zinc-600 text-xs">—</span>
+                  )}
+                </td>
+              )}
+              {showCol('aprobadoPor') && <td className={`${rowPad} text-xs text-zinc-400`}>{aprobador?.nombre || '—'}</td>}
+              {showCol('creadoAt') && <td className={`${rowPad} text-xs text-zinc-500 whitespace-nowrap`}>{m.createdAt ? formatFechaCorta(m.createdAt.split('T')[0]) : '—'}</td>}
+              {showCol('status') && (
+                <td className={rowPad}>
+                  <span className={`text-[9px] font-black uppercase tracking-wider px-1 ${stmeta.cls}`}>{stmeta.label}</span>
+                </td>
+              )}
+              {showCol('monto') && <td className={`${rowPad} text-right tabular-nums font-black whitespace-nowrap ${cMonto}`}>{signo}{formatRD(m.monto)}</td>}
+              {showCol('accion') && (
+                <td className={`${rowPad} text-right whitespace-nowrap`} onClick={e => e.stopPropagation()}>
+                  <div className="inline-flex gap-1">
+                    {/* v8.17.33: toggle edit mode inline (solo para pendientes) */}
+                    {puedeMostrarBotonEditar && (
+                      <button
+                        onClick={() => toggleEdit(m.id)}
+                        className={`p-0.5 ${isEditing(m.id) ? 'text-red-400' : 'text-zinc-500 hover:text-red-400'}`}
+                        title={isEditing(m.id) ? 'Cerrar edición' : 'Editar inline (proyecto, empresa)'}
+                      >
+                        {isEditing(m.id) ? <X className="w-3.5 h-3.5" /> : <Edit2 className="w-3.5 h-3.5" />}
+                      </button>
+                    )}
+                    {m.tipo !== 'entrega' && (
+                      <button onClick={() => onAbrirDetalle && onAbrirDetalle(m)} className="text-zinc-500 hover:text-blue-400 p-0.5" title="Ver detalle (modal)">
+                        <Info className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    {m.tieneFoto && (
+                      <button onClick={() => onVerFoto && onVerFoto(m)} className="text-zinc-500 hover:text-red-400 p-0.5" title="Ver foto">
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    {onDesaprobar && m.tipo !== 'entrega' && (m.status === 'aprobado' || m.status === 'rechazado') && (
+                      <button onClick={() => onDesaprobar(m)} className="text-zinc-500 hover:text-yellow-400 p-0.5" title={m.status === 'aprobado' ? 'Desaprobar' : 'Reabrir'}>
+                        <RotateCcw className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    {onEliminar && (
+                      <button onClick={() => onEliminar(m)} className="text-zinc-500 hover:text-red-400 p-0.5" title="Eliminar">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </td>
+              )}
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+// v8.17.32: Panel lateral con foto de factura + datos editables + acciones + navegación.
+// v8.17.33: edición bloqueada por default; botón ✏️ para entrar a modo edición.
+//           Aprobado/rechazado NO se puede editar (solo modal completo).
+function PanelVisorFactura({ movimientos, todosMovimientos, movId, setMovId, data, fotoUrl, fotoLoading, rotacion, setRotacion, onCerrar, onAprobar, onRechazar, onDesaprobar, onEditarCampo, onAbrirDetalle, guardandoId }) {
+  const idx = movimientos.findIndex(m => m.id === movId);
+  const mov = idx >= 0 ? movimientos[idx] : null;
+  // v8.17.33: ordenados por uso más reciente en caja chica
+  const proyectosOrdenados = useMemo(
+    () => proyectosOrdenadosPorUsoCaja((data.proyectos || []).filter(p => !p.archivado), todosMovimientos || []),
+    [data.proyectos, todosMovimientos]
+  );
+  // v8.17.33: modo edición del panel (uno solo activo a la vez, se resetea al cambiar de mov o status)
+  const [editMode, setEditMode] = useState(false);
+  useEffect(() => { setEditMode(false); }, [movId, mov?.status]);
+
+  const irAnterior = () => { if (idx > 0) setMovId(movimientos[idx - 1].id); };
+  const irSiguiente = () => { if (idx < movimientos.length - 1) setMovId(movimientos[idx + 1].id); };
+
+  // Atajos de teclado: ← → para navegar, Esc para cerrar.
+  useEffect(() => {
+    const handle = (e) => {
+      if (e.target?.tagName === 'INPUT' || e.target?.tagName === 'SELECT' || e.target?.tagName === 'TEXTAREA') return;
+      if (e.key === 'ArrowLeft') irAnterior();
+      else if (e.key === 'ArrowRight') irSiguiente();
+      else if (e.key === 'Escape') onCerrar();
+    };
+    window.addEventListener('keydown', handle);
+    return () => window.removeEventListener('keydown', handle);
+  }, [idx, movimientos]);
+
+  if (!mov) {
+    return (
+      <div className="w-[400px] flex-shrink-0 bg-zinc-900 border border-zinc-800 p-4 text-center text-zinc-500 text-sm">
+        Selecciona una fila para verla aquí.
+        <button onClick={onCerrar} className="block mx-auto mt-3 text-[10px] uppercase text-red-400 hover:text-red-300">Cerrar visor</button>
+      </div>
+    );
+  }
+
+  const persona = data.personal.find(p => p.id === mov.personaId);
+  const proy = mov.proyectoId ? data.proyectos.find(p => p.id === mov.proyectoId) : null;
+  const empresa = mov.empresaReceptora ? EMPRESAS_RECEPTORAS[mov.empresaReceptora] : null;
+  const stmeta = STATUS[mov.status] || STATUS.pendiente_revision;
+  const sinFactura = !!mov.datosIA?.sin_factura;
+  const fotoPorWs = !!mov.datosIA?.foto_por_ws && !mov.tieneFoto;
+  const dInc = evaluarDatosIncompletos(mov);
+  const incompletoVisible = dInc.incompleto && mov.status === 'pendiente_revision';
+  const guardando = guardandoId === mov.id;
+
+  return (
+    <div className="w-[440px] flex-shrink-0 bg-zinc-900 border border-zinc-800 flex flex-col" style={{ maxHeight: '85vh', position: 'sticky', top: '1rem' }}>
+      {/* Header */}
+      <div className="px-3 py-2 border-b border-zinc-800 flex items-center gap-2">
+        <div className="flex-1 min-w-0">
+          <div className="text-[10px] uppercase tracking-widest text-blue-400 font-bold flex items-center gap-1"><PanelRight className="w-3 h-3" /> Visor de factura</div>
+          <div className="text-[10px] text-zinc-500">{idx + 1} de {movimientos.length}</div>
+        </div>
+        <button onClick={irAnterior} disabled={idx === 0} className="p-1 text-zinc-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed" title="Anterior (←)"><ChevronLeft className="w-4 h-4" /></button>
+        <button onClick={irSiguiente} disabled={idx >= movimientos.length - 1} className="p-1 text-zinc-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed" title="Siguiente (→)"><ChevronRight className="w-4 h-4" /></button>
+        <button onClick={onCerrar} className="p-1 text-zinc-500 hover:text-white" title="Cerrar visor (Esc)"><X className="w-4 h-4" /></button>
+      </div>
+
+      {/* Cuerpo scrolleable */}
+      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+        {/* Foto / placeholder */}
+        <div className="bg-zinc-950 border border-zinc-800 relative" style={{ minHeight: 220 }}>
+          {fotoLoading ? (
+            <div className="absolute inset-0 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-blue-400" /></div>
+          ) : fotoUrl ? (
+            <>
+              <div className="overflow-auto" style={{ maxHeight: '50vh' }}>
+                <img
+                  src={fotoUrl}
+                  alt="Factura"
+                  className="w-full"
+                  style={{ transform: `rotate(${rotacion}deg)`, transition: 'transform 0.2s' }}
+                />
+              </div>
+              <div className="absolute top-1 right-1 flex gap-0.5 bg-black/60 p-0.5">
+                <button onClick={() => setRotacion(r => ((r - 90) % 360 + 360) % 360)} className="p-1 text-white hover:text-blue-300" title="Rotar izquierda"><RotateCcw className="w-3.5 h-3.5" /></button>
+                <button onClick={() => setRotacion(r => (r + 90) % 360)} className="p-1 text-white hover:text-blue-300" title="Rotar derecha"><RotateCw className="w-3.5 h-3.5" /></button>
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-10 text-zinc-600 text-xs gap-2">
+              {sinFactura ? <><FileX className="w-8 h-8" /> Sin factura (gasto informal)</>
+                : fotoPorWs ? <><Camera className="w-8 h-8 text-yellow-400" /> Foto pendiente por WhatsApp</>
+                : <><ImageIcon className="w-8 h-8" /> Sin foto</>}
+            </div>
+          )}
+        </div>
+
+        {/* Header info */}
+        <div className="space-y-1">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="font-bold text-sm">{persona?.nombre || mov.personaId}</div>
+            <span className={`text-[9px] font-black uppercase tracking-wider px-1 ${stmeta.cls}`}>{stmeta.label}</span>
+          </div>
+          <div className="text-[10px] text-zinc-500">{TIPOS[mov.tipo]?.label || mov.tipo} · {formatFechaCorta(mov.fecha)}</div>
+          {incompletoVisible && (
+            <div className="text-[10px] bg-amber-900/30 border border-amber-700 px-2 py-1 text-amber-300">
+              ⚠ Faltan: {dInc.motivos.map(x => LABEL_MOTIVO[x] || x).join(' · ')}
+            </div>
+          )}
+        </div>
+
+        {/* v8.17.33: Datos editables — solo editables si pendiente Y modo edit activado */}
+        <div className="space-y-2 text-xs">
+          {/* Botón Editar (solo pendientes que NO son entrega) */}
+          {mov.tipo !== 'entrega' && mov.status === 'pendiente_revision' && (
+            <button
+              onClick={() => setEditMode(e => !e)}
+              className={`w-full text-[10px] uppercase tracking-wider font-bold py-1.5 border ${editMode ? 'bg-red-600 border-red-600 text-white' : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-red-400'}`}
+            >
+              {editMode ? <><X className="w-3 h-3 inline" /> Cerrar edición</> : <><Edit2 className="w-3 h-3 inline" /> Editar proyecto / empresa</>}
+            </button>
+          )}
+          <div>
+            <div className="text-[9px] uppercase tracking-widest text-zinc-500 mb-0.5">Proyecto</div>
+            {editMode && mov.tipo !== 'entrega' ? (
+              <select
+                value={mov.proyectoId || ''}
+                onChange={e => { onEditarCampo(mov, { proyectoId: e.target.value || null }); setEditMode(false); }}
+                disabled={guardando}
+                autoFocus
+                className="w-full bg-zinc-950 border-2 border-red-600 outline-none px-2 py-1.5 text-white text-xs disabled:opacity-50"
+              >
+                <option value="">— Sin proyecto —</option>
+                {proyectosOrdenados.map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo || p.cliente}</option>)}
+              </select>
+            ) : (
+              <div className="text-xs text-zinc-200">{proy?.referenciaOdoo || proy?.cliente || <span className="text-zinc-600">— Sin proyecto —</span>}</div>
+            )}
+          </div>
+          {mov.tipo === 'gasto_factura' && (
+            <div>
+              <div className="text-[9px] uppercase tracking-widest text-zinc-500 mb-0.5">Empresa receptora</div>
+              {editMode && !sinFactura ? (
+                <select
+                  value={mov.empresaReceptora || ''}
+                  onChange={e => { onEditarCampo(mov, { empresaReceptora: e.target.value || null }); setEditMode(false); }}
+                  disabled={guardando}
+                  className="w-full border-2 border-red-600 outline-none px-2 py-1.5 text-xs bg-zinc-950 text-white disabled:opacity-50"
+                >
+                  <option value="">— Sin asignar —</option>
+                  {Object.entries(EMPRESAS_RECEPTORAS).map(([k, e]) => <option key={k} value={k}>{e.label}</option>)}
+                </select>
+              ) : empresa ? (
+                <span className={`inline-block text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5 ${empresa.color} text-white border ${empresa.borderColor}`}>{empresa.label}</span>
+              ) : (
+                <div className="text-xs text-amber-400">— Sin asignar —</div>
+              )}
+            </div>
+          )}
+          {mov.proveedor && (
+            <div>
+              <div className="text-[9px] uppercase tracking-widest text-zinc-500 mb-0.5">Proveedor</div>
+              <div className="text-xs font-bold text-zinc-200 truncate">{mov.proveedor}</div>
+            </div>
+          )}
+          {mov.rnc && (
+            <div className="flex gap-3">
+              <div>
+                <div className="text-[9px] uppercase tracking-widest text-zinc-500 mb-0.5">RNC</div>
+                <div className="text-xs font-mono text-zinc-300">{mov.rnc}</div>
+              </div>
+              {mov.datosIA?.ncf && (
+                <div>
+                  <div className="text-[9px] uppercase tracking-widest text-zinc-500 mb-0.5">NCF</div>
+                  <div className="text-xs font-mono text-zinc-300">{mov.datosIA.ncf}</div>
+                </div>
+              )}
+            </div>
+          )}
+          {mov.concepto && (
+            <div>
+              <div className="text-[9px] uppercase tracking-widest text-zinc-500 mb-0.5">Concepto</div>
+              <div className="text-xs text-zinc-300">{mov.concepto}</div>
+            </div>
+          )}
+          <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
+            <div className="text-[9px] uppercase tracking-widest text-zinc-500">Monto</div>
+            <div className={`text-lg font-black ${mov.tipo === 'entrega' ? 'text-green-400' : mov.status === 'aprobado' ? 'text-orange-400' : 'text-zinc-300'}`}>
+              {mov.tipo === 'entrega' ? '+' : '−'}{formatRD(mov.monto)}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Acciones */}
+      <div className="border-t border-zinc-800 p-2 space-y-1.5">
+        {mov.status === 'pendiente_revision' && mov.tipo !== 'entrega' && (
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
+              onClick={async () => { await onAprobar(mov); irSiguiente(); }}
+              disabled={guardando}
+              className="bg-green-700 hover:bg-green-600 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-2 flex items-center justify-center gap-1"
+            >
+              <Check className="w-3.5 h-3.5" /> Aprobar
+            </button>
+            <button
+              onClick={async () => { await onRechazar(mov); irSiguiente(); }}
+              disabled={guardando}
+              className="bg-red-700 hover:bg-red-600 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-2 flex items-center justify-center gap-1"
+            >
+              <X className="w-3.5 h-3.5" /> Rechazar
+            </button>
+          </div>
+        )}
+        {mov.status !== 'pendiente_revision' && mov.tipo !== 'entrega' && onDesaprobar && (
+          <button
+            onClick={() => onDesaprobar(mov)}
+            disabled={guardando}
+            className="w-full bg-yellow-700 hover:bg-yellow-600 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-2 flex items-center justify-center gap-1"
+          >
+            <RotateCcw className="w-3.5 h-3.5" /> {mov.status === 'aprobado' ? 'Desaprobar' : 'Reabrir'} (volver a bandeja)
+          </button>
+        )}
+        <button
+          onClick={() => onAbrirDetalle(mov)}
+          className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-bold uppercase py-2 flex items-center justify-center gap-1"
+        >
+          <Edit2 className="w-3 h-3" /> Editar todos los campos (modal)
+        </button>
+        <div className="text-[9px] text-zinc-600 text-center">← → para navegar · Esc para cerrar</div>
+      </div>
+    </div>
+  );
+}
+
 const TIPOS = {
   entrega:        { label: 'Entrega',  icono: '💵', bg: 'bg-green-900/40 border border-green-800' },
   gasto_factura:  { label: 'Gasto',    icono: '🧾', bg: 'bg-orange-900/40 border border-orange-800' },
   dieta:          { label: 'Dieta',    icono: '🍽️', bg: 'bg-blue-900/40 border border-blue-800' },
+  hospedaje:      { label: 'Hosped.',  icono: '🛏', bg: 'bg-purple-900/40 border border-purple-800' },
   ajuste:         { label: 'Ajuste',   icono: '⚙️', bg: 'bg-zinc-800 border border-zinc-700' },
 };
 

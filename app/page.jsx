@@ -7052,6 +7052,8 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
   const [lineasConfirmar, setLineasConfirmar] = useState([]);
   const [matForm, setMatForm] = useState({ materialId: '', cantidad: '', costoUnidad: '', fecha: new Date().toISOString().split('T')[0] });
   const [expandidos, setExpandidos] = useState({}); // v8.9.3: expandir desglose por área
+  // v8.17.39: sort para la tabla de materiales por sistema en desktop
+  const [sortMat, setSortMat] = useState({ key: 'pend', dir: 'desc' });
 
   // v8.9.3: Agrupar áreas por sistema y calcular materiales de cada grupo
   const grupos = React.useMemo(() => agruparAreasPorSistema(proyecto, sistemas), [proyecto, sistemas]);
@@ -7610,7 +7612,7 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
             </div>
 
             {/* Materiales del sistema */}
-            <div className="p-3 space-y-2">
+            <div className="p-3">
               {grupo.materialesCalculados.length === 0 ? (
                 // Lista vacía con botón para agregar
                 <div className="bg-zinc-900 border-2 border-dashed border-zinc-700 p-6 text-center space-y-3">
@@ -7623,50 +7625,65 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
                   )}
                 </div>
               ) : (
-                grupo.materialesCalculados.map(mat => {
-                  const pctE = mat.requerido > 0 ? (mat.enviado / mat.requerido) * 100 : 0;
-                  const pctU = mat.requerido > 0 ? (mat.usado / mat.requerido) * 100 : 0;
-                  const pendiente = Math.max(0, mat.requerido - mat.enviado);
-                  const expandKey = `${grupo.sistemaId}:${mat.id}`;
-                  const abierto = expandidos[expandKey];
-                  return (
-                    <div key={mat.id} className="bg-zinc-900 border border-zinc-800 p-3">
-                      <div className="flex justify-between items-start mb-2">
-                        <div>
-                          <div className="font-bold text-sm">{mat.nombre}</div>
-                          <div className="text-[10px] text-zinc-500 uppercase">1 {mat.unidad} = {mat.rinde_m2} m²</div>
-                        </div>
-                        {grupo.areas.length > 1 && (
-                          <button onClick={() => toggleArea(expandKey)} className="text-[10px] text-zinc-500 hover:text-white">
-                            {abierto ? '▼ ocultar' : '▶ por área'}
-                          </button>
-                        )}
-                      </div>
-                      <div className="grid grid-cols-4 gap-2 mb-2">
-                        <div className="text-center"><div className="text-[9px] text-zinc-500 uppercase">Req</div><div className="text-base font-black">{formatNum(mat.requerido)}</div></div>
-                        <div className="text-center border-x border-zinc-800"><div className="text-[9px] text-blue-400 uppercase">Env</div><div className="text-base font-black text-blue-400">{formatNum(mat.enviado)}</div></div>
-                        <div className={`text-center ${pendiente > 0 ? '' : 'opacity-50'}`}><div className="text-[9px] text-orange-400 uppercase">Pend.</div><div className={`text-base font-black ${pendiente > 0 ? 'text-orange-400' : 'text-zinc-600'}`}>{formatNum(pendiente)}</div></div>
-                        <div className="text-center border-l border-zinc-800"><div className="text-[9px] text-green-400 uppercase">Usa</div><div className="text-base font-black text-green-400">{formatNum(mat.usado)}</div></div>
-                      </div>
-                      <div className="relative h-2 bg-zinc-800 overflow-hidden">
-                        <div className="absolute inset-y-0 left-0 bg-blue-600/40" style={{ width: `${Math.min(pctE, 100)}%` }} />
-                        <div className="absolute inset-y-0 left-0 bg-green-500" style={{ width: `${Math.min(pctU, 100)}%` }} />
-                      </div>
-                      {/* v8.9.3: Desglose por área */}
-                      {abierto && grupo.areas.length > 1 && (
-                        <div className="mt-3 pt-3 border-t border-zinc-800 space-y-1">
-                          <div className="text-[9px] tracking-widest uppercase text-zinc-500 font-bold">Por área</div>
-                          {mat.porArea.map(pa => (
-                            <div key={pa.id} className="flex justify-between items-center text-xs">
-                              <div className="text-zinc-400">{pa.nombre} · {formatNum(pa.m2)} m²</div>
-                              <div className="text-zinc-300 font-bold">{formatNum(pa.requerido)} {mat.unidad_plural || mat.unidad}</div>
+                <>
+                  {/* v8.17.39: DESKTOP — tabla con sort + bandita de color por pendiente */}
+                  <div className="hidden md:block bg-zinc-900 border border-zinc-800 overflow-x-auto">
+                    <TablaMaterialesSistema
+                      grupo={grupo}
+                      sort={sortMat}
+                      setSort={setSortMat}
+                      expandidos={expandidos}
+                      onToggleArea={toggleArea}
+                    />
+                  </div>
+                  {/* MOBILE — cards (layout original) */}
+                  <div className="md:hidden space-y-2">
+                    {grupo.materialesCalculados.map(mat => {
+                      const pctE = mat.requerido > 0 ? (mat.enviado / mat.requerido) * 100 : 0;
+                      const pctU = mat.requerido > 0 ? (mat.usado / mat.requerido) * 100 : 0;
+                      const pendiente = Math.max(0, mat.requerido - mat.enviado);
+                      const expandKey = `${grupo.sistemaId}:${mat.id}`;
+                      const abierto = expandidos[expandKey];
+                      return (
+                        <div key={mat.id} className="bg-zinc-900 border border-zinc-800 p-3">
+                          <div className="flex justify-between items-start mb-2">
+                            <div>
+                              <div className="font-bold text-sm">{mat.nombre}</div>
+                              <div className="text-[10px] text-zinc-500 uppercase">1 {mat.unidad} = {mat.rinde_m2} m²</div>
                             </div>
-                          ))}
+                            {grupo.areas.length > 1 && (
+                              <button onClick={() => toggleArea(expandKey)} className="text-[10px] text-zinc-500 hover:text-white">
+                                {abierto ? '▼ ocultar' : '▶ por área'}
+                              </button>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-4 gap-2 mb-2">
+                            <div className="text-center"><div className="text-[9px] text-zinc-500 uppercase">Req</div><div className="text-base font-black">{formatNum(mat.requerido)}</div></div>
+                            <div className="text-center border-x border-zinc-800"><div className="text-[9px] text-blue-400 uppercase">Env</div><div className="text-base font-black text-blue-400">{formatNum(mat.enviado)}</div></div>
+                            <div className={`text-center ${pendiente > 0 ? '' : 'opacity-50'}`}><div className="text-[9px] text-orange-400 uppercase">Pend.</div><div className={`text-base font-black ${pendiente > 0 ? 'text-orange-400' : 'text-zinc-600'}`}>{formatNum(pendiente)}</div></div>
+                            <div className="text-center border-l border-zinc-800"><div className="text-[9px] text-green-400 uppercase">Usa</div><div className="text-base font-black text-green-400">{formatNum(mat.usado)}</div></div>
+                          </div>
+                          <div className="relative h-2 bg-zinc-800 overflow-hidden">
+                            <div className="absolute inset-y-0 left-0 bg-blue-600/40" style={{ width: `${Math.min(pctE, 100)}%` }} />
+                            <div className="absolute inset-y-0 left-0 bg-green-500" style={{ width: `${Math.min(pctU, 100)}%` }} />
+                          </div>
+                          {/* v8.9.3: Desglose por área */}
+                          {abierto && grupo.areas.length > 1 && (
+                            <div className="mt-3 pt-3 border-t border-zinc-800 space-y-1">
+                              <div className="text-[9px] tracking-widest uppercase text-zinc-500 font-bold">Por área</div>
+                              {mat.porArea.map(pa => (
+                                <div key={pa.id} className="flex justify-between items-center text-xs">
+                                  <div className="text-zinc-400">{pa.nombre} · {formatNum(pa.m2)} m²</div>
+                                  <div className="text-zinc-300 font-bold">{formatNum(pa.requerido)} {mat.unidad_plural || mat.unidad}</div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  );
-                })
+                      );
+                    })}
+                  </div>
+                </>
               )}
             </div>
           </div>
@@ -7700,6 +7717,125 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
       )}
       </>}
     </div>
+  );
+}
+
+// v8.17.39: tabla de materiales por sistema para desktop.
+// Igual estilo que la tabla de Caja Chica Movimientos: bandita de color a la izquierda
+// (verde si todo cubierto, naranja/rojo si hay pendiente), sticky header, sort por columna.
+// Las filas multi-área son expandibles a sub-filas con el detalle por área.
+function TablaMaterialesSistema({ grupo, sort, setSort, expandidos, onToggleArea }) {
+  // Sort por columna
+  const items = (grupo.materialesCalculados || []).slice().sort((a, b) => {
+    const dir = sort.dir === 'asc' ? 1 : -1;
+    const pendA = Math.max(0, a.requerido - a.enviado);
+    const pendB = Math.max(0, b.requerido - b.enviado);
+    const get = (m, p) => {
+      switch (sort.key) {
+        case 'nombre': return (m.nombre || '').toLowerCase();
+        case 'req': return m.requerido || 0;
+        case 'env': return m.enviado || 0;
+        case 'pend': return p;
+        case 'usa': return m.usado || 0;
+        default: return 0;
+      }
+    };
+    const va = get(a, pendA), vb = get(b, pendB);
+    if (va < vb) return -1 * dir;
+    if (va > vb) return 1 * dir;
+    return 0;
+  });
+
+  const Th = ({ k, align = 'left', children }) => {
+    const activo = sort.key === k;
+    const dirIcono = activo ? (sort.dir === 'asc' ? '▲' : '▼') : '';
+    const handle = () => setSort(s => ({ key: k, dir: s.key === k && s.dir === 'asc' ? 'desc' : 'asc' }));
+    return (
+      <th className={`py-2 px-2 font-bold ${align === 'right' ? 'text-right' : 'text-left'}`}>
+        <button onClick={handle} className={`inline-flex items-center gap-1 text-[10px] uppercase tracking-wider ${activo ? 'text-red-400' : 'text-zinc-500 hover:text-zinc-300'}`}>
+          {children}{activo && <span className="text-[8px]">{dirIcono}</span>}
+        </button>
+      </th>
+    );
+  };
+
+  return (
+    <table className="w-full text-sm">
+      <thead className="bg-zinc-950 border-b border-zinc-800 sticky top-0 z-10">
+        <tr>
+          <th className="w-1" />
+          <Th k="nombre">Material</Th>
+          <Th k="req" align="right">Requerido</Th>
+          <Th k="env" align="right">Enviado</Th>
+          <Th k="pend" align="right">Pendiente</Th>
+          <Th k="usa" align="right">Usado</Th>
+          <th className="py-2 px-2 text-left text-[10px] uppercase tracking-wider text-zinc-500 font-bold w-[180px]">Progreso</th>
+          {grupo.areas.length > 1 && <th className="py-2 px-2 text-right text-[10px] uppercase tracking-wider text-zinc-500 font-bold">Por área</th>}
+        </tr>
+      </thead>
+      <tbody>
+        {items.map(mat => {
+          const pctE = mat.requerido > 0 ? (mat.enviado / mat.requerido) * 100 : 0;
+          const pctU = mat.requerido > 0 ? (mat.usado / mat.requerido) * 100 : 0;
+          const pendiente = Math.max(0, mat.requerido - mat.enviado);
+          const expandKey = `${grupo.sistemaId}:${mat.id}`;
+          const abierto = expandidos[expandKey];
+          // Banda izquierda: verde si todo enviado, naranja si pendiente, rojo si nada enviado y requerido > 0
+          const bandColor = mat.requerido <= 0
+            ? 'bg-zinc-700'
+            : pendiente <= 0
+              ? 'bg-green-600'
+              : mat.enviado <= 0
+                ? 'bg-red-600'
+                : 'bg-orange-500';
+          return (
+            <React.Fragment key={mat.id}>
+              <tr className="border-b border-zinc-800 hover:bg-zinc-800/30">
+                <td className={`${bandColor} w-1`} style={{ padding: 0 }} />
+                <td className="py-2 px-2">
+                  <div className="font-bold text-sm text-white">{mat.nombre}</div>
+                  <div className="text-[10px] text-zinc-500 uppercase">1 {mat.unidad} = {mat.rinde_m2} m²</div>
+                </td>
+                <td className="py-2 px-2 text-right tabular-nums font-black text-white">{formatNum(mat.requerido)} <span className="text-[10px] text-zinc-500 font-normal">{mat.unidad_plural || mat.unidad}</span></td>
+                <td className="py-2 px-2 text-right tabular-nums font-black text-blue-400">{formatNum(mat.enviado)}</td>
+                <td className={`py-2 px-2 text-right tabular-nums font-black ${pendiente > 0 ? 'text-orange-400' : 'text-zinc-600'}`}>{formatNum(pendiente)}</td>
+                <td className="py-2 px-2 text-right tabular-nums font-black text-green-400">{formatNum(mat.usado)}</td>
+                <td className="py-2 px-2">
+                  <div className="relative h-2 bg-zinc-800 overflow-hidden w-full" title={`${pctE.toFixed(0)}% enviado · ${pctU.toFixed(0)}% usado`}>
+                    <div className="absolute inset-y-0 left-0 bg-blue-600/40" style={{ width: `${Math.min(pctE, 100)}%` }} />
+                    <div className="absolute inset-y-0 left-0 bg-green-500" style={{ width: `${Math.min(pctU, 100)}%` }} />
+                  </div>
+                  <div className="text-[9px] text-zinc-500 mt-0.5 flex justify-between">
+                    <span>{pctE.toFixed(0)}% env</span>
+                    <span>{pctU.toFixed(0)}% usa</span>
+                  </div>
+                </td>
+                {grupo.areas.length > 1 && (
+                  <td className="py-2 px-2 text-right">
+                    <button onClick={() => onToggleArea(expandKey)} className="text-[10px] text-zinc-500 hover:text-red-400 font-bold">
+                      {abierto ? '▼ ocultar' : '▶ ver'}
+                    </button>
+                  </td>
+                )}
+              </tr>
+              {/* Sub-filas por área cuando está expandido */}
+              {abierto && grupo.areas.length > 1 && mat.porArea.map(pa => (
+                <tr key={`${expandKey}:${pa.id}`} className="border-b border-zinc-800 bg-zinc-950/50">
+                  <td className="bg-zinc-700 w-1" style={{ padding: 0 }} />
+                  <td className="py-1.5 px-2 pl-6 text-[11px] text-zinc-400">└ {pa.nombre} · {formatNum(pa.m2)} m²</td>
+                  <td className="py-1.5 px-2 text-right tabular-nums text-xs text-zinc-300">{formatNum(pa.requerido)}</td>
+                  <td className="py-1.5 px-2 text-right tabular-nums text-xs text-blue-400/70">{pa.enviado != null ? formatNum(pa.enviado) : '—'}</td>
+                  <td className="py-1.5 px-2 text-right tabular-nums text-xs text-orange-400/70">{pa.enviado != null ? formatNum(Math.max(0, pa.requerido - pa.enviado)) : '—'}</td>
+                  <td className="py-1.5 px-2 text-right tabular-nums text-xs text-green-400/70">{pa.usado != null ? formatNum(pa.usado) : '—'}</td>
+                  <td className="py-1.5 px-2 text-[9px] text-zinc-600">—</td>
+                  <td className="py-1.5 px-2" />
+                </tr>
+              ))}
+            </React.Fragment>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }
 

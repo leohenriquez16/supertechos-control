@@ -886,6 +886,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
                 <div className={`bg-zinc-900 border border-zinc-800 overflow-x-auto ${viewerAbierto ? 'flex-1 min-w-0' : 'w-full'}`}>
                   <TablaMovimientos
                     movimientos={movimientosSorted}
+                    todosMovimientos={movimientos}
                     data={data}
                     sort={sortMov}
                     setSort={setSortMov}
@@ -896,7 +897,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
                     onEditarCampo={editarCampoMov}
                     onAbrirDetalle={(m) => setVerDetalle(m)}
                     onVerFoto={(m) => verFotoMov(m)}
-                    onSeleccionar={(m) => viewerAbierto ? setViewerMovId(m.id) : setVerDetalle(m)}
+                    onSeleccionar={(m) => viewerAbierto ? setViewerMovId(m.id) : (m.tipo !== 'entrega' && setVerDetalle(m))}
                     onEliminar={tieneRol(usuario, 'admin') ? eliminar : null}
                     onDesaprobar={tieneRol(usuario, 'admin') ? desaprobar : null}
                   />
@@ -904,6 +905,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
                 {viewerAbierto && (
                   <PanelVisorFactura
                     movimientos={movimientosSorted}
+                    todosMovimientos={movimientos}
                     movId={viewerMovId}
                     setMovId={setViewerMovId}
                     data={data}
@@ -1315,15 +1317,60 @@ function FilaMovimiento({ m, data, dx, onAbrirDetalle, onVerFoto, onEliminar, on
   );
 }
 
+// v8.17.33: helper — ordena proyectos por uso más reciente en caja chica.
+// Activos primero (orden desc por última fecha de movimiento), después activos sin uso (alfabético),
+// después archivados al final.
+function proyectosOrdenadosPorUsoCaja(proyectos, movimientos) {
+  const ultimoUso = new Map();
+  (movimientos || []).forEach(m => {
+    if (!m.proyectoId) return;
+    const f = m.fecha;
+    const prev = ultimoUso.get(m.proyectoId);
+    if (!prev || f > prev) ultimoUso.set(m.proyectoId, f);
+  });
+  return (proyectos || []).slice().sort((a, b) => {
+    if (!!a.archivado !== !!b.archivado) return a.archivado ? 1 : -1;
+    const ua = ultimoUso.get(a.id) || '';
+    const ub = ultimoUso.get(b.id) || '';
+    if (ua && ub) return ub.localeCompare(ua);
+    if (ua && !ub) return -1;
+    if (!ua && ub) return 1;
+    return (a.cliente || '').localeCompare(b.cliente || '');
+  });
+}
+
 // v8.17.30: tabla de movimientos para desktop. Mismo patrón que la tabla de Proyectos:
-// sticky header, sort por columna, inline edit (proyecto, empresa), color band por status.
+// sticky header, sort por columna, color band por status.
 // v8.17.32: columnas configurables + selección sincronizada con el visor lateral.
-function TablaMovimientos({ movimientos, data, sort, setSort, dx, guardandoId, columnasVisibles, filaSeleccionada, onEditarCampo, onAbrirDetalle, onVerFoto, onEliminar, onDesaprobar, onSeleccionar }) {
+// v8.17.33: edición inline bloqueada por default — solo se habilita al click en ✏️ Editar.
+//           Pendientes pueden entrar a modo edición; aprobados/rechazados NO (solo modal).
+function TablaMovimientos({ movimientos: movsTabla, todosMovimientos, data, sort, setSort, dx, guardandoId, columnasVisibles, filaSeleccionada, onEditarCampo, onAbrirDetalle, onVerFoto, onEliminar, onDesaprobar, onSeleccionar }) {
   const compacto = !!dx?.compacto;
   const rowPad = compacto ? 'py-1 px-2' : 'py-2 px-2';
-  const proyectosActivos = (data.proyectos || []).filter(p => !p.archivado);
+  // v8.17.33: proyectos ordenados por uso más reciente en caja chica (incluye todos los movs, no solo los filtrados)
+  const proyectosOrdenados = useMemo(
+    () => proyectosOrdenadosPorUsoCaja((data.proyectos || []).filter(p => !p.archivado), todosMovimientos || movsTabla),
+    [data.proyectos, todosMovimientos, movsTabla]
+  );
+  // v8.17.33: ids de filas que el admin habilitó para edición. Solo pendientes.
+  const [editingIds, setEditingIds] = useState(() => new Set());
+  const isEditing = (id) => editingIds.has(id);
+  const toggleEdit = (id) => setEditingIds(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const saveAndExit = async (mov, campos) => {
+    await onEditarCampo(mov, campos);
+    setEditingIds(prev => {
+      const next = new Set(prev);
+      next.delete(mov.id);
+      return next;
+    });
+  };
   // Si no se pasa columnasVisibles, mostrar todas las default
   const showCol = (k) => !columnasVisibles || columnasVisibles.has(k);
+  const movimientos = movsTabla;
 
   const Th = ({ k, align = 'left', children }) => {
     const activo = sort.key === k;
@@ -1381,9 +1428,13 @@ function TablaMovimientos({ movimientos, data, sort, setSort, dx, guardandoId, c
           const empresa = m.empresaReceptora ? EMPRESAS_RECEPTORAS[m.empresaReceptora] : null;
           const signo = m.tipo === 'entrega' ? '+' : (m.tipo === 'ajuste' ? (m.signoAjuste >= 0 ? '+' : '−') : '−');
           const cMonto = m.tipo === 'entrega' ? 'text-green-400' : (m.status === 'aprobado' ? 'text-orange-400' : 'text-zinc-500');
-          // Inline edit solo para gasto_factura, dieta, hospedaje (no para entregas/ajustes que tienen lógica especial)
-          const puedeEditarProy = m.tipo !== 'entrega';
-          const puedeEditarEmpresa = m.tipo === 'gasto_factura' && !sinFactura;
+          // v8.17.33: edición inline SOLO disponible si:
+          // - el movimiento NO está cerrado (aprobado/rechazado), y
+          // - el admin habilitó modo edición en esta fila (botón ✏️).
+          // Para entregas no aplica.
+          const puedeEditarProy = m.tipo !== 'entrega' && m.status === 'pendiente_revision' && isEditing(m.id);
+          const puedeEditarEmpresa = m.tipo === 'gasto_factura' && !sinFactura && m.status === 'pendiente_revision' && isEditing(m.id);
+          const puedeMostrarBotonEditar = m.tipo !== 'entrega' && m.status === 'pendiente_revision';
 
           // v8.17.32: categoría desde datosIA.categoria_sugerida (cuando aplica)
           const catId = m.datosIA?.categoria_sugerida;
@@ -1418,15 +1469,16 @@ function TablaMovimientos({ movimientos, data, sort, setSort, dx, guardandoId, c
                   {puedeEditarProy ? (
                     <select
                       value={m.proyectoId || ''}
-                      onChange={e => onEditarCampo(m, { proyectoId: e.target.value || null })}
-                      className="bg-zinc-950 border border-zinc-800 hover:border-red-600 focus:border-red-600 outline-none px-1.5 py-1 text-xs text-white max-w-[160px]"
+                      onChange={e => saveAndExit(m, { proyectoId: e.target.value || null })}
+                      autoFocus
+                      className="bg-zinc-950 border-2 border-red-600 outline-none px-1.5 py-1 text-xs text-white max-w-[160px]"
                       title={proy?.cliente || 'Sin proyecto'}
                     >
                       <option value="">— Sin —</option>
-                      {proyectosActivos.map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo || p.cliente}</option>)}
+                      {proyectosOrdenados.map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo || p.cliente}</option>)}
                     </select>
                   ) : (
-                    <span className="text-zinc-500 text-xs">{proy?.referenciaOdoo || proy?.cliente || '—'}</span>
+                    <span className="text-zinc-300 text-xs">{proy?.referenciaOdoo || proy?.cliente || <span className="text-zinc-600">—</span>}</span>
                   )}
                 </td>
               )}
@@ -1462,8 +1514,9 @@ function TablaMovimientos({ movimientos, data, sort, setSort, dx, guardandoId, c
                   {puedeEditarEmpresa ? (
                     <select
                       value={m.empresaReceptora || ''}
-                      onChange={e => onEditarCampo(m, { empresaReceptora: e.target.value || null })}
-                      className={`border outline-none px-1.5 py-1 text-xs ${m.empresaReceptora ? 'bg-zinc-950 border-zinc-800 hover:border-red-600' : 'bg-amber-950/40 border-amber-700/60 text-amber-300'}`}
+                      onChange={e => saveAndExit(m, { empresaReceptora: e.target.value || null })}
+                      autoFocus
+                      className="border-2 border-red-600 outline-none px-1.5 py-1 text-xs bg-zinc-950 text-white"
                       title="Empresa receptora de la factura"
                     >
                       <option value="">—</option>
@@ -1487,6 +1540,16 @@ function TablaMovimientos({ movimientos, data, sort, setSort, dx, guardandoId, c
               {showCol('accion') && (
                 <td className={`${rowPad} text-right whitespace-nowrap`} onClick={e => e.stopPropagation()}>
                   <div className="inline-flex gap-1">
+                    {/* v8.17.33: toggle edit mode inline (solo para pendientes) */}
+                    {puedeMostrarBotonEditar && (
+                      <button
+                        onClick={() => toggleEdit(m.id)}
+                        className={`p-0.5 ${isEditing(m.id) ? 'text-red-400' : 'text-zinc-500 hover:text-red-400'}`}
+                        title={isEditing(m.id) ? 'Cerrar edición' : 'Editar inline (proyecto, empresa)'}
+                      >
+                        {isEditing(m.id) ? <X className="w-3.5 h-3.5" /> : <Edit2 className="w-3.5 h-3.5" />}
+                      </button>
+                    )}
                     {m.tipo !== 'entrega' && (
                       <button onClick={() => onAbrirDetalle && onAbrirDetalle(m)} className="text-zinc-500 hover:text-blue-400 p-0.5" title="Ver detalle (modal)">
                         <Info className="w-3.5 h-3.5" />
@@ -1519,12 +1582,19 @@ function TablaMovimientos({ movimientos, data, sort, setSort, dx, guardandoId, c
 }
 
 // v8.17.32: Panel lateral con foto de factura + datos editables + acciones + navegación.
-// Sustituye el flujo de "abrir modal por cada uno": el admin puede navegar todas las facturas
-// secuencialmente sin perder el contexto de la tabla.
-function PanelVisorFactura({ movimientos, movId, setMovId, data, fotoUrl, fotoLoading, rotacion, setRotacion, onCerrar, onAprobar, onRechazar, onDesaprobar, onEditarCampo, onAbrirDetalle, guardandoId }) {
+// v8.17.33: edición bloqueada por default; botón ✏️ para entrar a modo edición.
+//           Aprobado/rechazado NO se puede editar (solo modal completo).
+function PanelVisorFactura({ movimientos, todosMovimientos, movId, setMovId, data, fotoUrl, fotoLoading, rotacion, setRotacion, onCerrar, onAprobar, onRechazar, onDesaprobar, onEditarCampo, onAbrirDetalle, guardandoId }) {
   const idx = movimientos.findIndex(m => m.id === movId);
   const mov = idx >= 0 ? movimientos[idx] : null;
-  const proyectosActivos = (data.proyectos || []).filter(p => !p.archivado);
+  // v8.17.33: ordenados por uso más reciente en caja chica
+  const proyectosOrdenados = useMemo(
+    () => proyectosOrdenadosPorUsoCaja((data.proyectos || []).filter(p => !p.archivado), todosMovimientos || []),
+    [data.proyectos, todosMovimientos]
+  );
+  // v8.17.33: modo edición del panel (uno solo activo a la vez, se resetea al cambiar de mov o status)
+  const [editMode, setEditMode] = useState(false);
+  useEffect(() => { setEditMode(false); }, [movId, mov?.status]);
 
   const irAnterior = () => { if (idx > 0) setMovId(movimientos[idx - 1].id); };
   const irSiguiente = () => { if (idx < movimientos.length - 1) setMovId(movimientos[idx + 1].id); };
@@ -1617,32 +1687,52 @@ function PanelVisorFactura({ movimientos, movId, setMovId, data, fotoUrl, fotoLo
           )}
         </div>
 
-        {/* Datos editables inline */}
+        {/* v8.17.33: Datos editables — solo editables si pendiente Y modo edit activado */}
         <div className="space-y-2 text-xs">
+          {/* Botón Editar (solo pendientes que NO son entrega) */}
+          {mov.tipo !== 'entrega' && mov.status === 'pendiente_revision' && (
+            <button
+              onClick={() => setEditMode(e => !e)}
+              className={`w-full text-[10px] uppercase tracking-wider font-bold py-1.5 border ${editMode ? 'bg-red-600 border-red-600 text-white' : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-red-400'}`}
+            >
+              {editMode ? <><X className="w-3 h-3 inline" /> Cerrar edición</> : <><Edit2 className="w-3 h-3 inline" /> Editar proyecto / empresa</>}
+            </button>
+          )}
           <div>
             <div className="text-[9px] uppercase tracking-widest text-zinc-500 mb-0.5">Proyecto</div>
-            <select
-              value={mov.proyectoId || ''}
-              onChange={e => onEditarCampo(mov, { proyectoId: e.target.value || null })}
-              disabled={guardando || mov.tipo === 'entrega'}
-              className="w-full bg-zinc-950 border border-zinc-800 hover:border-red-600 focus:border-red-600 outline-none px-2 py-1.5 text-white text-xs disabled:opacity-50"
-            >
-              <option value="">— Sin proyecto —</option>
-              {proyectosActivos.map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo || p.cliente}</option>)}
-            </select>
+            {editMode && mov.tipo !== 'entrega' ? (
+              <select
+                value={mov.proyectoId || ''}
+                onChange={e => { onEditarCampo(mov, { proyectoId: e.target.value || null }); setEditMode(false); }}
+                disabled={guardando}
+                autoFocus
+                className="w-full bg-zinc-950 border-2 border-red-600 outline-none px-2 py-1.5 text-white text-xs disabled:opacity-50"
+              >
+                <option value="">— Sin proyecto —</option>
+                {proyectosOrdenados.map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo || p.cliente}</option>)}
+              </select>
+            ) : (
+              <div className="text-xs text-zinc-200">{proy?.referenciaOdoo || proy?.cliente || <span className="text-zinc-600">— Sin proyecto —</span>}</div>
+            )}
           </div>
           {mov.tipo === 'gasto_factura' && (
             <div>
               <div className="text-[9px] uppercase tracking-widest text-zinc-500 mb-0.5">Empresa receptora</div>
-              <select
-                value={mov.empresaReceptora || ''}
-                onChange={e => onEditarCampo(mov, { empresaReceptora: e.target.value || null })}
-                disabled={guardando || sinFactura}
-                className={`w-full border outline-none px-2 py-1.5 text-xs disabled:opacity-50 ${mov.empresaReceptora ? 'bg-zinc-950 border-zinc-800 hover:border-red-600' : 'bg-amber-950/40 border-amber-700/60 text-amber-300'}`}
-              >
-                <option value="">— Sin asignar —</option>
-                {Object.entries(EMPRESAS_RECEPTORAS).map(([k, e]) => <option key={k} value={k}>{e.label}</option>)}
-              </select>
+              {editMode && !sinFactura ? (
+                <select
+                  value={mov.empresaReceptora || ''}
+                  onChange={e => { onEditarCampo(mov, { empresaReceptora: e.target.value || null }); setEditMode(false); }}
+                  disabled={guardando}
+                  className="w-full border-2 border-red-600 outline-none px-2 py-1.5 text-xs bg-zinc-950 text-white disabled:opacity-50"
+                >
+                  <option value="">— Sin asignar —</option>
+                  {Object.entries(EMPRESAS_RECEPTORAS).map(([k, e]) => <option key={k} value={k}>{e.label}</option>)}
+                </select>
+              ) : empresa ? (
+                <span className={`inline-block text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5 ${empresa.color} text-white border ${empresa.borderColor}`}>{empresa.label}</span>
+              ) : (
+                <div className="text-xs text-amber-400">— Sin asignar —</div>
+              )}
             </div>
           )}
           {mov.proveedor && (

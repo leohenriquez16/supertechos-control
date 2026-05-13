@@ -39,6 +39,8 @@ import Campo from '../components/common/Campo';
 import Input from '../components/common/Input';
 // v8.10.10: AutoFitText para números que se autoajustan al ancho
 import AutoFitText from '../components/common/AutoFitText';
+// v8.17.30: toggle de densidad para listas/tablas
+import ToggleDensidad, { useDensidad } from '../components/common/ToggleDensidad';
 // v8.10.4: ModalEditarReporte extraído
 import ModalEditarReporte from '../components/proyecto/modales/ModalEditarReporte';
 // v8.10.4: ModalReporteAvancePDF extraído (incluye ReportePDFContenido)
@@ -770,10 +772,15 @@ export default function App() {
               <div className="text-xl font-black">Todos los proyectos</div>
             </div>
             <ListaProyectosMultivista
+              usuario={usuario}
               data={data}
               onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }}
               onNuevoProyecto={() => setVista('nuevoProyecto')}
               onCambiarEstadoRapido={async (proyId, estadoNuevo) => withSync(async () => { await db.cambiarEstadoProyecto(proyId, estadoNuevo, usuario, 'Cambio rápido desde Kanban'); })}
+              onActualizarProyecto={async (proy) => withSync(async () => { await db.actualizarProyecto(proy); })}
+              onArchivarProyecto={async (id) => withSync(async () => { await db.archivarProyecto(id, usuario.id); })}
+              onEliminarProyecto={esAdmin ? async (id) => withSync(async () => { await db.eliminarProyecto(id); }) : undefined}
+              onRecargar={recargar}
             />
           </div>
         )}
@@ -4738,7 +4745,7 @@ function MisProyectos({ usuario, data, onIrAReportar, onVerDetalle }) {
 // ============================================================
 // LISTA PROYECTOS MULTIVISTA (v8.1) — Kanban / Lista / Mapa
 // ============================================================
-function ListaProyectosMultivista({ data, onVerProyecto, onNuevoProyecto, onCambiarEstadoRapido }) {
+function ListaProyectosMultivista({ usuario, data, onVerProyecto, onNuevoProyecto, onCambiarEstadoRapido, onActualizarProyecto, onArchivarProyecto, onEliminarProyecto, onRecargar }) {
   const [vista, setVista] = useState('kanban'); // kanban | lista | mapa
   const [filtroEstado, setFiltroEstado] = useState('');
   const [filtroMaestro, setFiltroMaestro] = useState('');
@@ -4747,6 +4754,10 @@ function ListaProyectosMultivista({ data, onVerProyecto, onNuevoProyecto, onCamb
   const [filtroSistema, setFiltroSistema] = useState('');
   const [busqueda, setBusqueda] = useState('');
   const [filtrosAbiertos, setFiltrosAbiertos] = useState(false);
+  // v8.17.30: modal de editar proyecto desde la lista (botón Edit en la tabla)
+  const [modalEditar, setModalEditar] = useState(null); // proyecto o null
+  // v8.17.30: densidad compacta/detallada (persiste en localStorage)
+  const [densidad, setDensidad, dx] = useDensidad('lista-proyectos');
 
   const proyectosFiltrados = data.proyectos.filter(p => {
     if (p.estado === 'facturado' && vista === 'kanban') return false;
@@ -4774,6 +4785,8 @@ function ListaProyectosMultivista({ data, onVerProyecto, onNuevoProyecto, onCamb
       <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
         <h2 className="text-xs tracking-widest uppercase text-zinc-400 font-bold">Proyectos ({proyectosFiltrados.length})</h2>
         <div className="flex items-center gap-2">
+          {/* v8.17.30: toggle de densidad solo en vista Lista (en desktop tiene sentido) */}
+          {vista === 'lista' && <div className="hidden md:block"><ToggleDensidad valor={densidad} onChange={setDensidad} /></div>}
           <div className="flex bg-zinc-900 border border-zinc-800">
             <button onClick={() => setVista('kanban')} className={`px-2 py-1 text-xs font-bold uppercase ${vista === 'kanban' ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>Kanban</button>
             <button onClick={() => setVista('lista')} className={`px-2 py-1 text-xs font-bold uppercase ${vista === 'lista' ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>Lista</button>
@@ -4799,8 +4812,33 @@ function ListaProyectosMultivista({ data, onVerProyecto, onNuevoProyecto, onCamb
       )}
 
       {vista === 'kanban' && <VistaKanban proyectos={proyectosFiltrados} data={data} onVerProyecto={onVerProyecto} onCambiarEstadoRapido={onCambiarEstadoRapido} />}
-      {vista === 'lista' && <VistaLista proyectos={proyectosFiltrados} data={data} onVerProyecto={onVerProyecto} />}
+      {vista === 'lista' && (
+        <VistaLista
+          proyectos={proyectosFiltrados}
+          data={data}
+          densidad={densidad}
+          dx={dx}
+          onVerProyecto={onVerProyecto}
+          onActualizarProyecto={onActualizarProyecto}
+          onAbrirModalEditar={(p) => setModalEditar(p)}
+          onArchivarProyecto={onArchivarProyecto}
+          onRecargar={onRecargar}
+        />
+      )}
       {vista === 'mapa' && <VistaMapa proyectos={proyectosFiltrados} data={data} onVerProyecto={onVerProyecto} />}
+
+      {/* v8.17.30: modal de editar proyecto, disparado desde la columna de acciones de la tabla */}
+      {modalEditar && (
+        <ModalEditarProyecto
+          proyecto={modalEditar}
+          data={data}
+          usuario={usuario}
+          onCerrar={() => setModalEditar(null)}
+          onGuardar={async (proy) => { await onActualizarProyecto(proy); if (onRecargar) await onRecargar(); }}
+          onArchivar={async (id) => { await onArchivarProyecto(id); if (onRecargar) await onRecargar(); }}
+          onEliminar={onEliminarProyecto}
+        />
+      )}
     </div>
   );
 }
@@ -4891,10 +4929,37 @@ function VistaKanban({ proyectos, data, onVerProyecto, onCambiarEstadoRapido }) 
   );
 }
 
-function VistaLista({ proyectos, data, onVerProyecto }) {
+// v8.17.30: helper para calcular días en el estado actual.
+// Usa la fecha más relevante según el estado (aprobado→fechaAprobacion, etc).
+// Fallback a createdAt o null si no hay nada.
+function diasEnEstado(p) {
+  const map = {
+    cubicacion: p.fechaCubicacion,
+    aprobado: p.fechaAprobacion,
+    en_ejecucion: p.fecha_inicio,
+    finalizado_recibido_conforme: p.fechaMedicion,
+    facturado: p.fechaFacturacion,
+    cobrado: p.fechaCobro,
+  };
+  const fRef = map[p.estado] || p.fecha_inicio || p.createdAt;
+  if (!fRef) return null;
+  const dRef = new Date(fRef + (fRef.length === 10 ? 'T12:00:00' : ''));
+  const ahora = new Date();
+  return Math.max(0, Math.floor((ahora - dRef) / 86400000));
+}
+
+function VistaLista({ proyectos, data, densidad = 'detallado', dx, onVerProyecto, onActualizarProyecto, onAbrirModalEditar, onArchivarProyecto, onRecargar }) {
   // v8.10.12: Agrupar por estado, colapsable, con totales
+  // v8.17.30: en desktop (md:) se renderiza como tabla con sticky header, sort, inline edit, acciones.
+  //           En móvil (<md) mantiene el layout de cards (más legible en pantalla chica).
   const [colapsados, setColapsados] = useState({});
+  const [guardandoId, setGuardandoId] = useState(null); // id del proyecto siendo guardado (feedback visual)
+  const [sort, setSort] = useState({ key: 'cliente', dir: 'asc' });
   const toggle = (estado) => setColapsados(c => ({ ...c, [estado]: !c[estado] }));
+  const supervisores = getSupervisores(data.personal);
+  const maestros = getMaestros(data.personal);
+  const compacto = densidad === 'compacto';
+  const rowPad = compacto ? 'py-1 px-2' : 'py-2 px-2';
 
   if (proyectos.length === 0) return <div className="text-center py-10 text-zinc-500 text-sm">No hay proyectos con estos filtros.</div>;
 
@@ -4906,16 +4971,79 @@ function VistaLista({ proyectos, data, onVerProyecto }) {
     const { porcentaje } = sistema ? calcAvanceProyecto(p, data.reportes, sistema, data.sistemas) : { porcentaje: 0 };
     const supervisor = getPersona(data.personal, p.supervisorId);
     const maestro = getPersona(data.personal, p.maestroId);
-    return { p, sistema, m2Total, valor, porcentaje, supervisor, maestro };
+    const dias = diasEnEstado(p);
+    return { p, sistema, m2Total, valor, porcentaje, supervisor, maestro, dias };
   });
 
-  // Agrupar por estado, respetando ORDEN_ESTADOS
+  // Función de comparación para sort. Trata strings (case-insensitive) y números.
+  const cmpItems = (a, b) => {
+    const k = sort.key;
+    const get = (item) => {
+      switch (k) {
+        case 'refOdoo': return (item.p.referenciaOdoo || '').toLowerCase();
+        case 'cliente': return (item.p.cliente || '').toLowerCase();
+        case 'proyecto': return (item.p.referenciaProyecto || item.p.nombre || '').toLowerCase();
+        case 'sistema': return (item.sistema?.nombre || '').toLowerCase();
+        case 'm2': return item.m2Total || 0;
+        case 'avance': return item.porcentaje || 0;
+        case 'dias': return item.dias ?? -1;
+        case 'supervisor': return (item.supervisor?.nombre || '').toLowerCase();
+        case 'maestro': return (item.maestro?.nombre || '').toLowerCase();
+        case 'valor': return item.valor || 0;
+        default: return 0;
+      }
+    };
+    const va = get(a); const vb = get(b);
+    if (va < vb) return sort.dir === 'asc' ? -1 : 1;
+    if (va > vb) return sort.dir === 'asc' ? 1 : -1;
+    return 0;
+  };
+
+  // Agrupar por estado, respetando ORDEN_ESTADOS. Cada grupo se ordena por el sort key.
   const grupos = ORDEN_ESTADOS.map(estado => {
-    const items = proyectosConDatos.filter(d => d.p.estado === estado);
+    const items = proyectosConDatos.filter(d => d.p.estado === estado).sort(cmpItems);
     const totalValor = items.reduce((s, d) => s + d.valor, 0);
     const totalM2 = items.reduce((s, d) => s + d.m2Total, 0);
     return { estado, items, totalValor, totalM2 };
   }).filter(g => g.items.length > 0);
+
+  // Helper para inline-edit. Hace stopPropagation para no abrir el detalle al cambiar el select.
+  const editarCampo = async (proy, campo, valor) => {
+    if (!onActualizarProyecto) return;
+    setGuardandoId(proy.id);
+    try {
+      await onActualizarProyecto({ ...proy, [campo]: valor || null });
+      if (onRecargar) await onRecargar();
+    } catch (e) { alert('Error guardando: ' + (e.message || e)); }
+    setGuardandoId(null);
+  };
+
+  const archivar = async (proy, e) => {
+    e.stopPropagation();
+    if (!onArchivarProyecto) return;
+    if (!confirm(`¿Archivar el proyecto "${proy.cliente}"? Ya no aparecerá en las listas, pero podemos restaurarlo después.`)) return;
+    setGuardandoId(proy.id);
+    try {
+      await onArchivarProyecto(proy.id);
+      if (onRecargar) await onRecargar();
+    } catch (err) { alert('Error: ' + (err.message || err)); }
+    setGuardandoId(null);
+  };
+
+  // Header de columna ordenable
+  const Th = ({ k, align = 'left', children, className = '' }) => {
+    const activo = sort.key === k;
+    const dirIcono = activo ? (sort.dir === 'asc' ? '▲' : '▼') : '';
+    const handle = () => setSort(s => ({ key: k, dir: s.key === k && s.dir === 'asc' ? 'desc' : 'asc' }));
+    const just = align === 'right' ? 'justify-end' : 'justify-start';
+    return (
+      <th className={`${rowPad} font-bold ${align === 'right' ? 'text-right' : 'text-left'} ${className}`}>
+        <button onClick={handle} className={`inline-flex items-center gap-1 ${just} text-[10px] uppercase tracking-wider ${activo ? 'text-red-400' : 'text-zinc-500 hover:text-zinc-300'}`}>
+          {children}{activo && <span className="text-[8px]">{dirIcono}</span>}
+        </button>
+      </th>
+    );
+  };
 
   return (
     <div className="space-y-3">
@@ -4937,42 +5065,138 @@ function VistaLista({ proyectos, data, onVerProyecto }) {
               </div>
             </button>
 
-            {!colapsado && items.map(({ p, sistema, m2Total, valor, porcentaje, supervisor, maestro }) => (
-              <button key={p.id} onClick={() => onVerProyecto(p)} className="w-full bg-zinc-900 border border-zinc-800 hover:border-red-600 p-3 text-left flex items-center gap-3">
-                <div className={`w-1 self-stretch ${estadoColor(p.estado)}`} />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <div className="text-[10px] font-mono text-zinc-500">{p.referenciaOdoo}</div>
-                  </div>
-                  <div className="font-bold text-sm truncate">{p.cliente}</div>
-                  <div className="text-[10px] text-zinc-500 truncate">{p.referenciaProyecto || p.nombre} · {sistema?.nombre} · {formatNum(m2Total)} m²</div>
-                  <div className="text-[9px] text-zinc-600 mt-0.5 flex flex-wrap gap-x-2">
-                    {supervisor && <span>👔 {supervisor.nombre.split(' ')[0]}</span>}
-                    {maestro && <span>🔨 {maestro.nombre.split(' ')[0]}</span>}
-                  </div>
+            {!colapsado && (
+              <>
+                {/* v8.17.30: DESKTOP — tabla con sticky header, sort, inline edit, acciones */}
+                <div className="hidden md:block bg-zinc-900 border border-zinc-800 overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-zinc-950 border-b border-zinc-800 sticky top-0 z-10">
+                      <tr>
+                        <th className="w-1" /> {/* color band */}
+                        <Th k="refOdoo">Ref Odoo</Th>
+                        <Th k="cliente">Cliente</Th>
+                        <Th k="proyecto">Proyecto</Th>
+                        <Th k="sistema">Sistema</Th>
+                        <Th k="m2" align="right">M²</Th>
+                        <Th k="avance" align="right">Avance</Th>
+                        <Th k="dias" align="right">Días</Th>
+                        <Th k="supervisor">Supervisor</Th>
+                        <Th k="maestro">Maestro</Th>
+                        <Th k="valor" align="right">Valor</Th>
+                        <th className={`${rowPad} text-right text-[10px] uppercase tracking-wider text-zinc-500 font-bold`}>Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items.map(({ p, sistema, m2Total, valor, porcentaje, supervisor, maestro, dias }) => {
+                        const colorDias = dias != null && dias > 14 ? 'text-orange-400' : dias != null && dias > 30 ? 'text-red-400' : 'text-zinc-500';
+                        return (
+                          <tr
+                            key={p.id}
+                            onClick={() => onVerProyecto(p)}
+                            className={`border-b border-zinc-800 hover:bg-zinc-800/40 cursor-pointer ${guardandoId === p.id ? 'opacity-60' : ''}`}
+                          >
+                            {/* v8.17.30: bandita de color del estado a la izquierda */}
+                            <td className={`${estadoColor(p.estado)} w-1`} style={{ padding: 0 }} />
+                            <td className={`${rowPad} font-mono text-[11px] text-zinc-500 whitespace-nowrap`}>{p.referenciaOdoo || '—'}</td>
+                            <td className={`${rowPad} font-bold max-w-[180px] truncate`}>{p.cliente}</td>
+                            <td className={`${rowPad} text-zinc-400 max-w-[180px] truncate text-xs`}>{p.referenciaProyecto || p.nombre || '—'}</td>
+                            <td className={`${rowPad} text-zinc-400 text-xs`}>{sistema?.nombre || '—'}</td>
+                            <td className={`${rowPad} text-right tabular-nums`}>{formatNum(m2Total)}</td>
+                            <td className={`${rowPad} text-right tabular-nums`}>
+                              <span className={porcentaje >= 75 ? 'text-green-400' : porcentaje >= 40 ? 'text-yellow-400' : 'text-zinc-500'}>
+                                {porcentaje.toFixed(0)}%
+                              </span>
+                            </td>
+                            <td className={`${rowPad} text-right tabular-nums ${colorDias} text-xs`} title="Días desde la última fecha relevante para el estado actual">{dias != null ? `${dias}d` : '—'}</td>
+                            <td className={rowPad} onClick={e => e.stopPropagation()}>
+                              <select
+                                value={p.supervisorId || ''}
+                                onChange={e => editarCampo(p, 'supervisorId', e.target.value)}
+                                className="bg-zinc-950 border border-zinc-800 hover:border-red-600 focus:border-red-600 outline-none px-1.5 py-1 text-xs text-white max-w-[140px]"
+                                title={supervisor?.nombre || 'Sin supervisor'}
+                              >
+                                <option value="">— Sin —</option>
+                                {supervisores.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+                              </select>
+                            </td>
+                            <td className={rowPad} onClick={e => e.stopPropagation()}>
+                              <select
+                                value={p.maestroId || ''}
+                                onChange={e => editarCampo(p, 'maestroId', e.target.value)}
+                                className="bg-zinc-950 border border-zinc-800 hover:border-red-600 focus:border-red-600 outline-none px-1.5 py-1 text-xs text-white max-w-[140px]"
+                                title={maestro?.nombre || 'Sin maestro'}
+                              >
+                                <option value="">— Sin —</option>
+                                {maestros.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}
+                              </select>
+                            </td>
+                            <td className={`${rowPad} text-right tabular-nums font-black text-green-400 whitespace-nowrap`}>{formatRD(valor)}</td>
+                            <td className={`${rowPad} text-right whitespace-nowrap`} onClick={e => e.stopPropagation()}>
+                              <div className="inline-flex gap-1">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); onAbrirModalEditar?.(p); }}
+                                  className="text-zinc-500 hover:text-red-400 p-1"
+                                  title="Editar (modal completo)"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={(e) => archivar(p, e)}
+                                  className="text-zinc-500 hover:text-yellow-400 p-1"
+                                  title="Archivar"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
-                {/* v8.10.14: Mini-mapa thumbnail si tiene ubicación */}
-                {p.ubicacionLat != null && p.ubicacionLng != null && (
-                  <div className="flex-shrink-0 relative overflow-hidden border border-zinc-700" style={{ width: 64, height: 64, borderRadius: 3 }}>
-                    <img
-                      src={`https://staticmap.openstreetmap.de/staticmap.php?center=${p.ubicacionLat},${p.ubicacionLng}&zoom=15&size=128x128&maptype=mapnik&markers=${p.ubicacionLat},${p.ubicacionLng},red`}
-                      alt="Mapa"
-                      width={64}
-                      height={64}
-                      style={{ objectFit: 'cover', width: '100%', height: '100%', opacity: 0.85 }}
-                      onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
-                    />
-                    <div style={{ display: 'none', width: '100%', height: '100%', background: '#27272a', alignItems: 'center', justifyContent: 'center', position: 'absolute', top: 0, left: 0 }}>
-                      <MapPin style={{ width: 16, height: 16, color: '#dc2626' }} />
-                    </div>
-                  </div>
-                )}
-                <div className="text-right flex-shrink-0">
-                  <div className="text-sm font-black text-green-400">{formatRD(valor)}</div>
-                  <div className="text-[10px] text-zinc-500">{porcentaje.toFixed(0)}%</div>
+
+                {/* v8.17.30: MOBILE — cards (layout original) */}
+                <div className="md:hidden space-y-2">
+                  {items.map(({ p, sistema, m2Total, valor, porcentaje, supervisor, maestro }) => (
+                    <button key={p.id} onClick={() => onVerProyecto(p)} className="w-full bg-zinc-900 border border-zinc-800 hover:border-red-600 p-3 text-left flex items-center gap-3">
+                      <div className={`w-1 self-stretch ${estadoColor(p.estado)}`} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <div className="text-[10px] font-mono text-zinc-500">{p.referenciaOdoo}</div>
+                        </div>
+                        <div className="font-bold text-sm truncate">{p.cliente}</div>
+                        <div className="text-[10px] text-zinc-500 truncate">{p.referenciaProyecto || p.nombre} · {sistema?.nombre} · {formatNum(m2Total)} m²</div>
+                        <div className="text-[9px] text-zinc-600 mt-0.5 flex flex-wrap gap-x-2">
+                          {supervisor && <span>👔 {supervisor.nombre.split(' ')[0]}</span>}
+                          {maestro && <span>🔨 {maestro.nombre.split(' ')[0]}</span>}
+                        </div>
+                      </div>
+                      {/* v8.10.14: Mini-mapa thumbnail si tiene ubicación */}
+                      {p.ubicacionLat != null && p.ubicacionLng != null && (
+                        <div className="flex-shrink-0 relative overflow-hidden border border-zinc-700" style={{ width: 64, height: 64, borderRadius: 3 }}>
+                          <img
+                            src={`https://staticmap.openstreetmap.de/staticmap.php?center=${p.ubicacionLat},${p.ubicacionLng}&zoom=15&size=128x128&maptype=mapnik&markers=${p.ubicacionLat},${p.ubicacionLng},red`}
+                            alt="Mapa"
+                            width={64}
+                            height={64}
+                            style={{ objectFit: 'cover', width: '100%', height: '100%', opacity: 0.85 }}
+                            onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
+                          />
+                          <div style={{ display: 'none', width: '100%', height: '100%', background: '#27272a', alignItems: 'center', justifyContent: 'center', position: 'absolute', top: 0, left: 0 }}>
+                            <MapPin style={{ width: 16, height: 16, color: '#dc2626' }} />
+                          </div>
+                        </div>
+                      )}
+                      <div className="text-right flex-shrink-0">
+                        <div className="text-sm font-black text-green-400">{formatRD(valor)}</div>
+                        <div className="text-[10px] text-zinc-500">{porcentaje.toFixed(0)}%</div>
+                      </div>
+                    </button>
+                  ))}
                 </div>
-              </button>
-            ))}
+              </>
+            )}
           </div>
         );
       })}

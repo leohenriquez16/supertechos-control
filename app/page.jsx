@@ -24,6 +24,7 @@ import {
   buildMovimientosDieta,
   dietaAplicaA,
   hospedajeAplicaA,
+  obtenerResponsableCajaDieta, // v8.17.47
   TODOS_SUB_TIPOS,
   LABEL_SUB_TIPO,
   EMOJI_SUB_TIPO,
@@ -10212,18 +10213,25 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
         condicionDia,
         condicionNota,
       });
-      // v8.17.29: registrar dieta/hospedaje marcados al cerrar la jornada.
+      // v8.17.29 / v8.17.47: registrar dieta/hospedaje marcados al cerrar jornada.
       // dietaPorPersona = { [personaId]: ['desayuno','comida','hotel',...] }
+      // CADA marca debita la caja chica del MAESTRO/SUPERVISOR responsable, no
+      // del propio team member (los ayudantes no tienen caja chica). El concepto
+      // del movimiento incluye el nombre del team member que consumió.
+      const responsable = obtenerResponsableCajaDieta(proyecto, personal);
       const movs = [];
-      Object.entries(dietaPorPersona || {}).forEach(([personaId, subTipos]) => {
+      Object.entries(dietaPorPersona || {}).forEach(([consumePersonaId, subTipos]) => {
         if (!subTipos || subTipos.length === 0) return;
+        if (!responsable) return; // sin caja no podemos registrar
+        const consumio = (personal || []).find(p => p.id === consumePersonaId);
         movs.push(...buildMovimientosDieta({
           subTipos,
-          personaId,
+          personaId: responsable.id, // ← dueño de la caja
           proyectoId: proyecto.id,
           fecha: jornadaHoy.fecha || hoy,
           configDieta,
           creadoPorId: usuario.id,
+          consumioPersonaNombre: consumio?.nombre || consumePersonaId,
         }));
       });
       for (const m of movs) {
@@ -10528,7 +10536,8 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
         )}
       </div>
 
-      {/* Modal finalizar jornada con condición del día (v8.3) + dieta/hospedaje (v8.17.29) */}
+      {/* Modal finalizar jornada con condición del día (v8.3) + dieta/hospedaje (v8.17.29)
+          v8.17.47: pasa el responsable de caja (maestro o supervisor con caja chica) */}
       {finalizarModal && (
         <ModalFinalizarJornada
           onCerrar={() => setFinalizarModal(false)}
@@ -10537,6 +10546,7 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
           proyecto={proyecto}
           personasPresentes={(jornadaHoy?.personasPresentesIds || personasSel || []).map(id => getPersona(personal, id)).filter(Boolean)}
           configDieta={configDieta}
+          responsableCaja={obtenerResponsableCajaDieta(proyecto, personal)}
         />
       )}
 
@@ -10555,18 +10565,20 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
   );
 }
 
-function ModalFinalizarJornada({ onCerrar, onConfirmar, procesando, proyecto, personasPresentes = [], configDieta }) {
+function ModalFinalizarJornada({ onCerrar, onConfirmar, procesando, proyecto, personasPresentes = [], configDieta, responsableCaja = null }) {
   const [condicion, setCondicion] = useState('normal');
   const [nota, setNota] = useState('');
   // v8.17.29: dietaPorPersona = { [personaId]: ['desayuno','comida','cena','hotel'] }
   const [dietaPorPersona, setDietaPorPersona] = useState({});
 
-  // Personas elegibles para dieta/hospedaje en ESTE proyecto (opt-in 2 niveles)
-  const elegibles = (personasPresentes || []).map(p => {
-    const conDieta = dietaAplicaA(p, proyecto);
-    const conHospedaje = hospedajeAplicaA(p, proyecto);
-    return { persona: p, conDieta, conHospedaje };
-  }).filter(e => e.conDieta || e.conHospedaje);
+  // v8.17.47: dieta/hospedaje del proyecto se debita a la caja del responsable
+  // (maestro o supervisor con cajaChicaHabilitada). Mostramos TODOS los presentes
+  // (no se filtra por persona.dietaHabilitada).
+  const conDietaProy = !!proyecto?.aplicaDieta && !!responsableCaja;
+  const conHospedajeProy = !!proyecto?.aplicaHospedaje && !!responsableCaja;
+  const elegibles = (conDietaProy || conHospedajeProy)
+    ? (personasPresentes || []).map(p => ({ persona: p, conDieta: conDietaProy, conHospedaje: conHospedajeProy }))
+    : [];
 
   const toggleSubTipo = (personaId, subTipo) => {
     setDietaPorPersona(prev => {
@@ -10641,14 +10653,24 @@ function ModalFinalizarJornada({ onCerrar, onConfirmar, procesando, proyecto, pe
           </div>
         )}
 
-        {/* v8.17.29: Dieta + Hospedaje al cerrar jornada. Solo aparece si:
-            - proyecto.aplicaDieta o proyecto.aplicaHospedaje
-            - hay al menos 1 persona presente con la habilitación correspondiente
-        */}
+        {/* v8.17.47: aviso si el proyecto tiene dieta/hospedaje pero NADIE
+            del equipo tiene caja chica habilitada para recibir el presupuesto */}
+        {(proyecto?.aplicaDieta || proyecto?.aplicaHospedaje) && !responsableCaja && (
+          <div className="border-t border-zinc-800 pt-3 text-[11px] bg-amber-900/20 border border-amber-700 p-2 text-amber-200">
+            ⚠️ Este proyecto tiene dieta/hospedaje activo pero ni el maestro ni el supervisor tienen <b>caja chica habilitada</b>. Habilita la caja a uno de ellos en Personal para poder registrar dieta del equipo.
+          </div>
+        )}
+
+        {/* v8.17.29 / v8.17.47: Dieta + Hospedaje del equipo, debitado a la
+            caja del responsable. Aparece si: proyecto.aplicaDieta o
+            proyecto.aplicaHospedaje, hay responsableCaja y hay presentes. */}
         {elegibles.length > 0 && (
           <div className="border-t border-zinc-800 pt-3">
-            <div className="text-[11px] tracking-widest uppercase text-orange-400 font-bold mb-2">🍽 Dieta + Hospedaje de hoy</div>
-            <div className="text-[10px] text-zinc-500 mb-2">Marca lo que cada persona consumió. Cada marca debita el monto fijo del presupuesto y NO requiere factura.</div>
+            <div className="text-[11px] tracking-widest uppercase text-orange-400 font-bold mb-2">🍽 Dieta + Hospedaje del equipo</div>
+            <div className="text-[10px] text-zinc-500 mb-1">Marca lo que cada miembro del equipo consumió. Cada marca debita el monto fijo del presupuesto y NO requiere factura.</div>
+            <div className="text-[10px] text-orange-300 mb-2">
+              💰 Se debita de la caja chica de: <b>{responsableCaja?.nombre || '—'}</b>
+            </div>
             <div className="space-y-2">
               {elegibles.map(({ persona, conDieta, conHospedaje }) => (
                 <div key={persona.id} className="bg-zinc-950 border border-zinc-800 p-2.5 space-y-1.5">

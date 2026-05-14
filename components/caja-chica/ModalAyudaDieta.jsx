@@ -88,21 +88,30 @@ function VistaMaestro({ configDieta }) {
 
       <Seccion titulo="¿Cómo lo reporto?" icono="📲">
         <ol className="list-decimal list-inside space-y-1.5 text-xs">
-          <li><b>Al cerrar la jornada del día</b>, marca qué comidas tomaste y si dormiste en hotel.</li>
-          <li>Cada marca <b>debita el monto fijo</b> de tu presupuesto del mes.</li>
+          <li><b>Al cerrar la jornada del día</b>, marca qué comió cada miembro del equipo y si durmieron en hotel.</li>
+          <li>Cada marca <b>debita el monto fijo</b> de la caja chica del <b>responsable</b> (típicamente el maestro). Los ayudantes no tienen caja propia.</li>
           <li><b>NO necesitas factura</b> para esos consumos — el presupuesto ya cubre.</li>
           <li>Si tienes factura de comida o hotel del interior, repórtala como gasto normal con foto. Si la categoría está marcada como "dieta" u "hospedaje", la oficina sabrá que descontó del presupuesto.</li>
         </ol>
       </Seccion>
 
-      <Seccion titulo="La diferencia es tuya (o tuya el ajuste)" icono="✨">
+      <Seccion titulo="Dieta del equipo, no individual" icono="👥">
+        <p>
+          El presupuesto de dieta/hospedaje se le da al <b>responsable de caja</b> (maestro o
+          supervisor con caja chica habilitada) y cubre al <b>equipo completo</b> asignado al
+          proyecto. Cuando marcas comidas al cerrar la jornada, se debita una vez por persona
+          desde la misma caja del responsable. El concepto del movimiento dice quién comió.
+        </p>
+      </Seccion>
+
+      <Seccion titulo="La diferencia es del responsable de caja" icono="✨">
         <div className="bg-green-950/50 border border-green-900/50 p-3 text-xs space-y-1">
-          <div className="flex items-center gap-1 text-green-300 font-bold"><CheckCircle2 className="w-3 h-3" /> Te sobró presupuesto</div>
-          <p>Si comiste por menos del presupuesto, la diferencia <b>es tuya</b>. La oficina ya te la entregó como caja chica.</p>
+          <div className="flex items-center gap-1 text-green-300 font-bold"><CheckCircle2 className="w-3 h-3" /> Sobró presupuesto</div>
+          <p>Si el equipo comió por menos del presupuesto, la diferencia <b>se queda con el responsable de caja</b>. La oficina ya le entregó esa plata.</p>
         </div>
         <div className="bg-red-950/50 border border-red-900/50 p-3 text-xs space-y-1">
-          <div className="flex items-center gap-1 text-red-300 font-bold"><AlertTriangle className="w-3 h-3" /> Te pasaste</div>
-          <p>Si tus facturas de comida exceden el presupuesto, habla con la oficina <b>antes de exigir reembolso</b>. Caso por caso: lluvia que cierra opciones baratas, cliente que extendió la jornada, etc.</p>
+          <div className="flex items-center gap-1 text-red-300 font-bold"><AlertTriangle className="w-3 h-3" /> Se pasaron</div>
+          <p>Si las facturas exceden el presupuesto, habla con la oficina <b>antes de exigir reembolso</b>. Caso por caso: lluvia que cierra opciones baratas, cliente que extendió la jornada, etc.</p>
         </div>
       </Seccion>
 
@@ -121,14 +130,15 @@ function VistaAdmin({ configDieta }) {
   const cd = configDieta || { desayunoRd: 200, comidaRd: 350, cenaRd: 350, hotelRd: 900 };
   return (
     <>
-      <Seccion titulo="Modelo opt-in en 2 niveles" icono="🔧">
+      <Seccion titulo="Configuración" icono="🔧">
         <p>
-          Tanto la persona como el proyecto deben tener el toggle activo para que la dieta/hospedaje se aplique.
+          v8.17.47 — La dieta es del <b>equipo</b>, no de cada persona individual.
+          Se debita de la caja chica del responsable (maestro o supervisor con caja).
         </p>
         <div className="bg-zinc-950 border border-zinc-800 p-2 text-xs space-y-1">
-          <div><b>Personal → toggle:</b> <code>dieta_habilitada</code> / <code>hospedaje_habilitado</code> (en cada maestro/supervisor que viaja al interior).</div>
           <div><b>Proyecto → toggle:</b> <code>aplica_dieta</code> / <code>aplica_hospedaje</code> (en proyectos del interior).</div>
-          <div className="text-[10px] text-zinc-500 italic">Si uno de los dos está en false → no se aplica nada.</div>
+          <div><b>Personal → toggle:</b> <code>caja_chica_habilitada</code> en el maestro o supervisor del proyecto (es la caja desde donde se debita).</div>
+          <div className="text-[10px] text-zinc-500 italic">El equipo completo (incluyendo ayudantes) puede recibir dieta — no hace falta que cada uno tenga su propio toggle.</div>
         </div>
       </Seccion>
 

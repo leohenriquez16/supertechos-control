@@ -59,6 +59,8 @@ import TabManoDeObra from '../components/proyecto/tabs/TabManoDeObra';
 // v8.10.8: NuevoProyecto y ModalEditarProyecto extraídos a components/proyecto/
 import NuevoProyecto from '../components/proyecto/NuevoProyecto';
 import ModalEditarProyecto from '../components/proyecto/ModalEditarProyecto';
+// v8.17.41: carta de acceso de personal al cliente
+import ModalCartaAcceso from '../components/proyecto/ModalCartaAcceso';
 // v8.10.13: VistaNomina extraída
 import VistaNomina from '../components/nomina/VistaNomina';
 // v8.12: Caja Chica + Dieta
@@ -5357,6 +5359,8 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
 // TAB INFO (v8.2) - ubicación + contacto cliente
 // ============================================================
 function TabInfo({ proyecto, clientes = [], contactos = [], documentos = [], usuario, personal = [], esAdmin, esSupervisor, onRecargar }) {
+  // v8.17.41: modal carta de acceso del personal
+  const [modalCarta, setModalCarta] = useState(false);
   const hayUbicacion = proyecto.ubicacionLat != null && proyecto.ubicacionLng != null;
   // v8.9.10: cliente y contactos derivados
   const cliente = clienteDelProyecto(proyecto, clientes);
@@ -5405,6 +5409,25 @@ function TabInfo({ proyecto, clientes = [], contactos = [], documentos = [], usu
 
   return (
     <div className="space-y-4">
+      {/* v8.17.41: Quick actions del proyecto (cartas, etc.) — solo admin */}
+      {esAdmin && (
+        <div className="bg-zinc-900 border border-zinc-800 p-3 flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <FileText className="w-4 h-4 text-red-400" />
+            <div>
+              <div className="text-xs font-bold">Carta de acceso del personal</div>
+              <div className="text-[10px] text-zinc-500">Genera un PDF con el personal asignado y envíalo al cliente.</div>
+            </div>
+          </div>
+          <button
+            onClick={() => setModalCarta(true)}
+            className="bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase px-3 py-2 flex items-center gap-1 whitespace-nowrap"
+          >
+            <FileText className="w-3 h-3" /> Generar carta
+          </button>
+        </div>
+      )}
+
       {/* Ubicación */}
       <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
         <div className="flex items-center justify-between">
@@ -5520,6 +5543,16 @@ function TabInfo({ proyecto, clientes = [], contactos = [], documentos = [], usu
         esSupervisor={esSupervisor}
         onRecargar={onRecargar}
       />
+
+      {/* v8.17.41: Modal de carta de acceso al cliente */}
+      {modalCarta && (
+        <ModalCartaAcceso
+          proyecto={proyecto}
+          data={{ personal, clientes, contactos }}
+          usuario={usuario}
+          onCerrar={() => setModalCarta(false)}
+        />
+      )}
     </div>
   );
 }

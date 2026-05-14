@@ -36,6 +36,9 @@ const EMPRESA_DATOS = {
     direccion: 'Santo Domingo, República Dominicana',
     telefono: '',
     email: '',
+    // v8.17.42: logo (en /public). Aspect ratio square (3000x3000)
+    logo: '/logo-super-techos.png',
+    logoMaxHeight: 80,
   },
   prouco: {
     razonSocial: 'PROUCO GROUP DOMINICANA, SRL',
@@ -43,6 +46,9 @@ const EMPRESA_DATOS = {
     direccion: 'Santo Domingo, República Dominicana',
     telefono: '',
     email: '',
+    // v8.17.42: logo (en /public). Aspect ratio horizontal (400x119)
+    logo: '/logo-prouco.png',
+    logoMaxHeight: 60,
   },
 };
 
@@ -512,15 +518,25 @@ function CartaTemplate({
 
   return (
     <div style={{ fontFamily: 'Times New Roman, Times, serif', fontSize: 12, lineHeight: 1.5, color: '#111' }}>
-      {/* Encabezado de la empresa */}
-      <div style={{ borderBottom: '2px solid #111', paddingBottom: 12, marginBottom: 24 }}>
-        <div style={{ fontSize: 16, fontWeight: 'bold', letterSpacing: 0.5 }}>{empresa?.razonSocial || ''}</div>
-        <div style={{ fontSize: 11, color: '#444', marginTop: 2 }}>RNC {empresa?.rnc || ''}{empresa?.direccion ? ' · ' + empresa.direccion : ''}</div>
-        {empresa?.telefono || empresa?.email ? (
-          <div style={{ fontSize: 11, color: '#444' }}>
-            {empresa?.telefono ? `Tel. ${empresa.telefono}` : ''}{empresa?.telefono && empresa?.email ? ' · ' : ''}{empresa?.email || ''}
-          </div>
-        ) : null}
+      {/* Encabezado de la empresa con logo a la izquierda y datos a la derecha */}
+      <div style={{ borderBottom: '2px solid #111', paddingBottom: 12, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 16 }}>
+        {empresa?.logo && (
+          <img
+            src={empresa.logo}
+            alt={empresa.razonSocial}
+            style={{ maxHeight: empresa.logoMaxHeight || 70, width: 'auto', objectFit: 'contain', flexShrink: 0 }}
+            crossOrigin="anonymous"
+          />
+        )}
+        <div style={{ flex: 1, textAlign: empresa?.logo ? 'right' : 'left' }}>
+          <div style={{ fontSize: 16, fontWeight: 'bold', letterSpacing: 0.5 }}>{empresa?.razonSocial || ''}</div>
+          <div style={{ fontSize: 11, color: '#444', marginTop: 2 }}>RNC {empresa?.rnc || ''}{empresa?.direccion ? ' · ' + empresa.direccion : ''}</div>
+          {empresa?.telefono || empresa?.email ? (
+            <div style={{ fontSize: 11, color: '#444' }}>
+              {empresa?.telefono ? `Tel. ${empresa.telefono}` : ''}{empresa?.telefono && empresa?.email ? ' · ' : ''}{empresa?.email || ''}
+            </div>
+          ) : null}
+        </div>
       </div>
 
       {/* Fecha + destinatario */}

@@ -52,7 +52,8 @@ const EMPRESA_DATOS = {
     email: '',
     logo: '/logo-prouco.png',
     logoMaxHeight: 48,
-    accentColor: '#7C3AED',
+    // v8.17.46: verde lumínico (lime-600) que matchea el logo. Black + green como pidió Leo.
+    accentColor: '#65A30D',
   },
 };
 

@@ -250,7 +250,7 @@ export default function ModalImportarOdoo({ sistemas, proyectos = [], onCerrar, 
                     <span className="inline-block bg-red-700 text-white text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5">SUPER TECHOS</span>
                   )}
                   {seleccionada.empresaEmisora === 'prouco' && (
-                    <span className="inline-block bg-purple-700 text-white text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5">PROUCO</span>
+                    <span className="inline-block bg-lime-600 text-black text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5">PROUCO</span>
                   )}
                   {!seleccionada.empresaEmisora && (
                     <span className="text-[10px] text-amber-400 italic">

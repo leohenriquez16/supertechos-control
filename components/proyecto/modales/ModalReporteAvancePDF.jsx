@@ -467,7 +467,8 @@ function ReportePDFContenido({ proyecto, sistema, data, tipo, fechaInicio, fecha
             Si el proyecto no tiene empresa asignada, default a super_techos. */}
         {(() => {
           const empresaKey = proyecto.empresaEjecutora === 'prouco' ? 'prouco' : 'super_techos';
-          const accent = empresaKey === 'prouco' ? '#7C3AED' : '#CC0000';
+          // v8.17.46: Prouco verde lumínico (#65A30D = lime-600), Super Techos rojo
+          const accent = empresaKey === 'prouco' ? '#65A30D' : '#CC0000';
           const logoSrc = empresaKey === 'prouco' ? '/logo-prouco.png' : '/logo-super-techos.png';
           const logoMaxH = empresaKey === 'prouco' ? 48 : 56;
           return (

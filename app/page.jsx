@@ -61,6 +61,8 @@ import NuevoProyecto from '../components/proyecto/NuevoProyecto';
 import ModalEditarProyecto from '../components/proyecto/ModalEditarProyecto';
 // v8.17.41: carta de acceso de personal al cliente
 import ModalCartaAcceso from '../components/proyecto/ModalCartaAcceso';
+// v8.17.49: propiedades de la empresa (apartamento Punta Cana, etc)
+import VistaPropiedadesEmpresa from '../components/propiedades/VistaPropiedadesEmpresa';
 // v8.10.13: VistaNomina extraída
 import VistaNomina from '../components/nomina/VistaNomina';
 // v8.12: Caja Chica + Dieta
@@ -674,6 +676,8 @@ export default function App() {
     { seccion: 'FINANZAS', items: [
       { id: 'nomina', label: 'Nómina', icon: Wallet, vista: 'nomina' },
       { id: 'cajaChica', label: 'Caja Chica', icon: CreditCard, vista: 'cajaChica' },
+      // v8.17.49: propiedades de la empresa (apartamento Punta Cana, etc) — log de estadías
+      { id: 'propiedadesEmpresa', label: 'Propiedades', icon: Building2, vista: 'propiedadesEmpresa' },
     ]},
     { seccion: 'CONFIGURACIÓN', items: [
       { id: 'sistemas', label: 'Sistemas', icon: Settings, vista: 'sistemas' },
@@ -808,6 +812,8 @@ export default function App() {
         {vista === 'autorizaciones' && esAdmin && <VistaAutorizaciones usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
         {vista === 'brigadas' && esAdmin && <VistaBrigadas data={data} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
         {vista === 'auditLog' && esAdmin && <VistaAuditLog data={data} onVolver={() => setVista('dashboard')} />}
+        {/* v8.17.49: Propiedades de la empresa (apartamento Punta Cana, etc) */}
+        {vista === 'propiedadesEmpresa' && esAdmin && <VistaPropiedadesEmpresa usuario={usuario} data={data} onVolver={() => setVista('dashboard')} />}
         {vista === 'miPerfil' && <MiPerfil usuario={usuario} persona={usuario} soloLectura={false} onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }} onGuardar={(campos) => withSync(() => db.guardarPerfil(usuario.id, campos))} />}
         {esAdmin && vista === 'personal' && <GestionPersonal usuario={usuario} personal={data.personal} data={data} onVolver={() => setVista('dashboard')} onActualizar={(p) => withSync(() => db.reemplazarPersonal(p))} onRecargar={recargar} onAbrirPerfil={(p) => { setPerfilViendo(p); setVista('perfilPersona'); }} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'perfilPersona' && perfilViendo && <MiPerfil usuario={usuario} persona={perfilViendo} soloLectura={false} onVolver={() => setVista('personal')} onGuardar={(campos) => withSync(async () => { await db.guardarPerfil(perfilViendo.id, campos); const d = await db.loadAllData(); const actualizada = d.personal.find(p => p.id === perfilViendo.id); if (actualizada) setPerfilViendo(actualizada); })} />}
@@ -10135,9 +10141,12 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
   const [verHistorial, setVerHistorial] = useState(false);
   // v8.17.29: config global de dieta para mostrar montos en el modal de cierre
   const [configDieta, setConfigDieta] = useState({ desayunoRd: 200, comidaRd: 350, cenaRd: 350, hotelRd: 900 });
+  // v8.17.49: propiedades empresa activas para mostrar botones de estadía en el modal
+  const [propiedadesEmpresa, setPropiedadesEmpresa] = useState([]);
   useEffect(() => {
     (async () => {
       try { setConfigDieta(await db.obtenerConfigDieta()); } catch (e) { /* defaults */ }
+      try { setPropiedadesEmpresa(await db.listarPropiedadesEmpresa({ soloActivas: true })); } catch (e) { /* vacío */ }
     })();
   }, []);
 
@@ -10194,7 +10203,7 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
     setProcesando(null);
   };
 
-  const finalizarJornada = async (condicionDia = 'normal', condicionNota = '', dietaPorPersona = {}) => {
+  const finalizarJornada = async (condicionDia = 'normal', condicionNota = '', dietaPorPersona = {}, propiedadPorPersona = {}) => {
     if (!jornadaHoy) return;
     setProcesando('fin');
     const ubi = await obtenerUbicacion();
@@ -10229,6 +10238,21 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
       for (const m of movs) {
         try { await db.crearMovimientoCajaChica(m); }
         catch (e) { console.warn('No se pudo crear movimiento de dieta:', e?.message); }
+      }
+      // v8.17.49: registrar estadías en propiedades de la empresa (apartamento Punta Cana).
+      // propiedadPorPersona = { [personaId]: propiedadId }
+      const fechaJornada = jornadaHoy.fecha || hoy;
+      for (const [personaId, propiedadId] of Object.entries(propiedadPorPersona || {})) {
+        if (!propiedadId) continue;
+        try {
+          await db.crearEstadiaEmpresa({
+            propiedadId,
+            personaId,
+            proyectoId: proyecto.id,
+            fecha: fechaJornada,
+            creadoPorId: usuario.id,
+          });
+        } catch (e) { console.warn('No se pudo crear estadía:', e?.message); }
       }
       setFinalizarModal(false);
       await recargar();
@@ -10528,7 +10552,8 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
         )}
       </div>
 
-      {/* Modal finalizar jornada con condición del día (v8.3) + dieta/hospedaje (v8.17.29) */}
+      {/* Modal finalizar jornada con condición del día (v8.3) + dieta/hospedaje (v8.17.29)
+          + propiedades empresa (v8.17.49) */}
       {finalizarModal && (
         <ModalFinalizarJornada
           onCerrar={() => setFinalizarModal(false)}
@@ -10537,6 +10562,7 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
           proyecto={proyecto}
           personasPresentes={(jornadaHoy?.personasPresentesIds || personasSel || []).map(id => getPersona(personal, id)).filter(Boolean)}
           configDieta={configDieta}
+          propiedadesEmpresa={propiedadesEmpresa}
         />
       )}
 
@@ -10555,11 +10581,14 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
   );
 }
 
-function ModalFinalizarJornada({ onCerrar, onConfirmar, procesando, proyecto, personasPresentes = [], configDieta }) {
+function ModalFinalizarJornada({ onCerrar, onConfirmar, procesando, proyecto, personasPresentes = [], configDieta, propiedadesEmpresa = [] }) {
   const [condicion, setCondicion] = useState('normal');
   const [nota, setNota] = useState('');
   // v8.17.29: dietaPorPersona = { [personaId]: ['desayuno','comida','cena','hotel'] }
   const [dietaPorPersona, setDietaPorPersona] = useState({});
+  // v8.17.49: dónde durmió cada persona — si eligen propiedad, NO se marca Hotel y NO se debita caja.
+  // estructura: { [personaId]: propiedadId }
+  const [propiedadPorPersona, setPropiedadPorPersona] = useState({});
 
   // Personas elegibles para dieta/hospedaje en ESTE proyecto (opt-in 2 niveles)
   const elegibles = (personasPresentes || []).map(p => {
@@ -10575,12 +10604,37 @@ function ModalFinalizarJornada({ onCerrar, onConfirmar, procesando, proyecto, pe
       const nuevo = ya ? actuales.filter(x => x !== subTipo) : [...actuales, subTipo];
       return { ...prev, [personaId]: nuevo };
     });
+    // v8.17.49: Hotel y Apartamento son mutuamente excluyentes (no dormiste en los dos).
+    if (subTipo === 'hotel') {
+      setPropiedadPorPersona(prev => {
+        const next = { ...prev };
+        delete next[personaId];
+        return next;
+      });
+    }
+  };
+
+  // v8.17.49: toggle de propiedad. Si elige propiedad, quita Hotel del array de subTipos.
+  const togglePropiedad = (personaId, propiedadId) => {
+    setPropiedadPorPersona(prev => {
+      const yaTiene = prev[personaId] === propiedadId;
+      const next = { ...prev };
+      if (yaTiene) delete next[personaId]; else next[personaId] = propiedadId;
+      return next;
+    });
+    // Si activó una propiedad, quitar Hotel del dietaPorPersona del mismo
+    setDietaPorPersona(prev => {
+      const actuales = prev[personaId] || [];
+      if (!actuales.includes('hotel')) return prev;
+      return { ...prev, [personaId]: actuales.filter(x => x !== 'hotel') };
+    });
   };
 
   const totalDietaEstimado = elegibles.reduce((acc, e) => {
     const sts = dietaPorPersona[e.persona.id] || [];
     return acc + sts.reduce((s, st) => s + montoDelSubTipo(st, configDieta), 0);
   }, 0);
+  const totalEstadias = Object.keys(propiedadPorPersona).length;
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-y-auto">
@@ -10672,14 +10726,41 @@ function ModalFinalizarJornada({ onCerrar, onConfirmar, procesando, proyecto, pe
                         </button>
                       );
                     })}
+                    {/* v8.17.49: botones de propiedades de la empresa (apartamento Punta Cana, etc).
+                        Si conHospedaje y hay propiedades activas → opciones gratis que excluyen al Hotel. */}
+                    {conHospedaje && propiedadesEmpresa.map(prop => {
+                      const activo = propiedadPorPersona[persona.id] === prop.id;
+                      return (
+                        <button
+                          key={prop.id}
+                          type="button"
+                          onClick={() => togglePropiedad(persona.id, prop.id)}
+                          className={`flex flex-col items-center text-[10px] font-bold uppercase px-2 py-1.5 border-2 ${activo ? 'bg-green-700 border-green-500 text-white' : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:border-zinc-600'}`}
+                          title={`Estadía gratis en propiedad de la empresa: ${prop.nombre}`}
+                        >
+                          <span>🏠 {prop.nombre}</span>
+                          <span className={`text-[9px] ${activo ? 'opacity-80' : 'text-zinc-500'}`}>GRATIS</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               ))}
             </div>
-            {totalDietaEstimado > 0 && (
-              <div className="mt-2 text-[10px] bg-zinc-950 border border-orange-900/50 p-2 flex justify-between">
-                <span className="text-zinc-400">Total a debitar del presupuesto:</span>
-                <span className="text-orange-300 font-bold">RD$ {totalDietaEstimado.toLocaleString()}</span>
+            {(totalDietaEstimado > 0 || totalEstadias > 0) && (
+              <div className="mt-2 text-[10px] space-y-1">
+                {totalDietaEstimado > 0 && (
+                  <div className="bg-zinc-950 border border-orange-900/50 p-2 flex justify-between">
+                    <span className="text-zinc-400">Total a debitar del presupuesto:</span>
+                    <span className="text-orange-300 font-bold">RD$ {totalDietaEstimado.toLocaleString()}</span>
+                  </div>
+                )}
+                {totalEstadias > 0 && (
+                  <div className="bg-zinc-950 border border-green-900/50 p-2 flex justify-between">
+                    <span className="text-zinc-400">Estadías gratis (propiedades empresa):</span>
+                    <span className="text-green-400 font-bold">{totalEstadias} {totalEstadias === 1 ? 'persona' : 'personas'}</span>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -10688,7 +10769,7 @@ function ModalFinalizarJornada({ onCerrar, onConfirmar, procesando, proyecto, pe
         <div className="flex gap-2 pt-1">
           <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button>
           <button
-            onClick={() => onConfirmar(condicion, nota, dietaPorPersona)}
+            onClick={() => onConfirmar(condicion, nota, dietaPorPersona, propiedadPorPersona)}
             disabled={procesando || (condicion === 'otro' && !nota.trim())}
             className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-3 flex items-center justify-center gap-2"
           >

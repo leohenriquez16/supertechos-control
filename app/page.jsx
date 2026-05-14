@@ -10667,7 +10667,9 @@ function ModalFinalizarJornada({ onCerrar, onConfirmar, procesando, proyecto, pe
         {elegibles.length > 0 && (
           <div className="border-t border-zinc-800 pt-3">
             <div className="text-[11px] tracking-widest uppercase text-orange-400 font-bold mb-2">🍽 Dieta + Hospedaje del equipo</div>
-            <div className="text-[10px] text-zinc-500 mb-1">Marca lo que cada miembro del equipo consumió. Cada marca debita el monto fijo del presupuesto y NO requiere factura.</div>
+            <div className="text-[10px] text-zinc-500 mb-1">
+              Marca lo que cada miembro del equipo consumió. <b className="text-zinc-300">Solo aparecen los presentes en la jornada de hoy</b> — si alguien no asistió, no recibe dieta.
+            </div>
             <div className="text-[10px] text-orange-300 mb-2">
               💰 Se debita de la caja chica de: <b>{responsableCaja?.nombre || '—'}</b>
             </div>

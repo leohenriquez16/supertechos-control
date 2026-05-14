@@ -32,23 +32,27 @@ const cargarScriptCDN = (src) => new Promise((resolve, reject) => {
 const EMPRESA_DATOS = {
   super_techos: {
     razonSocial: 'LH SUPER TECHOS, SRL',
+    nombreCorto: 'SUPER TECHOS',
+    tagline: 'IMPERMEABILIZACIÓN PROFESIONAL',
     rnc: '130774331',
     direccion: 'Santo Domingo, República Dominicana',
     telefono: '',
     email: '',
-    // v8.17.42: logo (en /public). Aspect ratio square (3000x3000)
     logo: '/logo-super-techos.png',
-    logoMaxHeight: 80,
+    logoMaxHeight: 56,
+    accentColor: '#CC0000',
   },
   prouco: {
     razonSocial: 'PROUCO GROUP DOMINICANA, SRL',
+    nombreCorto: 'PROUCO',
+    tagline: 'GROUP DOMINICANA',
     rnc: '131515541',
     direccion: 'Santo Domingo, República Dominicana',
     telefono: '',
     email: '',
-    // v8.17.42: logo (en /public). Aspect ratio horizontal (400x119)
     logo: '/logo-prouco.png',
-    logoMaxHeight: 60,
+    logoMaxHeight: 48,
+    accentColor: '#7C3AED',
   },
 };
 
@@ -481,7 +485,7 @@ export default function ModalCartaAcceso({ proyecto, data, usuario, onCerrar }) 
           {/* ============ PREVIEW ============ */}
           <div className="lg:max-h-[70vh] lg:overflow-y-auto bg-zinc-950 p-3">
             <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-2">Vista previa</div>
-            <div className="bg-white text-black p-10 mx-auto" style={{ maxWidth: 816 }} ref={cartaRef}>
+            <div className="bg-white text-black mx-auto" style={{ maxWidth: 816 }} ref={cartaRef}>
               <CartaTemplate
                 empresa={empresaDatos}
                 clienteNombre={proyecto.cliente || cliente?.nombre}
@@ -516,101 +520,103 @@ function CartaTemplate({
   const nombreContacto = contacto?.nombre || contactoCustomNombre || '';
   const cargoContacto = contacto?.cargo || '';
 
+  const accent = empresa?.accentColor || '#CC0000';
+
   return (
-    <div style={{ fontFamily: 'Times New Roman, Times, serif', fontSize: 12, lineHeight: 1.5, color: '#111' }}>
-      {/* Encabezado de la empresa con logo a la izquierda y datos a la derecha */}
-      <div style={{ borderBottom: '2px solid #111', paddingBottom: 12, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 16 }}>
-        {empresa?.logo && (
-          <img
-            src={empresa.logo}
-            alt={empresa.razonSocial}
-            style={{ maxHeight: empresa.logoMaxHeight || 70, width: 'auto', objectFit: 'contain', flexShrink: 0 }}
-            crossOrigin="anonymous"
-          />
-        )}
-        <div style={{ flex: 1, textAlign: empresa?.logo ? 'right' : 'left' }}>
-          <div style={{ fontSize: 16, fontWeight: 'bold', letterSpacing: 0.5 }}>{empresa?.razonSocial || ''}</div>
-          <div style={{ fontSize: 11, color: '#444', marginTop: 2 }}>RNC {empresa?.rnc || ''}{empresa?.direccion ? ' · ' + empresa.direccion : ''}</div>
-          {empresa?.telefono || empresa?.email ? (
-            <div style={{ fontSize: 11, color: '#444' }}>
-              {empresa?.telefono ? `Tel. ${empresa.telefono}` : ''}{empresa?.telefono && empresa?.email ? ' · ' : ''}{empresa?.email || ''}
-            </div>
-          ) : null}
+    <div style={{ background: '#fff', color: '#27272a', fontFamily: "'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", fontSize: '12px' }}>
+      {/* Letterhead — mismo estilo que el reporte de avance */}
+      <div style={{ padding: '28px 36px 24px', borderBottom: `3px solid ${accent}`, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, flex: 1, minWidth: 0 }}>
+          {empresa?.logo && (
+            <img
+              src={empresa.logo}
+              alt={empresa.razonSocial}
+              style={{ maxHeight: empresa.logoMaxHeight || 56, width: 'auto', objectFit: 'contain', flexShrink: 0 }}
+              crossOrigin="anonymous"
+            />
+          )}
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ color: '#71717a', fontSize: '9px', letterSpacing: '1.5px' }}>CARTA DE ACCESO</div>
+          <div style={{ color: '#27272a', fontSize: '13px', fontWeight: 500, marginTop: '3px' }}>
+            {formatearFechaLarga(fecha)}
+          </div>
         </div>
       </div>
 
-      {/* Fecha + destinatario */}
-      <div style={{ marginBottom: 24, textAlign: 'right' }}>
-        Santo Domingo, {formatearFechaLarga(fecha)}
-      </div>
+      {/* Cuerpo de la carta */}
+      <div style={{ padding: '28px 36px 36px' }}>
+        {/* Destinatario */}
+        <div style={{ marginBottom: 22 }}>
+          <div style={{ color: '#71717a', fontSize: '9px', letterSpacing: '1.5px', marginBottom: 4 }}>DIRIGIDA A</div>
+          <div style={{ fontSize: 16, fontWeight: 600, lineHeight: 1.25, color: '#18181b' }}>{(clienteNombre || '—').toUpperCase()}</div>
+          {clienteRNC && <div style={{ fontSize: 11, color: '#71717a', marginTop: 2 }}>RNC {clienteRNC}</div>}
+          {nombreContacto && (
+            <div style={{ marginTop: 6, fontSize: 12, color: '#27272a' }}>
+              <span style={{ color: '#71717a' }}>Atención:</span> <strong>{nombreContacto}</strong>{cargoContacto ? ` — ${cargoContacto}` : ''}
+            </div>
+          )}
+          <div style={{ marginTop: 10, fontSize: 11, color: '#71717a', paddingTop: 10, borderTop: '1px solid #e4e4e7' }}>
+            <span style={{ letterSpacing: '1px' }}>REF.</span> Proyecto <strong style={{ color: '#27272a' }}>{proyectoRef || '—'}</strong>
+            {proyectoDireccion ? <span> · {proyectoDireccion}</span> : null}
+          </div>
+        </div>
 
-      <div style={{ marginBottom: 24 }}>
-        <div><strong>Señores</strong></div>
-        <div style={{ fontWeight: 'bold' }}>{(clienteNombre || '').toUpperCase()}</div>
-        {clienteRNC && <div style={{ fontSize: 11, color: '#444' }}>RNC {clienteRNC}</div>}
-        {nombreContacto && (
-          <div style={{ marginTop: 4 }}>
-            <strong>Atención:</strong> {nombreContacto}{cargoContacto ? ` — ${cargoContacto}` : ''}
+        {/* Saludo + cuerpo */}
+        <div style={{ marginBottom: 14, fontSize: 12 }}>Estimados señores,</div>
+        <p style={{ margin: '0 0 14px 0', textAlign: 'justify', lineHeight: 1.55, fontSize: 12 }}>
+          Por medio de la presente, le solicitamos autorización para que el siguiente
+          personal de nuestra empresa, <strong>{empresa?.razonSocial}</strong>, pueda
+          acceder a las instalaciones del proyecto <strong>{proyectoRef || ''}</strong>
+          {proyectoDireccion ? <> ubicado en <strong>{proyectoDireccion}</strong></> : null}
+          {' '}a fin de realizar los trabajos contratados.
+        </p>
+
+        {/* Tabla del personal — estilo idéntico al reporte (bordes ligeros, header gris) */}
+        <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 8, marginBottom: 16, fontSize: 11 }}>
+          <thead>
+            <tr style={{ background: '#fafafa' }}>
+              <th style={{ border: '1px solid #e4e4e7', padding: '8px 10px', textAlign: 'left', fontSize: 9, letterSpacing: '1.5px', color: '#71717a', width: 32 }}>#</th>
+              <th style={{ border: '1px solid #e4e4e7', padding: '8px 10px', textAlign: 'left', fontSize: 9, letterSpacing: '1.5px', color: '#71717a' }}>NOMBRE COMPLETO</th>
+              <th style={{ border: '1px solid #e4e4e7', padding: '8px 10px', textAlign: 'left', fontSize: 9, letterSpacing: '1.5px', color: '#71717a', width: 140 }}>CÉDULA</th>
+              <th style={{ border: '1px solid #e4e4e7', padding: '8px 10px', textAlign: 'left', fontSize: 9, letterSpacing: '1.5px', color: '#71717a', width: 120 }}>ROL</th>
+            </tr>
+          </thead>
+          <tbody>
+            {personas.map((p, i) => (
+              <tr key={p.id}>
+                <td style={{ border: '1px solid #e4e4e7', padding: '8px 10px', color: '#71717a' }}>{i + 1}</td>
+                <td style={{ border: '1px solid #e4e4e7', padding: '8px 10px', color: '#27272a', fontWeight: 500 }}>{p.persona.nombre}</td>
+                <td style={{ border: '1px solid #e4e4e7', padding: '8px 10px', color: '#27272a', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{p.persona.cedulaNumero || '—'}</td>
+                <td style={{ border: '1px solid #e4e4e7', padding: '8px 10px', color: '#27272a' }}>{p.rolEnProyecto}</td>
+              </tr>
+            ))}
+            {personas.length === 0 && (
+              <tr><td colSpan={4} style={{ border: '1px solid #e4e4e7', padding: 10, textAlign: 'center', color: '#a1a1aa', fontStyle: 'italic' }}>Sin personal seleccionado</td></tr>
+            )}
+          </tbody>
+        </table>
+
+        {vigenciaHasta && (
+          <div style={{ marginBottom: 14, fontSize: 11, color: '#71717a', background: '#fafafa', padding: '10px 12px', border: '1px solid #e4e4e7' }}>
+            <strong style={{ color: '#27272a' }}>Vigencia de esta autorización:</strong> hasta el {formatearFechaLarga(vigenciaHasta)}.
           </div>
         )}
-        <div style={{ marginTop: 8, fontSize: 11, color: '#444' }}>
-          <strong>Ref.</strong> Proyecto {proyectoRef}{proyectoDireccion ? ` · ${proyectoDireccion}` : ''}
+
+        <p style={{ margin: '0 0 14px 0', textAlign: 'justify', lineHeight: 1.55, fontSize: 12 }}>
+          Agradecemos su colaboración y quedamos atentos a cualquier información adicional
+          que requieran. Sin otro particular,
+        </p>
+
+        <div style={{ marginTop: 28, marginBottom: 4, fontSize: 12 }}>Atentamente,</div>
+
+        {/* Espacio para firma */}
+        <div style={{ marginTop: 56, marginBottom: 4, borderBottom: '1px solid #27272a', width: 260 }} />
+        <div style={{ fontWeight: 600, fontSize: 12, color: '#18181b' }}>{firmanteNombre || ' '}</div>
+        {firmanteCargo && <div style={{ fontSize: 11, color: '#71717a' }}>{firmanteCargo}</div>}
+        <div style={{ fontSize: 10, color: '#a1a1aa', marginTop: 4, letterSpacing: '0.5px' }}>
+          {empresa?.razonSocial} · RNC {empresa?.rnc}{empresa?.direccion ? ` · ${empresa.direccion}` : ''}
         </div>
-      </div>
-
-      <div style={{ marginBottom: 16 }}>Estimados señores,</div>
-
-      <div style={{ marginBottom: 16, textAlign: 'justify' }}>
-        Por medio de la presente, le solicitamos autorización para que el siguiente personal de
-        nuestra empresa, <strong>{empresa?.razonSocial}</strong>, pueda acceder a las
-        instalaciones del proyecto <strong>{proyectoRef || ''}</strong> a fin de realizar los
-        trabajos contratados.
-      </div>
-
-      {/* Tabla del personal */}
-      <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 16, fontSize: 11 }}>
-        <thead>
-          <tr style={{ background: '#f0f0f0' }}>
-            <th style={{ border: '1px solid #999', padding: '6px 8px', textAlign: 'left', width: 32 }}>#</th>
-            <th style={{ border: '1px solid #999', padding: '6px 8px', textAlign: 'left' }}>Nombre completo</th>
-            <th style={{ border: '1px solid #999', padding: '6px 8px', textAlign: 'left', width: 140 }}>Cédula</th>
-            <th style={{ border: '1px solid #999', padding: '6px 8px', textAlign: 'left', width: 120 }}>Rol</th>
-          </tr>
-        </thead>
-        <tbody>
-          {personas.map((p, i) => (
-            <tr key={p.id}>
-              <td style={{ border: '1px solid #999', padding: '6px 8px' }}>{i + 1}</td>
-              <td style={{ border: '1px solid #999', padding: '6px 8px' }}>{p.persona.nombre}</td>
-              <td style={{ border: '1px solid #999', padding: '6px 8px' }}>{p.persona.cedulaNumero || '—'}</td>
-              <td style={{ border: '1px solid #999', padding: '6px 8px' }}>{p.rolEnProyecto}</td>
-            </tr>
-          ))}
-          {personas.length === 0 && (
-            <tr><td colSpan={4} style={{ border: '1px solid #999', padding: 8, textAlign: 'center', color: '#888', fontStyle: 'italic' }}>Sin personal seleccionado</td></tr>
-          )}
-        </tbody>
-      </table>
-
-      {vigenciaHasta && (
-        <div style={{ marginBottom: 16, fontSize: 11, color: '#444' }}>
-          <strong>Vigencia de esta autorización:</strong> hasta el {formatearFechaLarga(vigenciaHasta)}.
-        </div>
-      )}
-
-      <div style={{ marginBottom: 16, textAlign: 'justify' }}>
-        Agradecemos su colaboración y quedamos atentos a cualquier información adicional que requieran.
-        Sin otro particular,
-      </div>
-
-      <div style={{ marginTop: 32, marginBottom: 4 }}>Atentamente,</div>
-
-      {/* Espacio para firma */}
-      <div style={{ marginTop: 48, marginBottom: 4, borderBottom: '1px solid #111', width: 240 }} />
-      <div style={{ fontWeight: 'bold' }}>{firmanteNombre || ' '}</div>
-      {firmanteCargo && <div style={{ fontSize: 11, color: '#444' }}>{firmanteCargo}</div>}
-      <div style={{ fontSize: 11, color: '#444', marginTop: 2 }}>
-        {empresa?.razonSocial} · RNC {empresa?.rnc}
       </div>
     </div>
   );

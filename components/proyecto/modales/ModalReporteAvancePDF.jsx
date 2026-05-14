@@ -463,24 +463,32 @@ function ReportePDFContenido({ proyecto, sistema, data, tipo, fechaInicio, fecha
       `}</style>
       <div style={{ maxWidth: '720px', margin: '0 auto', fontFamily: "'Inter', system-ui, sans-serif", fontSize: '12px', color: '#27272a' }}>
 
-        {/* Header */}
-        <div style={{ padding: '28px 36px 24px', borderBottom: '3px solid #CC0000', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-            <div style={{ width: '52px', height: '52px', background: '#CC0000', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: '20px', transform: 'skewX(-12deg)' }}>
-              <span style={{ transform: 'skewX(12deg)', display: 'block' }}>ST</span>
+        {/* Header — v8.17.44: logo PNG real según empresa ejecutora del proyecto.
+            Si el proyecto no tiene empresa asignada, default a super_techos. */}
+        {(() => {
+          const empresaKey = proyecto.empresaEjecutora === 'prouco' ? 'prouco' : 'super_techos';
+          const accent = empresaKey === 'prouco' ? '#7C3AED' : '#CC0000';
+          const logoSrc = empresaKey === 'prouco' ? '/logo-prouco.png' : '/logo-super-techos.png';
+          const logoMaxH = empresaKey === 'prouco' ? 48 : 56;
+          return (
+            <div style={{ padding: '28px 36px 24px', borderBottom: `3px solid ${accent}`, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14, flex: 1, minWidth: 0 }}>
+                <img
+                  src={logoSrc}
+                  alt={empresaKey === 'prouco' ? 'PROUCO' : 'Super Techos'}
+                  style={{ maxHeight: logoMaxH, width: 'auto', objectFit: 'contain', flexShrink: 0 }}
+                  crossOrigin="anonymous"
+                />
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ color: '#71717a', fontSize: '9px', letterSpacing: '1.5px' }}>REPORTE {tipoLabel.toUpperCase()}</div>
+                <div style={{ color: '#27272a', fontSize: '13px', fontWeight: 500, marginTop: '3px' }}>
+                  {formatFechaCorta(fechaInicio)} — {formatFechaCorta(fechaFin)}
+                </div>
+              </div>
             </div>
-            <div>
-              <div style={{ color: '#18181b', fontWeight: 700, fontSize: '18px', lineHeight: 1 }}>SUPER TECHOS</div>
-              <div style={{ color: '#71717a', fontSize: '10px', letterSpacing: '1.5px', marginTop: '3px' }}>IMPERMEABILIZACIÓN PROFESIONAL</div>
-            </div>
-          </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ color: '#71717a', fontSize: '9px', letterSpacing: '1.5px' }}>REPORTE {tipoLabel.toUpperCase()}</div>
-            <div style={{ color: '#27272a', fontSize: '13px', fontWeight: 500, marginTop: '3px' }}>
-              {formatFechaCorta(fechaInicio)} — {formatFechaCorta(fechaFin)}
-            </div>
-          </div>
-        </div>
+          );
+        })()}
 
         {/* Datos del proyecto */}
         <div style={{ padding: '22px 36px', background: '#fafafa', borderBottom: '1px solid #e4e4e7' }}>

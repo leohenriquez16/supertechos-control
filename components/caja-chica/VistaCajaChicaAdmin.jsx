@@ -1449,7 +1449,9 @@ function TablaMovimientos({ movimientos: movsTabla, todosMovimientos, data, sort
           // - el admin habilitó modo edición en esta fila (botón ✏️) o el toggle global.
           // Para entregas no aplica.
           const puedeEditarProy = m.tipo !== 'entrega' && m.status === 'pendiente_revision' && isEditing(m.id);
-          const puedeEditarEmpresa = m.tipo === 'gasto_factura' && !sinFactura && m.status === 'pendiente_revision' && isEditing(m.id);
+          // v8.17.40: permitir editar empresa receptora aunque la factura sea "sin factura".
+          // El admin igual puede querer atribuirla a Super Techos o Prouco contablemente.
+          const puedeEditarEmpresa = m.tipo === 'gasto_factura' && m.status === 'pendiente_revision' && isEditing(m.id);
           // v8.17.36: ocultar el ✏️ per-row cuando el toggle global está activo (redundante)
           const puedeMostrarBotonEditar = !editAllMode && m.tipo !== 'entrega' && m.status === 'pendiente_revision';
 
@@ -1735,7 +1737,8 @@ function PanelVisorFactura({ movimientos, todosMovimientos, movId, setMovId, dat
           {mov.tipo === 'gasto_factura' && (
             <div>
               <div className="text-[9px] uppercase tracking-widest text-zinc-500 mb-0.5">Empresa receptora</div>
-              {editMode && !sinFactura ? (
+              {/* v8.17.40: permitir editar aunque sea sin_factura — el admin puede querer atribuir contablemente */}
+              {editMode ? (
                 <select
                   value={mov.empresaReceptora || ''}
                   onChange={e => { onEditarCampo(mov, { empresaReceptora: e.target.value || null }); setEditMode(false); }}

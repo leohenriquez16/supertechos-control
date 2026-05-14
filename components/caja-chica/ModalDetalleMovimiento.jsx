@@ -499,27 +499,30 @@ export default function ModalDetalleMovimiento({
               </Field>
             </div>
 
-            {/* v8.17.25: Empresa receptora (cliente en la factura) — clave para el 606 */}
-            {!movimiento.datosIA?.sin_factura && (
-              <Field label="Empresa receptora · ¿a nombre de quién está esta factura?">
-                <select
-                  value={campos.empresaReceptora || ''}
-                  onChange={e => set('empresaReceptora', e.target.value)}
-                  disabled={soloLectura}
-                  className={`w-full bg-zinc-950 border ${campos.empresaReceptora ? 'border-zinc-700' : 'border-amber-700'} focus:border-red-600 outline-none px-2 py-2 text-white text-sm ${soloLectura ? 'cursor-not-allowed opacity-60' : ''}`}
-                >
-                  <option value="">— Sin asignar — (admin debe elegir)</option>
-                  {Object.entries(EMPRESAS_RECEPTORAS).map(([key, meta]) => (
-                    <option key={key} value={key}>{meta.label} (RNC {meta.rnc})</option>
-                  ))}
-                </select>
-                {!campos.empresaReceptora && !soloLectura && (
-                  <div className="text-[10px] text-amber-400 mt-0.5 flex items-center gap-1">
-                    <AlertCircle className="w-3 h-3" /> Asigna a Prouco o Super Techos para que el 606 salga bien.
-                  </div>
-                )}
-              </Field>
-            )}
+            {/* v8.17.25: Empresa receptora (cliente en la factura) — clave para el 606
+                v8.17.40: mostrar también para sin_factura por si el admin quiere
+                atribuir el gasto a una empresa contablemente, aunque no haya CF. */}
+            <Field label="Empresa receptora · ¿a nombre de quién está esta factura?">
+              <select
+                value={campos.empresaReceptora || ''}
+                onChange={e => set('empresaReceptora', e.target.value)}
+                disabled={soloLectura}
+                className={`w-full bg-zinc-950 border ${campos.empresaReceptora ? 'border-zinc-700' : 'border-amber-700'} focus:border-red-600 outline-none px-2 py-2 text-white text-sm ${soloLectura ? 'cursor-not-allowed opacity-60' : ''}`}
+              >
+                <option value="">— Sin asignar — (admin debe elegir)</option>
+                {Object.entries(EMPRESAS_RECEPTORAS).map(([key, meta]) => (
+                  <option key={key} value={key}>{meta.label} (RNC {meta.rnc})</option>
+                ))}
+              </select>
+              {!campos.empresaReceptora && !soloLectura && (
+                <div className="text-[10px] text-amber-400 mt-0.5 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" /> Asigna a Prouco o Super Techos para que el 606 salga bien.
+                </div>
+              )}
+              {movimiento.datosIA?.sin_factura && (
+                <div className="text-[10px] text-zinc-500 mt-0.5 italic">Sin comprobante fiscal, pero igual puede atribuirse a una empresa.</div>
+              )}
+            </Field>
 
             <Field label="Proveedor (razón social)">
               <input

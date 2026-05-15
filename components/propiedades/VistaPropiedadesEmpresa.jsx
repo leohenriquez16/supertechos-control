@@ -508,6 +508,7 @@ function ModalReservaRango({ usuario, data, propiedades, onCerrar, onGuardado })
   const [fechaDesde, setFechaDesde] = useState(fechaIsoHoy());
   const [fechaHasta, setFechaHasta] = useState(fechaIsoHoy());
   const [personasSel, setPersonasSel] = useState([]);
+  const [busquedaPersonas, setBusquedaPersonas] = useState(''); // v8.17.51: search personal
   const [proyectoId, setProyectoId] = useState('');
   const [nota, setNota] = useState('');
   const [guardando, setGuardando] = useState(false);
@@ -542,6 +543,14 @@ function ModalReservaRango({ usuario, data, propiedades, onCerrar, onGuardado })
   };
 
   const personasOrden = (data.personal || []).slice().sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+  // v8.17.51: filtro de búsqueda — match por nombre o rol
+  const personasFiltradas = personasOrden.filter(p => {
+    if (!busquedaPersonas.trim()) return true;
+    const q = busquedaPersonas.toLowerCase().trim();
+    const nombre = (p.nombre || '').toLowerCase();
+    const roles = (p.roles || []).join(' ').toLowerCase();
+    return nombre.includes(q) || roles.includes(q);
+  });
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-y-auto">
@@ -563,15 +572,44 @@ function ModalReservaRango({ usuario, data, propiedades, onCerrar, onGuardado })
           <Campo label="Hasta"><Input type="date" value={fechaHasta} onChange={v => setFechaHasta(v)} /></Campo>
         </div>
 
-        <Campo label={`Personas (${personasSel.length})`}>
-          <div className="max-h-48 overflow-y-auto bg-zinc-950 border border-zinc-800 p-2 space-y-1">
-            {personasOrden.map(p => (
-              <label key={p.id} className="flex items-center gap-2 cursor-pointer hover:bg-zinc-900 px-1 py-0.5">
-                <input type="checkbox" checked={personasSel.includes(p.id)} onChange={() => togglePersona(p.id)} className="w-3.5 h-3.5 accent-red-600" />
-                <span className="text-xs">{p.nombre}</span>
-                <span className="text-[9px] text-zinc-500 ml-auto">{(p.roles || []).join('·')}</span>
-              </label>
-            ))}
+        <Campo label={`Personas (${personasSel.length} seleccionada${personasSel.length !== 1 ? 's' : ''})`}>
+          <div className="bg-zinc-950 border border-zinc-800 p-2 space-y-1">
+            {/* v8.17.51: buscador + acciones rápidas */}
+            <div className="flex items-center gap-1 px-1 pb-1 border-b border-zinc-800">
+              <span className="text-zinc-500">🔍</span>
+              <input
+                type="text"
+                value={busquedaPersonas}
+                onChange={e => setBusquedaPersonas(e.target.value)}
+                placeholder="Buscar por nombre o rol…"
+                className="flex-1 bg-transparent outline-none text-xs text-white placeholder:text-zinc-600"
+              />
+              {busquedaPersonas && (
+                <button onClick={() => setBusquedaPersonas('')} className="text-zinc-500 hover:text-white text-[10px]">
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+              {personasSel.length > 0 && (
+                <button
+                  onClick={() => setPersonasSel([])}
+                  className="text-[9px] text-zinc-500 hover:text-red-400 uppercase font-bold ml-1"
+                  title="Quitar todas las selecciones"
+                >
+                  Limpiar
+                </button>
+              )}
+            </div>
+            <div className="max-h-48 overflow-y-auto space-y-1">
+              {personasFiltradas.length === 0 ? (
+                <div className="text-[10px] text-zinc-500 italic py-2 text-center">Sin resultados para "{busquedaPersonas}"</div>
+              ) : personasFiltradas.map(p => (
+                <label key={p.id} className="flex items-center gap-2 cursor-pointer hover:bg-zinc-900 px-1 py-0.5">
+                  <input type="checkbox" checked={personasSel.includes(p.id)} onChange={() => togglePersona(p.id)} className="w-3.5 h-3.5 accent-red-600" />
+                  <span className="text-xs">{p.nombre}</span>
+                  <span className="text-[9px] text-zinc-500 ml-auto">{(p.roles || []).join('·')}</span>
+                </label>
+              ))}
+            </div>
           </div>
         </Campo>
 

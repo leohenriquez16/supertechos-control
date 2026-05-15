@@ -14,6 +14,7 @@ import * as db from '../../lib/db';
 import { toast } from '../../lib/toast';
 import Campo from '../common/Campo';
 import Input from '../common/Input';
+import ProyectoSelector from '../common/ProyectoSelector'; // v8.17.50: buscar proyecto con search
 
 const FORM_VACIO = {
   nombre: '',
@@ -575,10 +576,14 @@ function ModalReservaRango({ usuario, data, propiedades, onCerrar, onGuardado })
         </Campo>
 
         <Campo label="Proyecto (opcional)">
-          <select value={proyectoId} onChange={e => setProyectoId(e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-xs">
-            <option value="">— Sin asociar —</option>
-            {(data.proyectos || []).filter(p => !p.archivado).map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo || p.cliente}</option>)}
-          </select>
+          <ProyectoSelector
+            value={proyectoId}
+            onChange={(id) => setProyectoId(id || '')}
+            proyectos={(data.proyectos || []).filter(p => !p.archivado)}
+            permitirVacio
+            etiquetaVacio="— Sin asociar a proyecto —"
+            placeholder="Buscar por cliente o referencia…"
+          />
         </Campo>
 
         <Campo label="Nota (opcional)">

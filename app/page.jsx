@@ -61,6 +61,8 @@ import NuevoProyecto from '../components/proyecto/NuevoProyecto';
 import ModalEditarProyecto from '../components/proyecto/ModalEditarProyecto';
 // v8.17.41: carta de acceso de personal al cliente
 import ModalCartaAcceso from '../components/proyecto/ModalCartaAcceso';
+// v8.17.52: reportar avance del día en proyectos de unidades (baños, balcones, etc)
+import ModalReportarAvanceUnidades from '../components/proyecto/ModalReportarAvanceUnidades';
 // v8.17.49: propiedades de la empresa (apartamento Punta Cana, etc)
 import VistaPropiedadesEmpresa from '../components/propiedades/VistaPropiedadesEmpresa';
 // v8.10.13: VistaNomina extraída
@@ -5350,7 +5352,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
       {tab === 'equipo' && <TabEquipoProyecto proyecto={proyecto} data={data} sistema={sistema} />}
       {tab === 'fotos' && <TabFotos usuario={usuario} proyecto={proyecto} />}
       {tab === 'cronograma' && (esAdmin || proyecto.cronogramaVisibleMaestro !== false) && <TabCronograma proyecto={proyecto} porcentajeActual={porcentaje} onActualizarProyecto={onActualizarProyecto} esSupervisor={esSupervisor} reportes={data.reportes} sistema={sistema} sistemas={data.sistemas} />}
-      {tab === 'unidades' && proyecto.tipoAvance === 'unidades' && <TabUnidades proyecto={proyecto} onActualizarProyecto={onActualizarProyecto} esAdmin={esAdmin} />}
+      {tab === 'unidades' && proyecto.tipoAvance === 'unidades' && <TabUnidades proyecto={proyecto} usuario={usuario} onActualizarProyecto={onActualizarProyecto} esAdmin={esAdmin} esSupervisor={esSupervisor} onRecargar={onRecargar} />}
       {tab === 'materiales' && !tieneRol(usuario, 'maestro') && <TabMateriales proyecto={proyecto} sistema={sistema} materiales={materiales} envios={data.envios.filter(e => e.proyectoId === proyecto.id)} reportes={data.reportes} sistemas={data.sistemas} onRegistrarEnvio={onRegistrarEnvio} onRegistrarEnviosLote={onRegistrarEnviosLote} esSupervisor={esSupervisor} onEliminarEnvio={onEliminarEnvio} onIrASistemas={onIrASistemas} />}
       {tab === 'areas' && esAdmin && <TabAreas proyecto={proyecto} data={data} usuario={usuario} onRecargar={onRecargar} />}
       {tab === 'productos' && !esSupervisor && <TabProductosAdicionales proyecto={proyecto} onActualizarProyecto={onActualizarProyecto} esAdmin={esAdmin} />}
@@ -10139,6 +10141,8 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
   const [finalizarModal, setFinalizarModal] = useState(false);
   const [programarModal, setProgramarModal] = useState(false);
   const [verHistorial, setVerHistorial] = useState(false);
+  // v8.17.52: modal de reportar avance de unidades (proyectos tipoAvance='unidades')
+  const [modalReportarAvance, setModalReportarAvance] = useState(false);
   // v8.17.29: config global de dieta para mostrar montos en el modal de cierre
   const [configDieta, setConfigDieta] = useState({ desayunoRd: 200, comidaRd: 350, cenaRd: 350, hotelRd: 900 });
   // v8.17.49: propiedades empresa activas para mostrar botones de estadía en el modal
@@ -10437,6 +10441,16 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
                 {procesando === 'fin' ? <><Loader2 className="w-4 h-4 animate-spin" /> Capturando GPS...</> : <><Square className="w-4 h-4" /> Finalizar Jornada</>}
               </button>
             )}
+            {/* v8.17.52: para proyectos por unidades, botón rápido para reportar avance del día */}
+            {jornadaHoy && proyecto.tipoAvance === 'unidades' && (proyecto.estructuraUnidades || []).length > 0 && (
+              <button
+                onClick={() => setModalReportarAvance(true)}
+                className="w-full bg-zinc-900 border-2 border-zinc-700 hover:border-red-500 text-zinc-200 font-bold uppercase py-3 flex items-center justify-center gap-2"
+                title="Registra cuántos baños / balcones / etc se hicieron hoy"
+              >
+                📊 Reportar avance de unidades hoy
+              </button>
+            )}
           </>
         )}
         {tieneRol(usuario, 'admin') && (
@@ -10575,6 +10589,18 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
           onCerrar={() => setProgramarModal(false)}
           onConfirmar={programarJornada}
           procesando={procesando === 'programar'}
+        />
+      )}
+
+      {/* v8.17.52: Modal reportar avance de unidades (proyectos tipoAvance='unidades').
+          Pre-llenado con la fecha de la jornada activa. */}
+      {modalReportarAvance && (
+        <ModalReportarAvanceUnidades
+          proyecto={proyecto}
+          usuario={usuario}
+          fechaInicial={jornadaHoy?.fecha || hoy}
+          onCerrar={() => setModalReportarAvance(false)}
+          onReportado={async () => { await recargar(); }}
         />
       )}
     </div>

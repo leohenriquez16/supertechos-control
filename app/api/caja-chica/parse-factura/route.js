@@ -7,7 +7,10 @@ export const maxDuration = 60;
 
 // Construye el prompt incluyendo dinámicamente las categorías que el cliente
 // envíe. Si no envía nada, usa la lista por defecto (compatibilidad).
-function buildPrompt(categorias) {
+// v8.17.57: recibe `fechaHoy` (YYYY-MM-DD) para que el modelo distinga la fecha
+// de la factura de la fecha de vencimiento del NCF y resuelva ambigüedades DD/MM
+// vs MM/DD usando el mes actual como pista.
+function buildPrompt(categorias, fechaHoy) {
   const lista = (categorias && categorias.length > 0)
     ? categorias
     : [
@@ -27,6 +30,8 @@ function buildPrompt(categorias) {
 
   return `Eres un asistente que extrae datos estructurados de facturas físicas dominicanas (típicas de ferretería, gasolineras, restaurantes, peajes).
 
+HOY ES: ${fechaHoy} (úsalo de referencia para validar fechas).
+
 Devuelve EXCLUSIVAMENTE un JSON con esta estructura, sin texto antes ni después:
 
 {
@@ -37,7 +42,8 @@ Devuelve EXCLUSIVAMENTE un JSON con esta estructura, sin texto antes ni después
   "rnc": string | null,            // RNC del PROVEEDOR (quien EMITE la factura)
   "rnc_cliente": string | null,    // RNC del CLIENTE (a quien va dirigida la factura)
   "empresa_receptora": string | null, // 'super_techos' si rnc_cliente == 130774331, 'prouco' si == 131515541, sino null
-  "fecha": string | null,        // formato YYYY-MM-DD si se identifica, null si no
+  "fecha": string | null,        // FECHA DE EMISIÓN de la factura, formato YYYY-MM-DD. NO confundir con vencimiento NCF.
+  "fecha_vencimiento_ncf": string | null, // VENCIMIENTO del NCF si aparece en la factura (suele ser 31/12 de un año futuro). YYYY-MM-DD.
   "proveedor": string | null,    // nombre de la empresa que emite
   "ncf": string | null,          // número comprobante fiscal si visible (ej: B0100012345)
   "categoria_sugerida": string | null, // ELIGE EXACTAMENTE UNO de los IDs listados abajo
@@ -64,6 +70,22 @@ Esa empresa es el CLIENTE/COMPRADOR, no el vendedor. Una empresa no se vende a s
 Vuelve a leer la factura y busca al PROVEEDOR REAL (Ferretería, Estación de combustible, Restaurante, etc).
 - Su nombre va arriba del documento, suele tener logo.
 - Su RNC va junto a su nombre (en el encabezado), no abajo donde está "Cliente:" o "Receptor:".
+
+📅 FECHAS — REGLA CRÍTICA (la IA se equivoca seguido aquí):
+Las facturas dominicanas TÍPICAMENTE muestran 2 fechas distintas:
+1. FECHA DE EMISIÓN (la del día que se imprimió/emitió la factura). Es la que va en "fecha".
+2. FECHA DE VENCIMIENTO DEL NCF (cuándo expira el comprobante fiscal). Casi siempre es el 31/12 de un año futuro. Va en "fecha_vencimiento_ncf".
+
+Pistas para distinguirlas:
+- La emisión está cerca de HOY (${fechaHoy}). Casi siempre dentro de los últimos 30-60 días, raro que sea más vieja que 6 meses.
+- El vencimiento NCF suele decir "Válido hasta:", "Fecha de vencimiento:", "Vence:", "Fecha límite emisión:". Suele caer en 31/12/AAAA con AAAA > año actual.
+- Si ves una fecha más allá del próximo 31/12, es vencimiento NCF, NO la emisión.
+
+Formato DD/MM/AAAA vs MM/DD/AAAA — facturas dominicanas son AMBIGUAS:
+- En RD el estándar es DD/MM (día primero), pero algunos sistemas usan MM/DD (estilo gringo).
+- Si la primera parte es > 12, es DEFINITIVAMENTE DD/MM (no hay mes 13).
+- Si AMBAS partes son ≤ 12 y la factura parece reciente, asume DD/MM (estándar RD). Ej: HOY es ${fechaHoy}, si la factura dice "05/04/2026", interpreta como 5 de abril, no 4 de mayo.
+- Si dudas, mira el contexto (¿pasó ya esa fecha? ¿es coherente con el NCF reciente?).
 
 Reglas:
 - Si un campo no se ve claro, usa null en lugar de inventar.
@@ -116,7 +138,7 @@ export async function POST(request) {
           role: 'user',
           content: [
             { type: 'image', source: { type: 'base64', media_type: detectedMedia, data: pureBase64 } },
-            { type: 'text', text: buildPrompt(categorias) },
+            { type: 'text', text: buildPrompt(categorias, new Date().toISOString().slice(0, 10)) },
           ],
         }],
       }),
@@ -203,6 +225,59 @@ export async function POST(request) {
       // Set empresa_receptora si el rnc_cliente coincide y aún está vacío
       if (!parsed.empresa_receptora && RNCS_NUESTROS[rncCliente]) {
         parsed.empresa_receptora = RNCS_NUESTROS[rncCliente];
+      }
+
+      // v8.17.57: post-proceso de fechas. Si la IA puso una fecha demasiado en
+      // el futuro, casi seguro confundió la emisión con el vencimiento NCF.
+      // Reglas:
+      //   - Si `fecha` está > 60 días en el futuro → es vencimiento NCF, no emisión.
+      //     Movemos a `fecha_vencimiento_ncf` y dejamos `fecha` en null.
+      //   - Si hay `fecha` y `fecha_vencimiento_ncf` y ambas se ven válidas,
+      //     mantenemos la más cercana a hoy en `fecha`.
+      //   - Validamos formato YYYY-MM-DD; si no lo cumple, null.
+      const hoy = new Date();
+      hoy.setHours(0, 0, 0, 0);
+      const SESENTA_DIAS_MS = 60 * 24 * 60 * 60 * 1000;
+      const parseISO = (s) => {
+        if (!s || typeof s !== 'string') return null;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+        const d = new Date(s + 'T12:00:00');
+        return isNaN(d.getTime()) ? null : d;
+      };
+      const fechaEmision = parseISO(parsed.fecha);
+      const fechaVenc = parseISO(parsed.fecha_vencimiento_ncf);
+      // Si fecha "de emisión" está >60d en el futuro → es vencimiento NCF
+      if (fechaEmision && (fechaEmision - hoy) > SESENTA_DIAS_MS) {
+        parsed.advertencias = [
+          ...(parsed.advertencias || []),
+          `La fecha ${parsed.fecha} está demasiado en el futuro — parece vencimiento NCF, no emisión. Revisa.`,
+        ];
+        // Si no había vencimiento NCF, usar esta. Si había, conservar la suya.
+        if (!fechaVenc) parsed.fecha_vencimiento_ncf = parsed.fecha;
+        parsed.fecha = null;
+      }
+      // Si hay ambas, elegir la más cercana a hoy como emisión.
+      else if (fechaEmision && fechaVenc) {
+        const distEmis = Math.abs(fechaEmision - hoy);
+        const distVenc = Math.abs(fechaVenc - hoy);
+        if (distVenc < distEmis) {
+          // La que llamaba "vencimiento" en realidad está más cerca → swap
+          const tmp = parsed.fecha;
+          parsed.fecha = parsed.fecha_vencimiento_ncf;
+          parsed.fecha_vencimiento_ncf = tmp;
+          parsed.advertencias = [
+            ...(parsed.advertencias || []),
+            'Las fechas estaban intercambiadas (emisión vs vencimiento NCF) — corregido.',
+          ];
+        }
+      }
+      // Si fecha no parseó bien, anularla
+      if (parsed.fecha && !parseISO(parsed.fecha)) {
+        parsed.advertencias = [
+          ...(parsed.advertencias || []),
+          `Formato de fecha inválido: ${parsed.fecha}`,
+        ];
+        parsed.fecha = null;
       }
     }
 

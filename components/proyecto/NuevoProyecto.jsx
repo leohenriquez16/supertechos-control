@@ -38,6 +38,7 @@ export default function NuevoProyecto({ personal, sistemas, clientes = [], conta
   const [form, setForm] = useState({
     nombre: '', cliente: '', referenciaProyecto: '',
     clienteId: '', contactoPrincipalId: null, // v8.9.10
+    contactosExtraIds: [], // v8.17.58: contactos adicionales al principal
     supervisorId: '', maestroId: '', ayudantesIds: [],
     sistema: sistemasArray[0]?.id || '',
     fecha_inicio: '', fecha_entrega: '', referenciaOdoo: '',
@@ -172,6 +173,8 @@ export default function NuevoProyecto({ personal, sistemas, clientes = [], conta
       // v8.9.10: relación con clientes
       clienteId: form.clienteId || null,
       contactoPrincipalId: form.contactoPrincipalId || null,
+      // v8.17.58: contactos extras a persistir post-create en proyecto_contactos
+      contactosExtraIds: form.contactosExtraIds || [],
       contactoClienteNombre: form.contactoClienteNombre || '',
       contactoClienteTelefono: form.contactoClienteTelefono || '',
       contactoClienteEmail: form.contactoClienteEmail || '',
@@ -319,29 +322,57 @@ export default function NuevoProyecto({ personal, sistemas, clientes = [], conta
             <Input value={form.cliente} onChange={v => setForm({ ...form, cliente: v })} placeholder="O escribe nombre del cliente (se creará al guardar si no existe)" />
             {form.clienteId && (() => {
               const contsCliente = contactos.filter(ct => ct.clienteId === form.clienteId);
-              if (contsCliente.length > 1) {
-                return (
-                  <select
-                    value={form.contactoPrincipalId || ''}
-                    onChange={e => {
-                      const contId = e.target.value;
-                      const cont = contactos.find(ct => ct.id === contId);
-                      setForm({
-                        ...form,
-                        contactoPrincipalId: contId || null,
-                        contactoClienteNombre: cont?.nombre || '',
-                        contactoClienteTelefono: cont?.telefono || '',
-                        contactoClienteEmail: cont?.email || '',
-                      });
-                    }}
-                    className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-white text-xs"
-                  >
-                    <option value="">— Seleccionar contacto —</option>
-                    {contsCliente.map(ct => <option key={ct.id} value={ct.id}>{ct.esPrincipal ? '⭐ ' : ''}{ct.nombre}{ct.cargo ? ` · ${ct.cargo}` : ''}{ct.telefono ? ` · ${ct.telefono}` : ''}</option>)}
-                  </select>
-                );
-              }
-              return null;
+              if (contsCliente.length === 0) return null;
+              const otrosContactos = contsCliente.filter(ct => ct.id !== form.contactoPrincipalId);
+              return (
+                <div className="space-y-2">
+                  {contsCliente.length > 1 && (
+                    <select
+                      value={form.contactoPrincipalId || ''}
+                      onChange={e => {
+                        const contId = e.target.value;
+                        const cont = contactos.find(ct => ct.id === contId);
+                        setForm({
+                          ...form,
+                          contactoPrincipalId: contId || null,
+                          contactosExtraIds: (form.contactosExtraIds || []).filter(id => id !== contId),
+                          contactoClienteNombre: cont?.nombre || '',
+                          contactoClienteTelefono: cont?.telefono || '',
+                          contactoClienteEmail: cont?.email || '',
+                        });
+                      }}
+                      className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-white text-xs"
+                    >
+                      <option value="">— Seleccionar contacto —</option>
+                      {contsCliente.map(ct => <option key={ct.id} value={ct.id}>{ct.esPrincipal ? '⭐ ' : ''}{ct.nombre}{ct.cargo ? ` · ${ct.cargo}` : ''}{ct.telefono ? ` · ${ct.telefono}` : ''}</option>)}
+                    </select>
+                  )}
+                  {/* v8.17.58: contactos adicionales asociados al proyecto */}
+                  {otrosContactos.length > 0 && (
+                    <div>
+                      <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold mb-1">Otros contactos asociados al proyecto</div>
+                      <div className="space-y-1">
+                        {otrosContactos.map(ct => (
+                          <label key={ct.id} className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 p-1.5 cursor-pointer hover:border-red-600">
+                            <input
+                              type="checkbox"
+                              checked={(form.contactosExtraIds || []).includes(ct.id)}
+                              onChange={e => setForm({
+                                ...form,
+                                contactosExtraIds: e.target.checked
+                                  ? [...(form.contactosExtraIds || []), ct.id]
+                                  : (form.contactosExtraIds || []).filter(id => id !== ct.id),
+                              })}
+                              className="w-4 h-4 accent-red-600"
+                            />
+                            <span className="text-xs">{ct.nombre}{ct.cargo ? ` · ${ct.cargo}` : ''}{ct.telefono ? ` · ${ct.telefono}` : ''}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
             })()}
           </div>
         </Campo>

@@ -4926,7 +4926,12 @@ function VistaKanban({ proyectos, data, onVerProyecto, onCambiarEstadoRapido }) 
               {(porEstado[estado] || []).map(p => {
                 const sistema = data.sistemas[p.sistema];
                 const m2Total = (p.areas || []).reduce((a, ar) => a + ar.m2, 0);
-                const valor = m2Total * (sistema?.precio_m2 || 0);
+                // v8.17.63: priorizar valor cotizado > cubicado > derivado (m² × precio)
+                const valorDerivado = m2Total * (sistema?.precio_m2 || 0);
+                const valor = p.valorCotizacion != null
+                  ? p.valorCotizacion
+                  : (p.montoFinalCubicado != null ? p.montoFinalCubicado : valorDerivado);
+                const fuenteValor = p.valorCotizacion != null ? 'cot' : (p.montoFinalCubicado != null ? 'cub' : null);
                 const supervisor = getPersona(data.personal, p.supervisorId);
                 const { porcentaje } = sistema ? calcAvanceProyecto(p, data.reportes, sistema, data.sistemas) : { porcentaje: 0 };
                 // v8.10.23: color del donut según avance
@@ -4969,7 +4974,10 @@ function VistaKanban({ proyectos, data, onVerProyecto, onCambiarEstadoRapido }) 
                       )}
                     </div>
                     <div className="mt-2 flex items-center justify-between text-[10px]">
-                      <span className="text-green-400 font-bold">{formatRD(valor)}</span>
+                      <span className="text-green-400 font-bold">
+                        {formatRD(valor)}
+                        {fuenteValor && <span className="ml-1 text-[8px] text-zinc-500 font-normal">{fuenteValor}</span>}
+                      </span>
                       {supervisor && <span className="text-zinc-600">👔 {supervisor.nombre.split(' ')[0]}</span>}
                     </div>
                   </div>
@@ -5098,12 +5106,20 @@ function VistaLista({ proyectos, data, densidad = 'detallado', dx, onVerProyecto
   const proyectosConDatos = proyectos.map(p => {
     const sistema = data.sistemas[p.sistema];
     const m2Total = (p.areas || []).reduce((a, ar) => a + ar.m2, 0);
-    const valor = m2Total * (sistema?.precio_m2 || 0);
+    const valorDerivado = m2Total * (sistema?.precio_m2 || 0);
+    // v8.17.63: priorizar valor_cotizacion > monto_final_cubicado > derivado.
+    // El "valor mostrado" es el que aparece como total del proyecto en lista/kanban.
+    const valor = p.valorCotizacion != null
+      ? p.valorCotizacion
+      : (p.montoFinalCubicado != null ? p.montoFinalCubicado : valorDerivado);
+    const fuenteValor = p.valorCotizacion != null
+      ? 'cotizacion'
+      : (p.montoFinalCubicado != null ? 'cubicado' : 'derivado');
     const { porcentaje } = sistema ? calcAvanceProyecto(p, data.reportes, sistema, data.sistemas) : { porcentaje: 0 };
     const supervisor = getPersona(data.personal, p.supervisorId);
     const maestro = getPersona(data.personal, p.maestroId);
     const dias = diasEnEstado(p);
-    return { p, sistema, m2Total, valor, porcentaje, supervisor, maestro, dias };
+    return { p, sistema, m2Total, valor, valorDerivado, fuenteValor, porcentaje, supervisor, maestro, dias };
   });
 
   // Función de comparación para sort. Trata strings (case-insensitive) y números.
@@ -5230,8 +5246,14 @@ function VistaLista({ proyectos, data, densidad = 'detallado', dx, onVerProyecto
                       </tr>
                     </thead>
                     <tbody>
-                      {items.map(({ p, sistema, m2Total, valor, porcentaje, supervisor, maestro, dias }) => {
+                      {items.map(({ p, sistema, m2Total, valor, valorDerivado, fuenteValor, porcentaje, supervisor, maestro, dias }) => {
                         const colorDias = dias != null && dias > 14 ? 'text-orange-400' : dias != null && dias > 30 ? 'text-red-400' : 'text-zinc-500';
+                        // v8.17.63: tooltip de valor: mostrar cotizado, cubicado y derivado si difieren
+                        const tooltipValor = [
+                          p.valorCotizacion != null ? `Cotizado: ${formatRD(p.valorCotizacion)}` : null,
+                          p.montoFinalCubicado != null ? `Cubicado: ${formatRD(p.montoFinalCubicado)}` : null,
+                          `Derivado (m² × precio): ${formatRD(valorDerivado)}`,
+                        ].filter(Boolean).join('\n');
                         return (
                           <tr
                             key={p.id}
@@ -5290,7 +5312,12 @@ function VistaLista({ proyectos, data, densidad = 'detallado', dx, onVerProyecto
                                 {maestros.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}
                               </select>
                             </td>
-                            <td className={`${rowPad} text-right tabular-nums font-black text-green-400 whitespace-nowrap`}>{formatRD(valor)}</td>
+                            <td className={`${rowPad} text-right tabular-nums font-black text-green-400 whitespace-nowrap`} title={tooltipValor}>
+                              {formatRD(valor)}
+                              {/* v8.17.63: tag mini para distinguir la fuente del valor */}
+                              {fuenteValor === 'cotizacion' && <span className="ml-1 text-[8px] text-zinc-500 font-normal">cot</span>}
+                              {fuenteValor === 'cubicado' && <span className="ml-1 text-[8px] text-blue-400 font-normal">cub</span>}
+                            </td>
                             <td className={`${rowPad} text-right whitespace-nowrap`} onClick={e => e.stopPropagation()}>
                               <div className="inline-flex gap-1">
                                 <button

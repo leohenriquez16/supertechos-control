@@ -63,6 +63,9 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
     ubicacionDireccionTexto: proyecto.ubicacionDireccionTexto || '',
     fecha_inicio: proyecto.fecha_inicio,
     fechaEstimadaInicio: proyecto.fechaEstimadaInicio || '', // v8.17.59
+    // v8.17.63: valor cotizado (firma del cliente, típicamente de Odoo) + cubicado final
+    valorCotizacion: proyecto.valorCotizacion ?? '',
+    montoFinalCubicado: proyecto.montoFinalCubicado ?? '',
     fecha_entrega: proyecto.fecha_entrega,
     fechaAprobacion: proyecto.fechaAprobacion || '', // v8.10.22
     modoPagoManoObra: proyecto.modoPagoManoObra || 'dia',
@@ -386,6 +389,18 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
             <Input type="date" value={form.fechaEstimadaInicio || ''} onChange={v => setForm({ ...form, fechaEstimadaInicio: v })} />
             <div className="text-[10px] text-zinc-500 mt-1">Es la fecha que le prometes al cliente cuando planificas el arranque. La fecha de inicio real se registra al pasar a En ejecución.</div>
           </Campo>
+
+          {/* v8.17.63: valores monetarios — cotizado (firma del cliente) y cubicado (real final) */}
+          <div className="grid grid-cols-2 gap-3">
+            <Campo label="Valor cotizado (RD$) — Odoo">
+              <Input type="number" value={form.valorCotizacion} onChange={v => setForm({ ...form, valorCotizacion: v })} placeholder="0.00" />
+              <div className="text-[10px] text-zinc-500 mt-1">Total que el cliente firmó. Se autollena al importar de Odoo.</div>
+            </Campo>
+            <Campo label="Monto final cubicado (RD$)">
+              <Input type="number" value={form.montoFinalCubicado} onChange={v => setForm({ ...form, montoFinalCubicado: v })} placeholder="0.00" />
+              <div className="text-[10px] text-zinc-500 mt-1">Lo que terminás cobrando después de medir en obra. Requerido para Facturado.</div>
+            </Campo>
+          </div>
           <div className="grid grid-cols-2 gap-3"><Campo label="Fecha inicio"><Input type="date" value={form.fecha_inicio} onChange={v => setForm({ ...form, fecha_inicio: v })} /></Campo><Campo label="Fecha entrega"><Input type="date" value={form.fecha_entrega} onChange={v => setForm({ ...form, fecha_entrega: v })} /></Campo></div>
         </div>
 

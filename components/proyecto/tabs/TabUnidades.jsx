@@ -1,14 +1,20 @@
 'use client';
 
 import React, { useState } from 'react';
-import { ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, Plus, Trash2, Calendar, FileText } from 'lucide-react';
+import ModalReportarAvanceUnidades from '../ModalReportarAvanceUnidades'; // v8.17.52
+import ModalReporteUnidadesPDF from '../ModalReporteUnidadesPDF'; // v8.17.52
 
-export default function TabUnidades({ proyecto, onActualizarProyecto, esAdmin }) {
+export default function TabUnidades({ proyecto, usuario, onActualizarProyecto, esAdmin, esSupervisor, onRecargar }) {
   const estructura = proyecto.estructuraUnidades || [];
   const [expandidos, setExpandidos] = useState({});
   const [editandoTorre, setEditandoTorre] = useState(null);
   const [editandoNivel, setEditandoNivel] = useState(null);
   const [editandoEspacio, setEditandoEspacio] = useState(null);
+  // v8.17.52: modales nuevos
+  const [modalReporte, setModalReporte] = useState(false);
+  const [modalPDF, setModalPDF] = useState(false);
+  const puedeReportar = esAdmin || esSupervisor || (proyecto.maestroId === usuario?.id);
 
   const guardarEstructura = async (nueva) => {
     try {
@@ -105,14 +111,34 @@ export default function TabUnidades({ proyecto, onActualizarProyecto, esAdmin })
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-start gap-2 flex-wrap">
         <div>
           <div className="text-xs tracking-widest uppercase text-red-500 font-bold">Unidades del Proyecto</div>
           <div className="text-[11px] text-zinc-500">Edificios → Niveles → Espacios (baños, balcones, etc.)</div>
         </div>
-        {esAdmin && (
-          <button onClick={agregarTorre} className="bg-red-600 text-white font-bold uppercase px-3 py-1.5 text-xs flex items-center gap-1"><Plus className="w-3 h-3" /> Torre</button>
-        )}
+        <div className="flex flex-wrap gap-1">
+          {puedeReportar && estructura.length > 0 && (
+            <button
+              onClick={() => setModalReporte(true)}
+              className="bg-zinc-900 border border-zinc-700 hover:border-red-500 text-zinc-200 font-bold uppercase px-3 py-1.5 text-xs flex items-center gap-1"
+              title="Reportar cuántas unidades se hicieron en una fecha específica"
+            >
+              <Calendar className="w-3 h-3" /> Reportar avance del día
+            </button>
+          )}
+          {estructura.length > 0 && (
+            <button
+              onClick={() => setModalPDF(true)}
+              className="bg-zinc-900 border border-zinc-700 hover:border-red-500 text-zinc-200 font-bold uppercase px-3 py-1.5 text-xs flex items-center gap-1"
+              title="Generar PDF con detalle por nivel y avance diario"
+            >
+              <FileText className="w-3 h-3" /> Reporte PDF
+            </button>
+          )}
+          {esAdmin && (
+            <button onClick={agregarTorre} className="bg-red-600 text-white font-bold uppercase px-3 py-1.5 text-xs flex items-center gap-1"><Plus className="w-3 h-3" /> Torre</button>
+          )}
+        </div>
       </div>
 
       {/* Resumen */}
@@ -225,6 +251,29 @@ export default function TabUnidades({ proyecto, onActualizarProyecto, esAdmin })
           );
         })}
       </div>
+
+      {/* v8.17.52: modales */}
+      {modalReporte && (
+        <ModalReportarAvanceUnidades
+          proyecto={proyecto}
+          usuario={usuario}
+          onCerrar={() => setModalReporte(false)}
+          onReportado={async () => {
+            // db.reportarAvanceDelDia ya sincronizó estructuraUnidades en backend.
+            // Forzamos refresh para que la UI lo vea.
+            if (onRecargar) {
+              try { await onRecargar(); } catch (e) { console.warn(e); }
+            }
+          }}
+        />
+      )}
+      {modalPDF && (
+        <ModalReporteUnidadesPDF
+          proyecto={proyecto}
+          usuario={usuario}
+          onCerrar={() => setModalPDF(false)}
+        />
+      )}
     </div>
   );
 }

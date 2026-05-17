@@ -138,6 +138,9 @@ export default function ModalImportarOdoo({ sistemas, proyectos = [], onCerrar, 
         contactoClienteNombre: '',
         contactoClienteTelefono: '',
         contactoClienteEmail: '',
+        // v8.17.45: empresa ejecutora detectada desde company_id de Odoo (super_techos | prouco | null).
+        // Si la cotización no trae company_id reconocible, queda null y el admin la asigna en editar.
+        empresaEjecutora: cot.empresaEmisora || null,
       };
 
       // Si no hay áreas válidas y tampoco hay áreas generales, crear una por defecto
@@ -240,6 +243,21 @@ export default function ModalImportarOdoo({ sistemas, proyectos = [], onCerrar, 
                 <div><span className="text-zinc-500">Ref Odoo:</span> <span className="font-bold text-purple-400">{seleccionada.referencia}</span></div>
                 <div><span className="text-zinc-500">Monto:</span> <span className="font-bold text-green-400">{formatMonto(seleccionada.montoTotal)}</span></div>
                 {seleccionada.referencias && <div><span className="text-zinc-500">Ref:</span> <span className="font-bold">{seleccionada.referencias}</span></div>}
+                {/* v8.17.45: empresa detectada desde Odoo (super_techos / prouco / null) */}
+                <div className="col-span-2">
+                  <span className="text-zinc-500">Empresa ejecutora:</span>{' '}
+                  {seleccionada.empresaEmisora === 'super_techos' && (
+                    <span className="inline-block bg-red-700 text-white text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5">SUPER TECHOS</span>
+                  )}
+                  {seleccionada.empresaEmisora === 'prouco' && (
+                    <span className="inline-block bg-lime-600 text-black text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5">PROUCO</span>
+                  )}
+                  {!seleccionada.empresaEmisora && (
+                    <span className="text-[10px] text-amber-400 italic">
+                      no detectada{seleccionada.empresaOdoo ? ` (Odoo: ${seleccionada.empresaOdoo})` : ''} — asígnala manualmente al editar el proyecto
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 

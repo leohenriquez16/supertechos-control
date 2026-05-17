@@ -141,6 +141,9 @@ export default function ModalImportarOdoo({ sistemas, proyectos = [], onCerrar, 
         // v8.17.45: empresa ejecutora detectada desde company_id de Odoo (super_techos | prouco | null).
         // Si la cotización no trae company_id reconocible, queda null y el admin la asigna en editar.
         empresaEjecutora: cot.empresaEmisora || null,
+        // v8.17.63: monto total firmado en la cotización Odoo. Es el "valor cotizado"
+        // del proyecto — se prioriza sobre el cálculo derivado m²×precio_m2.
+        valorCotizacion: cot.montoTotal != null ? Number(cot.montoTotal) : null,
       };
 
       // Si no hay áreas válidas y tampoco hay áreas generales, crear una por defecto

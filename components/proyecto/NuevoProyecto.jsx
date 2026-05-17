@@ -42,6 +42,7 @@ export default function NuevoProyecto({ personal, sistemas, clientes = [], conta
     supervisorId: '', maestroId: '', ayudantesIds: [],
     sistema: sistemasArray[0]?.id || '',
     fecha_inicio: '', fecha_entrega: '', referenciaOdoo: '',
+    valorCotizacion: '', // v8.17.63
     areas: [{ nombre: '', m2: '' }],
     dieta: { habilitada: false, tarifa_dia_persona: 800, dias_hombre_presupuestados: 0, personasIds: [] },
     contactoClienteNombre: '', contactoClienteTelefono: '', contactoClienteEmail: '',
@@ -175,6 +176,8 @@ export default function NuevoProyecto({ personal, sistemas, clientes = [], conta
       contactoPrincipalId: form.contactoPrincipalId || null,
       // v8.17.58: contactos extras a persistir post-create en proyecto_contactos
       contactosExtraIds: form.contactosExtraIds || [],
+      // v8.17.63: valor de cotización (firma cliente). Si vino del PDF, ya estará en form.
+      valorCotizacion: form.valorCotizacion === '' || form.valorCotizacion == null ? null : Number(form.valorCotizacion),
       contactoClienteNombre: form.contactoClienteNombre || '',
       contactoClienteTelefono: form.contactoClienteTelefono || '',
       contactoClienteEmail: form.contactoClienteEmail || '',
@@ -378,6 +381,11 @@ export default function NuevoProyecto({ personal, sistemas, clientes = [], conta
         </Campo>
         <Campo label="Referencia del proyecto"><Input value={form.referenciaProyecto} onChange={v => setForm({ ...form, referenciaProyecto: v })} /></Campo>
         <Campo label="Nombre interno"><Input value={form.nombre} onChange={v => setForm({ ...form, nombre: v })} /></Campo>
+        {/* v8.17.63: valor cotizado (Odoo) — el "total" que firma el cliente */}
+        <Campo label="Valor cotizado (RD$) — total que firma el cliente">
+          <Input type="number" value={form.valorCotizacion} onChange={v => setForm({ ...form, valorCotizacion: v })} placeholder="0.00" />
+          <div className="text-[10px] text-zinc-500 mt-1">Se autollena al importar desde Odoo. Si lo creás manual, cargalo desde la cotización firmada.</div>
+        </Campo>
         {/* v8.10.23: Fecha de aprobación se asigna automáticamente al crear (fecha actual) — campo eliminado del formulario */}
         <div className="grid grid-cols-2 gap-3"><Campo label="Inicio (opcional — déjalo vacío si está por definir)"><Input type="date" value={form.fecha_inicio} onChange={v => setForm({ ...form, fecha_inicio: v })} /></Campo><Campo label="Entrega"><Input type="date" value={form.fecha_entrega} onChange={v => setForm({ ...form, fecha_entrega: v })} /></Campo></div>
 

@@ -131,7 +131,12 @@ export default function ModalImportarOdoo({ sistemas, proyectos = [], onCerrar, 
         } : {}),
         dieta: { habilitada: false },
         estado: 'aprobado',
-        fechaAprobacion: new Date().toISOString().split('T')[0],
+        // v8.17.66: usar date_order del Sale Order de Odoo como fecha de aprobación.
+        // Si el SO viene confirmado (state='sale') coincide con cuando el cliente aprobó.
+        // Fallback a hoy si el SO no trae fecha por algún motivo.
+        fechaAprobacion: cot.fechaOrden
+          ? String(cot.fechaOrden).slice(0, 10)
+          : new Date().toISOString().split('T')[0],
         // Datos del cliente
         clienteId: clienteIdLocal,
         contactoPrincipalId: null,

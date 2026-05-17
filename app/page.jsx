@@ -63,6 +63,7 @@ import ModalEditarProyecto from '../components/proyecto/ModalEditarProyecto';
 // v8.17.41: carta de acceso de personal al cliente
 import ModalCartaAcceso from '../components/proyecto/ModalCartaAcceso';
 import ModalListaHerramientas from '../components/proyecto/ModalListaHerramientas';
+import SeccionArchivosProyecto from '../components/proyecto/SeccionArchivosProyecto';
 // v8.17.52: reportar avance del día en proyectos de unidades (baños, balcones, etc)
 import ModalReportarAvanceUnidades from '../components/proyecto/ModalReportarAvanceUnidades';
 // v8.17.49: propiedades de la empresa (apartamento Punta Cana, etc)
@@ -936,12 +937,28 @@ export default function App() {
           }
 
           const nuevoProyectoId = 'p_' + Date.now();
-          await db.crearProyecto({ ...proy, id: nuevoProyectoId });
+          // v8.17.64: extraer el File del PDF antes de mandar el proy a la DB (no es columna)
+          const pdfCotizacion = proy._pdfCotizacion;
+          const proyLimpio = { ...proy };
+          delete proyLimpio._pdfCotizacion;
+          await db.crearProyecto({ ...proyLimpio, id: nuevoProyectoId });
           // v8.17.58: persistir contactos asociados (principal + extras) en proyecto_contactos
           try {
             const ids = [proy.contactoPrincipalId, ...(proy.contactosExtraIds || [])].filter(Boolean);
             if (ids.length > 0) await db.asignarContactosProyecto(nuevoProyectoId, ids, usuario?.id);
           } catch (e) { console.warn('No se pudieron persistir contactos del proyecto:', e?.message); }
+          // v8.17.64: subir el PDF original de cotización a Storage
+          if (pdfCotizacion) {
+            try {
+              await db.subirArchivoProyecto({
+                proyectoId: nuevoProyectoId,
+                tipo: 'cotizacion',
+                file: pdfCotizacion,
+                descripcion: 'Cotización subida al crear el proyecto',
+                usuarioId: usuario?.id,
+              });
+            } catch (e) { console.warn('No se pudo guardar PDF de cotización:', e?.message); }
+          }
           setVista('dashboard');
         })} />}
         {vista === 'proyecto' && proyectoActivo && (
@@ -5760,6 +5777,13 @@ function TabInfo({ proyecto, clientes = [], contactos = [], documentos = [], sis
           onCerrar={() => setModalHerramientas(false)}
         />
       )}
+
+      {/* v8.17.64: Archivos crudos del proyecto (cotización, envíos, reportes, otros) */}
+      <SeccionArchivosProyecto
+        proyecto={proyecto}
+        usuario={usuario}
+        esAdmin={esAdmin}
+      />
     </div>
   );
 }

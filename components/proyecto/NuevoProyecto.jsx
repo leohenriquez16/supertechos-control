@@ -33,6 +33,8 @@ export default function NuevoProyecto({ personal, sistemas, clientes = [], conta
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState('');
   const [extraido, setExtraido] = useState(null);
+  // v8.17.64: archivo PDF original de la cotización para guardarlo al crear el proyecto
+  const [pdfCotizacion, setPdfCotizacion] = useState(null);
   const [mostrarRevision, setMostrarRevision] = useState(false);
   const sistemasArray = Object.values(sistemas);
   const [form, setForm] = useState({
@@ -61,6 +63,8 @@ export default function NuevoProyecto({ personal, sistemas, clientes = [], conta
 
   const procesarPDF = async (file) => {
     setCargando(true); setError('');
+    // v8.17.64: guardamos el File original para subirlo al crear el proyecto
+    setPdfCotizacion(file);
     try {
       // v8.9.31: cortar a las primeras 2 páginas (evita que fichas técnicas/anexos rompan la extracción)
       const corte = await cortarPDFaPrimerasPaginas(file, 2);
@@ -178,6 +182,9 @@ export default function NuevoProyecto({ personal, sistemas, clientes = [], conta
       contactosExtraIds: form.contactosExtraIds || [],
       // v8.17.63: valor de cotización (firma cliente). Si vino del PDF, ya estará en form.
       valorCotizacion: form.valorCotizacion === '' || form.valorCotizacion == null ? null : Number(form.valorCotizacion),
+      // v8.17.64: PDF original de la cotización (si vino de upload). El caller lo
+      // sube a Storage post-create. NO se persiste en la fila de proyectos.
+      _pdfCotizacion: pdfCotizacion,
       contactoClienteNombre: form.contactoClienteNombre || '',
       contactoClienteTelefono: form.contactoClienteTelefono || '',
       contactoClienteEmail: form.contactoClienteEmail || '',

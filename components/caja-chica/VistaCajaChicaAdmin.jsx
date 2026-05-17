@@ -14,6 +14,7 @@ import ModalGenerarCuadre from './ModalGenerarCuadre';
 import ModalExportarOdoo from './ModalExportarOdoo';
 import ModalCargaMasiva from './ModalCargaMasiva';
 import ModalDetalleMovimiento from './ModalDetalleMovimiento';
+import ModalCrearGastoAdmin from './ModalCrearGastoAdmin'; // v8.17.56
 import ModalAyudaDieta from './ModalAyudaDieta'; // v8.17.29
 import DashboardCajaChica from './DashboardCajaChica';
 import { imprimirCuadreIndividual } from './imprimirCuadre';
@@ -60,6 +61,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
   const [modalCuadre, setModalCuadre] = useState(false);
   const [modalExport, setModalExport] = useState(false);
   const [modalCargaMasiva, setModalCargaMasiva] = useState(false); // v8.15
+  const [modalNuevoGasto, setModalNuevoGasto] = useState(false); // v8.17.56
   const [verDetalle, setVerDetalle] = useState(null); // v8.15.1: movimiento abierto en modal de detalle (modo simple)
   const [indicePendiente, setIndicePendiente] = useState(null); // v8.15.5: índice del pendiente abierto en modo bandeja
   const [gruposColapsados, setGruposColapsados] = useState(() => new Set()); // v8.17.7: personaIds con grupo colapsado en bandeja
@@ -490,6 +492,10 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
           </button>
           <button onClick={() => setModalCargaMasiva(true)} className="bg-zinc-900 border border-zinc-800 hover:border-green-500 text-zinc-300 text-xs font-bold uppercase px-3 py-2 flex items-center gap-1" title="Sube varias facturas a la vez con AI procesándolas en paralelo">
             <Sparkles className="w-3 h-3 text-green-400" /> Carga masiva
+          </button>
+          {/* v8.17.56: crear gasto manualmente (admin) */}
+          <button onClick={() => setModalNuevoGasto(true)} className="bg-zinc-900 border border-zinc-800 hover:border-blue-500 text-zinc-300 text-xs font-bold uppercase px-3 py-2 flex items-center gap-1" title="Registrar manualmente un gasto sin pasar por el flujo del maestro">
+            <Plus className="w-3 h-3 text-blue-400" /> Nuevo gasto
           </button>
           <button onClick={() => setModalEntrega(true)} className="bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase px-4 py-2 flex items-center gap-1">
             <Plus className="w-3 h-3" /> Entregar caja
@@ -995,6 +1001,17 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
           vista="admin"
           configDieta={configDieta}
           onCerrar={() => setModalAyuda(false)}
+        />
+      )}
+
+      {/* v8.17.56: crear gasto manualmente (admin) */}
+      {modalNuevoGasto && (
+        <ModalCrearGastoAdmin
+          usuario={usuario}
+          data={data}
+          movimientos={movimientos}
+          onCerrar={() => setModalNuevoGasto(false)}
+          onCreado={() => cargar()}
         />
       )}
 

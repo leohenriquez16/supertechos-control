@@ -6,9 +6,9 @@
 // de rotar visible arriba de la foto.
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Loader2, Save, Camera, AlertCircle, Building2, FileText, User as UserIcon, Calendar, DollarSign, RotateCcw, RotateCw, Maximize2, Lock, Sparkles, ChevronLeft, ChevronRight, Check, FileX } from 'lucide-react';
+import { X, Loader2, Save, Camera, AlertCircle, Building2, FileText, User as UserIcon, Calendar, DollarSign, RotateCcw, RotateCw, Maximize2, Lock, Sparkles, ChevronLeft, ChevronRight, Check, FileX, History, ChevronDown, ChevronUp } from 'lucide-react';
 import * as db from '../../lib/db';
-import { formatFechaCorta } from '../../lib/helpers/formato';
+import { formatFechaCorta, formatRD, formatRNC, limpiarRNC, formatFechaHora } from '../../lib/helpers/formato';
 import { calcularAlertasSinFactura } from '../../lib/helpers/alertasSinFactura';
 import { EMPRESAS_RECEPTORAS } from '../../lib/constants';
 import ProyectoSelector from '../common/ProyectoSelector';
@@ -147,7 +147,10 @@ export default function ModalDetalleMovimiento({
     if (campos.fecha !== (movimiento.fecha || '')) d.fecha = campos.fecha;
     if (Number(campos.monto) !== Number(movimiento.monto || 0)) d.monto = Number(campos.monto);
     if ((campos.proveedor || '') !== (movimiento.proveedor || '')) d.proveedor = campos.proveedor;
-    if ((campos.rnc || '') !== (movimiento.rnc || '')) d.rnc = campos.rnc;
+    // v8.17.56: comparar RNC por dígitos limpios para no marcar cambio si solo difiere el formato
+    const rncLimpioActual = limpiarRNC(movimiento.rnc || '');
+    const rncLimpioInput = limpiarRNC(campos.rnc || '');
+    if (rncLimpioInput !== rncLimpioActual) d.rnc = rncLimpioInput ? formatRNC(rncLimpioInput) : null;
     if ((campos.concepto || '') !== (movimiento.concepto || '')) d.concepto = campos.concepto;
     if ((campos.proyectoId || '') !== (movimiento.proyectoId || '')) d.proyectoId = campos.proyectoId || null;
     // v8.17.25: empresa receptora editable por admin
@@ -176,11 +179,42 @@ export default function ModalDetalleMovimiento({
 
   const hayCambios = Object.keys(diff).length > 0;
 
+  // v8.17.56: validaciones unificadas. Devuelve string con error o null si está OK.
+  const validarParaGuardar = () => {
+    if (diff.monto != null && (!Number.isFinite(diff.monto) || diff.monto <= 0)) {
+      return 'Monto debe ser mayor a 0.';
+    }
+    return null;
+  };
+
+  // v8.17.56: validaciones más estrictas al aprobar (no para solo guardar).
+  // - Fecha no vacía y razonable
+  // - Monto > 0
+  // - Si es gasto_factura CON factura → RNC requerido
+  const validarParaAprobar = () => {
+    const errVal = validarParaGuardar();
+    if (errVal) return errVal;
+    const fechaFinal = campos.fecha || movimiento.fecha;
+    if (!fechaFinal) return 'Falta la fecha de la factura.';
+    const fechaDate = new Date(fechaFinal + 'T12:00:00');
+    if (isNaN(fechaDate.getTime())) return 'Fecha inválida.';
+    const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+    const diffDias = (fechaDate - hoy) / (1000 * 60 * 60 * 24);
+    if (diffDias > 60) return 'La fecha está más de 60 días en el futuro. Revisa si es la fecha de vencimiento del NCF en vez de la fecha de emisión.';
+    const montoFinal = diff.monto != null ? diff.monto : Number(movimiento.monto || 0);
+    if (!Number.isFinite(montoFinal) || montoFinal <= 0) return 'Monto debe ser mayor a 0.';
+    const esConFactura = movimiento.tipo === 'gasto_factura' && !movimiento.datosIA?.sin_factura;
+    if (esConFactura) {
+      const rncFinal = limpiarRNC(campos.rnc || movimiento.rnc || '');
+      if (!rncFinal) return 'RNC del proveedor es requerido para facturas con CF.';
+    }
+    return null;
+  };
+
   const guardar = async () => {
     if (guardando || !hayCambios || soloLectura) return;
-    if (diff.monto != null && (!Number.isFinite(diff.monto) || diff.monto <= 0)) {
-      setError('Monto debe ser mayor a 0.'); return;
-    }
+    const errVal = validarParaGuardar();
+    if (errVal) { setError(errVal); return; }
     // v8.15.2: si admin edita un movimiento ya aprobado, confirmar antes de guardar.
     if (editandoAprobado) {
       const camposCambiados = Object.keys(diff).join(', ');
@@ -189,30 +223,12 @@ export default function ModalDetalleMovimiento({
     }
     setGuardando(true); setError('');
     try {
-      await db.actualizarMovimientoCajaChica(movimiento.id, diff);
-      // v8.15.2: audit log explícito si modificó aprobado
-      if (editandoAprobado) {
-        try {
-          db.registrarAudit({
-            usuarioId: usuario.id, usuarioNombre: usuario.nombre,
-            accion: 'caja_chica.movimiento_aprobado_editado',
-            recursoTipo: 'caja_chica_movimiento', recursoId: movimiento.id,
-            recursoNombre: `Gasto ${movimiento.tipo} de ${persona?.nombre || movimiento.personaId}`,
-            datosAntes: {
-              fecha: movimiento.fecha,
-              monto: movimiento.monto,
-              proveedor: movimiento.proveedor,
-              rnc: movimiento.rnc,
-              concepto: movimiento.concepto,
-              proyectoId: movimiento.proyectoId,
-              ncf: movimiento.datosIA?.ncf,
-              categoria: movimiento.datosIA?.categoria_sugerida,
-            },
-            datosDespues: diff,
-            severidad: 'warning',
-          });
-        } catch (e) { console.warn('Audit log falló:', e?.message); }
-      }
+      // v8.17.56: pasamos audit info para que la DB registre el cambio en historial_cambios.
+      await db.actualizarMovimientoCajaChica(
+        movimiento.id,
+        diff,
+        usuario ? { usuarioId: usuario.id, usuarioNombre: usuario.nombre } : null,
+      );
       onActualizado?.();
       onCerrar();
     } catch (e) {
@@ -221,33 +237,70 @@ export default function ModalDetalleMovimiento({
     setGuardando(false);
   };
 
-  // Cerrar con ESC + navegar con flechas (si hay onSiguiente/onAnterior)
+  // v8.17.56: autoguarda los cambios pendientes (sin cerrar modal). Devuelve true
+  // si guardó correctamente o no había nada que guardar; false si falló validación.
+  const autoguardar = async () => {
+    if (!hayCambios || soloLectura) return true;
+    const errVal = validarParaGuardar();
+    if (errVal) { setError(errVal); return false; }
+    try {
+      await db.actualizarMovimientoCajaChica(
+        movimiento.id,
+        diff,
+        usuario ? { usuarioId: usuario.id, usuarioNombre: usuario.nombre } : null,
+      );
+      onActualizado?.();
+      return true;
+    } catch (e) {
+      setError(e.message || 'Error guardando');
+      return false;
+    }
+  };
+
+  // v8.17.56: wrap onSiguiente/onAnterior con autoguardado.
+  const navegarConAutoguardado = async (direccion) => {
+    if (guardando) return;
+    if (hayCambios && !soloLectura) {
+      const ok = await autoguardar();
+      if (!ok) return; // dejamos al usuario corregir el error antes de moverse
+    }
+    if (direccion === 'siguiente') onSiguiente?.();
+    else if (direccion === 'anterior') onAnterior?.();
+  };
+
+  // Cerrar con ESC + navegar con flechas (si hay onSiguiente/onAnterior).
+  // v8.17.56: ↓↑ además de ← → para los que prefieren teclas verticales.
   useEffect(() => {
     const onKey = (e) => {
       // Si está en un input/textarea/select, no capturar flechas
       const tag = (e.target?.tagName || '').toLowerCase();
       const enInput = tag === 'input' || tag === 'textarea' || tag === 'select';
       if (e.key === 'Escape') onCerrar();
-      if (!enInput) {
-        if (e.key === 'ArrowRight' && onSiguiente && posicion && posicion.actual < posicion.total - 1) onSiguiente();
-        if (e.key === 'ArrowLeft' && onAnterior && posicion && posicion.actual > 0) onAnterior();
+      if (!enInput && posicion) {
+        const irSiguiente = (e.key === 'ArrowRight' || e.key === 'ArrowDown') && posicion.actual < posicion.total - 1;
+        const irAnterior = (e.key === 'ArrowLeft' || e.key === 'ArrowUp') && posicion.actual > 0;
+        if (irSiguiente && onSiguiente) { e.preventDefault(); navegarConAutoguardado('siguiente'); }
+        if (irAnterior && onAnterior) { e.preventDefault(); navegarConAutoguardado('anterior'); }
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onCerrar, onSiguiente, onAnterior, posicion]);
+  }, [onCerrar, onSiguiente, onAnterior, posicion, hayCambios, diff, soloLectura, guardando]);
 
   // v8.15.5: aprobar (con guardado previo de cambios si hay) + avanzar al siguiente
   const aprobarYAvanzar = async () => {
     if (guardando) return;
+    // v8.17.56: validación estricta al aprobar
+    const errVal = validarParaAprobar();
+    if (errVal) { setError(errVal); return; }
     setGuardando(true); setError('');
     try {
-      // Si hay cambios sin guardar, los guardamos primero
       if (hayCambios) {
-        if (diff.monto != null && (!Number.isFinite(diff.monto) || diff.monto <= 0)) {
-          setError('Monto debe ser mayor a 0.'); setGuardando(false); return;
-        }
-        await db.actualizarMovimientoCajaChica(movimiento.id, diff);
+        await db.actualizarMovimientoCajaChica(
+          movimiento.id,
+          diff,
+          usuario ? { usuarioId: usuario.id, usuarioNombre: usuario.nombre } : null,
+        );
       }
       await onAprobar?.(movimiento);
       onActualizado?.();
@@ -287,14 +340,14 @@ export default function ModalDetalleMovimiento({
         {/* HEADER sticky con cerrar prominente + navegación entre pendientes */}
         <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-2.5 flex-shrink-0 bg-zinc-900 gap-2">
           <div className="flex items-center gap-2 min-w-0">
-            {/* Navegación entre pendientes — solo si viene de la bandeja */}
+            {/* Navegación entre movimientos — autoguarda al pasar (v8.17.56) */}
             {posicion && (
               <div className="flex items-center gap-1">
                 <button
-                  onClick={onAnterior}
-                  disabled={posicion.actual === 0}
+                  onClick={() => navegarConAutoguardado('anterior')}
+                  disabled={posicion.actual === 0 || guardando}
                   className="bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed text-white p-1.5"
-                  title="Gasto anterior (←)"
+                  title="Anterior (← / ↑) — autoguarda los cambios"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
@@ -302,10 +355,10 @@ export default function ModalDetalleMovimiento({
                   {posicion.actual + 1} de {posicion.total}
                 </div>
                 <button
-                  onClick={onSiguiente}
-                  disabled={posicion.actual >= posicion.total - 1}
+                  onClick={() => navegarConAutoguardado('siguiente')}
+                  disabled={posicion.actual >= posicion.total - 1 || guardando}
                   className="bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed text-white p-1.5"
-                  title="Gasto siguiente (→)"
+                  title="Siguiente (→ / ↓) — autoguarda los cambios"
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>
@@ -478,6 +531,25 @@ export default function ModalDetalleMovimiento({
               <span className="capitalize">{movimiento.tipo}</span> · <span className={`font-bold ${movimiento.status === 'aprobado' ? 'text-green-400' : movimiento.status === 'rechazado' ? 'text-red-400' : 'text-orange-400'}`}>{movimiento.status}</span>
             </Item>
 
+            {/* v8.17.56: Subido por — quién creó el movimiento y cuándo */}
+            <div className="text-[10px] text-zinc-500 -mt-1">
+              {(() => {
+                const creador = (data.personal || []).find(p => p.id === movimiento.creadoPorId);
+                const nombre = creador?.nombre || movimiento.creadoPorId || '—';
+                return <>Subido por <span className="text-zinc-300 font-bold">{nombre}</span> · {formatFechaHora(movimiento.createdAt)}</>;
+              })()}
+              {movimiento.aprobadoPorId && movimiento.aprobadoAt && (
+                <>
+                  {' · '}
+                  {(() => {
+                    const aprobador = (data.personal || []).find(p => p.id === movimiento.aprobadoPorId);
+                    const nombre = aprobador?.nombre || movimiento.aprobadoPorId;
+                    return <span>Aprobado por <span className="text-green-400 font-bold">{nombre}</span> · {formatFechaHora(movimiento.aprobadoAt)}</span>;
+                  })()}
+                </>
+              )}
+            </div>
+
             <div className="grid grid-cols-2 gap-2">
               <Field label="Fecha" icon={<Calendar className="w-3 h-3" />}>
                 <input
@@ -496,6 +568,10 @@ export default function ModalDetalleMovimiento({
                   readOnly={soloLectura}
                   className={`w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-2 text-white text-base font-bold text-right text-orange-400 ${soloLectura ? 'cursor-not-allowed opacity-60' : ''}`}
                 />
+                {/* v8.17.56: muestra formateado con comas + 2 decimales */}
+                {Number(campos.monto) > 0 && (
+                  <div className="text-[10px] text-zinc-500 mt-0.5 text-right font-mono">{formatRD(campos.monto)}</div>
+                )}
               </Field>
             </div>
 
@@ -549,7 +625,13 @@ export default function ModalDetalleMovimiento({
                   type="text"
                   value={campos.rnc}
                   onChange={e => set('rnc', e.target.value)}
+                  /* v8.17.56: en blur normalizamos al formato ###-#####-# */
+                  onBlur={e => {
+                    const d = limpiarRNC(e.target.value);
+                    if (d) set('rnc', formatRNC(d));
+                  }}
                   placeholder="000-00000-0"
+                  inputMode="numeric"
                   readOnly={soloLectura}
                   className={`w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-2 text-white text-sm font-mono ${soloLectura ? 'cursor-not-allowed opacity-60' : ''}`}
                 />
@@ -633,6 +715,9 @@ export default function ModalDetalleMovimiento({
               etiquetaVacio="— Sin proyecto —"
             />
           </div>
+
+          {/* v8.17.56: HISTORIAL DE CAMBIOS — expandible */}
+          <HistorialCambios entradas={movimiento.historialCambios} personal={data.personal || []} />
 
           {error && (
             <div className="bg-red-950/40 border border-red-800 px-3 py-2 m-4 text-xs text-red-300 flex items-start gap-2">
@@ -761,4 +846,65 @@ function Field({ icon, label, children }) {
       {children}
     </div>
   );
+}
+
+// v8.17.56: audit log expandible. Muestra entradas del array `historial_cambios`
+// del movimiento. Cada entrada: { fecha, usuarioId, usuarioNombre, campo, antes, despues }.
+function HistorialCambios({ entradas, personal }) {
+  const [abierto, setAbierto] = useState(false);
+  const lista = Array.isArray(entradas) ? entradas : [];
+  const total = lista.length;
+  if (total === 0) return null;
+  // Mostrar las más recientes arriba
+  const ordenadas = [...lista].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+  return (
+    <div className="border-t border-zinc-800 bg-zinc-950">
+      <button
+        onClick={() => setAbierto(o => !o)}
+        className="w-full px-4 py-2.5 flex items-center justify-between text-left hover:bg-zinc-900"
+      >
+        <div className="flex items-center gap-2">
+          <History className="w-3.5 h-3.5 text-zinc-400" />
+          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">
+            Historial de cambios <span className="text-zinc-600">({total})</span>
+          </div>
+        </div>
+        {abierto ? <ChevronUp className="w-4 h-4 text-zinc-500" /> : <ChevronDown className="w-4 h-4 text-zinc-500" />}
+      </button>
+      {abierto && (
+        <div className="px-4 pb-3 space-y-2">
+          {ordenadas.map((e, i) => {
+            const persona = personal.find(p => p.id === e.usuarioId);
+            const nombre = persona?.nombre || e.usuarioNombre || e.usuarioId || '—';
+            return (
+              <div key={i} className="bg-zinc-900 border border-zinc-800 px-2.5 py-1.5 text-[11px]">
+                <div className="flex items-center justify-between gap-2 mb-0.5">
+                  <span className="text-zinc-300 font-bold">{nombre}</span>
+                  <span className="text-zinc-500 font-mono">{formatFechaHora(e.fecha)}</span>
+                </div>
+                <div className="text-zinc-400">
+                  <span className="text-zinc-500">{e.campo}:</span>{' '}
+                  <span className="text-red-300 line-through">{formatValor(e.campoKey, e.antes)}</span>
+                  {' → '}
+                  <span className="text-green-300">{formatValor(e.campoKey, e.despues)}</span>
+                  {e.motivoRechazo && (
+                    <div className="text-zinc-500 mt-0.5 italic">Motivo: {e.motivoRechazo}</div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Formatea un valor del historial según el campo. Soporta null → '—'.
+function formatValor(campoKey, v) {
+  if (v === null || v === undefined || v === '') return '—';
+  if (campoKey === 'monto') return formatRD(v);
+  if (campoKey === 'rnc') return formatRNC(v);
+  if (campoKey === 'empresaReceptora') return EMPRESAS_RECEPTORAS[v]?.label || v;
+  return String(v);
 }

@@ -62,6 +62,7 @@ import NuevoProyecto from '../components/proyecto/NuevoProyecto';
 import ModalEditarProyecto from '../components/proyecto/ModalEditarProyecto';
 // v8.17.41: carta de acceso de personal al cliente
 import ModalCartaAcceso from '../components/proyecto/ModalCartaAcceso';
+import ModalListaHerramientas from '../components/proyecto/ModalListaHerramientas';
 // v8.17.52: reportar avance del día en proyectos de unidades (baños, balcones, etc)
 import ModalReportarAvanceUnidades from '../components/proyecto/ModalReportarAvanceUnidades';
 // v8.17.49: propiedades de la empresa (apartamento Punta Cana, etc)
@@ -4008,6 +4009,10 @@ function EditorSistema({ sistema, setSistema, onGuardar, onCancelar, categorias 
   const sumaPesos = sistema.tareas.reduce((a, t) => a + (parseFloat(t.peso) || 0), 0);
   const actTarea = (i, c, v) => { const n = [...sistema.tareas]; n[i] = { ...n[i], [c]: v }; setSistema({ ...sistema, tareas: n }); };
   const actMat = (i, c, v) => { const n = [...sistema.materiales]; n[i] = { ...n[i], [c]: v }; setSistema({ ...sistema, materiales: n }); };
+  // v8.17.62: herramientas necesarias para ejecutar el sistema (lista que Miguel
+  // carga una vez por sistema). Se persisten dentro del jsonb `data` del sistema.
+  const herramientas = Array.isArray(sistema.herramientas) ? sistema.herramientas : [];
+  const actHerr = (i, c, v) => { const n = [...herramientas]; n[i] = { ...n[i], [c]: v }; setSistema({ ...sistema, herramientas: n }); };
   return (
     <div className="space-y-5 max-w-4xl mx-auto">
       <button onClick={onCancelar} className="flex items-center gap-2 text-zinc-400 text-sm"><ArrowLeft className="w-4 h-4" /> Cancelar</button>
@@ -4037,6 +4042,27 @@ function EditorSistema({ sistema, setSistema, onGuardar, onCancelar, categorias 
           ))}
         </div>
         <button onClick={() => setSistema({ ...sistema, tareas: [...sistema.tareas, { id: 't_' + Date.now(), nombre: '', peso: 0, reporta: 'm2' }] })} className="text-xs text-red-500 flex items-center gap-1"><Plus className="w-3 h-3" /> Agregar tarea</button>
+      </div>
+      {/* v8.17.62: Herramientas necesarias para el sistema. Una lista que Miguel
+          carga por sistema; al combinar los sistemas del proyecto se genera una
+          lista total que se puede enviar por WhatsApp. */}
+      <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
+        <div className="flex justify-between items-center">
+          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Herramientas necesarias</div>
+          <div className="text-[10px] text-zinc-500">{herramientas.length} item{herramientas.length !== 1 ? 's' : ''}</div>
+        </div>
+        <div className="space-y-2">
+          {herramientas.map((h, i) => (
+            <div key={h.id} className="grid grid-cols-12 gap-2 items-center">
+              <div className="col-span-5"><Input value={h.nombre || ''} onChange={v => actHerr(i, 'nombre', v)} placeholder="Nombre (ej: taladro, andamios)" /></div>
+              <div className="col-span-2"><Input type="number" value={h.cantidad || ''} onChange={v => actHerr(i, 'cantidad', v)} placeholder="Cant." /></div>
+              <div className="col-span-2"><Input value={h.unidad || ''} onChange={v => actHerr(i, 'unidad', v)} placeholder="Unidad" /></div>
+              <div className="col-span-2"><Input value={h.notas || ''} onChange={v => actHerr(i, 'notas', v)} placeholder="Notas" /></div>
+              <button onClick={() => setSistema({ ...sistema, herramientas: herramientas.filter((_, x) => x !== i) })} className="text-zinc-500 hover:text-red-400"><X className="w-4 h-4" /></button>
+            </div>
+          ))}
+        </div>
+        <button onClick={() => setSistema({ ...sistema, herramientas: [...herramientas, { id: 'h_' + Date.now() + Math.random().toString(36).slice(2, 6), nombre: '', cantidad: '', unidad: '', notas: '' }] })} className="text-xs text-red-500 flex items-center gap-1"><Plus className="w-3 h-3" /> Agregar herramienta</button>
       </div>
       <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
         <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Materiales</div>
@@ -5471,7 +5497,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
       </div>
 
       {tab === 'avance' && <TabAvance proyecto={proyecto} reportes={data.reportes} sistema={sistema} sistemas={data.sistemas} esSupervisor={esSupervisor} onEliminarReporte={onEliminarReporte} onEditarReporte={onEditarReporte} data={data} usuario={usuario} />}
-      {tab === 'info' && <TabInfo proyecto={proyecto} clientes={data.clientes || []} contactos={data.contactos || []} documentos={data.documentos || []} usuario={usuario} personal={data.personal} esAdmin={esAdmin} esSupervisor={esSupervisor} onRecargar={onRecargar} />}
+      {tab === 'info' && <TabInfo proyecto={proyecto} clientes={data.clientes || []} contactos={data.contactos || []} documentos={data.documentos || []} sistemas={data.sistemas || {}} usuario={usuario} personal={data.personal} esAdmin={esAdmin} esSupervisor={esSupervisor} onRecargar={onRecargar} />}
       {tab === 'jornada' && <TabAsistencia usuario={usuario} proyecto={proyecto} personal={data.personal} checkins={data.checkins || []} esAdmin={esAdmin} onActualizarProyecto={onActualizarProyecto} onRecargar={onRecargar} onEliminarJornada={onEliminarJornada} TabJornada={TabJornada} />}
       {tab === 'asistencia' && <TabAsistencia usuario={usuario} proyecto={proyecto} personal={data.personal} checkins={data.checkins || []} esAdmin={esAdmin} onActualizarProyecto={onActualizarProyecto} onRecargar={onRecargar} onEliminarJornada={onEliminarJornada} TabJornada={TabJornada} />}
       {tab === 'equipo' && <TabEquipoProyecto proyecto={proyecto} data={data} sistema={sistema} />}
@@ -5491,9 +5517,11 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
 // ============================================================
 // TAB INFO (v8.2) - ubicación + contacto cliente
 // ============================================================
-function TabInfo({ proyecto, clientes = [], contactos = [], documentos = [], usuario, personal = [], esAdmin, esSupervisor, onRecargar }) {
+function TabInfo({ proyecto, clientes = [], contactos = [], documentos = [], sistemas = {}, usuario, personal = [], esAdmin, esSupervisor, onRecargar }) {
   // v8.17.41: modal carta de acceso del personal
   const [modalCarta, setModalCarta] = useState(false);
+  // v8.17.62: modal lista de herramientas
+  const [modalHerramientas, setModalHerramientas] = useState(false);
   const hayUbicacion = proyecto.ubicacionLat != null && proyecto.ubicacionLng != null;
   // v8.9.10: cliente y contactos derivados
   const cliente = clienteDelProyecto(proyecto, clientes);
@@ -5552,12 +5580,22 @@ function TabInfo({ proyecto, clientes = [], contactos = [], documentos = [], usu
               <div className="text-[10px] text-zinc-500">Genera un PDF con el personal asignado y envíalo al cliente.</div>
             </div>
           </div>
-          <button
-            onClick={() => setModalCarta(true)}
-            className="bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase px-3 py-2 flex items-center gap-1 whitespace-nowrap"
-          >
-            <FileText className="w-3 h-3" /> Generar carta
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* v8.17.62: lista de herramientas del proyecto + envío WhatsApp */}
+            <button
+              onClick={() => setModalHerramientas(true)}
+              className="bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold uppercase px-3 py-2 flex items-center gap-1 whitespace-nowrap"
+              title="Lista combinada de herramientas para los sistemas del proyecto"
+            >
+              🔧 Herramientas
+            </button>
+            <button
+              onClick={() => setModalCarta(true)}
+              className="bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase px-3 py-2 flex items-center gap-1 whitespace-nowrap"
+            >
+              <FileText className="w-3 h-3" /> Generar carta
+            </button>
+          </div>
         </div>
       )}
 
@@ -5684,6 +5722,15 @@ function TabInfo({ proyecto, clientes = [], contactos = [], documentos = [], usu
           data={{ personal, clientes, contactos }}
           usuario={usuario}
           onCerrar={() => setModalCarta(false)}
+        />
+      )}
+
+      {/* v8.17.62: Modal lista de herramientas del proyecto */}
+      {modalHerramientas && (
+        <ModalListaHerramientas
+          proyecto={proyecto}
+          sistemas={sistemas}
+          onCerrar={() => setModalHerramientas(false)}
         />
       )}
     </div>

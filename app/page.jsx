@@ -62,6 +62,10 @@ import NuevoProyecto from '../components/proyecto/NuevoProyecto';
 import ModalEditarProyecto from '../components/proyecto/ModalEditarProyecto';
 // v8.17.41: carta de acceso de personal al cliente
 import ModalCartaAcceso from '../components/proyecto/ModalCartaAcceso';
+// v8.17.52: reportar avance del día en proyectos de unidades (baños, balcones, etc)
+import ModalReportarAvanceUnidades from '../components/proyecto/ModalReportarAvanceUnidades';
+// v8.17.49: propiedades de la empresa (apartamento Punta Cana, etc)
+import VistaPropiedadesEmpresa from '../components/propiedades/VistaPropiedadesEmpresa';
 // v8.10.13: VistaNomina extraída
 import VistaNomina from '../components/nomina/VistaNomina';
 // v8.12: Caja Chica + Dieta
@@ -675,6 +679,8 @@ export default function App() {
     { seccion: 'FINANZAS', items: [
       { id: 'nomina', label: 'Nómina', icon: Wallet, vista: 'nomina' },
       { id: 'cajaChica', label: 'Caja Chica', icon: CreditCard, vista: 'cajaChica' },
+      // v8.17.49: propiedades de la empresa (apartamento Punta Cana, etc) — log de estadías
+      { id: 'propiedadesEmpresa', label: 'Propiedades', icon: Building2, vista: 'propiedadesEmpresa' },
     ]},
     { seccion: 'CONFIGURACIÓN', items: [
       { id: 'sistemas', label: 'Sistemas', icon: Settings, vista: 'sistemas' },
@@ -809,6 +815,8 @@ export default function App() {
         {vista === 'autorizaciones' && esAdmin && <VistaAutorizaciones usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
         {vista === 'brigadas' && esAdmin && <VistaBrigadas data={data} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
         {vista === 'auditLog' && esAdmin && <VistaAuditLog data={data} onVolver={() => setVista('dashboard')} />}
+        {/* v8.17.49: Propiedades de la empresa (apartamento Punta Cana, etc) */}
+        {vista === 'propiedadesEmpresa' && esAdmin && <VistaPropiedadesEmpresa usuario={usuario} data={data} onVolver={() => setVista('dashboard')} />}
         {vista === 'miPerfil' && <MiPerfil usuario={usuario} persona={usuario} soloLectura={false} onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }} onGuardar={(campos) => withSync(() => db.guardarPerfil(usuario.id, campos))} />}
         {esAdmin && vista === 'personal' && <GestionPersonal usuario={usuario} personal={data.personal} data={data} onVolver={() => setVista('dashboard')} onActualizar={(p) => withSync(() => db.reemplazarPersonal(p))} onRecargar={recargar} onAbrirPerfil={(p) => { setPerfilViendo(p); setVista('perfilPersona'); }} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'perfilPersona' && perfilViendo && <MiPerfil usuario={usuario} persona={perfilViendo} soloLectura={false} onVolver={() => setVista('personal')} onGuardar={(campos) => withSync(async () => { await db.guardarPerfil(perfilViendo.id, campos); const d = await db.loadAllData(); const actualizada = d.personal.find(p => p.id === perfilViendo.id); if (actualizada) setPerfilViendo(actualizada); })} />}
@@ -5345,7 +5353,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
       {tab === 'equipo' && <TabEquipoProyecto proyecto={proyecto} data={data} sistema={sistema} />}
       {tab === 'fotos' && <TabFotos usuario={usuario} proyecto={proyecto} />}
       {tab === 'cronograma' && (esAdmin || proyecto.cronogramaVisibleMaestro !== false) && <TabCronograma proyecto={proyecto} porcentajeActual={porcentaje} onActualizarProyecto={onActualizarProyecto} esSupervisor={esSupervisor} reportes={data.reportes} sistema={sistema} sistemas={data.sistemas} />}
-      {tab === 'unidades' && proyecto.tipoAvance === 'unidades' && <TabUnidades proyecto={proyecto} onActualizarProyecto={onActualizarProyecto} esAdmin={esAdmin} />}
+      {tab === 'unidades' && proyecto.tipoAvance === 'unidades' && <TabUnidades proyecto={proyecto} usuario={usuario} onActualizarProyecto={onActualizarProyecto} esAdmin={esAdmin} esSupervisor={esSupervisor} onRecargar={onRecargar} />}
       {tab === 'materiales' && !tieneRol(usuario, 'maestro') && <TabMateriales proyecto={proyecto} sistema={sistema} materiales={materiales} envios={data.envios.filter(e => e.proyectoId === proyecto.id)} reportes={data.reportes} sistemas={data.sistemas} onRegistrarEnvio={onRegistrarEnvio} onRegistrarEnviosLote={onRegistrarEnviosLote} esSupervisor={esSupervisor} onEliminarEnvio={onEliminarEnvio} onIrASistemas={onIrASistemas} />}
       {tab === 'areas' && esAdmin && <TabAreas proyecto={proyecto} data={data} usuario={usuario} onRecargar={onRecargar} />}
       {tab === 'productos' && !esSupervisor && <TabProductosAdicionales proyecto={proyecto} onActualizarProyecto={onActualizarProyecto} esAdmin={esAdmin} />}
@@ -7086,6 +7094,8 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
   const [lineasConfirmar, setLineasConfirmar] = useState([]);
   const [matForm, setMatForm] = useState({ materialId: '', cantidad: '', costoUnidad: '', fecha: new Date().toISOString().split('T')[0] });
   const [expandidos, setExpandidos] = useState({}); // v8.9.3: expandir desglose por área
+  // v8.17.39: sort para la tabla de materiales por sistema en desktop
+  const [sortMat, setSortMat] = useState({ key: 'pend', dir: 'desc' });
 
   // v8.9.3: Agrupar áreas por sistema y calcular materiales de cada grupo
   const grupos = React.useMemo(() => agruparAreasPorSistema(proyecto, sistemas), [proyecto, sistemas]);
@@ -7644,7 +7654,7 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
             </div>
 
             {/* Materiales del sistema */}
-            <div className="p-3 space-y-2">
+            <div className="p-3">
               {grupo.materialesCalculados.length === 0 ? (
                 // Lista vacía con botón para agregar
                 <div className="bg-zinc-900 border-2 border-dashed border-zinc-700 p-6 text-center space-y-3">
@@ -7657,50 +7667,65 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
                   )}
                 </div>
               ) : (
-                grupo.materialesCalculados.map(mat => {
-                  const pctE = mat.requerido > 0 ? (mat.enviado / mat.requerido) * 100 : 0;
-                  const pctU = mat.requerido > 0 ? (mat.usado / mat.requerido) * 100 : 0;
-                  const pendiente = Math.max(0, mat.requerido - mat.enviado);
-                  const expandKey = `${grupo.sistemaId}:${mat.id}`;
-                  const abierto = expandidos[expandKey];
-                  return (
-                    <div key={mat.id} className="bg-zinc-900 border border-zinc-800 p-3">
-                      <div className="flex justify-between items-start mb-2">
-                        <div>
-                          <div className="font-bold text-sm">{mat.nombre}</div>
-                          <div className="text-[10px] text-zinc-500 uppercase">1 {mat.unidad} = {mat.rinde_m2} m²</div>
-                        </div>
-                        {grupo.areas.length > 1 && (
-                          <button onClick={() => toggleArea(expandKey)} className="text-[10px] text-zinc-500 hover:text-white">
-                            {abierto ? '▼ ocultar' : '▶ por área'}
-                          </button>
-                        )}
-                      </div>
-                      <div className="grid grid-cols-4 gap-2 mb-2">
-                        <div className="text-center"><div className="text-[9px] text-zinc-500 uppercase">Req</div><div className="text-base font-black">{formatNum(mat.requerido)}</div></div>
-                        <div className="text-center border-x border-zinc-800"><div className="text-[9px] text-blue-400 uppercase">Env</div><div className="text-base font-black text-blue-400">{formatNum(mat.enviado)}</div></div>
-                        <div className={`text-center ${pendiente > 0 ? '' : 'opacity-50'}`}><div className="text-[9px] text-orange-400 uppercase">Pend.</div><div className={`text-base font-black ${pendiente > 0 ? 'text-orange-400' : 'text-zinc-600'}`}>{formatNum(pendiente)}</div></div>
-                        <div className="text-center border-l border-zinc-800"><div className="text-[9px] text-green-400 uppercase">Usa</div><div className="text-base font-black text-green-400">{formatNum(mat.usado)}</div></div>
-                      </div>
-                      <div className="relative h-2 bg-zinc-800 overflow-hidden">
-                        <div className="absolute inset-y-0 left-0 bg-blue-600/40" style={{ width: `${Math.min(pctE, 100)}%` }} />
-                        <div className="absolute inset-y-0 left-0 bg-green-500" style={{ width: `${Math.min(pctU, 100)}%` }} />
-                      </div>
-                      {/* v8.9.3: Desglose por área */}
-                      {abierto && grupo.areas.length > 1 && (
-                        <div className="mt-3 pt-3 border-t border-zinc-800 space-y-1">
-                          <div className="text-[9px] tracking-widest uppercase text-zinc-500 font-bold">Por área</div>
-                          {mat.porArea.map(pa => (
-                            <div key={pa.id} className="flex justify-between items-center text-xs">
-                              <div className="text-zinc-400">{pa.nombre} · {formatNum(pa.m2)} m²</div>
-                              <div className="text-zinc-300 font-bold">{formatNum(pa.requerido)} {mat.unidad_plural || mat.unidad}</div>
+                <>
+                  {/* v8.17.39: DESKTOP — tabla con sort + bandita de color por pendiente */}
+                  <div className="hidden md:block bg-zinc-900 border border-zinc-800 overflow-x-auto">
+                    <TablaMaterialesSistema
+                      grupo={grupo}
+                      sort={sortMat}
+                      setSort={setSortMat}
+                      expandidos={expandidos}
+                      onToggleArea={toggleArea}
+                    />
+                  </div>
+                  {/* MOBILE — cards (layout original) */}
+                  <div className="md:hidden space-y-2">
+                    {grupo.materialesCalculados.map(mat => {
+                      const pctE = mat.requerido > 0 ? (mat.enviado / mat.requerido) * 100 : 0;
+                      const pctU = mat.requerido > 0 ? (mat.usado / mat.requerido) * 100 : 0;
+                      const pendiente = Math.max(0, mat.requerido - mat.enviado);
+                      const expandKey = `${grupo.sistemaId}:${mat.id}`;
+                      const abierto = expandidos[expandKey];
+                      return (
+                        <div key={mat.id} className="bg-zinc-900 border border-zinc-800 p-3">
+                          <div className="flex justify-between items-start mb-2">
+                            <div>
+                              <div className="font-bold text-sm">{mat.nombre}</div>
+                              <div className="text-[10px] text-zinc-500 uppercase">1 {mat.unidad} = {mat.rinde_m2} m²</div>
                             </div>
-                          ))}
+                            {grupo.areas.length > 1 && (
+                              <button onClick={() => toggleArea(expandKey)} className="text-[10px] text-zinc-500 hover:text-white">
+                                {abierto ? '▼ ocultar' : '▶ por área'}
+                              </button>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-4 gap-2 mb-2">
+                            <div className="text-center"><div className="text-[9px] text-zinc-500 uppercase">Req</div><div className="text-base font-black">{formatNum(mat.requerido)}</div></div>
+                            <div className="text-center border-x border-zinc-800"><div className="text-[9px] text-blue-400 uppercase">Env</div><div className="text-base font-black text-blue-400">{formatNum(mat.enviado)}</div></div>
+                            <div className={`text-center ${pendiente > 0 ? '' : 'opacity-50'}`}><div className="text-[9px] text-orange-400 uppercase">Pend.</div><div className={`text-base font-black ${pendiente > 0 ? 'text-orange-400' : 'text-zinc-600'}`}>{formatNum(pendiente)}</div></div>
+                            <div className="text-center border-l border-zinc-800"><div className="text-[9px] text-green-400 uppercase">Usa</div><div className="text-base font-black text-green-400">{formatNum(mat.usado)}</div></div>
+                          </div>
+                          <div className="relative h-2 bg-zinc-800 overflow-hidden">
+                            <div className="absolute inset-y-0 left-0 bg-blue-600/40" style={{ width: `${Math.min(pctE, 100)}%` }} />
+                            <div className="absolute inset-y-0 left-0 bg-green-500" style={{ width: `${Math.min(pctU, 100)}%` }} />
+                          </div>
+                          {/* v8.9.3: Desglose por área */}
+                          {abierto && grupo.areas.length > 1 && (
+                            <div className="mt-3 pt-3 border-t border-zinc-800 space-y-1">
+                              <div className="text-[9px] tracking-widest uppercase text-zinc-500 font-bold">Por área</div>
+                              {mat.porArea.map(pa => (
+                                <div key={pa.id} className="flex justify-between items-center text-xs">
+                                  <div className="text-zinc-400">{pa.nombre} · {formatNum(pa.m2)} m²</div>
+                                  <div className="text-zinc-300 font-bold">{formatNum(pa.requerido)} {mat.unidad_plural || mat.unidad}</div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  );
-                })
+                      );
+                    })}
+                  </div>
+                </>
               )}
             </div>
           </div>
@@ -7734,6 +7759,125 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
       )}
       </>}
     </div>
+  );
+}
+
+// v8.17.39: tabla de materiales por sistema para desktop.
+// Igual estilo que la tabla de Caja Chica Movimientos: bandita de color a la izquierda
+// (verde si todo cubierto, naranja/rojo si hay pendiente), sticky header, sort por columna.
+// Las filas multi-área son expandibles a sub-filas con el detalle por área.
+function TablaMaterialesSistema({ grupo, sort, setSort, expandidos, onToggleArea }) {
+  // Sort por columna
+  const items = (grupo.materialesCalculados || []).slice().sort((a, b) => {
+    const dir = sort.dir === 'asc' ? 1 : -1;
+    const pendA = Math.max(0, a.requerido - a.enviado);
+    const pendB = Math.max(0, b.requerido - b.enviado);
+    const get = (m, p) => {
+      switch (sort.key) {
+        case 'nombre': return (m.nombre || '').toLowerCase();
+        case 'req': return m.requerido || 0;
+        case 'env': return m.enviado || 0;
+        case 'pend': return p;
+        case 'usa': return m.usado || 0;
+        default: return 0;
+      }
+    };
+    const va = get(a, pendA), vb = get(b, pendB);
+    if (va < vb) return -1 * dir;
+    if (va > vb) return 1 * dir;
+    return 0;
+  });
+
+  const Th = ({ k, align = 'left', children }) => {
+    const activo = sort.key === k;
+    const dirIcono = activo ? (sort.dir === 'asc' ? '▲' : '▼') : '';
+    const handle = () => setSort(s => ({ key: k, dir: s.key === k && s.dir === 'asc' ? 'desc' : 'asc' }));
+    return (
+      <th className={`py-2 px-2 font-bold ${align === 'right' ? 'text-right' : 'text-left'}`}>
+        <button onClick={handle} className={`inline-flex items-center gap-1 text-[10px] uppercase tracking-wider ${activo ? 'text-red-400' : 'text-zinc-500 hover:text-zinc-300'}`}>
+          {children}{activo && <span className="text-[8px]">{dirIcono}</span>}
+        </button>
+      </th>
+    );
+  };
+
+  return (
+    <table className="w-full text-sm">
+      <thead className="bg-zinc-950 border-b border-zinc-800 sticky top-0 z-10">
+        <tr>
+          <th className="w-1" />
+          <Th k="nombre">Material</Th>
+          <Th k="req" align="right">Requerido</Th>
+          <Th k="env" align="right">Enviado</Th>
+          <Th k="pend" align="right">Pendiente</Th>
+          <Th k="usa" align="right">Usado</Th>
+          <th className="py-2 px-2 text-left text-[10px] uppercase tracking-wider text-zinc-500 font-bold w-[180px]">Progreso</th>
+          {grupo.areas.length > 1 && <th className="py-2 px-2 text-right text-[10px] uppercase tracking-wider text-zinc-500 font-bold">Por área</th>}
+        </tr>
+      </thead>
+      <tbody>
+        {items.map(mat => {
+          const pctE = mat.requerido > 0 ? (mat.enviado / mat.requerido) * 100 : 0;
+          const pctU = mat.requerido > 0 ? (mat.usado / mat.requerido) * 100 : 0;
+          const pendiente = Math.max(0, mat.requerido - mat.enviado);
+          const expandKey = `${grupo.sistemaId}:${mat.id}`;
+          const abierto = expandidos[expandKey];
+          // Banda izquierda: verde si todo enviado, naranja si pendiente, rojo si nada enviado y requerido > 0
+          const bandColor = mat.requerido <= 0
+            ? 'bg-zinc-700'
+            : pendiente <= 0
+              ? 'bg-green-600'
+              : mat.enviado <= 0
+                ? 'bg-red-600'
+                : 'bg-orange-500';
+          return (
+            <React.Fragment key={mat.id}>
+              <tr className="border-b border-zinc-800 hover:bg-zinc-800/30">
+                <td className={`${bandColor} w-1`} style={{ padding: 0 }} />
+                <td className="py-2 px-2">
+                  <div className="font-bold text-sm text-white">{mat.nombre}</div>
+                  <div className="text-[10px] text-zinc-500 uppercase">1 {mat.unidad} = {mat.rinde_m2} m²</div>
+                </td>
+                <td className="py-2 px-2 text-right tabular-nums font-black text-white">{formatNum(mat.requerido)} <span className="text-[10px] text-zinc-500 font-normal">{mat.unidad_plural || mat.unidad}</span></td>
+                <td className="py-2 px-2 text-right tabular-nums font-black text-blue-400">{formatNum(mat.enviado)}</td>
+                <td className={`py-2 px-2 text-right tabular-nums font-black ${pendiente > 0 ? 'text-orange-400' : 'text-zinc-600'}`}>{formatNum(pendiente)}</td>
+                <td className="py-2 px-2 text-right tabular-nums font-black text-green-400">{formatNum(mat.usado)}</td>
+                <td className="py-2 px-2">
+                  <div className="relative h-2 bg-zinc-800 overflow-hidden w-full" title={`${pctE.toFixed(0)}% enviado · ${pctU.toFixed(0)}% usado`}>
+                    <div className="absolute inset-y-0 left-0 bg-blue-600/40" style={{ width: `${Math.min(pctE, 100)}%` }} />
+                    <div className="absolute inset-y-0 left-0 bg-green-500" style={{ width: `${Math.min(pctU, 100)}%` }} />
+                  </div>
+                  <div className="text-[9px] text-zinc-500 mt-0.5 flex justify-between">
+                    <span>{pctE.toFixed(0)}% env</span>
+                    <span>{pctU.toFixed(0)}% usa</span>
+                  </div>
+                </td>
+                {grupo.areas.length > 1 && (
+                  <td className="py-2 px-2 text-right">
+                    <button onClick={() => onToggleArea(expandKey)} className="text-[10px] text-zinc-500 hover:text-red-400 font-bold">
+                      {abierto ? '▼ ocultar' : '▶ ver'}
+                    </button>
+                  </td>
+                )}
+              </tr>
+              {/* Sub-filas por área cuando está expandido */}
+              {abierto && grupo.areas.length > 1 && mat.porArea.map(pa => (
+                <tr key={`${expandKey}:${pa.id}`} className="border-b border-zinc-800 bg-zinc-950/50">
+                  <td className="bg-zinc-700 w-1" style={{ padding: 0 }} />
+                  <td className="py-1.5 px-2 pl-6 text-[11px] text-zinc-400">└ {pa.nombre} · {formatNum(pa.m2)} m²</td>
+                  <td className="py-1.5 px-2 text-right tabular-nums text-xs text-zinc-300">{formatNum(pa.requerido)}</td>
+                  <td className="py-1.5 px-2 text-right tabular-nums text-xs text-blue-400/70">{pa.enviado != null ? formatNum(pa.enviado) : '—'}</td>
+                  <td className="py-1.5 px-2 text-right tabular-nums text-xs text-orange-400/70">{pa.enviado != null ? formatNum(Math.max(0, pa.requerido - pa.enviado)) : '—'}</td>
+                  <td className="py-1.5 px-2 text-right tabular-nums text-xs text-green-400/70">{pa.usado != null ? formatNum(pa.usado) : '—'}</td>
+                  <td className="py-1.5 px-2 text-[9px] text-zinc-600">—</td>
+                  <td className="py-1.5 px-2" />
+                </tr>
+              ))}
+            </React.Fragment>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }
 
@@ -10134,11 +10278,16 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
   const [finalizarModal, setFinalizarModal] = useState(false);
   const [programarModal, setProgramarModal] = useState(false);
   const [verHistorial, setVerHistorial] = useState(false);
+  // v8.17.52: modal de reportar avance de unidades (proyectos tipoAvance='unidades')
+  const [modalReportarAvance, setModalReportarAvance] = useState(false);
   // v8.17.29: config global de dieta para mostrar montos en el modal de cierre
   const [configDieta, setConfigDieta] = useState({ desayunoRd: 200, comidaRd: 350, cenaRd: 350, hotelRd: 900 });
+  // v8.17.49: propiedades empresa activas para mostrar botones de estadía en el modal
+  const [propiedadesEmpresa, setPropiedadesEmpresa] = useState([]);
   useEffect(() => {
     (async () => {
       try { setConfigDieta(await db.obtenerConfigDieta()); } catch (e) { /* defaults */ }
+      try { setPropiedadesEmpresa(await db.listarPropiedadesEmpresa({ soloActivas: true })); } catch (e) { /* vacío */ }
     })();
   }, []);
 
@@ -10195,7 +10344,7 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
     setProcesando(null);
   };
 
-  const finalizarJornada = async (condicionDia = 'normal', condicionNota = '', dietaPorPersona = {}) => {
+  const finalizarJornada = async (condicionDia = 'normal', condicionNota = '', dietaPorPersona = {}, propiedadPorPersona = {}) => {
     if (!jornadaHoy) return;
     setProcesando('fin');
     const ubi = await obtenerUbicacion();
@@ -10237,6 +10386,21 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
       for (const m of movs) {
         try { await db.crearMovimientoCajaChica(m); }
         catch (e) { console.warn('No se pudo crear movimiento de dieta:', e?.message); }
+      }
+      // v8.17.49: registrar estadías en propiedades de la empresa (apartamento Punta Cana).
+      // propiedadPorPersona = { [personaId]: propiedadId }
+      const fechaJornada = jornadaHoy.fecha || hoy;
+      for (const [personaId, propiedadId] of Object.entries(propiedadPorPersona || {})) {
+        if (!propiedadId) continue;
+        try {
+          await db.crearEstadiaEmpresa({
+            propiedadId,
+            personaId,
+            proyectoId: proyecto.id,
+            fecha: fechaJornada,
+            creadoPorId: usuario.id,
+          });
+        } catch (e) { console.warn('No se pudo crear estadía:', e?.message); }
       }
       setFinalizarModal(false);
       await recargar();
@@ -10421,6 +10585,16 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
                 {procesando === 'fin' ? <><Loader2 className="w-4 h-4 animate-spin" /> Capturando GPS...</> : <><Square className="w-4 h-4" /> Finalizar Jornada</>}
               </button>
             )}
+            {/* v8.17.52: para proyectos por unidades, botón rápido para reportar avance del día */}
+            {jornadaHoy && proyecto.tipoAvance === 'unidades' && (proyecto.estructuraUnidades || []).length > 0 && (
+              <button
+                onClick={() => setModalReportarAvance(true)}
+                className="w-full bg-zinc-900 border-2 border-zinc-700 hover:border-red-500 text-zinc-200 font-bold uppercase py-3 flex items-center justify-center gap-2"
+                title="Registra cuántos baños / balcones / etc se hicieron hoy"
+              >
+                📊 Reportar avance de unidades hoy
+              </button>
+            )}
           </>
         )}
         {tieneRol(usuario, 'admin') && (
@@ -10537,7 +10711,7 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
       </div>
 
       {/* Modal finalizar jornada con condición del día (v8.3) + dieta/hospedaje (v8.17.29)
-          v8.17.47: pasa el responsable de caja (maestro o supervisor con caja chica) */}
+          + responsable de caja (v8.17.47) + propiedades empresa (v8.17.49) */}
       {finalizarModal && (
         <ModalFinalizarJornada
           onCerrar={() => setFinalizarModal(false)}
@@ -10547,6 +10721,7 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
           personasPresentes={(jornadaHoy?.personasPresentesIds || personasSel || []).map(id => getPersona(personal, id)).filter(Boolean)}
           configDieta={configDieta}
           responsableCaja={obtenerResponsableCajaDieta(proyecto, personal)}
+          propiedadesEmpresa={propiedadesEmpresa}
         />
       )}
 
@@ -10561,15 +10736,30 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
           procesando={procesando === 'programar'}
         />
       )}
+
+      {/* v8.17.52: Modal reportar avance de unidades (proyectos tipoAvance='unidades').
+          Pre-llenado con la fecha de la jornada activa. */}
+      {modalReportarAvance && (
+        <ModalReportarAvanceUnidades
+          proyecto={proyecto}
+          usuario={usuario}
+          fechaInicial={jornadaHoy?.fecha || hoy}
+          onCerrar={() => setModalReportarAvance(false)}
+          onReportado={async () => { await recargar(); }}
+        />
+      )}
     </div>
   );
 }
 
-function ModalFinalizarJornada({ onCerrar, onConfirmar, procesando, proyecto, personasPresentes = [], configDieta, responsableCaja = null }) {
+function ModalFinalizarJornada({ onCerrar, onConfirmar, procesando, proyecto, personasPresentes = [], configDieta, responsableCaja = null, propiedadesEmpresa = [] }) {
   const [condicion, setCondicion] = useState('normal');
   const [nota, setNota] = useState('');
   // v8.17.29: dietaPorPersona = { [personaId]: ['desayuno','comida','cena','hotel'] }
   const [dietaPorPersona, setDietaPorPersona] = useState({});
+  // v8.17.49: dónde durmió cada persona — si eligen propiedad, NO se marca Hotel y NO se debita caja.
+  // estructura: { [personaId]: propiedadId }
+  const [propiedadPorPersona, setPropiedadPorPersona] = useState({});
 
   // v8.17.47: dieta/hospedaje del proyecto se debita a la caja del responsable
   // (maestro o supervisor con cajaChicaHabilitada). Mostramos TODOS los presentes
@@ -10587,12 +10777,37 @@ function ModalFinalizarJornada({ onCerrar, onConfirmar, procesando, proyecto, pe
       const nuevo = ya ? actuales.filter(x => x !== subTipo) : [...actuales, subTipo];
       return { ...prev, [personaId]: nuevo };
     });
+    // v8.17.49: Hotel y Apartamento son mutuamente excluyentes (no dormiste en los dos).
+    if (subTipo === 'hotel') {
+      setPropiedadPorPersona(prev => {
+        const next = { ...prev };
+        delete next[personaId];
+        return next;
+      });
+    }
+  };
+
+  // v8.17.49: toggle de propiedad. Si elige propiedad, quita Hotel del array de subTipos.
+  const togglePropiedad = (personaId, propiedadId) => {
+    setPropiedadPorPersona(prev => {
+      const yaTiene = prev[personaId] === propiedadId;
+      const next = { ...prev };
+      if (yaTiene) delete next[personaId]; else next[personaId] = propiedadId;
+      return next;
+    });
+    // Si activó una propiedad, quitar Hotel del dietaPorPersona del mismo
+    setDietaPorPersona(prev => {
+      const actuales = prev[personaId] || [];
+      if (!actuales.includes('hotel')) return prev;
+      return { ...prev, [personaId]: actuales.filter(x => x !== 'hotel') };
+    });
   };
 
   const totalDietaEstimado = elegibles.reduce((acc, e) => {
     const sts = dietaPorPersona[e.persona.id] || [];
     return acc + sts.reduce((s, st) => s + montoDelSubTipo(st, configDieta), 0);
   }, 0);
+  const totalEstadias = Object.keys(propiedadPorPersona).length;
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-y-auto">
@@ -10696,14 +10911,41 @@ function ModalFinalizarJornada({ onCerrar, onConfirmar, procesando, proyecto, pe
                         </button>
                       );
                     })}
+                    {/* v8.17.49: botones de propiedades de la empresa (apartamento Punta Cana, etc).
+                        Si conHospedaje y hay propiedades activas → opciones gratis que excluyen al Hotel. */}
+                    {conHospedaje && propiedadesEmpresa.map(prop => {
+                      const activo = propiedadPorPersona[persona.id] === prop.id;
+                      return (
+                        <button
+                          key={prop.id}
+                          type="button"
+                          onClick={() => togglePropiedad(persona.id, prop.id)}
+                          className={`flex flex-col items-center text-[10px] font-bold uppercase px-2 py-1.5 border-2 ${activo ? 'bg-green-700 border-green-500 text-white' : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:border-zinc-600'}`}
+                          title={`Estadía gratis en propiedad de la empresa: ${prop.nombre}`}
+                        >
+                          <span>🏠 {prop.nombre}</span>
+                          <span className={`text-[9px] ${activo ? 'opacity-80' : 'text-zinc-500'}`}>GRATIS</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               ))}
             </div>
-            {totalDietaEstimado > 0 && (
-              <div className="mt-2 text-[10px] bg-zinc-950 border border-orange-900/50 p-2 flex justify-between">
-                <span className="text-zinc-400">Total a debitar del presupuesto:</span>
-                <span className="text-orange-300 font-bold">RD$ {totalDietaEstimado.toLocaleString()}</span>
+            {(totalDietaEstimado > 0 || totalEstadias > 0) && (
+              <div className="mt-2 text-[10px] space-y-1">
+                {totalDietaEstimado > 0 && (
+                  <div className="bg-zinc-950 border border-orange-900/50 p-2 flex justify-between">
+                    <span className="text-zinc-400">Total a debitar del presupuesto:</span>
+                    <span className="text-orange-300 font-bold">RD$ {totalDietaEstimado.toLocaleString()}</span>
+                  </div>
+                )}
+                {totalEstadias > 0 && (
+                  <div className="bg-zinc-950 border border-green-900/50 p-2 flex justify-between">
+                    <span className="text-zinc-400">Estadías gratis (propiedades empresa):</span>
+                    <span className="text-green-400 font-bold">{totalEstadias} {totalEstadias === 1 ? 'persona' : 'personas'}</span>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -10712,7 +10954,7 @@ function ModalFinalizarJornada({ onCerrar, onConfirmar, procesando, proyecto, pe
         <div className="flex gap-2 pt-1">
           <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button>
           <button
-            onClick={() => onConfirmar(condicion, nota, dietaPorPersona)}
+            onClick={() => onConfirmar(condicion, nota, dietaPorPersona, propiedadPorPersona)}
             disabled={procesando || (condicion === 'otro' && !nota.trim())}
             className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-3 flex items-center justify-center gap-2"
           >

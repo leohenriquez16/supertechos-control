@@ -54,16 +54,24 @@ ${descripcionesCategorias}
 
 IDs válidos: ${ids}
 
-EMPRESAS RECEPTORAS conocidas (el RNC del CLIENTE en la factura):
-- "super_techos" → RNC 130774331 (LH SUPER TECHOS SRL)
-- "prouco" → RNC 131515541 (PROUCO GROUP DOMINICANA SRL)
+⚠️ EMPRESAS NUESTRAS (NUNCA son el proveedor — siempre son el comprador/receptor):
+Cuando veas estos nombres o RNCs en la factura, son NUESTRA empresa (el cliente que paga), NO el vendedor:
+- "LH SUPER TECHOS SRL" / "SUPER TECHOS" → RNC 130774331 → empresa_receptora: "super_techos"
+- "PROUCO GROUP DOMINICANA SRL" / "PROUCO" → RNC 131515541 → empresa_receptora: "prouco"
+
+🚫 REGLA DURA — Si el "proveedor" que ibas a poner es Super Techos o Prouco, ESTÁS CONFUNDIDO:
+Esa empresa es el CLIENTE/COMPRADOR, no el vendedor. Una empresa no se vende a sí misma.
+Vuelve a leer la factura y busca al PROVEEDOR REAL (Ferretería, Estación de combustible, Restaurante, etc).
+- Su nombre va arriba del documento, suele tener logo.
+- Su RNC va junto a su nombre (en el encabezado), no abajo donde está "Cliente:" o "Receptor:".
 
 Reglas:
 - Si un campo no se ve claro, usa null en lugar de inventar.
 - monto_total siempre es el TOTAL final (después de ITBIS y propina si aplican).
 - RNC dominicano: 9 u 11 dígitos, puede tener formato 130-77433-1. Normaliza a solo dígitos.
-- El campo "rnc" es del PROVEEDOR (vendedor). El "rnc_cliente" es del cliente (Super Techos o Prouco), suele aparecer abajo en la sección "Cliente:" o "Datos del Receptor".
-- Si rnc_cliente NO coincide con ninguno de los 2 RNCs conocidos, deja "empresa_receptora" en null.
+- "proveedor" y "rnc" SIEMPRE pertenecen al vendedor (el que emite/factura). NUNCA pongas Super Techos o Prouco ahí.
+- "rnc_cliente" pertenece a Super Techos o Prouco (nuestra empresa). Suele aparecer en una sección "Cliente:" / "Datos del Receptor:" / "Razón Social del Cliente:".
+- Si rnc_cliente NO coincide con ninguno de los 2 RNCs conocidos (130774331 ni 131515541), deja "empresa_receptora" en null.
 - Si la imagen NO es una factura/recibo, devuelve confianza="baja" y todos los campos null excepto advertencias.
 - "categoria_sugerida" DEBE ser uno de los IDs listados — no inventes nuevas categorías.
 - No incluyas explicaciones fuera del JSON.`;
@@ -147,6 +155,55 @@ export async function POST(request) {
         error: 'No se pudo interpretar la respuesta del modelo',
         raw: text.substring(0, 500),
       }), { status: 500 });
+    }
+
+    // v8.17.40: Post-proceso defensivo — si la IA confundió Super Techos/Prouco como
+    // proveedor, lo corregimos. Una empresa no se vende a sí misma: si aparecen como
+    // proveedor, en realidad son la empresa receptora y el verdadero proveedor está
+    // perdido (lo dejamos en null para que el admin lo corrija).
+    const RNCS_NUESTROS = {
+      '130774331': 'super_techos',
+      '131515541': 'prouco',
+    };
+    const esNombreNuestro = (nombre) => {
+      if (!nombre) return false;
+      const n = String(nombre).toUpperCase();
+      return n.includes('SUPER TECHOS') || n.includes('PROUCO') || n.includes('LH SUPER');
+    };
+    if (parsed && typeof parsed === 'object') {
+      const rncProveedor = (parsed.rnc || '').replace(/\D/g, '');
+      const rncCliente = (parsed.rnc_cliente || '').replace(/\D/g, '');
+      // Caso 1: RNC del "proveedor" coincide con una empresa nuestra → swap
+      if (RNCS_NUESTROS[rncProveedor]) {
+        parsed.empresa_receptora = RNCS_NUESTROS[rncProveedor];
+        parsed.rnc_cliente = parsed.rnc_cliente || rncProveedor;
+        parsed.rnc = null;
+        parsed.proveedor = null;
+        parsed.advertencias = [
+          ...(parsed.advertencias || []),
+          'La IA puso a Super Techos/Prouco como proveedor — corregido a empresa_receptora. Revisa el proveedor real.',
+        ];
+      }
+      // Caso 2: el nombre del proveedor menciona nuestras empresas → null
+      else if (esNombreNuestro(parsed.proveedor)) {
+        // Si nombre coincide pero RNC no, asumir igual que es nuestra empresa
+        if (!parsed.empresa_receptora) {
+          // Inferir por el nombre
+          const nom = String(parsed.proveedor).toUpperCase();
+          if (nom.includes('PROUCO')) parsed.empresa_receptora = 'prouco';
+          else if (nom.includes('SUPER TECHOS') || nom.includes('LH SUPER')) parsed.empresa_receptora = 'super_techos';
+        }
+        parsed.proveedor = null;
+        parsed.rnc = null;
+        parsed.advertencias = [
+          ...(parsed.advertencias || []),
+          'La IA puso a Super Techos/Prouco como proveedor — corregido. Revisa el proveedor real.',
+        ];
+      }
+      // Set empresa_receptora si el rnc_cliente coincide y aún está vacío
+      if (!parsed.empresa_receptora && RNCS_NUESTROS[rncCliente]) {
+        parsed.empresa_receptora = RNCS_NUESTROS[rncCliente];
+      }
     }
 
     return new Response(JSON.stringify({ datos: parsed, modelo: 'claude-sonnet-4-5-20250929' }), {

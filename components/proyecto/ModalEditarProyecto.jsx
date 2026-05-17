@@ -147,6 +147,16 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
       alert('⚠️ Cuando se asigna personal al proyecto, debes establecer la fecha de inicio. Si aún está por definir, quita el personal asignado o define una fecha.');
       return;
     }
+    // v8.17.60: validar valor != 0. Si el cálculo da 0 con áreas asignadas,
+    // probablemente falta el precio del sistema o el m2 — pedimos confirmación
+    // explícita en vez de bloquear (el admin puede estar editando WIP).
+    const m2TotalCalc = (form.areas || []).reduce((acc, a) => acc + (parseFloat(a.m2) || 0), 0);
+    const sistemaFinal = data.sistemas?.[form.sistema];
+    const valorCalc = m2TotalCalc * (sistemaFinal?.precio_m2 || 0);
+    if (m2TotalCalc > 0 && valorCalc === 0) {
+      const ok = confirm(`⚠️ Este proyecto tiene VALOR RD$ 0 (m² total: ${m2TotalCalc}, precio del sistema: 0). Esto suele significar que falta el precio por m² del sistema o que el sistema no se cargó bien. ¿Guardar igual?`);
+      if (!ok) return;
+    }
     setGuardando(true);
     // v8.9.27: audit log de cambios de precio custom por área
     try {

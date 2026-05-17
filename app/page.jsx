@@ -4958,6 +4958,25 @@ function VistaKanban({ proyectos, data, onVerProyecto, onCambiarEstadoRapido }) 
   );
 }
 
+// v8.17.61: dado el historial_estados de un proyecto (asc por fecha), calcula
+// cuántos días pasó en cada etapa. La etapa actual cuenta hasta hoy.
+// Devuelve: [{estado, dias}, ...] en orden cronológico. Vacío si no hay historial.
+function diasPorEtapa(historial, estadoActual) {
+  if (!Array.isArray(historial) || historial.length === 0) return [];
+  const eventos = historial.map(h => ({
+    estado: h.estado_nuevo,
+    fecha: new Date(h.created_at),
+  }));
+  const resultado = [];
+  for (let i = 0; i < eventos.length; i++) {
+    const inicio = eventos[i].fecha;
+    const fin = i + 1 < eventos.length ? eventos[i + 1].fecha : new Date();
+    const dias = Math.max(0, Math.floor((fin - inicio) / 86400000));
+    resultado.push({ estado: eventos[i].estado, dias });
+  }
+  return resultado;
+}
+
 // v8.17.30: helper para calcular días en el estado actual.
 // Usa la fecha más relevante según el estado (aprobado→fechaAprobacion, etc).
 // Fallback a createdAt o null si no hay nada.
@@ -4981,9 +5000,66 @@ function VistaLista({ proyectos, data, densidad = 'detallado', dx, onVerProyecto
   // v8.10.12: Agrupar por estado, colapsable, con totales
   // v8.17.30: en desktop (md:) se renderiza como tabla con sticky header, sort, inline edit, acciones.
   //           En móvil (<md) mantiene el layout de cards (más legible en pantalla chica).
+  // v8.17.61: sort independiente por estado, persiste en localStorage.
   const [colapsados, setColapsados] = useState({});
   const [guardandoId, setGuardandoId] = useState(null); // id del proyecto siendo guardado (feedback visual)
-  const [sort, setSort] = useState({ key: 'cliente', dir: 'asc' });
+  // v8.17.61: historial de estados para tooltip "días por etapa". Lazy batch al montar.
+  const [historialMap, setHistorialMap] = useState({});
+  useEffect(() => {
+    (async () => {
+      try {
+        const ids = proyectos.map(p => p.id);
+        if (ids.length === 0) return;
+        const map = await db.listarHistorialEstadosBatch(ids);
+        setHistorialMap(map);
+      } catch (e) { console.warn('No se pudo cargar historial de estados:', e?.message); }
+    })();
+  }, [proyectos.map(p => p.id).join(',')]);
+  const SORT_DEFAULT = { key: 'cliente', dir: 'asc' };
+  const [sortPorEstado, setSortPorEstado] = useState(() => {
+    if (typeof window === 'undefined') return {};
+    try {
+      const raw = localStorage.getItem('lista-proyectos-sort-por-estado');
+      return raw ? JSON.parse(raw) : {};
+    } catch { return {}; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('lista-proyectos-sort-por-estado', JSON.stringify(sortPorEstado)); } catch {}
+  }, [sortPorEstado]);
+  const getSort = (estado) => sortPorEstado[estado] || SORT_DEFAULT;
+  const setSortFor = (estado, updater) => setSortPorEstado(prev => ({ ...prev, [estado]: updater(prev[estado] || SORT_DEFAULT) }));
+
+  // v8.17.61: anchos de columnas resizables. Aplica solo a desktop. Persiste en localStorage.
+  const [anchos, setAnchos] = useState(() => {
+    if (typeof window === 'undefined') return {};
+    try {
+      const raw = localStorage.getItem('lista-proyectos-anchos-cols');
+      return raw ? JSON.parse(raw) : {};
+    } catch { return {}; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('lista-proyectos-anchos-cols', JSON.stringify(anchos)); } catch {}
+  }, [anchos]);
+  // Drag para redimensionar: mousedown en el handle → captura mousemove global hasta mouseup.
+  const empezarResize = (colKey, e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const thEl = e.target.parentElement;
+    const inicioX = e.clientX;
+    const inicioW = thEl?.getBoundingClientRect().width || 100;
+    const onMove = (ev) => {
+      const delta = ev.clientX - inicioX;
+      const nuevoW = Math.max(60, Math.min(600, inicioW + delta));
+      setAnchos(prev => ({ ...prev, [colKey]: nuevoW }));
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
   const toggle = (estado) => setColapsados(c => ({ ...c, [estado]: !c[estado] }));
   const supervisores = getSupervisores(data.personal);
   const maestros = getMaestros(data.personal);
@@ -5005,7 +5081,8 @@ function VistaLista({ proyectos, data, densidad = 'detallado', dx, onVerProyecto
   });
 
   // Función de comparación para sort. Trata strings (case-insensitive) y números.
-  const cmpItems = (a, b) => {
+  // v8.17.61: ahora recibe el sort del grupo (no global) para soportar sort por estado.
+  const cmpItemsConSort = (sort) => (a, b) => {
     const k = sort.key;
     const get = (item) => {
       switch (k) {
@@ -5028,9 +5105,9 @@ function VistaLista({ proyectos, data, densidad = 'detallado', dx, onVerProyecto
     return 0;
   };
 
-  // Agrupar por estado, respetando ORDEN_ESTADOS. Cada grupo se ordena por el sort key.
+  // Agrupar por estado, respetando ORDEN_ESTADOS. Cada grupo se ordena por SU propio sort.
   const grupos = ORDEN_ESTADOS.map(estado => {
-    const items = proyectosConDatos.filter(d => d.p.estado === estado).sort(cmpItems);
+    const items = proyectosConDatos.filter(d => d.p.estado === estado).sort(cmpItemsConSort(getSort(estado)));
     const totalValor = items.reduce((s, d) => s + d.valor, 0);
     const totalM2 = items.reduce((s, d) => s + d.m2Total, 0);
     return { estado, items, totalValor, totalM2 };
@@ -5059,17 +5136,28 @@ function VistaLista({ proyectos, data, densidad = 'detallado', dx, onVerProyecto
     setGuardandoId(null);
   };
 
-  // Header de columna ordenable
-  const Th = ({ k, align = 'left', children, className = '' }) => {
+  // Header de columna ordenable + redimensionable (v8.17.61).
+  const Th = ({ k, estado, align = 'left', children, className = '' }) => {
+    const sort = getSort(estado);
     const activo = sort.key === k;
     const dirIcono = activo ? (sort.dir === 'asc' ? '▲' : '▼') : '';
-    const handle = () => setSort(s => ({ key: k, dir: s.key === k && s.dir === 'asc' ? 'desc' : 'asc' }));
+    const handle = () => setSortFor(estado, s => ({ key: k, dir: s.key === k && s.dir === 'asc' ? 'desc' : 'asc' }));
     const just = align === 'right' ? 'justify-end' : 'justify-start';
+    const ancho = anchos[k];
     return (
-      <th className={`${rowPad} font-bold ${align === 'right' ? 'text-right' : 'text-left'} ${className}`}>
+      <th
+        className={`${rowPad} font-bold ${align === 'right' ? 'text-right' : 'text-left'} relative ${className}`}
+        style={ancho ? { width: ancho, minWidth: ancho } : undefined}
+      >
         <button onClick={handle} className={`inline-flex items-center gap-1 ${just} text-[10px] uppercase tracking-wider ${activo ? 'text-red-400' : 'text-zinc-500 hover:text-zinc-300'}`}>
           {children}{activo && <span className="text-[8px]">{dirIcono}</span>}
         </button>
+        {/* v8.17.61: drag handle para redimensionar */}
+        <span
+          onMouseDown={(e) => empezarResize(k, e)}
+          className="absolute top-0 right-0 h-full w-1 cursor-col-resize hover:bg-red-600/40 select-none"
+          title="Arrastrar para redimensionar"
+        />
       </th>
     );
   };
@@ -5102,16 +5190,16 @@ function VistaLista({ proyectos, data, densidad = 'detallado', dx, onVerProyecto
                     <thead className="bg-zinc-950 border-b border-zinc-800 sticky top-0 z-10">
                       <tr>
                         <th className="w-1" /> {/* color band */}
-                        <Th k="refOdoo">Ref Odoo</Th>
-                        <Th k="cliente">Cliente</Th>
-                        <Th k="proyecto">Proyecto</Th>
-                        <Th k="sistema">Sistema</Th>
-                        <Th k="m2" align="right">M²</Th>
-                        <Th k="avance" align="right">Avance</Th>
-                        <Th k="dias" align="right">Días</Th>
-                        <Th k="supervisor">Supervisor</Th>
-                        <Th k="maestro">Maestro</Th>
-                        <Th k="valor" align="right">Valor</Th>
+                        <Th k="refOdoo" estado={estado}>Ref Odoo</Th>
+                        <Th k="cliente" estado={estado}>Cliente</Th>
+                        <Th k="proyecto" estado={estado}>Proyecto</Th>
+                        <Th k="sistema" estado={estado}>Sistema</Th>
+                        <Th k="m2" estado={estado} align="right">M²</Th>
+                        <Th k="avance" estado={estado} align="right">Avance</Th>
+                        <Th k="dias" estado={estado} align="right">Días</Th>
+                        <Th k="supervisor" estado={estado}>Supervisor</Th>
+                        <Th k="maestro" estado={estado}>Maestro</Th>
+                        <Th k="valor" estado={estado} align="right">Valor</Th>
                         <th className={`${rowPad} text-right text-[10px] uppercase tracking-wider text-zinc-500 font-bold`}>Acción</th>
                       </tr>
                     </thead>
@@ -5142,7 +5230,18 @@ function VistaLista({ proyectos, data, densidad = 'detallado', dx, onVerProyecto
                                 {porcentaje.toFixed(0)}%
                               </span>
                             </td>
-                            <td className={`${rowPad} text-right tabular-nums ${colorDias} text-xs`} title="Días desde la última fecha relevante para el estado actual">{dias != null ? `${dias}d` : '—'}</td>
+                            {/* v8.17.61: tooltip enriquecido con días por cada etapa pasada */}
+                            {(() => {
+                              const etapas = diasPorEtapa(historialMap[p.id], p.estado);
+                              const tooltip = etapas.length > 0
+                                ? etapas.map(e => `${estadoLabel(e.estado)}: ${e.dias}d`).join('\n')
+                                : 'Días desde la última fecha relevante para el estado actual';
+                              return (
+                                <td className={`${rowPad} text-right tabular-nums ${colorDias} text-xs`} title={tooltip}>
+                                  {dias != null ? `${dias}d` : '—'}
+                                </td>
+                              );
+                            })()}
                             <td className={rowPad} onClick={e => e.stopPropagation()}>
                               <select
                                 value={p.supervisorId || ''}

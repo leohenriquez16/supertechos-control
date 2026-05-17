@@ -62,6 +62,7 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
     ubicacionLng: proyecto.ubicacionLng,
     ubicacionDireccionTexto: proyecto.ubicacionDireccionTexto || '',
     fecha_inicio: proyecto.fecha_inicio,
+    fechaEstimadaInicio: proyecto.fechaEstimadaInicio || '', // v8.17.59
     fecha_entrega: proyecto.fecha_entrega,
     fechaAprobacion: proyecto.fechaAprobacion || '', // v8.10.22
     modoPagoManoObra: proyecto.modoPagoManoObra || 'dia',
@@ -369,6 +370,11 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
           {/* v8.10.22: Fecha de aprobación (cuándo el cliente aprobó) — separada de fecha_inicio */}
           <Campo label="Fecha de aprobación (cuándo se aprobó la cotización)">
             <Input type="date" value={form.fechaAprobacion || ''} onChange={v => setForm({ ...form, fechaAprobacion: v })} />
+          </Campo>
+          {/* v8.17.59: fecha tentativa para pasar a "Planificado" (≠ fecha_inicio real) */}
+          <Campo label="Fecha estimada de inicio (requerida para pasar a Planificado)">
+            <Input type="date" value={form.fechaEstimadaInicio || ''} onChange={v => setForm({ ...form, fechaEstimadaInicio: v })} />
+            <div className="text-[10px] text-zinc-500 mt-1">Es la fecha que le prometes al cliente cuando planificas el arranque. La fecha de inicio real se registra al pasar a En ejecución.</div>
           </Campo>
           <div className="grid grid-cols-2 gap-3"><Campo label="Fecha inicio"><Input type="date" value={form.fecha_inicio} onChange={v => setForm({ ...form, fecha_inicio: v })} /></Campo><Campo label="Fecha entrega"><Input type="date" value={form.fecha_entrega} onChange={v => setForm({ ...form, fecha_entrega: v })} /></Campo></div>
         </div>

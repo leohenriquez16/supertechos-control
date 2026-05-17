@@ -459,13 +459,16 @@ const calcEstadisticasPersona = (personaId, reportes, proyectos, sistemas) => {
 // ============================================================
 const ESTADOS = {
   aprobado:                     { label: 'Aprobado',           color: 'bg-cyan-600',   textColor: 'text-cyan-400',   order: 1 },
-  en_ejecucion:                 { label: 'En ejecución',       color: 'bg-red-600',    textColor: 'text-red-400',    order: 2 },
-  parado:                       { label: 'Parado',             color: 'bg-yellow-600', textColor: 'text-yellow-400', order: 3 },
-  finalizado_no_entregado:      { label: 'Finalizado No Entregado',   color: 'bg-orange-600', textColor: 'text-orange-400', order: 4 },
-  finalizado_recibido_conforme: { label: 'Finalizado Recibido Conforme', color: 'bg-green-600', textColor: 'text-green-400', order: 5 },
-  facturado:                    { label: 'Facturado',          color: 'bg-emerald-700', textColor: 'text-emerald-400', order: 6 },
+  // v8.17.59: nueva etapa Planificado entre Aprobado y Ejecución. Requiere
+  // supervisor/maestro + fecha estimada de inicio + location + contacto.
+  planificado:                  { label: 'Planificado',        color: 'bg-blue-600',   textColor: 'text-blue-400',   order: 2 },
+  en_ejecucion:                 { label: 'En ejecución',       color: 'bg-red-600',    textColor: 'text-red-400',    order: 3 },
+  parado:                       { label: 'Parado',             color: 'bg-yellow-600', textColor: 'text-yellow-400', order: 4 },
+  finalizado_no_entregado:      { label: 'Finalizado No Entregado',   color: 'bg-orange-600', textColor: 'text-orange-400', order: 5 },
+  finalizado_recibido_conforme: { label: 'Finalizado Recibido Conforme', color: 'bg-green-600', textColor: 'text-green-400', order: 6 },
+  facturado:                    { label: 'Facturado',          color: 'bg-emerald-700', textColor: 'text-emerald-400', order: 7 },
 };
-const ORDEN_ESTADOS = ['aprobado', 'en_ejecucion', 'parado', 'finalizado_no_entregado', 'finalizado_recibido_conforme', 'facturado'];
+const ORDEN_ESTADOS = ['aprobado', 'planificado', 'en_ejecucion', 'parado', 'finalizado_no_entregado', 'finalizado_recibido_conforme', 'facturado'];
 const estadoLabel = (e) => ESTADOS[e]?.label || e;
 const estadoColor = (e) => ESTADOS[e]?.color || 'bg-zinc-600';
 const estadoTextColor = (e) => ESTADOS[e]?.textColor || 'text-zinc-400';

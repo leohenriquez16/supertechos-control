@@ -6,6 +6,7 @@ import * as db from '../../lib/db';
 import { abrirEnMapa } from '../../lib/geo';
 import { expandirYExtraer } from '../../lib/geoutils';
 import { formatRD, formatNum } from '../../lib/helpers/formato';
+import { EMPRESAS_RECEPTORAS } from '../../lib/constants'; // v8.17.41: empresas Super Techos / Prouco
 import Campo from '../common/Campo';
 import Input from '../common/Input';
 
@@ -46,6 +47,8 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
     cliente: proyecto.cliente || '',
     clienteId: proyecto.clienteId || '', // v8.9.10
     contactoPrincipalId: proyecto.contactoPrincipalId || null, // v8.9.10
+    // v8.17.41: empresa ejecutora (Super Techos / Prouco) — usada en carta de acceso, factura, etc.
+    empresaEjecutora: proyecto.empresaEjecutora || '',
     nombre: proyecto.nombre || '', // v8.10.22: nombre interno editable (lo que aparece como título en reportes)
     referenciaProyecto: proyecto.referenciaProyecto || '',
     referenciaOdoo: proyecto.referenciaOdoo || '',
@@ -277,6 +280,24 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
             </div>
           </Campo>
           <div className="grid grid-cols-2 gap-3"><Campo label="Ref. Odoo *"><Input value={form.referenciaOdoo} onChange={v => setForm({ ...form, referenciaOdoo: v })} placeholder="Ej: ST-C5437" /></Campo><Campo label="Ref. Proyecto"><Input value={form.referenciaProyecto} onChange={v => setForm({ ...form, referenciaProyecto: v })} /></Campo></div>
+          {/* v8.17.41: empresa ejecutora — afecta carta de acceso, factura, y razón social que aparece al cliente */}
+          <Campo label="Empresa ejecutora — ¿quién factura y firma este proyecto?">
+            <select
+              value={form.empresaEjecutora || ''}
+              onChange={e => setForm({ ...form, empresaEjecutora: e.target.value || '' })}
+              className={`w-full border-2 outline-none px-4 py-3 text-white text-sm bg-zinc-950 ${form.empresaEjecutora ? 'border-zinc-800 focus:border-red-600' : 'border-amber-700/60'}`}
+            >
+              <option value="">— Sin asignar —</option>
+              {Object.entries(EMPRESAS_RECEPTORAS).map(([key, meta]) => (
+                <option key={key} value={key}>{meta.label} (RNC {meta.rnc})</option>
+              ))}
+            </select>
+            {!form.empresaEjecutora && (
+              <div className="text-[10px] text-amber-400 mt-1 flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" /> Sin esto no se puede generar carta de acceso ni factura limpia.
+              </div>
+            )}
+          </Campo>
           {/* v8.10.22: Nombre interno (es el título principal que aparece en reportes semanales y vistas) */}
           <Campo label="Nombre interno (título que verás en reportes y listas)">
             <Input value={form.nombre} onChange={v => setForm({ ...form, nombre: v })} placeholder="Ej: Techo Central y Distrito Herrera" />

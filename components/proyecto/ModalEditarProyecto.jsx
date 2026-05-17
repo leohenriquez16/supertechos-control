@@ -47,6 +47,8 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
     cliente: proyecto.cliente || '',
     clienteId: proyecto.clienteId || '', // v8.9.10
     contactoPrincipalId: proyecto.contactoPrincipalId || null, // v8.9.10
+    // v8.17.58: contactos adicionales (más allá del principal). Se carga via useEffect.
+    contactosExtraIds: [],
     // v8.17.41: empresa ejecutora (Super Techos / Prouco) — usada en carta de acceso, factura, etc.
     empresaEjecutora: proyecto.empresaEjecutora || '',
     nombre: proyecto.nombre || '', // v8.10.22: nombre interno editable (lo que aparece como título en reportes)
@@ -90,6 +92,19 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
       setLoadingCostos(false);
     })();
   }, []);
+
+  // v8.17.58: cargar contactos extra (más allá del principal) asignados al proyecto
+  useEffect(() => {
+    (async () => {
+      try {
+        const vinculados = await db.listarContactosProyecto(proyecto.id);
+        const extras = vinculados.map(v => v.contactoId).filter(cid => cid !== proyecto.contactoPrincipalId);
+        setForm(f => ({ ...f, contactosExtraIds: extras }));
+      } catch (e) {
+        console.warn('No se pudieron cargar contactos extra:', e?.message);
+      }
+    })();
+  }, [proyecto.id]);
 
   const supervisores = getSupervisores(data.personal);
   const maestros = getMaestros(data.personal);
@@ -160,6 +175,13 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
       });
     } catch (e) { console.warn('Audit de precio no registrado:', e?.message); }
     await onGuardar({ ...proyecto, ...form });
+    // v8.17.58: persistir contactos asociados al proyecto (principal + extras)
+    try {
+      const ids = [form.contactoPrincipalId, ...(form.contactosExtraIds || [])].filter(Boolean);
+      await db.asignarContactosProyecto(proyecto.id, ids, usuario?.id);
+    } catch (e) {
+      console.warn('No se pudieron persistir contactos del proyecto:', e?.message);
+    }
     setGuardando(false);
     onCerrar();
   };
@@ -253,29 +275,58 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
               <Input value={form.cliente} onChange={v => setForm({ ...form, cliente: v })} placeholder="Nombre del cliente" />
               {form.clienteId && (() => {
                 const contsCliente = (data.contactos || []).filter(ct => ct.clienteId === form.clienteId);
-                if (contsCliente.length > 1) {
-                  return (
-                    <select
-                      value={form.contactoPrincipalId || ''}
-                      onChange={e => {
-                        const contId = e.target.value;
-                        const cont = (data.contactos || []).find(ct => ct.id === contId);
-                        setForm({
-                          ...form,
-                          contactoPrincipalId: contId || null,
-                          contactoClienteNombre: cont?.nombre || form.contactoClienteNombre,
-                          contactoClienteTelefono: cont?.telefono || form.contactoClienteTelefono,
-                          contactoClienteEmail: cont?.email || form.contactoClienteEmail,
-                        });
-                      }}
-                      className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-white text-xs"
-                    >
-                      <option value="">— Contacto principal —</option>
-                      {contsCliente.map(ct => <option key={ct.id} value={ct.id}>{ct.esPrincipal ? '⭐ ' : ''}{ct.nombre}{ct.cargo ? ` · ${ct.cargo}` : ''}</option>)}
-                    </select>
-                  );
-                }
-                return null;
+                if (contsCliente.length === 0) return null;
+                const otrosContactos = contsCliente.filter(ct => ct.id !== form.contactoPrincipalId);
+                return (
+                  <div className="space-y-2">
+                    {contsCliente.length > 1 && (
+                      <select
+                        value={form.contactoPrincipalId || ''}
+                        onChange={e => {
+                          const contId = e.target.value;
+                          const cont = (data.contactos || []).find(ct => ct.id === contId);
+                          setForm({
+                            ...form,
+                            contactoPrincipalId: contId || null,
+                            // si el nuevo principal estaba en extras, quítalo de ahí (no se duplica)
+                            contactosExtraIds: (form.contactosExtraIds || []).filter(id => id !== contId),
+                            contactoClienteNombre: cont?.nombre || form.contactoClienteNombre,
+                            contactoClienteTelefono: cont?.telefono || form.contactoClienteTelefono,
+                            contactoClienteEmail: cont?.email || form.contactoClienteEmail,
+                          });
+                        }}
+                        className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-white text-xs"
+                      >
+                        <option value="">— Contacto principal —</option>
+                        {contsCliente.map(ct => <option key={ct.id} value={ct.id}>{ct.esPrincipal ? '⭐ ' : ''}{ct.nombre}{ct.cargo ? ` · ${ct.cargo}` : ''}</option>)}
+                      </select>
+                    )}
+                    {/* v8.17.58: contactos adicionales asociados al proyecto */}
+                    {otrosContactos.length > 0 && (
+                      <div>
+                        <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold mb-1">Otros contactos asociados al proyecto</div>
+                        <div className="space-y-1">
+                          {otrosContactos.map(ct => (
+                            <label key={ct.id} className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 p-1.5 cursor-pointer hover:border-red-600">
+                              <input
+                                type="checkbox"
+                                checked={(form.contactosExtraIds || []).includes(ct.id)}
+                                onChange={e => setForm({
+                                  ...form,
+                                  contactosExtraIds: e.target.checked
+                                    ? [...(form.contactosExtraIds || []), ct.id]
+                                    : (form.contactosExtraIds || []).filter(id => id !== ct.id),
+                                })}
+                                className="w-4 h-4 accent-red-600"
+                              />
+                              <span className="text-xs">{ct.nombre}{ct.cargo ? ` · ${ct.cargo}` : ''}{ct.telefono ? ` · ${ct.telefono}` : ''}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
               })()}
             </div>
           </Campo>

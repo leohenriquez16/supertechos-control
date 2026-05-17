@@ -931,7 +931,13 @@ export default function App() {
             if (primerSistema) proy.sistema = primerSistema;
           }
 
-          await db.crearProyecto({ ...proy, id: 'p_' + Date.now() });
+          const nuevoProyectoId = 'p_' + Date.now();
+          await db.crearProyecto({ ...proy, id: nuevoProyectoId });
+          // v8.17.58: persistir contactos asociados (principal + extras) en proyecto_contactos
+          try {
+            const ids = [proy.contactoPrincipalId, ...(proy.contactosExtraIds || [])].filter(Boolean);
+            if (ids.length > 0) await db.asignarContactosProyecto(nuevoProyectoId, ids, usuario?.id);
+          } catch (e) { console.warn('No se pudieron persistir contactos del proyecto:', e?.message); }
           setVista('dashboard');
         })} />}
         {vista === 'proyecto' && proyectoActivo && (

@@ -4919,7 +4919,13 @@ function VistaKanban({ proyectos, data, onVerProyecto, onCambiarEstadoRapido }) 
                     className={`bg-zinc-900 border border-zinc-800 hover:border-red-600 p-3 text-left cursor-pointer ${draggingId === p.id ? 'opacity-50' : ''}`}>
                     <div className="flex items-start gap-2">
                       <div className="flex-1 min-w-0">
-                        <div className="text-[10px] font-mono text-zinc-500">{p.referenciaOdoo}</div>
+                        <div className="text-[10px] font-mono text-zinc-500 flex items-center gap-1">
+                          <span>{p.referenciaOdoo}</span>
+                          {/* v8.17.60: alerta visual si falta location */}
+                          {(p.ubicacionLat == null || p.ubicacionLng == null) && (
+                            <span title="Falta location" className="text-amber-400">⚠</span>
+                          )}
+                        </div>
                         <div className="font-bold text-sm truncate">{p.cliente}</div>
                         <div className="text-[10px] text-zinc-500 truncate">{p.referenciaProyecto || p.nombre}</div>
                       </div>
@@ -5121,7 +5127,13 @@ function VistaLista({ proyectos, data, densidad = 'detallado', dx, onVerProyecto
                             {/* v8.17.30: bandita de color del estado a la izquierda */}
                             <td className={`${estadoColor(p.estado)} w-1`} style={{ padding: 0 }} />
                             <td className={`${rowPad} font-mono text-[11px] text-zinc-500 whitespace-nowrap`}>{p.referenciaOdoo || '—'}</td>
-                            <td className={`${rowPad} font-bold max-w-[180px] truncate`}>{p.cliente}</td>
+                            <td className={`${rowPad} font-bold max-w-[180px] truncate`}>
+                              {/* v8.17.60: alerta visual si falta location */}
+                              {(p.ubicacionLat == null || p.ubicacionLng == null) && (
+                                <span title="Falta location del proyecto — no se puede pasar a Planificado ni Ejecución" className="text-amber-400 mr-1">⚠</span>
+                              )}
+                              {p.cliente}
+                            </td>
                             <td className={`${rowPad} text-zinc-400 max-w-[180px] truncate text-xs`}>{p.referenciaProyecto || p.nombre || '—'}</td>
                             <td className={`${rowPad} text-zinc-400 text-xs`}>{sistema?.nombre || '—'}</td>
                             <td className={`${rowPad} text-right tabular-nums`}>{formatNum(m2Total)}</td>
@@ -5187,6 +5199,10 @@ function VistaLista({ proyectos, data, densidad = 'detallado', dx, onVerProyecto
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <div className="text-[10px] font-mono text-zinc-500">{p.referenciaOdoo}</div>
+                          {/* v8.17.60: alerta visual si falta location */}
+                          {(p.ubicacionLat == null || p.ubicacionLng == null) && (
+                            <span title="Falta location" className="text-amber-400 text-[10px]">⚠ sin location</span>
+                          )}
                         </div>
                         <div className="font-bold text-sm truncate">{p.cliente}</div>
                         <div className="text-[10px] text-zinc-500 truncate">{p.referenciaProyecto || p.nombre} · {sistema?.nombre} · {formatNum(m2Total)} m²</div>

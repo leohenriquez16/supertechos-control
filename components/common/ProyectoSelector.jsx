@@ -1,7 +1,9 @@
 'use client';
 
 // v8.17.25: Selector de proyecto con buscador integrado.
-// Reemplaza al <select> nativo cuando el usuario tiene muchos proyectos asignados.
+// v8.17.69: el panel del dropdown se renderiza con position:fixed anclado al
+//           botón trigger para escapar de cualquier padre con overflow:hidden/auto
+//           (modales como ModalCrearGastoAdmin que recortaban la lista).
 //
 // Props:
 //   value           id del proyecto seleccionado o '' / null
@@ -12,7 +14,7 @@
 //   etiquetaVacio   texto para la opción vacía
 //   disabled
 
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { ChevronDown, X, Search } from 'lucide-react';
 
 export default function ProyectoSelector({
@@ -27,13 +29,52 @@ export default function ProyectoSelector({
 }) {
   const [abierto, setAbierto] = useState(false);
   const [busqueda, setBusqueda] = useState('');
+  const [panelPos, setPanelPos] = useState(null);
   const wrapRef = useRef(null);
+  const btnRef = useRef(null);
+  const panelRef = useRef(null);
 
-  // Cerrar al click fuera
+  // Recalcular posición del panel a partir del rect del botón.
+  const recalcPos = useCallback(() => {
+    const btn = btnRef.current;
+    if (!btn) return;
+    const rect = btn.getBoundingClientRect();
+    const panelH = 300; // max-h del panel
+    const margin = 4;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const openUp = spaceBelow < panelH + margin && rect.top > spaceBelow;
+    setPanelPos({
+      top: openUp ? Math.max(8, rect.top - panelH - margin) : rect.bottom + margin,
+      left: rect.left,
+      width: rect.width,
+    });
+  }, []);
+
+  // Al abrir, calcular posición inicial.
+  useEffect(() => {
+    if (abierto) recalcPos();
+    else setPanelPos(null);
+  }, [abierto, recalcPos]);
+
+  // Re-calcular en scroll/resize mientras está abierto (el modal padre puede scrollear).
+  useEffect(() => {
+    if (!abierto) return;
+    const onScrollOrResize = () => recalcPos();
+    window.addEventListener('scroll', onScrollOrResize, true);
+    window.addEventListener('resize', onScrollOrResize);
+    return () => {
+      window.removeEventListener('scroll', onScrollOrResize, true);
+      window.removeEventListener('resize', onScrollOrResize);
+    };
+  }, [abierto, recalcPos]);
+
+  // Cerrar al click fuera (incluye el panel, que ya no está dentro del wrap).
   useEffect(() => {
     if (!abierto) return;
     const onClick = (e) => {
-      if (!wrapRef.current?.contains(e.target)) {
+      const inWrap = wrapRef.current?.contains(e.target);
+      const inPanel = panelRef.current?.contains(e.target);
+      if (!inWrap && !inPanel) {
         setAbierto(false);
         setBusqueda('');
       }
@@ -68,6 +109,7 @@ export default function ProyectoSelector({
     <div ref={wrapRef} className={`relative ${className}`}>
       {/* Botón que abre el dropdown — se ve como un <select> */}
       <button
+        ref={btnRef}
         type="button"
         onClick={() => !disabled && setAbierto(!abierto)}
         disabled={disabled}
@@ -79,9 +121,19 @@ export default function ProyectoSelector({
         <ChevronDown className={`w-4 h-4 text-zinc-500 shrink-0 transition-transform ${abierto ? 'rotate-180' : ''}`} />
       </button>
 
-      {/* Dropdown panel */}
-      {abierto && !disabled && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-zinc-950 border-2 border-red-600 z-30 shadow-2xl max-h-[300px] flex flex-col">
+      {/* Dropdown panel — position:fixed para escapar de overflow del padre */}
+      {abierto && !disabled && panelPos && (
+        <div
+          ref={panelRef}
+          style={{
+            position: 'fixed',
+            top: panelPos.top,
+            left: panelPos.left,
+            width: panelPos.width,
+            maxHeight: 300,
+            zIndex: 1000,
+          }}
+          className="bg-zinc-950 border-2 border-red-600 shadow-2xl flex flex-col">
           {/* Search box */}
           <div className="p-2 border-b border-zinc-800 flex items-center gap-2 bg-zinc-900">
             <Search className="w-3 h-3 text-zinc-500 shrink-0" />

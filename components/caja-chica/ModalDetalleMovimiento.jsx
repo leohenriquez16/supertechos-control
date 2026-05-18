@@ -48,8 +48,12 @@ export default function ModalDetalleMovimiento({
     });
   }, [proyectosActivos, movimientos]);
 
-  // v8.16.1: alertas detectivas para gastos sin factura
-  const sinFactura = !!movimiento.datosIA?.sin_factura;
+  // v8.17.70: el admin puede marcar un movimiento mal subido (en el modal "con
+  // factura" pero sin RNC/foto real) como "sin factura". Mantenemos override
+  // local para que el modal refleje el cambio sin cerrar — y el admin pueda
+  // aprobar de seguido en la misma sesión.
+  const [marcadoSinFacturaLocal, setMarcadoSinFacturaLocal] = useState(false);
+  const sinFactura = marcadoSinFacturaLocal || !!movimiento.datosIA?.sin_factura;
   const alertasSinFactura = useMemo(() => {
     if (!sinFactura || !movimientos) return [];
     return calcularAlertasSinFactura(movimiento, movimientos);
@@ -203,7 +207,9 @@ export default function ModalDetalleMovimiento({
     if (diffDias > 60) return 'La fecha está más de 60 días en el futuro. Revisa si es la fecha de vencimiento del NCF en vez de la fecha de emisión.';
     const montoFinal = diff.monto != null ? diff.monto : Number(movimiento.monto || 0);
     if (!Number.isFinite(montoFinal) || montoFinal <= 0) return 'Monto debe ser mayor a 0.';
-    const esConFactura = movimiento.tipo === 'gasto_factura' && !movimiento.datosIA?.sin_factura;
+    // v8.17.70: usa el sinFactura computado (incluye el override local cuando
+    // el admin acaba de marcarlo en este mismo modal).
+    const esConFactura = movimiento.tipo === 'gasto_factura' && !sinFactura;
     if (esConFactura) {
       const rncFinal = limpiarRNC(campos.rnc || movimiento.rnc || '');
       if (!rncFinal) return 'RNC del proveedor es requerido para facturas con CF.';
@@ -286,6 +292,41 @@ export default function ModalDetalleMovimiento({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onCerrar, onSiguiente, onAnterior, posicion, hayCambios, diff, soloLectura, guardando]);
+
+  // v8.17.70: condiciones para ofrecer "marcar como sin factura" al admin.
+  //   - puedeMarcar: aplicable solo a gasto_factura no marcado todavía
+  //   - sugiereSinFactura: ningún adjunto de factura ni RNC → claramente un
+  //     gasto informal que entró por el modal con factura por error.
+  const puedeMarcarSinFactura = esAdmin && !soloLectura && movimiento.tipo === 'gasto_factura' && !sinFactura;
+  const sinAdjuntoFactura = !tieneFoto && !movimiento.datosIA?.foto_por_ws;
+  const sinRncCargado = !limpiarRNC(campos.rnc || movimiento.rnc || '');
+  const sugiereSinFactura = puedeMarcarSinFactura && sinAdjuntoFactura && sinRncCargado;
+
+  const marcarComoSinFactura = async () => {
+    if (guardando || !puedeMarcarSinFactura) return;
+    const ok = confirm(
+      'Marcar este gasto como compra informal SIN factura fiscal.\n\n' +
+      '· Se limpiarán los campos RNC, proveedor y NCF.\n' +
+      '· El gasto ya no requerirá RNC para aprobarse.\n' +
+      '· El cambio queda en el historial de auditoría.\n\n' +
+      '¿Continuar?'
+    );
+    if (!ok) return;
+    setGuardando(true); setError('');
+    try {
+      await db.marcarMovimientoSinFactura(
+        movimiento.id,
+        usuario ? { usuarioId: usuario.id, usuarioNombre: usuario.nombre } : null,
+      );
+      // Reflejamos el cambio en local para que el modal lo muestre al instante.
+      setMarcadoSinFacturaLocal(true);
+      setCampos(prev => ({ ...prev, rnc: '', proveedor: '', ncf: '' }));
+      onActualizado?.();
+    } catch (e) {
+      setError(e.message || 'Error al marcar sin factura');
+    }
+    setGuardando(false);
+  };
 
   // v8.15.5: aprobar (con guardado previo de cambios si hay) + avanzar al siguiente
   const aprobarYAvanzar = async () => {
@@ -394,6 +435,27 @@ export default function ModalDetalleMovimiento({
               <div className="text-xs text-orange-200">
                 <strong>Atención:</strong> estás editando un gasto <strong>ya aprobado</strong>. Cualquier cambio queda registrado en el histórico de auditoría.
               </div>
+            </div>
+          )}
+          {/* v8.17.70: sugerencia proactiva — el maestro subió en el modal con
+              factura algo que claramente no tiene factura (sin foto, sin RNC).
+              Ofrecemos al admin re-clasificarlo con un clic. */}
+          {sugiereSinFactura && (
+            <div className="bg-amber-950/40 border-b-2 border-amber-700 px-4 py-3">
+              <div className="flex items-start gap-2 mb-2">
+                <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                <div className="text-xs text-amber-200">
+                  <strong>Parece un gasto sin factura.</strong> No hay foto adjunta ni RNC. Probablemente el maestro lo subió en el modal con factura por error.
+                </div>
+              </div>
+              <button
+                onClick={marcarComoSinFactura}
+                disabled={guardando}
+                className="w-full bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white font-black uppercase tracking-wider px-3 py-2 text-xs flex items-center justify-center gap-1"
+              >
+                {guardando ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileX className="w-3 h-3" />}
+                Marcar como gasto sin factura
+              </button>
             </div>
           )}
           {/* v8.16.1: gasto sin factura — banner siempre visible si aplica */}
@@ -647,6 +709,19 @@ export default function ModalDetalleMovimiento({
                 />
               </Field>
             </div>
+            {/* v8.17.70: link discreto siempre disponible para el admin cuando
+                el banner sugerencia no aparece (ej: tiene foto pero no es una
+                factura fiscal real). */}
+            {puedeMarcarSinFactura && !sugiereSinFactura && (
+              <button
+                type="button"
+                onClick={marcarComoSinFactura}
+                disabled={guardando}
+                className="text-[10px] text-amber-400 hover:text-amber-300 underline uppercase tracking-widest font-bold flex items-center gap-1 disabled:opacity-50"
+              >
+                <FileX className="w-3 h-3" /> Este gasto no tiene factura fiscal → marcar como sin factura
+              </button>
+            )}
 
             <Field label="Categoría">
               <select

@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/sync-facturas-odoo",
+      "schedule": "0 8 * * *"
+    }
+  ]
+}

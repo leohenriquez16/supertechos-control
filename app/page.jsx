@@ -5566,6 +5566,31 @@ function TabInfo({ proyecto, clientes = [], contactos = [], documentos = [], sis
   const [modalCarta, setModalCarta] = useState(false);
   // v8.17.62: modal lista de herramientas
   const [modalHerramientas, setModalHerramientas] = useState(false);
+  // v8.17.67: sincronización de factura desde Odoo
+  const [sincronizandoOdoo, setSincronizandoOdoo] = useState(false);
+  const sincronizarOdoo = async () => {
+    if (sincronizandoOdoo) return;
+    setSincronizandoOdoo(true);
+    try {
+      const res = await fetch('/api/odoo/sincronizar-factura', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ proyectoId: proyecto.id }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        alert('Error: ' + (data.error || 'desconocido'));
+      } else if (data.actualizado) {
+        alert(`✅ Proyecto marcado como facturado.\nFactura: ${data.cambios?.numero_factura?.despues || '—'}\nFecha: ${data.cambios?.fecha_facturacion?.despues || '—'}`);
+        if (onRecargar) await onRecargar();
+      } else {
+        alert(data.mensaje || 'Sin cambios.');
+      }
+    } catch (e) {
+      alert('Error de red: ' + (e.message || e));
+    }
+    setSincronizandoOdoo(false);
+  };
   const hayUbicacion = proyecto.ubicacionLat != null && proyecto.ubicacionLng != null;
   // v8.9.10: cliente y contactos derivados
   const cliente = clienteDelProyecto(proyecto, clientes);
@@ -5633,6 +5658,17 @@ function TabInfo({ proyecto, clientes = [], contactos = [], documentos = [], sis
             >
               🔧 Lista de obra
             </button>
+            {/* v8.17.67: sincronizar con Odoo para detectar si ya se emitió la factura */}
+            {proyecto.referenciaOdoo && proyecto.estado !== 'facturado' && (
+              <button
+                onClick={sincronizarOdoo}
+                disabled={sincronizandoOdoo}
+                className="bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-white text-xs font-bold uppercase px-3 py-2 flex items-center gap-1 whitespace-nowrap"
+                title="Buscar factura emitida en Odoo y marcar el proyecto como facturado"
+              >
+                {sincronizandoOdoo ? <Loader2 className="w-3 h-3 animate-spin" /> : '🔄'} Sincronizar Odoo
+              </button>
+            )}
             <button
               onClick={() => setModalCarta(true)}
               className="bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase px-3 py-2 flex items-center gap-1 whitespace-nowrap"

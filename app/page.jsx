@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed, Building2, Star, MessageCircle, Send, Search, Filter } from 'lucide-react';
 import * as db from '../lib/db';
 import { leerArchivo, parseMateriales, parseSistemas, descargarPlantilla, comprimirImagen } from '../lib/imports';
@@ -5344,9 +5345,11 @@ function CardKanban({ p, data, compacto, arrastrando, hover, onHover, onClick, o
         </div>
       </div>
 
-      {/* Hover-card: tooltip flotante con más info — position:fixed para
-          escapar del overflow-x-auto del kanban. */}
-      {hover && !arrastrando && tooltipPos && (
+      {/* Hover-card: tooltip flotante con más info.
+          v8.17.77: renderizada con React portal directo a document.body para
+          escapar de cualquier stacking context (overflow, transform, etc.) que
+          la dejaba detrás de las columnas. */}
+      {hover && !arrastrando && tooltipPos && typeof document !== 'undefined' && createPortal(
         <div
           className="w-64 bg-zinc-950 border border-red-600 shadow-2xl p-3 text-xs pointer-events-none"
           style={{
@@ -5384,7 +5387,8 @@ function CardKanban({ p, data, compacto, arrastrando, hover, onHover, onClick, o
               ))}
             </div>
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

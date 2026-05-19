@@ -17,6 +17,7 @@ import ModalDetalleMovimiento from './ModalDetalleMovimiento';
 import ModalCrearGastoAdmin from './ModalCrearGastoAdmin'; // v8.17.56
 import ModalAyudaDieta from './ModalAyudaDieta'; // v8.17.29
 import ModalGastosProyecto from './ModalGastosProyecto'; // v8.17.74
+import DesgloseEmpresaReembolso from './DesgloseEmpresaReembolso'; // v8.17.82
 import DashboardCajaChica from './DashboardCajaChica';
 import { imprimirCuadreIndividual } from './imprimirCuadre';
 
@@ -800,9 +801,18 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
                   </span>
                 </button>
 
-                {/* Cuerpo expandido: movimientos del mes + accesos a movimientos completos */}
+                {/* Cuerpo expandido: desglose por empresa + movimientos del mes */}
                 {expandida && (
                   <div className="border-t border-zinc-800 p-2 space-y-2">
+                    {/* v8.17.82: desglose de gastos por empresa para el reembolso.
+                        Si el saldo está negativo, también propone el monto a reponer
+                        por empresa (proporcional) para cuadrar. */}
+                    <DesgloseEmpresaReembolso
+                      movimientos={p.movimientos}
+                      montoEntrega={p.saldo < 0 ? Math.abs(p.saldo) : null}
+                      titulo={p.saldo < 0 ? `Reembolso para cuadrar saldo (RD$ ${formatNum(Math.abs(p.saldo), 0)})` : 'Gastos por empresa'}
+                      compacto={dx.compacto}
+                    />
                     <div className="flex items-center justify-between text-[10px] flex-wrap gap-2">
                       <div className="text-zinc-400">
                         Movimientos del mes actual ({movsMes.length})
@@ -1097,6 +1107,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
         <ModalEntregarCaja
           usuario={usuario}
           data={data}
+          movimientos={movimientos}
           saldosMap={saldosMap}
           onCerrar={() => setModalEntrega(false)}
           onGuardado={() => { setModalEntrega(false); cargar(); }}
@@ -2008,7 +2019,7 @@ const STATUS = {
 };
 
 // Modal para entregar efectivo a una caja chica
-function ModalEntregarCaja({ usuario, data, onCerrar, onGuardado, saldosMap = {} }) {
+function ModalEntregarCaja({ usuario, data, onCerrar, onGuardado, saldosMap = {}, movimientos = [] }) {
   const titulares = data.personal.filter(p => (tieneRol(p, 'maestro') || tieneRol(p, 'supervisor')) && p.cajaChicaHabilitada);
   const [personaId, setPersonaId] = useState('');
   const [monto, setMonto] = useState('');
@@ -2096,6 +2107,17 @@ function ModalEntregarCaja({ usuario, data, onCerrar, onGuardado, saldosMap = {}
               </div>
             )}
           </div>
+        )}
+
+        {/* v8.17.82: desglose de gastos del titular por empresa receptora.
+            Bruto = total imputado a cada empresa. Si hay monto a entregar,
+            también muestra cuánto le toca aportar a cada caja (proporcional). */}
+        {personaSel && (
+          <DesgloseEmpresaReembolso
+            movimientos={movimientos.filter(m => m.personaId === personaSel.id)}
+            montoEntrega={montoNum > 0 ? montoNum : null}
+            titulo="Reembolso por empresa"
+          />
         )}
 
         <div className="grid grid-cols-2 gap-3">

@@ -2,7 +2,7 @@
 // Sigue el patrón de imprimirReciboNomina y imprimirCorteCompleto del módulo
 // de nómina: window.open + window.print() con CSS A4/Letter.
 
-import { calcularCuadre, TIPO_LABEL, CATEGORIA_LABEL } from '../../lib/helpers/cuadreCajaChica';
+import { calcularCuadre, calcDesgloseEmpresa, TIPO_LABEL, CATEGORIA_LABEL } from '../../lib/helpers/cuadreCajaChica';
 import { toast } from '../../lib/toast';
 
 const fmt = (n) => new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n) || 0);
@@ -176,6 +176,58 @@ function bloqueTitular({ persona, cuadre, fechaInicio, fechaFin, data, conSignat
         <tr class="total"><td class="label">Total egresos con factura</td><td class="val">RD$ ${fmt(cuadre.totalGastos)}</td></tr>
       </table>
     </div>` : ''}
+
+    ${(() => {
+      // v8.17.82: Desglose de gastos por empresa receptora — sirve al admin para
+      // saber cuánto poner desde cada caja (Super Techos / Prouco) al hacer el
+      // reembolso al titular. Si el saldo final es negativo (oficina le debe),
+      // mostramos también el aporte proporcional de cada empresa.
+      const movsEnRango = cuadre.movimientosEnRango;
+      const aReembolsar = cuadre.saldoFinal < 0 ? Math.abs(cuadre.saldoFinal) : null;
+      const { bruto, proporcional, pct, totalGastos } = calcDesgloseEmpresa({
+        movimientos: movsEnRango,
+        montoEntrega: aReembolsar,
+      });
+      if (totalGastos === 0) return '';
+      const filaEmpresa = (nombre, key, color) => {
+        const monto = bruto[key];
+        if (monto === 0 && key === 'sin_asignar') return '';
+        const prop = proporcional[key];
+        return `
+        <tr>
+          <td class="label" style="color:${color};">${nombre} <span style="color:#888;">(${pct[key].toFixed(0)}%)</span></td>
+          <td class="val">RD$ ${fmt(monto)}</td>
+          ${aReembolsar != null ? `<td class="val" style="color:${color};">RD$ ${fmt(prop)}</td>` : ''}
+        </tr>`;
+      };
+      return `
+      <h2>Reembolso por empresa</h2>
+      <p style="font-size:10px;color:#555;margin:0 0 6px;">
+        Cuánto de los gastos aprobados del titular se imputa a cada empresa.
+        ${aReembolsar != null ? `Para cuadrar el saldo final negativo (RD$ ${fmt(cuadre.saldoFinal)}) se debe entregar <b>RD$ ${fmt(aReembolsar)}</b>, repartido proporcionalmente:` : ''}
+      </p>
+      <div class="resumen">
+        <table>
+          <thead>
+            <tr>
+              <th style="text-align:left;font-size:9px;color:#555;padding:4px 8px;text-transform:uppercase;">Empresa</th>
+              <th style="text-align:right;font-size:9px;color:#555;padding:4px 8px;text-transform:uppercase;">Imputado</th>
+              ${aReembolsar != null ? '<th style="text-align:right;font-size:9px;color:#555;padding:4px 8px;text-transform:uppercase;">Aporta al reembolso</th>' : ''}
+            </tr>
+          </thead>
+          <tbody>
+            ${filaEmpresa('Super Techos', 'super_techos', '#CC0000')}
+            ${filaEmpresa('Prouco', 'prouco', '#65A30D')}
+            ${filaEmpresa('Sin empresa asignada', 'sin_asignar', '#555')}
+            <tr class="total">
+              <td class="label">Total imputado</td>
+              <td class="val">RD$ ${fmt(totalGastos)}</td>
+              ${aReembolsar != null ? `<td class="val">RD$ ${fmt(aReembolsar)}</td>` : ''}
+            </tr>
+          </tbody>
+        </table>
+      </div>`;
+    })()}
 
     ${cuadre.sinFacturaAprob && cuadre.sinFacturaAprob.length > 0 ? `
     <h2 style="color:#CC0000;border-color:#CC0000;">⚠️ Gastos sin factura — atención auditoría</h2>

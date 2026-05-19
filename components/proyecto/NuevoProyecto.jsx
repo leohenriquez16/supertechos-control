@@ -143,6 +143,13 @@ export default function NuevoProyecto({ personal, sistemas, clientes = [], conta
         areas: areasDelForm,
         sistemasNuevosAutoCrear: [...sistemasNuevosPorNombre.values()],
         productosAdicionalesAutoCrear: productosAdic,
+        // v8.17.79: autocompletar valorCotizacion desde el total del PDF
+        // (lo que firmó el cliente). Después se prioriza como "valor del
+        // contrato" en KPIs, márgenes, kanban, etc. Admin puede editarlo
+        // antes de crear si necesita corregir.
+        valorCotizacion: result.total != null && !isNaN(Number(result.total))
+          ? Number(result.total)
+          : (form.valorCotizacion || ''),
       });
     } catch (e) { setError('No se pudo extraer el PDF. Detalle: ' + (e.message || e)); console.error(e); }
     setCargando(false);

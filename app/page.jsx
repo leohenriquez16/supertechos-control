@@ -4934,9 +4934,12 @@ function VistaKanban({ proyectos, data, usuario, onVerProyecto, onCambiarEstadoR
     if (typeof window === 'undefined') return 'comodo';
     return localStorage.getItem('kanban-densidad') || 'comodo';
   });
+  // v8.17.76: default = mostrar todas las columnas. Esconder vacías es opt-in,
+  // porque ocultar Planificado/Parado cuando están vacías rompe la lectura
+  // visual del workflow (las etapas dejan de estar en orden).
   const [ocultarVacias, setOcultarVacias] = useState(() => {
-    if (typeof window === 'undefined') return true;
-    return localStorage.getItem('kanban-ocultar-vacias') !== 'false';
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem('kanban-ocultar-vacias') === 'true';
   });
   const [hoverCardId, setHoverCardId] = useState(null);
   useEffect(() => { try { localStorage.setItem('kanban-densidad', densidadKb); } catch {} }, [densidadKb]);
@@ -5246,8 +5249,32 @@ function CardKanban({ p, data, compacto, arrastrando, hover, onHover, onClick, o
   const sideColor = empresa ? empresa.color : 'bg-zinc-700';
   const sistema = data.sistemas[p.sistema];
 
+  // v8.17.76: hover-card con position:fixed para escapar del overflow-x-auto
+  // del contenedor del kanban (antes quedaba oculta detrás de la columna siguiente).
+  const cardRef = React.useRef(null);
+  const [tooltipPos, setTooltipPos] = useState(null);
+  useEffect(() => {
+    if (!hover || arrastrando) { setTooltipPos(null); return; }
+    const el = cardRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const tipW = 260; // w-64
+    const tipH = 360; // estimado, suficiente para el contenido
+    const gap = 8;
+    // Por defecto a la derecha; si no entra, izquierda
+    let left = rect.right + gap;
+    if (left + tipW > window.innerWidth - 8) left = rect.left - tipW - gap;
+    // Si tampoco entra a la izquierda (móvil), centrar verticalmente debajo
+    if (left < 8) left = Math.max(8, Math.min(window.innerWidth - tipW - 8, rect.left));
+    // Alinear top con el card, sin desbordar abajo
+    let top = rect.top;
+    if (top + tipH > window.innerHeight - 8) top = Math.max(8, window.innerHeight - tipH - 8);
+    setTooltipPos({ top, left });
+  }, [hover, arrastrando]);
+
   return (
     <div
+      ref={cardRef}
       draggable
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
@@ -5317,11 +5344,18 @@ function CardKanban({ p, data, compacto, arrastrando, hover, onHover, onClick, o
         </div>
       </div>
 
-      {/* Hover-card: tooltip flotante con más info */}
-      {hover && !arrastrando && (
+      {/* Hover-card: tooltip flotante con más info — position:fixed para
+          escapar del overflow-x-auto del kanban. */}
+      {hover && !arrastrando && tooltipPos && (
         <div
-          className="absolute left-full ml-2 top-0 z-30 w-64 bg-zinc-950 border border-red-600 shadow-2xl p-3 text-xs pointer-events-none"
-          style={{ animation: 'fadeIn 120ms ease-out' }}
+          className="w-64 bg-zinc-950 border border-red-600 shadow-2xl p-3 text-xs pointer-events-none"
+          style={{
+            animation: 'fadeIn 120ms ease-out',
+            position: 'fixed',
+            top: tooltipPos.top,
+            left: tooltipPos.left,
+            zIndex: 9999,
+          }}
         >
           <div className="font-black text-sm mb-1 truncate">{p.cliente}</div>
           <div className="text-[10px] text-zinc-500 font-mono mb-2">{p.referenciaOdoo} {p.referenciaProyecto && <>· {p.referenciaProyecto}</>}</div>

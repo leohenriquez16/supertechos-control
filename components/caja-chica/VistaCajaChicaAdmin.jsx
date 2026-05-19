@@ -17,6 +17,7 @@ import ModalDetalleMovimiento from './ModalDetalleMovimiento';
 import ModalCrearGastoAdmin from './ModalCrearGastoAdmin'; // v8.17.56
 import ModalAyudaDieta from './ModalAyudaDieta'; // v8.17.29
 import ModalGastosProyecto from './ModalGastosProyecto'; // v8.17.74
+import DesgloseEmpresaReembolso from './DesgloseEmpresaReembolso'; // v8.17.82
 import DashboardCajaChica from './DashboardCajaChica';
 import { imprimirCuadreIndividual } from './imprimirCuadre';
 
@@ -1097,6 +1098,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
         <ModalEntregarCaja
           usuario={usuario}
           data={data}
+          movimientos={movimientos}
           saldosMap={saldosMap}
           onCerrar={() => setModalEntrega(false)}
           onGuardado={() => { setModalEntrega(false); cargar(); }}
@@ -2008,7 +2010,7 @@ const STATUS = {
 };
 
 // Modal para entregar efectivo a una caja chica
-function ModalEntregarCaja({ usuario, data, onCerrar, onGuardado, saldosMap = {} }) {
+function ModalEntregarCaja({ usuario, data, onCerrar, onGuardado, saldosMap = {}, movimientos = [] }) {
   const titulares = data.personal.filter(p => (tieneRol(p, 'maestro') || tieneRol(p, 'supervisor')) && p.cajaChicaHabilitada);
   const [personaId, setPersonaId] = useState('');
   const [monto, setMonto] = useState('');
@@ -2096,6 +2098,17 @@ function ModalEntregarCaja({ usuario, data, onCerrar, onGuardado, saldosMap = {}
               </div>
             )}
           </div>
+        )}
+
+        {/* v8.17.82: desglose de gastos del titular por empresa receptora.
+            Bruto = total imputado a cada empresa. Si hay monto a entregar,
+            también muestra cuánto le toca aportar a cada caja (proporcional). */}
+        {personaSel && (
+          <DesgloseEmpresaReembolso
+            movimientos={movimientos.filter(m => m.personaId === personaSel.id)}
+            montoEntrega={montoNum > 0 ? montoNum : null}
+            titulo="Reembolso por empresa"
+          />
         )}
 
         <div className="grid grid-cols-2 gap-3">

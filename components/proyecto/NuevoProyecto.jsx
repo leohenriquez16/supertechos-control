@@ -29,7 +29,7 @@ const buscarSistemaPorNombre = (sistemas, nombre) => {
   return null;
 };
 
-export default function NuevoProyecto({ personal, sistemas, clientes = [], contactos = [], onCancelar, onCrear }) {
+export default function NuevoProyecto({ personal, sistemas, clientes = [], contactos = [], proyectos = [], onCancelar, onCrear }) {
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState('');
   const [extraido, setExtraido] = useState(null);
@@ -157,6 +157,15 @@ export default function NuevoProyecto({ personal, sistemas, clientes = [], conta
 
   const crear = () => {
     if (!form.referenciaOdoo || !form.referenciaOdoo.trim()) { alert('⚠️ La Referencia Odoo es obligatoria. Ingresa el número de cotización/orden de Odoo.'); return; }
+    // v8.17.80: bloqueo de duplicados — ya hay un proyecto con esa ref Odoo
+    const refLimpia = form.referenciaOdoo.trim();
+    const dup = (proyectos || []).find(p => (p.referenciaOdoo || '').trim().toLowerCase() === refLimpia.toLowerCase());
+    if (dup) {
+      const nombre = dup.cliente || dup.nombre || dup.id;
+      const sufijo = dup.archivado ? ' (archivado)' : ` (estado: ${dup.estado || '—'})`;
+      alert(`⚠️ Ya existe un proyecto con la referencia Odoo "${refLimpia}":\n\n${nombre}${sufijo}\n\nNo se puede crear duplicado. Cambia la referencia o edita el proyecto existente.`);
+      return;
+    }
     if (!form.nombre && !form.cliente) { alert('Necesitas al menos un nombre o cliente'); return; }
     if (form.areas.some(a => !a.nombre || !a.m2)) { alert('Completa áreas o deja una sola'); return; }
 

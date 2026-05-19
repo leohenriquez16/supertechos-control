@@ -5330,16 +5330,18 @@ function CardKanban({ p, data, compacto, arrastrando, hover, onHover, onClick, o
             {dias != null && (
               <span className={`text-[9px] tabular-nums ${sla_cls}`} title={`Días en ${estadoLabel(p.estado)}`}>{dias}d</span>
             )}
-            {/* Avatars stack */}
-            {(supervisor || maestro) && (
-              <div className="flex -space-x-1">
-                {supervisor && (
-                  <AvatarMini persona={supervisor} title={`Supervisor: ${supervisor.nombre}`} />
-                )}
-                {maestro && maestro.id !== supervisor?.id && (
-                  <AvatarMini persona={maestro} title={`Maestro: ${maestro.nombre}`} />
-                )}
-              </div>
+            {/* v8.17.77: vuelta al texto antiguo "👔 nombre" — los avatares mini
+                no se distinguían bien en card chica. Si hay maestro distinto del
+                supervisor lo agregamos con 🔨. */}
+            {supervisor && (
+              <span className="text-[10px] text-zinc-500 truncate max-w-[80px]" title={`Supervisor: ${supervisor.nombre}`}>
+                👔 {supervisor.nombre.split(' ')[0]}
+              </span>
+            )}
+            {maestro && maestro.id !== supervisor?.id && (
+              <span className="text-[10px] text-zinc-500 truncate max-w-[80px]" title={`Maestro: ${maestro.nombre}`}>
+                🔨 {maestro.nombre.split(' ')[0]}
+              </span>
             )}
           </div>
         </div>
@@ -5390,17 +5392,6 @@ function CardKanban({ p, data, compacto, arrastrando, hover, onHover, onClick, o
         </div>,
         document.body
       )}
-    </div>
-  );
-}
-
-function AvatarMini({ persona, title }) {
-  if (persona.foto2x2) {
-    return <img src={persona.foto2x2} alt="" title={title} className="w-5 h-5 rounded-full object-cover border border-zinc-700" />;
-  }
-  return (
-    <div title={title} className="w-5 h-5 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-[8px] font-black text-zinc-400">
-      {(persona.nombre || '?').slice(0, 2).toUpperCase()}
     </div>
   );
 }

@@ -2022,9 +2022,11 @@ function ModalEntregarCaja({ usuario, data, onCerrar, onGuardado, saldosMap = {}
   const montoNum = parseFloat(monto) || 0;
   const saldoTrasEntrega = saldoSel + montoNum;
   const excedeLimite = limiteSel != null && limiteSel > 0 && saldoTrasEntrega > limiteSel;
-  // Bloqueamos entrega solo si la persona tiene saldo NEGATIVO (debe dinero a la oficina).
-  // Saldo = 0 (persona nueva o cuadrada) NO bloquea.
-  const personaEnLimite = personaSel && limiteSel != null && limiteSel > 0 && saldoSel < 0;
+  // v8.17.81: saldo negativo significa que la oficina le DEBE al titular
+  // (gastos aprobados > entregas). Una entrega es exactamente lo que cuadra
+  // ese desfasaje, así que ya NO bloqueamos. Solo mostramos un mensaje
+  // informativo abajo (ver render).
+  const saldoNegativo = personaSel && saldoSel < 0;
 
   const guardar = async () => {
     if (!personaId) { toast.warning('Selecciona la persona'); return; }
@@ -2078,20 +2080,20 @@ function ModalEntregarCaja({ usuario, data, onCerrar, onGuardado, saldosMap = {}
           <div className="bg-zinc-950 border border-zinc-800 p-2 text-[11px] space-y-0.5">
             <div className="flex justify-between"><span className="text-zinc-500">Saldo actual:</span><span className={`font-bold ${saldoSel >= 0 ? 'text-green-400' : 'text-red-400'}`}>RD$ {new Intl.NumberFormat('es-DO').format(saldoSel)}</span></div>
             {limiteSel != null && limiteSel > 0 ? (
-              <>
-                <div className="flex justify-between"><span className="text-zinc-500">Límite asignado:</span><span className="text-zinc-300">RD$ {new Intl.NumberFormat('es-DO').format(limiteSel)}</span></div>
-                {personaEnLimite && (
-                  <div className="text-red-400 mt-1">🚫 La persona tiene saldo negativo (debe dinero a la oficina). Cuadra antes de entregar más.</div>
-                )}
-                {!personaEnLimite && montoNum > 0 && (
-                  <div className="flex justify-between mt-1 pt-1 border-t border-zinc-800">
-                    <span className="text-zinc-500">Saldo tras entrega:</span>
-                    <span className={`font-bold ${excedeLimite ? 'text-red-400' : 'text-green-400'}`}>RD$ {new Intl.NumberFormat('es-DO').format(saldoTrasEntrega)}{excedeLimite ? ' ⚠️ excede' : ''}</span>
-                  </div>
-                )}
-              </>
+              <div className="flex justify-between"><span className="text-zinc-500">Límite asignado:</span><span className="text-zinc-300">RD$ {new Intl.NumberFormat('es-DO').format(limiteSel)}</span></div>
             ) : (
               <div className="text-zinc-500">Sin límite definido</div>
+            )}
+            {saldoNegativo && (
+              <div className="text-amber-300 mt-1 pt-1 border-t border-zinc-800 text-[10px]">
+                💰 La oficina le debe RD$ {new Intl.NumberFormat('es-DO').format(Math.abs(saldoSel))} al titular (gastos aprobados {'>'} entregas). Esta entrega cuadra el saldo.
+              </div>
+            )}
+            {montoNum > 0 && (
+              <div className="flex justify-between mt-1 pt-1 border-t border-zinc-800">
+                <span className="text-zinc-500">Saldo tras entrega:</span>
+                <span className={`font-bold ${excedeLimite ? 'text-red-400' : saldoTrasEntrega >= 0 ? 'text-green-400' : 'text-amber-300'}`}>RD$ {new Intl.NumberFormat('es-DO').format(saldoTrasEntrega)}{excedeLimite ? ' ⚠️ excede límite' : ''}</span>
+              </div>
             )}
           </div>
         )}
@@ -2117,9 +2119,8 @@ function ModalEntregarCaja({ usuario, data, onCerrar, onGuardado, saldosMap = {}
           <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2.5">Cancelar</button>
           <button
             onClick={guardar}
-            disabled={guardando || personaEnLimite}
+            disabled={guardando}
             className="flex-1 bg-green-700 hover:bg-green-600 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-xs font-black uppercase py-2.5 flex items-center justify-center gap-1"
-            title={personaEnLimite ? 'Aprueba primero los gastos pendientes' : ''}
           >
             {guardando ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Registrar entrega'}
           </button>

@@ -184,6 +184,22 @@ export default function ModalCrearGastoAdmin({ usuario, data, onCerrar, onCreado
             </Field>
           </div>
 
+          {/* v8.17.80: Empresa receptora disponible para cualquier tipo, no solo
+              gasto_factura. Para ajustes manuales el admin igual quiere atribuir
+              el movimiento contablemente a una empresa (Super Techos / Prouco). */}
+          <Field label={campos.tipo === 'gasto_factura' ? 'Empresa receptora · ¿a nombre de quién?' : 'Empresa que asume el gasto'}>
+            <select
+              value={campos.empresaReceptora}
+              onChange={e => set('empresaReceptora', e.target.value)}
+              className={`w-full bg-zinc-950 border ${campos.empresaReceptora ? 'border-zinc-700' : (campos.tipo === 'gasto_factura' ? 'border-amber-700' : 'border-zinc-800')} focus:border-red-600 outline-none px-2 py-2 text-white text-sm`}
+            >
+              <option value="">— Sin asignar —</option>
+              {Object.entries(EMPRESAS_RECEPTORAS).map(([key, meta]) => (
+                <option key={key} value={key}>{meta.label} (RNC {meta.rnc})</option>
+              ))}
+            </select>
+          </Field>
+
           {campos.tipo === 'gasto_factura' && (
             <>
               {/* Sin factura toggle */}
@@ -196,20 +212,6 @@ export default function ModalCrearGastoAdmin({ usuario, data, onCerrar, onCreado
                 />
                 Sin comprobante fiscal (compra informal sin RNC/NCF)
               </label>
-
-              {/* Empresa receptora */}
-              <Field label="Empresa receptora · ¿a nombre de quién?">
-                <select
-                  value={campos.empresaReceptora}
-                  onChange={e => set('empresaReceptora', e.target.value)}
-                  className={`w-full bg-zinc-950 border ${campos.empresaReceptora ? 'border-zinc-700' : 'border-amber-700'} focus:border-red-600 outline-none px-2 py-2 text-white text-sm`}
-                >
-                  <option value="">— Sin asignar —</option>
-                  {Object.entries(EMPRESAS_RECEPTORAS).map(([key, meta]) => (
-                    <option key={key} value={key}>{meta.label} (RNC {meta.rnc})</option>
-                  ))}
-                </select>
-              </Field>
 
               <Field label="Proveedor (razón social)">
                 <input

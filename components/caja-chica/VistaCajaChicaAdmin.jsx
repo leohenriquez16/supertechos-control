@@ -801,18 +801,9 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
                   </span>
                 </button>
 
-                {/* Cuerpo expandido: desglose por empresa + movimientos del mes */}
+                {/* Cuerpo expandido: movimientos del mes + accesos a movimientos completos */}
                 {expandida && (
                   <div className="border-t border-zinc-800 p-2 space-y-2">
-                    {/* v8.17.82: desglose de gastos por empresa para el reembolso.
-                        Si el saldo está negativo, también propone el monto a reponer
-                        por empresa (proporcional) para cuadrar. */}
-                    <DesgloseEmpresaReembolso
-                      movimientos={p.movimientos}
-                      montoEntrega={p.saldo < 0 ? Math.abs(p.saldo) : null}
-                      titulo={p.saldo < 0 ? `Reembolso para cuadrar saldo (RD$ ${formatNum(Math.abs(p.saldo), 0)})` : 'Gastos por empresa'}
-                      compacto={dx.compacto}
-                    />
                     <div className="flex items-center justify-between text-[10px] flex-wrap gap-2">
                       <div className="text-zinc-400">
                         Movimientos del mes actual ({movsMes.length})

@@ -1,17 +1,23 @@
 'use client';
 
 // v8.10.23: Modal para importar cotizaciones aprobadas desde Odoo
+// v8.17.78: + botón "ocultar" por cotización (ej. ventas de materiales que no
+//           son obras). Persistido en `odoo_cotizaciones_ocultas`.
 import React, { useState, useEffect } from 'react';
-import { X, Loader2, Download, Check, AlertCircle, ChevronRight, MapPin } from 'lucide-react';
+import { X, Loader2, Download, Check, AlertCircle, ChevronRight, MapPin, EyeOff, Eye, RotateCcw } from 'lucide-react';
 import * as db from '../../lib/db';
+import { toast } from '../../lib/toast';
 
-export default function ModalImportarOdoo({ sistemas, proyectos = [], onCerrar, onCrear }) {
+export default function ModalImportarOdoo({ usuario, sistemas, proyectos = [], onCerrar, onCrear }) {
   const [paso, setPaso] = useState('lista'); // lista | detalle | creando
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
   const [cotizaciones, setCotizaciones] = useState([]);
   const [seleccionada, setSeleccionada] = useState(null);
   const [creando, setCreando] = useState(false);
+  // v8.17.78: cotizaciones marcadas como ocultas + toggle para verlas
+  const [ocultas, setOcultas] = useState(new Map()); // referencia → {motivo, ocultadoAt}
+  const [verOcultas, setVerOcultas] = useState(false);
 
   // Cargar cotizaciones al abrir
   useEffect(() => {
@@ -22,21 +28,73 @@ export default function ModalImportarOdoo({ sistemas, proyectos = [], onCerrar, 
     setCargando(true);
     setError('');
     try {
-      const res = await fetch('/api/odoo/cotizaciones');
-      const data = await res.json();
-      if (!data.ok) throw new Error(data.error || 'Error al conectar con Odoo');
-      
+      // Paralelo: Odoo + lista de ocultas en DB
+      const [odooRes, ocultasArr] = await Promise.all([
+        fetch('/api/odoo/cotizaciones').then(r => r.json()),
+        db.listarCotizacionesOdooOcultas().catch(() => []),
+      ]);
+      if (!odooRes.ok) throw new Error(odooRes.error || 'Error al conectar con Odoo');
+
       // Filtrar cotizaciones que ya fueron importadas (comparar por referencia)
       const refsExistentes = new Set(proyectos.map(p => p.referenciaOdoo).filter(Boolean));
-      const pendientes = data.cotizaciones.filter(c => !refsExistentes.has(c.referencia));
-      
+      const pendientes = odooRes.cotizaciones.filter(c => !refsExistentes.has(c.referencia));
+
+      // Mapa de ocultas para acceso rápido
+      const ocultasMap = new Map();
+      ocultasArr.forEach(o => ocultasMap.set(o.referencia, o));
+
       setCotizaciones(pendientes);
+      setOcultas(ocultasMap);
     } catch (e) {
       setError(e.message);
     } finally {
       setCargando(false);
     }
   };
+
+  const ocultar = async (cot, e) => {
+    e?.stopPropagation();
+    const motivo = prompt(`¿Por qué ocultar "${cot.referencia} · ${cot.cliente}"?\nEjemplos: "venta de materiales", "no es proyecto de obra", "duplicado"`, 'venta de materiales');
+    if (motivo === null) return; // cancelado
+    try {
+      await db.ocultarCotizacionOdoo({
+        referencia: cot.referencia,
+        odooOrderId: cot.id,
+        cliente: cot.cliente,
+        montoTotal: cot.montoTotal,
+        fechaOrden: cot.fechaOrden,
+        motivo: motivo.trim() || null,
+        usuarioId: usuario?.id,
+      });
+      setOcultas(prev => {
+        const next = new Map(prev);
+        next.set(cot.referencia, { referencia: cot.referencia, motivo, ocultadoAt: new Date().toISOString() });
+        return next;
+      });
+      toast.success(`Ocultada: ${cot.referencia}`);
+    } catch (e2) {
+      toast.error('Error: ' + (e2.message || e2));
+    }
+  };
+
+  const mostrar = async (referencia, e) => {
+    e?.stopPropagation();
+    try {
+      await db.mostrarCotizacionOdoo(referencia);
+      setOcultas(prev => {
+        const next = new Map(prev);
+        next.delete(referencia);
+        return next;
+      });
+      toast.success(`Restaurada: ${referencia}`);
+    } catch (e2) {
+      toast.error('Error: ' + (e2.message || e2));
+    }
+  };
+
+  // Cotizaciones a mostrar según el toggle
+  const visibles = cotizaciones.filter(c => verOcultas ? true : !ocultas.has(c.referencia));
+  const cantOcultas = cotizaciones.filter(c => ocultas.has(c.referencia)).length;
 
   const seleccionar = (cot) => {
     setSeleccionada(cot);
@@ -187,7 +245,15 @@ export default function ModalImportarOdoo({ sistemas, proyectos = [], onCerrar, 
               {paso === 'lista' ? 'Cotizaciones Aprobadas' : seleccionada?.referencia}
             </h2>
             {paso === 'lista' && !cargando && !error && (
-              <div className="text-[10px] text-zinc-500">{cotizaciones.length} cotizaciones pendientes de importar</div>
+              <div className="text-[10px] text-zinc-500">
+                {visibles.length} cotizaciones {verOcultas ? '(incluye ocultas)' : 'pendientes de importar'}
+                {cantOcultas > 0 && !verOcultas && (
+                  <> · <button onClick={() => setVerOcultas(true)} className="text-zinc-400 hover:text-white underline">ver {cantOcultas} oculta{cantOcultas !== 1 ? 's' : ''}</button></>
+                )}
+                {verOcultas && (
+                  <> · <button onClick={() => setVerOcultas(false)} className="text-zinc-400 hover:text-white underline">esconder ocultas</button></>
+                )}
+              </div>
             )}
           </div>
           <button onClick={onCerrar} className="text-zinc-500 hover:text-white"><X className="w-5 h-5" /></button>
@@ -212,31 +278,72 @@ export default function ModalImportarOdoo({ sistemas, proyectos = [], onCerrar, 
         {/* PASO 1: Lista de cotizaciones */}
         {paso === 'lista' && !cargando && !error && (
           <div className="space-y-2">
-            {cotizaciones.length === 0 ? (
+            {visibles.length === 0 ? (
               <div className="text-center text-zinc-500 text-sm py-8">
-                No hay cotizaciones aprobadas pendientes de importar.
-                <br /><span className="text-[10px]">Todas las cotizaciones confirmadas ya tienen proyecto creado.</span>
+                {cotizaciones.length === 0 ? (
+                  <>
+                    No hay cotizaciones aprobadas pendientes de importar.
+                    <br /><span className="text-[10px]">Todas las cotizaciones confirmadas ya tienen proyecto creado.</span>
+                  </>
+                ) : (
+                  <>
+                    Todas las cotizaciones pendientes están ocultas.
+                    <br /><button onClick={() => setVerOcultas(true)} className="text-purple-400 hover:text-purple-300 text-[10px] underline mt-1">Ver {cantOcultas} oculta{cantOcultas !== 1 ? 's' : ''}</button>
+                  </>
+                )}
               </div>
-            ) : cotizaciones.map(cot => (
-              <button
-                key={cot.id}
-                onClick={() => seleccionar(cot)}
-                className="w-full text-left bg-zinc-950 border border-zinc-800 hover:border-purple-600 p-3 flex items-center gap-3 transition-colors"
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-black text-purple-400">{cot.referencia}</span>
-                    {cot.referencias && <span className="text-[10px] text-zinc-500">· {cot.referencias}</span>}
-                  </div>
-                  <div className="text-sm font-bold truncate">{cot.cliente}</div>
-                  <div className="text-[10px] text-zinc-500">
-                    {cot.areas.length} {cot.areas.length === 1 ? 'área' : 'áreas'} · {formatMonto(cot.montoTotal)}
-                    {cot.fechaOrden && ` · ${new Date(cot.fechaOrden).toLocaleDateString('es-DO', { day: 'numeric', month: 'short' })}`}
-                  </div>
+            ) : visibles.map(cot => {
+              const estaOculta = ocultas.has(cot.referencia);
+              const infoOculta = ocultas.get(cot.referencia);
+              return (
+                <div
+                  key={cot.id}
+                  className={`bg-zinc-950 border flex items-center gap-3 transition-colors ${estaOculta ? 'border-zinc-800 opacity-50' : 'border-zinc-800 hover:border-purple-600'}`}
+                >
+                  <button
+                    onClick={() => !estaOculta && seleccionar(cot)}
+                    className="flex-1 text-left p-3 flex items-center gap-3 min-w-0"
+                    disabled={estaOculta}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-black text-purple-400">{cot.referencia}</span>
+                        {cot.referencias && <span className="text-[10px] text-zinc-500">· {cot.referencias}</span>}
+                        {estaOculta && (
+                          <span className="text-[8px] uppercase tracking-widest px-1.5 py-0.5 bg-zinc-900 border border-zinc-700 text-zinc-400">
+                            oculta{infoOculta?.motivo ? ` · ${infoOculta.motivo}` : ''}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-sm font-bold truncate">{cot.cliente}</div>
+                      <div className="text-[10px] text-zinc-500">
+                        {cot.areas.length} {cot.areas.length === 1 ? 'área' : 'áreas'} · {formatMonto(cot.montoTotal)}
+                        {cot.fechaOrden && ` · ${new Date(cot.fechaOrden).toLocaleDateString('es-DO', { day: 'numeric', month: 'short' })}`}
+                      </div>
+                    </div>
+                    {!estaOculta && <ChevronRight className="w-4 h-4 text-zinc-600 shrink-0" />}
+                  </button>
+                  {/* Ocultar / restaurar */}
+                  {estaOculta ? (
+                    <button
+                      onClick={(e) => mostrar(cot.referencia, e)}
+                      title="Restaurar a la lista"
+                      className="px-3 self-stretch border-l border-zinc-800 text-zinc-500 hover:text-white hover:bg-zinc-900"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                    </button>
+                  ) : (
+                    <button
+                      onClick={(e) => ocultar(cot, e)}
+                      title="Ocultar (no es proyecto de obra)"
+                      className="px-3 self-stretch border-l border-zinc-800 text-zinc-500 hover:text-amber-400 hover:bg-zinc-900"
+                    >
+                      <EyeOff className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
-                <ChevronRight className="w-4 h-4 text-zinc-600" />
-              </button>
-            ))}
+              );
+            })}
           </div>
         )}
 

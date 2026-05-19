@@ -16,6 +16,7 @@ import ModalCargaMasiva from './ModalCargaMasiva';
 import ModalDetalleMovimiento from './ModalDetalleMovimiento';
 import ModalCrearGastoAdmin from './ModalCrearGastoAdmin'; // v8.17.56
 import ModalAyudaDieta from './ModalAyudaDieta'; // v8.17.29
+import ModalGastosProyecto from './ModalGastosProyecto'; // v8.17.74
 import DashboardCajaChica from './DashboardCajaChica';
 import { imprimirCuadreIndividual } from './imprimirCuadre';
 
@@ -87,6 +88,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
     { k: 'empresa',     label: 'Empresa' },
     { k: 'aprobadoPor', label: 'Aprobado por' },
     { k: 'creadoAt',    label: 'Creado el' },
+    { k: 'aprobadoAt',  label: 'Aprobado el' }, // v8.17.74
     { k: 'status',      label: 'Status' },
     { k: 'monto',       label: 'Monto',       fija: true  },
     { k: 'accion',      label: 'Acción',      fija: true  },
@@ -112,6 +114,12 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
   const [viewerRotacion, setViewerRotacion] = useState(0);
   // v8.17.36: modo edición global (todas las filas pendientes editables al mismo tiempo)
   const [editandoTodos, setEditandoTodos] = useState(false);
+  // v8.17.74: Bandeja "tipo Odoo" — agrupar por (persona|proyecto|categoria|empresa|ninguno) + filtros.
+  const [agruparBandeja, setAgruparBandeja] = useState('persona');
+  const [filtroBandejaProyecto, setFiltroBandejaProyecto] = useState('');
+  const [filtroBandejaCategoria, setFiltroBandejaCategoria] = useState('');
+  // v8.17.74: Por Proyecto drill-down — modal de gastos de un proyecto específico
+  const [verGastosProyecto, setVerGastosProyecto] = useState(null);
 
   const cargar = async () => {
     setLoading(true);
@@ -223,39 +231,76 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
 
   const pendientes = useMemo(() => movimientos.filter(m => m.status === 'pendiente_revision'), [movimientos]);
 
-  // v8.17.7: agrupar pendientes por persona — preserva el índice plano para el carrusel
-  const pendientesPorPersona = useMemo(() => {
-    const grupos = new Map(); // personaId -> { persona, items: [{m, idxPlano}], total, incompletos }
-    pendientes.forEach((m, idxPlano) => {
-      const personaId = m.personaId;
-      if (!grupos.has(personaId)) {
-        const persona = data.personal.find(p => p.id === personaId);
-        grupos.set(personaId, {
-          personaId,
-          persona,
-          nombre: persona?.nombre || personaId,
-          items: [],
-          total: 0,
-          incompletos: 0,
-        });
-      }
-      const g = grupos.get(personaId);
-      g.items.push({ m, idxPlano });
-      g.total += m.monto || 0;
-      if (evaluarDatosIncompletos(m).incompleto) g.incompletos += 1;
-    });
-    // Ordenar grupos por monto descendente (los que más deben revisar primero)
-    return Array.from(grupos.values()).sort((a, b) => b.total - a.total);
-  }, [pendientes, data.personal]);
+  // v8.17.7: agrupación por persona reemplazada por pendientesAgrupadosBandeja
+  // (v8.17.74) que soporta múltiples ejes de agrupación (persona/proyecto/categoría/empresa).
 
-  const toggleGrupo = (personaId) => {
+  const toggleGrupo = (key) => {
     setGruposColapsados(prev => {
       const next = new Set(prev);
-      if (next.has(personaId)) next.delete(personaId); else next.add(personaId);
+      if (next.has(key)) next.delete(key); else next.add(key);
       return next;
     });
   };
-  const colapsarTodos = () => setGruposColapsados(new Set(pendientesPorPersona.map(g => g.personaId)));
+
+  // v8.17.74: Bandeja con filtros + agrupar por flexible (tipo Odoo).
+  const pendientesFiltradosBandeja = useMemo(() => {
+    return pendientes.filter(m => {
+      if (filtroBandejaProyecto && m.proyectoId !== filtroBandejaProyecto) return false;
+      if (filtroBandejaCategoria && (m.datosIA?.categoria_sugerida || '__sin__') !== filtroBandejaCategoria) return false;
+      return true;
+    });
+  }, [pendientes, filtroBandejaProyecto, filtroBandejaCategoria]);
+
+  // Agrupación flexible: persona | proyecto | categoria | empresa | ninguno.
+  // Cada grupo lleva su key estable (para colapso) + label + items con idxPlano original.
+  const pendientesAgrupadosBandeja = useMemo(() => {
+    const items = pendientesFiltradosBandeja;
+    const idxPlanoMap = new Map();
+    pendientes.forEach((m, i) => idxPlanoMap.set(m.id, i));
+
+    if (agruparBandeja === 'ninguno') {
+      return [{
+        key: '__all__',
+        label: null,
+        persona: null,
+        items: items.map(m => ({ m, idxPlano: idxPlanoMap.get(m.id) })),
+        total: items.reduce((s, m) => s + (m.monto || 0), 0),
+        incompletos: items.filter(m => evaluarDatosIncompletos(m).incompleto).length,
+      }];
+    }
+    const grupos = new Map();
+    items.forEach((m) => {
+      let key, label, persona = null;
+      if (agruparBandeja === 'persona') {
+        key = m.personaId;
+        persona = data.personal.find(p => p.id === m.personaId);
+        label = persona?.nombre || m.personaId;
+      } else if (agruparBandeja === 'proyecto') {
+        key = m.proyectoId || '__sin__';
+        const proy = m.proyectoId ? data.proyectos.find(p => p.id === m.proyectoId) : null;
+        label = proy
+          ? (proy.referenciaOdoo ? `${proy.referenciaOdoo} · ${proy.cliente || proy.nombre}` : (proy.cliente || proy.nombre))
+          : 'Sin proyecto';
+      } else if (agruparBandeja === 'categoria') {
+        key = m.datosIA?.categoria_sugerida || '__sin__';
+        const cat = (data.categoriasCajaChica || []).find(c => c.id === key);
+        label = cat ? `${cat.icono ? cat.icono + ' ' : ''}${cat.nombre}` : 'Sin categoría';
+      } else if (agruparBandeja === 'empresa') {
+        key = m.empresaReceptora || '__sin__';
+        label = m.empresaReceptora ? (EMPRESAS_RECEPTORAS[m.empresaReceptora]?.label || m.empresaReceptora) : 'Sin empresa';
+      }
+      if (!grupos.has(key)) {
+        grupos.set(key, { key, label, persona, items: [], total: 0, incompletos: 0 });
+      }
+      const g = grupos.get(key);
+      g.items.push({ m, idxPlano: idxPlanoMap.get(m.id) });
+      g.total += m.monto || 0;
+      if (evaluarDatosIncompletos(m).incompleto) g.incompletos++;
+    });
+    return Array.from(grupos.values()).sort((a, b) => b.total - a.total);
+  }, [pendientesFiltradosBandeja, pendientes, agruparBandeja, data]);
+
+  const colapsarTodos = () => setGruposColapsados(new Set(pendientesAgrupadosBandeja.map(g => g.key)));
   const expandirTodos = () => setGruposColapsados(new Set());
 
   // v8.17.13: helpers para Por Persona — expandir card individual
@@ -387,6 +432,14 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
         case 'empresa': return m.empresaReceptora || '';
         case 'status': return m.status || '';
         case 'monto': return Number(m.monto || 0);
+        // v8.17.74: sort por las 3 fechas + categoría
+        case 'creadoAt': return m.createdAt || '';
+        case 'aprobadoAt': return m.aprobadoAt || '';
+        case 'categoria': {
+          const id = m.datosIA?.categoria_sugerida;
+          const c = id ? (data.categoriasCajaChica || []).find(x => x.id === id) : null;
+          return (c?.nombre || '').toLowerCase();
+        }
         default: return '';
       }
     };
@@ -396,7 +449,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
       if (va > vb) return 1 * dir;
       return 0;
     });
-  }, [movimientosFiltrados, sortMov, data.personal, data.proyectos]);
+  }, [movimientosFiltrados, sortMov, data.personal, data.proyectos, data.categoriasCajaChica]);
 
   // v8.17.8: agrupar movimientos filtrados por fecha
   const movimientosAgrupados = useMemo(() => {
@@ -526,55 +579,120 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
 
       {tab === 'bandeja' && (
         <div className={dx.listGap}>
-          {/* v8.17.7: header con conteo + acciones de colapsar/expandir todos */}
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">
-              Pendientes de aprobación ({pendientes.length}{pendientes.length > 0 && pendientesPorPersona.length > 1 ? ` · ${pendientesPorPersona.length} personas` : ''})
+          {/* v8.17.74: toolbar tipo Odoo — Agrupar por + Filtrar por */}
+          <div className="bg-zinc-900 border border-zinc-800 p-2 space-y-2 text-xs">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">Agrupar por</span>
+                <select
+                  value={agruparBandeja}
+                  onChange={e => { setAgruparBandeja(e.target.value); setGruposColapsados(new Set()); }}
+                  className="bg-zinc-950 border border-zinc-800 px-2 py-1 text-white text-xs"
+                >
+                  <option value="persona">Persona</option>
+                  <option value="proyecto">Proyecto</option>
+                  <option value="categoria">Categoría</option>
+                  <option value="empresa">Empresa receptora</option>
+                  <option value="ninguno">Sin agrupar</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-1">
+                <Filter className="w-3 h-3 text-zinc-500" />
+                <span className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">Filtrar por</span>
+                <select value={filtroBandejaProyecto} onChange={e => setFiltroBandejaProyecto(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-1 text-white text-xs">
+                  <option value="">Todos los proyectos</option>
+                  {data.proyectos.filter(p => !p.archivado).map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo || p.cliente || p.nombre}</option>)}
+                </select>
+                <select value={filtroBandejaCategoria} onChange={e => setFiltroBandejaCategoria(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-1 text-white text-xs">
+                  <option value="">Todas las categorías</option>
+                  {(data.categoriasCajaChica || []).filter(c => c.activa).map(c => <option key={c.id} value={c.id}>{c.icono ? c.icono + ' ' : ''}{c.nombre}</option>)}
+                  <option value="__sin__">— Sin categoría —</option>
+                </select>
+              </div>
+              {pendientesAgrupadosBandeja.length > 1 && (
+                <div className="flex items-center gap-1 ml-auto text-[10px]">
+                  <button onClick={expandirTodos} className="text-zinc-400 hover:text-white px-2 py-0.5 border border-zinc-800">Expandir todos</button>
+                  <button onClick={colapsarTodos} className="text-zinc-400 hover:text-white px-2 py-0.5 border border-zinc-800">Colapsar todos</button>
+                </div>
+              )}
             </div>
-            {pendientesPorPersona.length > 1 && (
-              <div className="flex items-center gap-1 text-[10px]">
-                <button onClick={expandirTodos} className="text-zinc-400 hover:text-white px-2 py-0.5 border border-zinc-800">Expandir todos</button>
-                <button onClick={colapsarTodos} className="text-zinc-400 hover:text-white px-2 py-0.5 border border-zinc-800">Colapsar todos</button>
+            {/* Chips de filtros activos */}
+            {(filtroBandejaProyecto || filtroBandejaCategoria) && (
+              <div className="flex flex-wrap items-center gap-1 pt-1 border-t border-zinc-800">
+                <span className="text-[9px] uppercase tracking-wider text-zinc-500">Filtros activos:</span>
+                {filtroBandejaProyecto && (
+                  <button
+                    onClick={() => setFiltroBandejaProyecto('')}
+                    className="bg-red-900/30 border border-red-700 text-red-300 px-2 py-0.5 text-[10px] flex items-center gap-1 hover:bg-red-800/40"
+                  >
+                    Proyecto: {data.proyectos.find(p => p.id === filtroBandejaProyecto)?.referenciaOdoo || data.proyectos.find(p => p.id === filtroBandejaProyecto)?.cliente || '—'}
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+                {filtroBandejaCategoria && (
+                  <button
+                    onClick={() => setFiltroBandejaCategoria('')}
+                    className="bg-red-900/30 border border-red-700 text-red-300 px-2 py-0.5 text-[10px] flex items-center gap-1 hover:bg-red-800/40"
+                  >
+                    Categoría: {filtroBandejaCategoria === '__sin__' ? 'Sin categoría' : ((data.categoriasCajaChica || []).find(c => c.id === filtroBandejaCategoria)?.nombre || '—')}
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+                <button onClick={() => { setFiltroBandejaProyecto(''); setFiltroBandejaCategoria(''); }} className="text-zinc-500 hover:text-white text-[10px] ml-1">Limpiar todo</button>
               </div>
             )}
+            {/* Conteo */}
+            <div className="text-[10px] text-zinc-500 pt-1 border-t border-zinc-800">
+              Pendientes de aprobación: <b className="text-white">{pendientesFiltradosBandeja.length}</b>
+              {pendientesFiltradosBandeja.length !== pendientes.length && <> de {pendientes.length}</>}
+              {agruparBandeja !== 'ninguno' && pendientesAgrupadosBandeja.length > 0 && <> · {pendientesAgrupadosBandeja.length} grupo{pendientesAgrupadosBandeja.length !== 1 ? 's' : ''}</>}
+              · Total: <b className="text-orange-400">{formatRD(pendientesFiltradosBandeja.reduce((s, m) => s + (m.monto || 0), 0))}</b>
+            </div>
           </div>
 
           {pendientes.length === 0 ? (
             <div className="text-center py-10 text-zinc-500 text-sm">✓ Sin pendientes. Todo aprobado.</div>
+          ) : pendientesFiltradosBandeja.length === 0 ? (
+            <div className="text-center py-10 text-zinc-500 text-sm">Sin pendientes que coincidan con los filtros.</div>
           ) : (
-            pendientesPorPersona.map(grupo => {
-              const colapsado = gruposColapsados.has(grupo.personaId);
+            pendientesAgrupadosBandeja.map(grupo => {
+              const colapsado = gruposColapsados.has(grupo.key);
+              const hayHeader = grupo.label !== null;
               return (
-                <div key={grupo.personaId} className="bg-zinc-950 border border-zinc-800">
-                  {/* Header del grupo */}
-                  <button
-                    onClick={() => toggleGrupo(grupo.personaId)}
-                    className="w-full flex items-center gap-2 p-2 hover:bg-zinc-900/50 text-left"
-                  >
-                    <span className="text-zinc-500 text-xs w-4 shrink-0">{colapsado ? '▶' : '▼'}</span>
-                    {grupo.persona?.foto2x2 ? (
-                      <img src={grupo.persona.foto2x2} alt="" className="w-7 h-7 object-cover rounded-sm border border-zinc-700 shrink-0" />
-                    ) : (
-                      <div className="w-7 h-7 bg-zinc-800 border border-zinc-700 flex items-center justify-center text-zinc-500 text-[10px] font-bold shrink-0">
-                        {(grupo.nombre || '?').slice(0, 2).toUpperCase()}
+                <div key={grupo.key} className="bg-zinc-950 border border-zinc-800">
+                  {/* Header del grupo (sólo si hay agrupación) */}
+                  {hayHeader && (
+                    <button
+                      onClick={() => toggleGrupo(grupo.key)}
+                      className="w-full flex items-center gap-2 p-2 hover:bg-zinc-900/50 text-left"
+                    >
+                      <span className="text-zinc-500 text-xs w-4 shrink-0">{colapsado ? '▶' : '▼'}</span>
+                      {agruparBandeja === 'persona' && (
+                        grupo.persona?.foto2x2 ? (
+                          <img src={grupo.persona.foto2x2} alt="" className="w-7 h-7 object-cover rounded-sm border border-zinc-700 shrink-0" />
+                        ) : (
+                          <div className="w-7 h-7 bg-zinc-800 border border-zinc-700 flex items-center justify-center text-zinc-500 text-[10px] font-bold shrink-0">
+                            {(grupo.label || '?').slice(0, 2).toUpperCase()}
+                          </div>
+                        )
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-bold truncate">{grupo.label}</div>
+                        <div className="text-[10px] text-zinc-500">
+                          {grupo.items.length} pendiente{grupo.items.length !== 1 ? 's' : ''}
+                          {grupo.incompletos > 0 && <span className="text-amber-400"> · ⚠ {grupo.incompletos} faltan datos</span>}
+                        </div>
                       </div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-bold truncate">{grupo.nombre}</div>
-                      <div className="text-[10px] text-zinc-500">
-                        {grupo.items.length} pendiente{grupo.items.length !== 1 ? 's' : ''}
-                        {grupo.incompletos > 0 && <span className="text-amber-400"> · ⚠ {grupo.incompletos} faltan datos</span>}
+                      <div className="text-right shrink-0">
+                        <div className="text-sm font-black text-orange-400">{formatRD(grupo.total)}</div>
+                        <div className="text-[9px] text-zinc-500">total</div>
                       </div>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <div className="text-sm font-black text-orange-400">{formatRD(grupo.total)}</div>
-                      <div className="text-[9px] text-zinc-500">total</div>
-                    </div>
-                  </button>
+                    </button>
+                  )}
 
                   {/* Filas del grupo */}
                   {!colapsado && (
-                    <div className={`${dx.listGap} p-2 pt-0`}>
+                    <div className={`${dx.listGap} ${hayHeader ? 'p-2 pt-0' : 'p-2'}`}>
                       {grupo.items.map(({ m, idxPlano }) => (
                         <FilaPendiente
                           key={m.id}
@@ -733,7 +851,19 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
           {porProyecto.length === 0 ? (
             <div className="text-center py-10 text-zinc-500 text-sm">Sin gastos asociados a proyecto.</div>
           ) : porProyecto.map(p => (
-            <div key={p.proyectoId} className={`bg-zinc-900 border border-zinc-800 ${dx.cardPad}`}>
+            <div
+              key={p.proyectoId}
+              className={`bg-zinc-900 border border-zinc-800 hover:border-red-600 ${dx.cardPad} cursor-pointer transition`}
+              onClick={() => {
+                const proy = data.proyectos.find(pr => pr.id === p.proyectoId);
+                setVerGastosProyecto({
+                  proyectoId: p.proyectoId,
+                  nombre: p.nombre,
+                  referenciaOdoo: proy?.referenciaOdoo || null,
+                  movimientos: p.movimientos,
+                });
+              }}
+            >
               {dx.compacto ? (
                 <div className="flex items-center gap-2">
                   <div className="flex-1 min-w-0">
@@ -747,8 +877,9 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
                   </div>
                   <div className="text-orange-400 font-black text-sm shrink-0">RD${formatNum(p.totalGastado + p.totalDieta, 0)}</div>
                   <button
-                    onClick={() => { setFiltroProyecto(p.proyectoId); setFiltroPersona(''); setTab('movimientos'); }}
+                    onClick={(e) => { e.stopPropagation(); setFiltroProyecto(p.proyectoId); setFiltroPersona(''); setTab('movimientos'); }}
                     className="text-[9px] text-red-400 hover:text-red-300 shrink-0 px-1"
+                    title="Ver todos los movimientos (incluye entregas)"
                   >→</button>
                 </div>
               ) : (
@@ -774,10 +905,10 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
                     </div>
                   </div>
                   <button
-                    onClick={() => { setFiltroProyecto(p.proyectoId); setFiltroPersona(''); setTab('movimientos'); }}
+                    onClick={(e) => { e.stopPropagation(); setFiltroProyecto(p.proyectoId); setFiltroPersona(''); setTab('movimientos'); }}
                     className="mt-2 text-[10px] text-red-400 hover:text-red-300"
                   >
-                    Ver todos los movimientos →
+                    Ver todos los movimientos (incluye entregas) →
                   </button>
                 </>
               )}
@@ -1012,6 +1143,18 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
           movimientos={movimientos}
           onCerrar={() => setModalNuevoGasto(false)}
           onCreado={() => cargar()}
+        />
+      )}
+
+      {/* v8.17.74: drill-down de gastos de un proyecto */}
+      {verGastosProyecto && (
+        <ModalGastosProyecto
+          proyecto={verGastosProyecto}
+          movimientos={verGastosProyecto.movimientos}
+          usuario={usuario}
+          data={data}
+          onCerrar={() => setVerGastosProyecto(null)}
+          onCambio={() => cargar()}
         />
       )}
 
@@ -1437,12 +1580,13 @@ function TablaMovimientos({ movimientos: movsTabla, todosMovimientos, data, sort
           {showCol('concepto')   && <Th k="concepto">Concepto / Proveedor</Th>}
           {showCol('rnc')        && <th className={`${rowPad} text-left text-[10px] uppercase tracking-wider text-zinc-500 font-bold`}>RNC</th>}
           {showCol('ncf')        && <th className={`${rowPad} text-left text-[10px] uppercase tracking-wider text-zinc-500 font-bold`}>NCF</th>}
-          {showCol('categoria')  && <th className={`${rowPad} text-left text-[10px] uppercase tracking-wider text-zinc-500 font-bold`}>Categoría</th>}
+          {showCol('categoria')  && <Th k="categoria">Categoría</Th>}
           {showCol('aplicaA')    && <th className={`${rowPad} text-left text-[10px] uppercase tracking-wider text-zinc-500 font-bold`}>Aplica a</th>}
           {showCol('subTipo')    && <th className={`${rowPad} text-left text-[10px] uppercase tracking-wider text-zinc-500 font-bold`}>Sub-tipo</th>}
           {showCol('empresa')    && <Th k="empresa">Empresa</Th>}
           {showCol('aprobadoPor')&& <th className={`${rowPad} text-left text-[10px] uppercase tracking-wider text-zinc-500 font-bold`}>Aprobado por</th>}
-          {showCol('creadoAt')   && <th className={`${rowPad} text-left text-[10px] uppercase tracking-wider text-zinc-500 font-bold`}>Creado</th>}
+          {showCol('creadoAt')   && <Th k="creadoAt">Creado</Th>}
+          {showCol('aprobadoAt') && <Th k="aprobadoAt">Aprobado el</Th>}
           {showCol('status')     && <Th k="status">Status</Th>}
           {showCol('monto')      && <Th k="monto" align="right">Monto</Th>}
           {showCol('accion')     && <th className={`${rowPad} text-right text-[10px] uppercase tracking-wider text-zinc-500 font-bold`}>Acción</th>}
@@ -1567,6 +1711,7 @@ function TablaMovimientos({ movimientos: movsTabla, todosMovimientos, data, sort
               )}
               {showCol('aprobadoPor') && <td className={`${rowPad} text-xs text-zinc-400`}>{aprobador?.nombre || '—'}</td>}
               {showCol('creadoAt') && <td className={`${rowPad} text-xs text-zinc-500 whitespace-nowrap`}>{m.createdAt ? formatFechaCorta(m.createdAt.split('T')[0]) : '—'}</td>}
+              {showCol('aprobadoAt') && <td className={`${rowPad} text-xs text-zinc-500 whitespace-nowrap`}>{m.aprobadoAt ? formatFechaCorta(m.aprobadoAt.split('T')[0]) : '—'}</td>}
               {showCol('status') && (
                 <td className={rowPad}>
                   <span className={`text-[9px] font-black uppercase tracking-wider px-1 ${stmeta.cls}`}>{stmeta.label}</span>

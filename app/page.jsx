@@ -1,13 +1,14 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed, Building2, Star, MessageCircle, Send } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed, Building2, Star, MessageCircle, Send, Search, Filter } from 'lucide-react';
 import * as db from '../lib/db';
 import { leerArchivo, parseMateriales, parseSistemas, descargarPlantilla, comprimirImagen } from '../lib/imports';
 import { obtenerUbicacion, distanciaMetros, formatDistancia, abrirEnMapa } from '../lib/geo';
 import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps } from '../lib/geoutils';
 // v8.10.0: helpers extraídos a módulos separados
-import { APP_VERSION } from '../lib/constants';
+import { APP_VERSION, EMPRESAS_RECEPTORAS } from '../lib/constants';
+import { toast } from '../lib/toast';
 import { formatRD, formatNum, formatFecha, formatFechaCorta, formatFechaLarga } from '../lib/helpers/formato';
 import {
   getM2Reporte, getPrecioVentaArea,
@@ -4877,7 +4878,7 @@ function ListaProyectosMultivista({ usuario, data, onVerProyecto, onNuevoProyect
         </div>
       )}
 
-      {vista === 'kanban' && <VistaKanban proyectos={proyectosFiltrados} data={data} onVerProyecto={onVerProyecto} onCambiarEstadoRapido={onCambiarEstadoRapido} />}
+      {vista === 'kanban' && <VistaKanban proyectos={proyectosFiltrados} data={data} usuario={usuario} onVerProyecto={onVerProyecto} onCambiarEstadoRapido={onCambiarEstadoRapido} />}
       {vista === 'lista' && (
         <VistaLista
           proyectos={proyectosFiltrados}
@@ -4910,101 +4911,458 @@ function ListaProyectosMultivista({ usuario, data, onVerProyecto, onNuevoProyect
 }
 
 // KANBAN con drag & drop nativo HTML5
-function VistaKanban({ proyectos, data, onVerProyecto, onCambiarEstadoRapido }) {
+// v8.17.75: Kanban rediseñado.
+//  - Headers de columna con franja de color del estado + total RD$ sumado.
+//  - Cards con avatar del supervisor, borde lateral por empresa ejecutora,
+//    progress bar inline (no solo donut), badge días en estado con semáforo,
+//    icon-cluster de alertas (faltan datos / retraso vs SLA / sobre presupuesto).
+//  - Toolbar tipo Odoo: buscador + chips de filtro (empresa · supervisor · mis
+//    proyectos) + dropdown Agrupar por (estado [default] / supervisor / empresa
+//    / sistema) + toggle densidad + colapsar columnas vacías.
+//  - Hover-card: tooltip flotante con m²/contactos/fechas/avance sin abrir el
+//    proyecto.
+//  - Drop con toast (no alert nativo) + transición CSS suave.
+function VistaKanban({ proyectos, data, usuario, onVerProyecto, onCambiarEstadoRapido }) {
   const [draggingId, setDraggingId] = useState(null);
-  const porEstado = {};
-  ORDEN_ESTADOS.forEach(e => { porEstado[e] = []; });
-  proyectos.forEach(p => { (porEstado[p.estado] = porEstado[p.estado] || []).push(p); });
+  const [dropTargetKey, setDropTargetKey] = useState(null); // resaltar columna durante drag
+  const [busqueda, setBusqueda] = useState('');
+  const [filtroEmpresa, setFiltroEmpresa] = useState(''); // '' | 'super_techos' | 'prouco'
+  const [filtroSupervisor, setFiltroSupervisor] = useState('');
+  const [misProyectos, setMisProyectos] = useState(false);
+  const [agruparPor, setAgruparPor] = useState('estado'); // estado | supervisor | empresa | sistema
+  const [densidadKb, setDensidadKb] = useState(() => {
+    if (typeof window === 'undefined') return 'comodo';
+    return localStorage.getItem('kanban-densidad') || 'comodo';
+  });
+  const [ocultarVacias, setOcultarVacias] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    return localStorage.getItem('kanban-ocultar-vacias') !== 'false';
+  });
+  const [hoverCardId, setHoverCardId] = useState(null);
+  useEffect(() => { try { localStorage.setItem('kanban-densidad', densidadKb); } catch {} }, [densidadKb]);
+  useEffect(() => { try { localStorage.setItem('kanban-ocultar-vacias', String(ocultarVacias)); } catch {} }, [ocultarVacias]);
+  const compacto = densidadKb === 'compacto';
 
-  const onDrop = (estadoNuevo) => {
+  // Personal con rol de supervisor (para el filtro)
+  const supervisoresOpciones = useMemo(() => {
+    return (data.personal || []).filter(p => p.roles?.includes('supervisor') || p.roles?.includes('admin'));
+  }, [data.personal]);
+
+  // Filtros
+  const proyectosFiltrados = useMemo(() => {
+    const q = busqueda.trim().toLowerCase();
+    return proyectos.filter(p => {
+      if (filtroEmpresa && p.empresaEjecutora !== filtroEmpresa) return false;
+      if (filtroSupervisor && p.supervisorId !== filtroSupervisor) return false;
+      if (misProyectos && usuario?.id && p.supervisorId !== usuario.id && p.maestroId !== usuario.id) return false;
+      if (q) {
+        const haystack = `${p.cliente || ''} ${p.referenciaOdoo || ''} ${p.referenciaProyecto || ''} ${p.nombre || ''}`.toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [proyectos, filtroEmpresa, filtroSupervisor, misProyectos, busqueda, usuario]);
+
+  // Helpers para valor y avance — extraídos para reutilizar
+  const calcValorYAvance = (p) => {
+    const sistema = data.sistemas[p.sistema];
+    const m2Total = (p.areas || []).reduce((a, ar) => a + (Number(ar.m2) || 0), 0);
+    const valorDerivado = m2Total * (sistema?.precio_m2 || 0);
+    const valor = p.valorCotizacion != null
+      ? p.valorCotizacion
+      : (p.montoFinalCubicado != null ? p.montoFinalCubicado : valorDerivado);
+    const fuenteValor = p.valorCotizacion != null ? 'cot' : (p.montoFinalCubicado != null ? 'cub' : 'der');
+    const { porcentaje = 0 } = sistema ? calcAvanceProyecto(p, data.reportes, sistema, data.sistemas) : { porcentaje: 0 };
+    return { valor, fuenteValor, porcentaje, m2Total, sistema };
+  };
+
+  // Agrupación flexible: estado (con orden + colores) o cualquier otro eje (orden por monto).
+  const grupos = useMemo(() => {
+    if (agruparPor === 'estado') {
+      const map = new Map();
+      ORDEN_ESTADOS.forEach(e => map.set(e, {
+        key: e, label: estadoLabel(e), color: ESTADOS[e]?.color, textColor: ESTADOS[e]?.textColor,
+        proyectos: [], total: 0, isEstado: true, estado: e,
+      }));
+      proyectosFiltrados.forEach(p => {
+        if (!map.has(p.estado)) {
+          map.set(p.estado, { key: p.estado, label: estadoLabel(p.estado), color: 'bg-zinc-600', textColor: 'text-zinc-400', proyectos: [], total: 0, isEstado: true, estado: p.estado });
+        }
+        const g = map.get(p.estado);
+        g.proyectos.push(p);
+        g.total += calcValorYAvance(p).valor;
+      });
+      return Array.from(map.values());
+    }
+    // Otras agrupaciones — orden por total desc
+    const grupoMap = new Map();
+    proyectosFiltrados.forEach(p => {
+      let key, label, color = 'bg-zinc-700', textColor = 'text-zinc-300';
+      if (agruparPor === 'supervisor') {
+        key = p.supervisorId || '__sin__';
+        const sup = p.supervisorId ? getPersona(data.personal, p.supervisorId) : null;
+        label = sup?.nombre || 'Sin supervisor';
+      } else if (agruparPor === 'empresa') {
+        key = p.empresaEjecutora || '__sin__';
+        const emp = p.empresaEjecutora ? EMPRESAS_RECEPTORAS[p.empresaEjecutora] : null;
+        label = emp?.label || 'Sin empresa';
+        color = emp?.color || color;
+        textColor = emp?.textColor || textColor;
+      } else if (agruparPor === 'sistema') {
+        key = p.sistema || '__sin__';
+        const s = p.sistema ? data.sistemas[p.sistema] : null;
+        label = s?.nombre || 'Sin sistema';
+      }
+      if (!grupoMap.has(key)) grupoMap.set(key, { key, label, color, textColor, proyectos: [], total: 0, isEstado: false });
+      const g = grupoMap.get(key);
+      g.proyectos.push(p);
+      g.total += calcValorYAvance(p).valor;
+    });
+    return Array.from(grupoMap.values()).sort((a, b) => b.total - a.total);
+  }, [proyectosFiltrados, agruparPor, data]);
+
+  const gruposVisibles = useMemo(
+    () => ocultarVacias ? grupos.filter(g => g.proyectos.length > 0) : grupos,
+    [grupos, ocultarVacias]
+  );
+
+  const hayFiltros = busqueda || filtroEmpresa || filtroSupervisor || misProyectos;
+  const limpiarFiltros = () => { setBusqueda(''); setFiltroEmpresa(''); setFiltroSupervisor(''); setMisProyectos(false); };
+
+  const onDrop = (grupo) => {
+    setDropTargetKey(null);
     if (!draggingId) return;
     const proy = proyectos.find(p => p.id === draggingId);
-    if (proy && proy.estado !== estadoNuevo) {
-      if (confirm(`¿Cambiar "${proy.cliente}" de "${estadoLabel(proy.estado)}" a "${estadoLabel(estadoNuevo)}"?`)) {
-        onCambiarEstadoRapido(proy.id, estadoNuevo);
-      }
-    }
     setDraggingId(null);
+    if (!proy) return;
+    if (!grupo.isEstado) {
+      toast.info('Solo se puede mover entre columnas cuando agrupas por estado.');
+      return;
+    }
+    if (proy.estado === grupo.estado) return;
+    if (confirm(`¿Cambiar "${proy.cliente}" de "${estadoLabel(proy.estado)}" a "${grupo.label}"?`)) {
+      onCambiarEstadoRapido(proy.id, grupo.estado);
+      toast.success(`"${proy.cliente}" → ${grupo.label}`);
+    }
   };
 
   return (
-    <div className="overflow-x-auto">
-      <div className="flex gap-3 pb-2" style={{ minWidth: 'max-content' }}>
-        {ORDEN_ESTADOS.map(estado => (
-          <div key={estado}
-            onDragOver={e => e.preventDefault()}
-            onDrop={() => onDrop(estado)}
-            className="w-72 flex-shrink-0 bg-zinc-950 border border-zinc-800 p-3">
-            <div className="flex items-center justify-between mb-2">
-              <div className={`text-[10px] tracking-widest uppercase font-bold ${estadoTextColor(estado)}`}>{estadoLabel(estado)}</div>
-              <div className="text-[10px] text-zinc-500">{(porEstado[estado] || []).length}</div>
-            </div>
-            <div className="space-y-2 min-h-[50px]">
-              {(porEstado[estado] || []).map(p => {
-                const sistema = data.sistemas[p.sistema];
-                const m2Total = (p.areas || []).reduce((a, ar) => a + ar.m2, 0);
-                // v8.17.63: priorizar valor cotizado > cubicado > derivado (m² × precio)
-                const valorDerivado = m2Total * (sistema?.precio_m2 || 0);
-                const valor = p.valorCotizacion != null
-                  ? p.valorCotizacion
-                  : (p.montoFinalCubicado != null ? p.montoFinalCubicado : valorDerivado);
-                const fuenteValor = p.valorCotizacion != null ? 'cot' : (p.montoFinalCubicado != null ? 'cub' : null);
-                const supervisor = getPersona(data.personal, p.supervisorId);
-                const { porcentaje } = sistema ? calcAvanceProyecto(p, data.reportes, sistema, data.sistemas) : { porcentaje: 0 };
-                // v8.10.23: color del donut según avance
-                const donutColor = porcentaje >= 75 ? '#22c55e' : porcentaje >= 40 ? '#eab308' : '#ef4444';
-                const donutTextColor = porcentaje >= 75 ? 'text-green-400' : porcentaje >= 40 ? 'text-yellow-400' : 'text-red-400';
-                const donutSize = 36;
-                const donutRadius = 14;
-                const donutCirc = 2 * Math.PI * donutRadius;
-                const donutOffset = donutCirc - (porcentaje / 100) * donutCirc;
-                return (
-                  <div key={p.id}
-                    draggable
-                    onDragStart={() => setDraggingId(p.id)}
-                    onDragEnd={() => setDraggingId(null)}
-                    onClick={() => onVerProyecto(p)}
-                    className={`bg-zinc-900 border border-zinc-800 hover:border-red-600 p-3 text-left cursor-pointer ${draggingId === p.id ? 'opacity-50' : ''}`}>
-                    <div className="flex items-start gap-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="text-[10px] font-mono text-zinc-500 flex items-center gap-1">
-                          <span>{p.referenciaOdoo}</span>
-                          {/* v8.17.60: alerta visual si falta location */}
-                          {(p.ubicacionLat == null || p.ubicacionLng == null) && (
-                            <span title="Falta location" className="text-amber-400">⚠</span>
-                          )}
-                        </div>
-                        <div className="font-bold text-sm truncate">{p.cliente}</div>
-                        <div className="text-[10px] text-zinc-500 truncate">{p.referenciaProyecto || p.nombre}</div>
-                      </div>
-                      {/* v8.10.23: Mini donut de avance */}
-                      {['en_ejecucion', 'finalizado_no_entregado', 'finalizado_recibido_conforme'].includes(estado) && (
-                        <div className="relative flex-shrink-0" style={{ width: donutSize, height: donutSize }}>
-                          <svg viewBox={`0 0 ${donutSize} ${donutSize}`} className="w-full h-full -rotate-90">
-                            <circle cx={donutSize/2} cy={donutSize/2} r={donutRadius} fill="none" stroke="#27272a" strokeWidth="4" />
-                            <circle cx={donutSize/2} cy={donutSize/2} r={donutRadius} fill="none" stroke={donutColor} strokeWidth="4" strokeLinecap="round" strokeDasharray={donutCirc} strokeDashoffset={donutOffset} />
-                          </svg>
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <span className={`text-[8px] font-black ${donutTextColor}`}>{porcentaje.toFixed(0)}%</span>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                    <div className="mt-2 flex items-center justify-between text-[10px]">
-                      <span className="text-green-400 font-bold">
-                        {formatRD(valor)}
-                        {fuenteValor && <span className="ml-1 text-[8px] text-zinc-500 font-normal">{fuenteValor}</span>}
-                      </span>
-                      {supervisor && <span className="text-zinc-600">👔 {supervisor.nombre.split(' ')[0]}</span>}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+    <div className="space-y-2">
+      {/* Toolbar tipo Odoo */}
+      <div className="bg-zinc-900 border border-zinc-800 p-2 space-y-2 text-xs">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Buscador */}
+          <div className="flex items-center gap-1 flex-1 min-w-[180px] bg-zinc-950 border border-zinc-800 px-2 py-1">
+            <Search className="w-3 h-3 text-zinc-500" />
+            <input
+              type="text"
+              value={busqueda}
+              onChange={e => setBusqueda(e.target.value)}
+              placeholder="Buscar cliente, referencia..."
+              className="flex-1 bg-transparent outline-none text-white text-xs placeholder:text-zinc-600"
+            />
+            {busqueda && <button onClick={() => setBusqueda('')} className="text-zinc-500"><X className="w-3 h-3" /></button>}
           </div>
-        ))}
+          {/* Agrupar por */}
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold hidden sm:inline">Agrupar</span>
+            <select value={agruparPor} onChange={e => setAgruparPor(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-1 text-white text-xs">
+              <option value="estado">Estado</option>
+              <option value="supervisor">Supervisor</option>
+              <option value="empresa">Empresa</option>
+              <option value="sistema">Sistema</option>
+            </select>
+          </div>
+          {/* Filtros */}
+          <div className="flex items-center gap-1">
+            <Filter className="w-3 h-3 text-zinc-500" />
+            <select value={filtroEmpresa} onChange={e => setFiltroEmpresa(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-1 text-white text-xs">
+              <option value="">Todas las empresas</option>
+              {Object.entries(EMPRESAS_RECEPTORAS).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
+            </select>
+            <select value={filtroSupervisor} onChange={e => setFiltroSupervisor(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-1 text-white text-xs">
+              <option value="">Todos los supervisores</option>
+              {supervisoresOpciones.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+            </select>
+            <button
+              onClick={() => setMisProyectos(v => !v)}
+              className={`px-2 py-1 border text-[10px] font-bold uppercase tracking-wider ${misProyectos ? 'bg-red-600 border-red-600 text-white' : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'}`}
+              title="Solo proyectos donde soy supervisor o maestro"
+            >★ Míos</button>
+          </div>
+          {/* Densidad + ocultar vacías */}
+          <div className="flex items-center gap-1 ml-auto">
+            <button
+              onClick={() => setDensidadKb(d => d === 'compacto' ? 'comodo' : 'compacto')}
+              className="px-2 py-1 border bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white text-[10px] font-bold uppercase tracking-wider"
+              title="Densidad de cards"
+            >{compacto ? 'Cómodo' : 'Compacto'}</button>
+            <button
+              onClick={() => setOcultarVacias(v => !v)}
+              className={`px-2 py-1 border text-[10px] font-bold uppercase tracking-wider ${ocultarVacias ? 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white' : 'bg-red-600 border-red-600 text-white'}`}
+              title="Mostrar todas las columnas, incluso las vacías"
+            >{ocultarVacias ? 'Mostrar vacías' : 'Ocultar vacías'}</button>
+          </div>
+        </div>
+        {/* Chips de filtros activos */}
+        {hayFiltros && (
+          <div className="flex flex-wrap items-center gap-1 pt-1 border-t border-zinc-800">
+            <span className="text-[9px] uppercase tracking-wider text-zinc-500">Filtros:</span>
+            {busqueda && <Chip onRemove={() => setBusqueda('')}>"{busqueda}"</Chip>}
+            {filtroEmpresa && <Chip onRemove={() => setFiltroEmpresa('')}>Empresa: {EMPRESAS_RECEPTORAS[filtroEmpresa]?.label}</Chip>}
+            {filtroSupervisor && <Chip onRemove={() => setFiltroSupervisor('')}>Sup: {getPersona(data.personal, filtroSupervisor)?.nombre || '—'}</Chip>}
+            {misProyectos && <Chip onRemove={() => setMisProyectos(false)}>Mis proyectos</Chip>}
+            <button onClick={limpiarFiltros} className="text-zinc-500 hover:text-white text-[10px] ml-1">Limpiar todo</button>
+          </div>
+        )}
+        {/* Conteo */}
+        <div className="text-[10px] text-zinc-500 pt-1 border-t border-zinc-800">
+          <b className="text-white">{proyectosFiltrados.length}</b> proyectos
+          {proyectosFiltrados.length !== proyectos.length && <> de {proyectos.length}</>}
+          {' · '}<b className="text-green-400">{formatRD(proyectosFiltrados.reduce((s, p) => s + calcValorYAvance(p).valor, 0))}</b>
+        </div>
       </div>
-      <div className="text-[10px] text-zinc-600 mt-2">💡 Arrastra las tarjetas entre columnas para cambiar el estado.</div>
+
+      {/* Columnas */}
+      <div className="overflow-x-auto">
+        <div className="flex gap-3 pb-2" style={{ minWidth: 'max-content' }}>
+          {gruposVisibles.length === 0 ? (
+            <div className="text-center py-10 text-zinc-500 text-sm w-full">Sin proyectos que coincidan con los filtros.</div>
+          ) : gruposVisibles.map(g => (
+            <ColumnaKanban
+              key={g.key}
+              grupo={g}
+              compacto={compacto}
+              draggingId={draggingId}
+              dropTarget={dropTargetKey === g.key}
+              onDragOver={(e) => { e.preventDefault(); setDropTargetKey(g.key); }}
+              onDragLeave={() => setDropTargetKey(prev => prev === g.key ? null : prev)}
+              onDrop={() => onDrop(g)}
+              data={data}
+              hoverCardId={hoverCardId}
+              setHoverCardId={setHoverCardId}
+              onVerProyecto={onVerProyecto}
+              onDragStartCard={setDraggingId}
+              onDragEndCard={() => { setDraggingId(null); setDropTargetKey(null); }}
+              calcValorYAvance={calcValorYAvance}
+            />
+          ))}
+        </div>
+      </div>
+      <div className="text-[10px] text-zinc-600">💡 Arrastra las tarjetas entre columnas (solo cuando agrupas por Estado).</div>
+    </div>
+  );
+}
+
+// ============================================================
+// v8.17.75: Sub-componentes del Kanban (Chip, ColumnaKanban, CardKanban)
+// ============================================================
+function Chip({ children, onRemove }) {
+  return (
+    <button onClick={onRemove} className="bg-red-900/30 border border-red-700 text-red-300 px-2 py-0.5 text-[10px] flex items-center gap-1 hover:bg-red-800/40">
+      {children} <X className="w-3 h-3" />
+    </button>
+  );
+}
+
+function ColumnaKanban({ grupo, compacto, draggingId, dropTarget, onDragOver, onDragLeave, onDrop, data, hoverCardId, setHoverCardId, onVerProyecto, onDragStartCard, onDragEndCard, calcValorYAvance }) {
+  return (
+    <div
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      className={`w-72 flex-shrink-0 bg-zinc-950 border ${dropTarget ? 'border-red-600 ring-2 ring-red-600/30' : 'border-zinc-800'} transition-colors`}
+    >
+      {/* Header con franja de color */}
+      <div className={`h-1 ${grupo.color || 'bg-zinc-700'}`} />
+      <div className="px-3 pt-2 pb-1.5 flex items-baseline justify-between gap-2 border-b border-zinc-800">
+        <div className="min-w-0">
+          <div className={`text-[10px] tracking-widest uppercase font-bold truncate ${grupo.textColor || 'text-zinc-400'}`}>{grupo.label}</div>
+          <div className="text-[9px] text-zinc-600">{grupo.proyectos.length} proyecto{grupo.proyectos.length !== 1 ? 's' : ''}</div>
+        </div>
+        <div className="text-right shrink-0">
+          <div className="text-[11px] font-black text-green-400 whitespace-nowrap">{formatRD(grupo.total)}</div>
+        </div>
+      </div>
+      {/* Lista de cards */}
+      <div className="space-y-2 min-h-[50px] p-2">
+        {grupo.proyectos.map(p => (
+          <CardKanban
+            key={p.id}
+            p={p}
+            data={data}
+            compacto={compacto}
+            arrastrando={draggingId === p.id}
+            hover={hoverCardId === p.id}
+            onHover={(v) => setHoverCardId(v ? p.id : null)}
+            onClick={() => onVerProyecto(p)}
+            onDragStart={() => onDragStartCard(p.id)}
+            onDragEnd={onDragEndCard}
+            calcValorYAvance={calcValorYAvance}
+          />
+        ))}
+        {grupo.proyectos.length === 0 && (
+          <div className="text-center text-[10px] text-zinc-600 py-3 italic">Vacía</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Evalúa qué alertas mostrar en la card.
+// - location: si falta lat/lng en estados que la necesitan
+// - retraso: dias en estado > SLA configurado por estado
+// - sobrePresupuesto: monto_final_cubicado > valor_cotizacion
+// - faltaContacto: planificado/en_ejecucion sin contacto
+const SLA_DIAS_POR_ESTADO = { aprobado: 30, planificado: 21, en_ejecucion: 60, parado: 14, finalizado_no_entregado: 7, finalizado_recibido_conforme: 30, facturado: 30 };
+
+function alertasProyecto(p) {
+  const alertas = [];
+  const necesitaLoc = ['planificado', 'en_ejecucion'].includes(p.estado);
+  if (necesitaLoc && (p.ubicacionLat == null || p.ubicacionLng == null)) alertas.push({ icon: '📍', cls: 'text-amber-400', titulo: 'Falta location' });
+  const dias = diasEnEstado(p);
+  const sla = SLA_DIAS_POR_ESTADO[p.estado];
+  if (dias != null && sla != null && dias > sla) alertas.push({ icon: '⏱', cls: 'text-red-400', titulo: `${dias}d en este estado (SLA ${sla}d)` });
+  if (p.valorCotizacion != null && p.montoFinalCubicado != null && p.montoFinalCubicado > p.valorCotizacion * 1.05) {
+    alertas.push({ icon: '💸', cls: 'text-red-400', titulo: 'Cubicado > cotizado (>5%)' });
+  }
+  // contacto: hay contacto_principal_id o texto legacy o tabla M:N (no podemos chequear M:N sin fetch, omitimos)
+  const necesitaContacto = ['planificado', 'en_ejecucion'].includes(p.estado);
+  const tieneContacto = !!p.contactoPrincipalId || !!(p.contactoClienteNombre || '').trim();
+  if (necesitaContacto && !tieneContacto) alertas.push({ icon: '☎', cls: 'text-amber-400', titulo: 'Falta contacto del cliente' });
+  return { alertas, dias, sla };
+}
+
+function CardKanban({ p, data, compacto, arrastrando, hover, onHover, onClick, onDragStart, onDragEnd, calcValorYAvance }) {
+  const { valor, fuenteValor, porcentaje, m2Total } = calcValorYAvance(p);
+  const supervisor = p.supervisorId ? getPersona(data.personal, p.supervisorId) : null;
+  const maestro = p.maestroId ? getPersona(data.personal, p.maestroId) : null;
+  const empresa = p.empresaEjecutora ? EMPRESAS_RECEPTORAS[p.empresaEjecutora] : null;
+  const { alertas, dias, sla } = alertasProyecto(p);
+  const enEjecucion = ['en_ejecucion', 'finalizado_no_entregado', 'finalizado_recibido_conforme'].includes(p.estado);
+  const progressColor = porcentaje >= 75 ? 'bg-green-500' : porcentaje >= 40 ? 'bg-yellow-500' : 'bg-red-500';
+  const sla_cls = (dias != null && sla != null) ? (dias > sla ? 'text-red-400' : dias > sla * 0.7 ? 'text-amber-400' : 'text-zinc-500') : 'text-zinc-600';
+  // Borde lateral: color de la empresa ejecutora, o gris si no hay
+  const sideColor = empresa ? empresa.color : 'bg-zinc-700';
+  const sistema = data.sistemas[p.sistema];
+
+  return (
+    <div
+      draggable
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      onClick={onClick}
+      onMouseEnter={() => onHover(true)}
+      onMouseLeave={() => onHover(false)}
+      className={`relative bg-zinc-900 border border-zinc-800 hover:border-red-600 text-left cursor-pointer transition-all ${arrastrando ? 'opacity-40 scale-95' : 'opacity-100 scale-100'}`}
+    >
+      {/* Borde lateral 3px con color de empresa */}
+      <div className={`absolute left-0 top-0 bottom-0 w-[3px] ${sideColor}`} />
+      <div className={compacto ? 'pl-2.5 pr-2 py-2' : 'pl-3 pr-3 py-2.5'}>
+        {/* Header: ref + alertas */}
+        <div className="flex items-start gap-2">
+          <div className="flex-1 min-w-0">
+            <div className="text-[10px] font-mono text-zinc-500 flex items-center gap-1">
+              <span className="truncate">{p.referenciaOdoo}</span>
+            </div>
+            <div className={`font-bold ${compacto ? 'text-xs' : 'text-sm'} truncate`}>{p.cliente}</div>
+            {!compacto && (
+              <div className="text-[10px] text-zinc-500 truncate">{p.referenciaProyecto || p.nombre}</div>
+            )}
+          </div>
+          {/* Cluster de alertas */}
+          {alertas.length > 0 && (
+            <div className="flex items-center gap-0.5 shrink-0">
+              {alertas.slice(0, 3).map((a, i) => (
+                <span key={i} className={`text-[11px] ${a.cls}`} title={a.titulo}>{a.icon}</span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Progress bar inline (solo en estados de ejecución/finalizado) */}
+        {enEjecucion && (
+          <div className="mt-1.5">
+            <div className="h-1 bg-zinc-800 overflow-hidden">
+              <div className={`h-full ${progressColor} transition-all`} style={{ width: `${Math.min(100, porcentaje)}%` }} />
+            </div>
+            <div className="text-[9px] text-zinc-500 mt-0.5">{porcentaje.toFixed(0)}% avance</div>
+          </div>
+        )}
+
+        {/* Footer: valor + días + avatars */}
+        <div className="mt-1.5 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-[11px] text-green-400 font-bold whitespace-nowrap">
+              {formatRD(valor)}
+              <span className="ml-1 text-[8px] text-zinc-500 font-normal">{fuenteValor}</span>
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {dias != null && (
+              <span className={`text-[9px] tabular-nums ${sla_cls}`} title={`Días en ${estadoLabel(p.estado)}`}>{dias}d</span>
+            )}
+            {/* Avatars stack */}
+            {(supervisor || maestro) && (
+              <div className="flex -space-x-1">
+                {supervisor && (
+                  <AvatarMini persona={supervisor} title={`Supervisor: ${supervisor.nombre}`} />
+                )}
+                {maestro && maestro.id !== supervisor?.id && (
+                  <AvatarMini persona={maestro} title={`Maestro: ${maestro.nombre}`} />
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Hover-card: tooltip flotante con más info */}
+      {hover && !arrastrando && (
+        <div
+          className="absolute left-full ml-2 top-0 z-30 w-64 bg-zinc-950 border border-red-600 shadow-2xl p-3 text-xs pointer-events-none"
+          style={{ animation: 'fadeIn 120ms ease-out' }}
+        >
+          <div className="font-black text-sm mb-1 truncate">{p.cliente}</div>
+          <div className="text-[10px] text-zinc-500 font-mono mb-2">{p.referenciaOdoo} {p.referenciaProyecto && <>· {p.referenciaProyecto}</>}</div>
+          <div className="space-y-1 text-[11px]">
+            <div className="flex justify-between"><span className="text-zinc-500">Estado:</span><span className={estadoTextColor(p.estado)}>{estadoLabel(p.estado)}</span></div>
+            {dias != null && <div className="flex justify-between"><span className="text-zinc-500">Días en estado:</span><span className={sla_cls}>{dias}d{sla ? ` / ${sla}d SLA` : ''}</span></div>}
+            <div className="flex justify-between"><span className="text-zinc-500">Sistema:</span><span className="truncate ml-2">{sistema?.nombre || '—'}</span></div>
+            <div className="flex justify-between"><span className="text-zinc-500">m² total:</span><span>{formatNum(m2Total, 1)}</span></div>
+            <div className="flex justify-between"><span className="text-zinc-500">Valor:</span><span className="text-green-400 font-bold">{formatRD(valor)}</span></div>
+            {p.valorCotizacion != null && p.montoFinalCubicado != null && (
+              <div className="flex justify-between"><span className="text-zinc-500">Cubicado:</span><span className={p.montoFinalCubicado > p.valorCotizacion * 1.05 ? 'text-red-400 font-bold' : ''}>{formatRD(p.montoFinalCubicado)}</span></div>
+            )}
+            {empresa && <div className="flex justify-between"><span className="text-zinc-500">Empresa:</span><span className={empresa.textColor}>{empresa.label}</span></div>}
+            {supervisor && <div className="flex justify-between"><span className="text-zinc-500">Supervisor:</span><span className="truncate ml-2">{supervisor.nombre}</span></div>}
+            {maestro && <div className="flex justify-between"><span className="text-zinc-500">Maestro:</span><span className="truncate ml-2">{maestro.nombre}</span></div>}
+            {p.fechaEstimadaInicio && <div className="flex justify-between"><span className="text-zinc-500">Inicio estimado:</span><span>{formatFechaCorta(p.fechaEstimadaInicio)}</span></div>}
+            {p.fecha_inicio && <div className="flex justify-between"><span className="text-zinc-500">Inicio real:</span><span>{formatFechaCorta(p.fecha_inicio)}</span></div>}
+            {enEjecucion && <div className="flex justify-between"><span className="text-zinc-500">Avance:</span><span className={porcentaje >= 75 ? 'text-green-400' : porcentaje >= 40 ? 'text-yellow-400' : 'text-red-400'}>{porcentaje.toFixed(0)}%</span></div>}
+          </div>
+          {alertas.length > 0 && (
+            <div className="mt-2 pt-2 border-t border-zinc-800 space-y-0.5">
+              {alertas.map((a, i) => (
+                <div key={i} className={`text-[10px] ${a.cls} flex items-center gap-1`}>
+                  <span>{a.icon}</span><span>{a.titulo}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AvatarMini({ persona, title }) {
+  if (persona.foto2x2) {
+    return <img src={persona.foto2x2} alt="" title={title} className="w-5 h-5 rounded-full object-cover border border-zinc-700" />;
+  }
+  return (
+    <div title={title} className="w-5 h-5 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-[8px] font-black text-zinc-400">
+      {(persona.nombre || '?').slice(0, 2).toUpperCase()}
     </div>
   );
 }

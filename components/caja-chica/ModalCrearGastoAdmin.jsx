@@ -250,21 +250,24 @@ export default function ModalCrearGastoAdmin({ usuario, data, onCerrar, onCreado
                   </Field>
                 </div>
               )}
-
-              <Field label="Categoría">
-                <select
-                  value={campos.categoria}
-                  onChange={e => set('categoria', e.target.value)}
-                  className="w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-2 text-white text-sm"
-                >
-                  <option value="">— Seleccionar —</option>
-                  {categoriasActivas.map(c => (
-                    <option key={c.id} value={c.id}>{c.icono} {c.nombre}</option>
-                  ))}
-                </select>
-              </Field>
             </>
           )}
+
+          {/* v8.17.84: Categoría disponible para cualquier tipo (gasto factura,
+              gasto sin factura, ajuste). Antes solo se mostraba en gasto_factura
+              y el admin no podía categorizar un ajuste manual. */}
+          <Field label="Categoría">
+            <select
+              value={campos.categoria}
+              onChange={e => set('categoria', e.target.value)}
+              className="w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-2 text-white text-sm"
+            >
+              <option value="">— Seleccionar —</option>
+              {categoriasActivas.map(c => (
+                <option key={c.id} value={c.id}>{c.icono} {c.nombre}</option>
+              ))}
+            </select>
+          </Field>
 
           <Field label="Concepto">
             <textarea

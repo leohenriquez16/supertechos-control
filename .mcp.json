@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "odoo": {
+      "command": "node",
+      "args": ["scripts/mcp-odoo.mjs"]
+    }
+  }
+}

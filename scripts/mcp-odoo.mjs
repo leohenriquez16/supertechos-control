@@ -320,6 +320,92 @@ async function odooExecute(model, method, args = [], kwargs = {}) {
 }
 
 // ============================================================
+// Export masivo (CSV / XLSX / JSON)
+// ============================================================
+
+function flattenForTabular(records) {
+  return records.map(r => {
+    const out = {};
+    for (const [k, v] of Object.entries(r)) {
+      if (Array.isArray(v) && v.length === 2 && typeof v[0] === 'number' && typeof v[1] === 'string') {
+        out[k] = v[1];
+      } else if (Array.isArray(v)) {
+        out[k] = JSON.stringify(v);
+      } else if (v === false || v === null) {
+        out[k] = '';
+      } else {
+        out[k] = v;
+      }
+    }
+    return out;
+  });
+}
+
+function toCsv(records) {
+  if (records.length === 0) return '';
+  const headers = [...new Set(records.flatMap(r => Object.keys(r)))];
+  const escape = (v) => {
+    const s = v == null ? '' : String(v);
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const lines = [headers.join(',')];
+  for (const r of records) lines.push(headers.map(h => escape(r[h])).join(','));
+  return lines.join('\n');
+}
+
+async function odooExport({ model, domain = [], fields, formato = 'csv', nombre_archivo, limit = 10000, order }) {
+  const { url, db, uid, apiKey } = await getClient();
+
+  const BATCH = 500;
+  const all = [];
+  let offset = 0;
+  while (all.length < limit) {
+    const remaining = limit - all.length;
+    const take = Math.min(BATCH, remaining);
+    const kwargs = { limit: take, offset };
+    if (fields && fields.length) kwargs.fields = fields;
+    if (order) kwargs.order = order;
+    const batch = await odooCall(url, db, uid, apiKey, model, 'search_read', [domain], kwargs);
+    all.push(...batch);
+    if (batch.length < take) break;
+    offset += take;
+  }
+
+  const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const base = String(nombre_archivo || `${model.replace(/\./g, '_')}_${ts}`).replace(/[^a-zA-Z0-9_-]/g, '_');
+  const exportsDir = path.join(ROOT, 'exports');
+  fs.mkdirSync(exportsDir, { recursive: true });
+
+  let fullPath;
+  if (formato === 'csv') {
+    fullPath = path.join(exportsDir, `${base}.csv`);
+    fs.writeFileSync(fullPath, toCsv(flattenForTabular(all)), 'utf-8');
+  } else if (formato === 'json') {
+    fullPath = path.join(exportsDir, `${base}.json`);
+    fs.writeFileSync(fullPath, JSON.stringify(all, null, 2), 'utf-8');
+  } else if (formato === 'xlsx') {
+    const XLSX = await import('xlsx');
+    const flat = flattenForTabular(all);
+    const ws = XLSX.utils.json_to_sheet(flat);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, model.slice(0, 31));
+    fullPath = path.join(exportsDir, `${base}.xlsx`);
+    XLSX.writeFile(wb, fullPath);
+  } else {
+    throw new Error(`Formato no soportado: ${formato} (usar csv | xlsx | json)`);
+  }
+
+  const stat = fs.statSync(fullPath);
+  return {
+    path: fullPath,
+    formato,
+    registros: all.length,
+    bytes: stat.size,
+    truncado: all.length === limit,
+  };
+}
+
+// ============================================================
 // MCP server (JSON-RPC 2.0 sobre stdio)
 // ============================================================
 
@@ -477,6 +563,23 @@ const TOOLS = [
       required: ['model', 'method'],
     },
   },
+  {
+    name: 'odoo_export',
+    description: 'Exporta registros de cualquier modelo Odoo a un archivo (CSV, Excel .xlsx o JSON). Pagina automáticamente en lotes de 500 hasta el limit (default 10000). Devuelve la ruta del archivo generado en ./exports/. Para CSV/XLSX, los campos many2one se aplanan al nombre (no al id).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        model: { type: 'string', description: 'Modelo Odoo, ej. "res.partner", "account.move"' },
+        domain: { type: 'array', description: 'Dominio de filtro (opcional, default todo)' },
+        fields: { type: 'array', items: { type: 'string' }, description: 'Campos a exportar (opcional, default todos los stored)' },
+        formato: { type: 'string', enum: ['csv', 'xlsx', 'json'], description: 'Formato del archivo (default csv)' },
+        nombre_archivo: { type: 'string', description: 'Nombre sin extensión (opcional, se autogenera con modelo+timestamp)' },
+        limit: { type: 'integer', description: 'Máximo de registros (default 10000)' },
+        order: { type: 'string', description: 'Orden, ej. "create_date desc"' },
+      },
+      required: ['model'],
+    },
+  },
 ];
 
 function send(msg) {
@@ -529,6 +632,16 @@ async function handleRequest(req) {
         result = await odooUnlink(args.model, args.ids);
       } else if (name === 'odoo_execute') {
         result = await odooExecute(args.model, args.method, args.args ?? [], args.kwargs ?? {});
+      } else if (name === 'odoo_export') {
+        result = await odooExport({
+          model: args.model,
+          domain: args.domain ?? [],
+          fields: args.fields,
+          formato: args.formato ?? 'csv',
+          nombre_archivo: args.nombre_archivo,
+          limit: args.limit ?? 10000,
+          order: args.order,
+        });
       } else {
         return replyError(id, -32601, `Tool desconocido: ${name}`);
       }

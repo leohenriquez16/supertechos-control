@@ -256,6 +256,70 @@ async function costoUltimaCompra(query) {
 }
 
 // ============================================================
+// Tools genéricos — acceso total a cualquier modelo de Odoo
+// ============================================================
+
+async function odooSearchRead(model, domain = [], opts = {}) {
+  const { url, db, uid, apiKey } = await getClient();
+  const { fields, limit = 50, offset = 0, order } = opts;
+  const kwargs = { limit, offset };
+  if (fields && fields.length) kwargs.fields = fields;
+  if (order) kwargs.order = order;
+  return odooCall(url, db, uid, apiKey, model, 'search_read', [domain], kwargs);
+}
+
+async function odooReadIds(model, ids, fields) {
+  const { url, db, uid, apiKey } = await getClient();
+  const kwargs = {};
+  if (fields && fields.length) kwargs.fields = fields;
+  return odooCall(url, db, uid, apiKey, model, 'read', [ids], kwargs);
+}
+
+async function odooFieldsGet(model, attributes) {
+  const { url, db, uid, apiKey } = await getClient();
+  const kwargs = {};
+  if (attributes && attributes.length) kwargs.attributes = attributes;
+  else kwargs.attributes = ['string', 'type', 'required', 'readonly', 'relation', 'selection', 'help'];
+  return odooCall(url, db, uid, apiKey, model, 'fields_get', [], kwargs);
+}
+
+async function odooModelsBuscar(query, limit = 30) {
+  const { url, db, uid, apiKey } = await getClient();
+  const domain = ['|', ['model', 'ilike', query], ['name', 'ilike', query]];
+  return odooCall(url, db, uid, apiKey, 'ir.model', 'search_read', [domain],
+    { fields: ['model', 'name', 'transient'], limit, order: 'model' }
+  );
+}
+
+async function odooCount(model, domain = []) {
+  const { url, db, uid, apiKey } = await getClient();
+  return odooCall(url, db, uid, apiKey, model, 'search_count', [domain], {});
+}
+
+async function odooCreate(model, values) {
+  const { url, db, uid, apiKey } = await getClient();
+  const id = await odooCall(url, db, uid, apiKey, model, 'create', [values], {});
+  return { id, model };
+}
+
+async function odooWrite(model, ids, values) {
+  const { url, db, uid, apiKey } = await getClient();
+  const ok = await odooCall(url, db, uid, apiKey, model, 'write', [ids, values], {});
+  return { ok, model, ids };
+}
+
+async function odooUnlink(model, ids) {
+  const { url, db, uid, apiKey } = await getClient();
+  const ok = await odooCall(url, db, uid, apiKey, model, 'unlink', [ids], {});
+  return { ok, model, ids };
+}
+
+async function odooExecute(model, method, args = [], kwargs = {}) {
+  const { url, db, uid, apiKey } = await getClient();
+  return odooCall(url, db, uid, apiKey, model, method, args, kwargs);
+}
+
+// ============================================================
 // MCP server (JSON-RPC 2.0 sobre stdio)
 // ============================================================
 
@@ -295,6 +359,124 @@ const TOOLS = [
       required: ['query'],
     },
   },
+
+  // ---- Tools genéricos ----
+  {
+    name: 'odoo_search_read',
+    description: 'Consulta cualquier modelo de Odoo con un dominio. Ejemplo model="res.partner", domain=[["name","ilike","Carlos"]]. Si no pasas fields, devuelve todos. Limit default 50. Úsalo para responder preguntas abiertas sobre datos en Odoo (facturas, clientes, proyectos, empleados, etc).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        model: { type: 'string', description: 'Nombre técnico del modelo, ej. "account.move", "res.partner", "sale.order", "hr.employee", "stock.picking"' },
+        domain: { type: 'array', description: 'Dominio Odoo, ej. [["state","=","posted"],["invoice_date",">=","2026-05-01"]]. Acepta operadores "|" "&" "!".' },
+        fields: { type: 'array', items: { type: 'string' }, description: 'Campos a devolver (opcional, default todos)' },
+        limit: { type: 'integer', description: 'Máximo de registros (default 50)' },
+        offset: { type: 'integer', description: 'Offset para paginar (default 0)' },
+        order: { type: 'string', description: 'Orden, ej. "date_order desc, id"' },
+      },
+      required: ['model'],
+    },
+  },
+  {
+    name: 'odoo_read',
+    description: 'Lee uno o varios registros de Odoo por ID. Más rápido que search_read cuando ya tienes el id.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        model: { type: 'string', description: 'Nombre del modelo' },
+        ids: { type: 'array', items: { type: 'integer' }, description: 'IDs a leer' },
+        fields: { type: 'array', items: { type: 'string' }, description: 'Campos a devolver (opcional)' },
+      },
+      required: ['model', 'ids'],
+    },
+  },
+  {
+    name: 'odoo_count',
+    description: 'Cuenta cuántos registros matchean un dominio (search_count). Útil para "¿cuántas facturas vencidas hay?" sin traerlas todas.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        model: { type: 'string' },
+        domain: { type: 'array' },
+      },
+      required: ['model'],
+    },
+  },
+  {
+    name: 'odoo_fields_get',
+    description: 'Devuelve la lista de campos de un modelo (nombre, tipo, relación, help). Úsalo antes de search_read cuando no sepas qué campos pedir.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        model: { type: 'string' },
+        attributes: { type: 'array', items: { type: 'string' }, description: 'Atributos a devolver por campo (opcional)' },
+      },
+      required: ['model'],
+    },
+  },
+  {
+    name: 'odoo_models_buscar',
+    description: 'Lista modelos de Odoo cuyo nombre técnico o label coincida con la búsqueda. Ej. query="invoice" → account.move. Úsalo cuando no sepas el nombre exacto del modelo.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string' },
+        limit: { type: 'integer' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'odoo_create',
+    description: 'Crea un registro en Odoo. Devuelve el id creado. ⚠ Modifica datos en Odoo — solicitar confirmación al usuario antes de invocar.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        model: { type: 'string' },
+        values: { type: 'object', description: 'Diccionario campo:valor. Para campos many2one pasa el id, para one2many/many2many usa comandos Odoo [(0,0,{...}), (4,id), ...].' },
+      },
+      required: ['model', 'values'],
+    },
+  },
+  {
+    name: 'odoo_write',
+    description: 'Actualiza uno o varios registros existentes. ⚠ Modifica datos en Odoo — confirmar con el usuario antes.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        model: { type: 'string' },
+        ids: { type: 'array', items: { type: 'integer' } },
+        values: { type: 'object' },
+      },
+      required: ['model', 'ids', 'values'],
+    },
+  },
+  {
+    name: 'odoo_unlink',
+    description: 'Elimina registros por ID. ⚠ DESTRUCTIVO — siempre pedir confirmación explícita al usuario antes de invocar.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        model: { type: 'string' },
+        ids: { type: 'array', items: { type: 'integer' } },
+      },
+      required: ['model', 'ids'],
+    },
+  },
+  {
+    name: 'odoo_execute',
+    description: 'Invoca cualquier método del ORM de Odoo. Útil para botones/acciones como sale.order.action_confirm, account.move.action_post, etc. ⚠ Puede modificar datos.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        model: { type: 'string' },
+        method: { type: 'string' },
+        args: { type: 'array', description: 'Argumentos posicionales (típicamente [[ids]] para acciones sobre records)' },
+        kwargs: { type: 'object', description: 'Argumentos con nombre' },
+      },
+      required: ['model', 'method'],
+    },
+  },
 ];
 
 function send(msg) {
@@ -324,6 +506,29 @@ async function handleRequest(req) {
         result = await historialComprasProducto(args.product_id, args.limit ?? 10);
       } else if (name === 'costo_ultima_compra') {
         result = await costoUltimaCompra(args.query);
+      } else if (name === 'odoo_search_read') {
+        result = await odooSearchRead(args.model, args.domain ?? [], {
+          fields: args.fields,
+          limit: args.limit ?? 50,
+          offset: args.offset ?? 0,
+          order: args.order,
+        });
+      } else if (name === 'odoo_read') {
+        result = await odooReadIds(args.model, args.ids, args.fields);
+      } else if (name === 'odoo_count') {
+        result = await odooCount(args.model, args.domain ?? []);
+      } else if (name === 'odoo_fields_get') {
+        result = await odooFieldsGet(args.model, args.attributes);
+      } else if (name === 'odoo_models_buscar') {
+        result = await odooModelsBuscar(args.query, args.limit ?? 30);
+      } else if (name === 'odoo_create') {
+        result = await odooCreate(args.model, args.values);
+      } else if (name === 'odoo_write') {
+        result = await odooWrite(args.model, args.ids, args.values);
+      } else if (name === 'odoo_unlink') {
+        result = await odooUnlink(args.model, args.ids);
+      } else if (name === 'odoo_execute') {
+        result = await odooExecute(args.model, args.method, args.args ?? [], args.kwargs ?? {});
       } else {
         return replyError(id, -32601, `Tool desconocido: ${name}`);
       }

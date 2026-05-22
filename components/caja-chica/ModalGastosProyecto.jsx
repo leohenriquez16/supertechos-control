@@ -6,6 +6,7 @@
 // Click en un movimiento → abre ModalDetalleMovimiento.
 
 import React, { useState, useMemo, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Building, FileText, Receipt } from 'lucide-react';
 import { formatRD, formatNum, formatFechaCorta } from '../../lib/helpers/formato';
 import { EMPRESAS_RECEPTORAS } from '../../lib/constants';
@@ -84,7 +85,11 @@ export default function ModalGastosProyecto({ proyecto, movimientos, usuario, da
     onCambio?.();
   };
 
-  return (
+  // v8.17.85: renderizar con React.createPortal directo a document.body para
+  // evitar que cualquier containing block del shell (md:ml-60, transform, etc.)
+  // recorte o desplace el modal. Mismo patrón que la hover-card del Kanban.
+  if (typeof document === 'undefined') return null;
+  return createPortal(
     <>
       <div className="fixed inset-0 bg-black/80 z-40 flex items-center justify-center p-2 sm:p-4" onClick={onCerrar}>
         <div
@@ -298,6 +303,7 @@ export default function ModalGastosProyecto({ proyecto, movimientos, usuario, da
           onActualizado={onActualizado}
         />
       )}
-    </>
+    </>,
+    document.body
   );
 }

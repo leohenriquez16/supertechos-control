@@ -6,6 +6,7 @@
 // Click en una fila → abre el ModalDetalleMovimiento para editar.
 
 import React, { useEffect, useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Loader2, ExternalLink, Building2 } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatRD, formatFechaCorta, formatRNC } from '../../lib/helpers/formato';
@@ -50,7 +51,10 @@ export default function ModalFacturasProveedor({ proveedor, usuario, data, onCer
     onCambio?.();
   };
 
-  return (
+  // v8.17.85: Portal a document.body para escapar de cualquier containing
+  // block del shell (md:ml-60, transform) que podría recortar el modal.
+  if (typeof document === 'undefined') return null;
+  return createPortal(
     <>
       <div className="fixed inset-0 bg-black/80 z-40 flex items-center justify-center p-2 sm:p-4" onClick={onCerrar}>
         <div
@@ -220,6 +224,7 @@ export default function ModalFacturasProveedor({ proveedor, usuario, data, onCer
           onActualizado={onActualizado}
         />
       )}
-    </>
+    </>,
+    document.body
   );
 }

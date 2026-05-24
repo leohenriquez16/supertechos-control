@@ -53,6 +53,9 @@ export default function WizardOnboarding({ usuario, onListo }) {
   const [error, setError] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [bioSoportadoState, setBioSoportadoState] = useState(false);
+  // v8.17.86: guard contra cache stale. Verificamos contra DB que
+  // realmente el onboarding NO está completo antes de mostrar el wizard.
+  const [verificandoEstado, setVerificandoEstado] = useState(true);
 
   const [datos, setDatos] = useState({
     cedulaNumero: usuario.cedulaNumero || '',
@@ -77,6 +80,43 @@ export default function WizardOnboarding({ usuario, onListo }) {
   useEffect(() => {
     biometriaSoportada().then(setBioSoportadoState);
   }, []);
+
+  // v8.17.86: guard defensivo — al montar, re-fetch estado real desde DB.
+  // Si la DB dice que el onboarding ya está completo (state cliente stale),
+  // saltamos el wizard inmediatamente. Una sola query barata.
+  useEffect(() => {
+    let cancelado = false;
+    (async () => {
+      try {
+        const estado = await db.obtenerEstadoOnboardingPersona(usuario.id);
+        if (cancelado) return;
+        if (estado?.onboardingCompletado) {
+          // DB ya está en true → saltar wizard. Auditamos para tener evidencia.
+          try {
+            db.registrarAudit({
+              usuarioId: usuario.id,
+              usuarioNombre: usuario.nombre,
+              accion: 'persona.wizard_skipped_guard',
+              recursoTipo: 'persona',
+              recursoId: usuario.id,
+              severidad: 'warning',
+              metadata: {
+                motivo: 'cliente_tenia_onboardingCompletado_false_pero_db_true',
+                userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+              },
+            });
+          } catch {}
+          onListo({ ...usuario, onboardingCompletado: true });
+        } else {
+          setVerificandoEstado(false);
+        }
+      } catch {
+        // Si falla el guard, mostramos el wizard igual (no bloquear al usuario).
+        if (!cancelado) setVerificandoEstado(false);
+      }
+    })();
+    return () => { cancelado = true; };
+  }, [usuario.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const set = (k, v) => setDatos(prev => ({ ...prev, [k]: v }));
 
@@ -163,6 +203,16 @@ export default function WizardOnboarding({ usuario, onListo }) {
       setGuardando(false);
     }
   };
+
+  // v8.17.86: mientras verifica el estado real contra DB, mostrar pantalla
+  // neutra (evita parpadeo del wizard si el guard va a saltarlo en ms).
+  if (verificandoEstado) {
+    return (
+      <div className="min-h-screen bg-zinc-950 text-zinc-100 flex items-center justify-center" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
+        <Loader2 className="w-6 h-6 text-red-500 animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 px-4 py-6" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>

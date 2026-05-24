@@ -181,11 +181,15 @@ npm run dev
 
 Asegurate que tu código nuevo + el cambio de schema funcionan bien juntos.
 
-### 5. Antes de mergear a main: BACKUP de prod
+### 5. Antes de mergear a main: BACKUP MANUAL de prod
 
-Va a Supabase Dashboard → tu proyecto prod → Database → Backups → crear backup manual ANTES de aplicar la migration.
+1. Supabase Dashboard → tu proyecto prod → Database → Backups
+2. Click **"Backup now"** (botón arriba a la derecha del listado de backups)
+3. Esperar ~30 segundos a que termine — verás un backup nuevo con timestamp de ahora.
 
-> Con Point-in-Time Recovery (PITR) activado podés restaurar a cualquier minuto. Si no está activado, lo activamos como parte de este setup.
+Esto te da un punto de restauración inmediato antes de la migración. Es gratis (incluido en Pro) y toma 1 click.
+
+> Decisión: NO usamos Point-in-Time Recovery (PITR) por ahora. Cuesta \$100-400/mes según retención. Para nuestro volumen actual, el backup manual antes de migrations + daily backups automáticos cubre el caso. Lo revisamos cuando tengamos clientes con SLA serio.
 
 ### 6. Aplicar la migration a prod
 
@@ -202,8 +206,9 @@ Una vez aplicada, mergear el PR. Vercel deploya el código nuevo, que ya espera 
 
 ### 8. Si algo sale mal
 
-- Si la migration fue destructiva → restaurar desde el backup (paso 5) o usar PITR.
+- Si la migration fue destructiva → restaurar al backup manual del paso 5 (5-30 min de downtime).
 - Si fue agregativa (nueva columna nullable o tabla nueva) → drop manual + investigar.
+- Si todavía no pasaron 24h → también podés restaurar al daily backup automático más reciente.
 
 ## Comandos útiles
 
@@ -218,27 +223,44 @@ Una vez aplicada, mergear el PR. Vercel deploya el código nuevo, que ya espera 
 | `supabase status` | Estado de la DB local |
 | `supabase db push --linked` | Aplica migrations pendientes a prod (cuidado!) |
 
-## Restauración rápida si rompiste prod
+## Estrategia de backups y restauración
 
-### Si PITR está activado
-1. Dashboard de Supabase → Database → Backups → Point in time recovery
-2. Elegir el timestamp pre-incidente
-3. Restaurar (5-30 min)
-4. Avisar a usuarios que hay downtime durante la restauración
+Para nuestro volumen actual (~20 maestros, sin SLA con clientes externos) usamos:
 
-### Si solo tenés backup diario
+### 1. Daily backups automáticos (gratis con Pro)
+Supabase Pro hace un snapshot completo cada noche, retención 7 días. **Ya está activo**, no hace falta configurarlo.
+
+### 2. Backup manual ANTES de migrations riesgosas (gratis, 1 click)
+Antes de cualquier cambio de schema:
+- Dashboard → Database → Backups → **"Backup now"**
+- ~30 segundos
+- Te queda como punto de restauración inmediato
+
+### 3. Restauración cuando algo se rompe
+
+**Si pasaron <1 día y tenés backup manual de antes:**
+1. Dashboard → Database → Backups → buscar tu backup manual
+2. Click "Restore"
+3. Confirmar (downtime de 5-30 min según tamaño)
+
+**Si pasaron <7 días sin backup manual:**
 1. Dashboard → Database → Backups → Daily backups
-2. Restaurar el último anterior al incidente
-3. Las transacciones desde ese backup se pierden
+2. Restaurar al snapshot anterior al incidente
+3. Aceptás que las transacciones desde ese snapshot se pierden
 
-## Activar Point-in-Time Recovery (PITR)
+**Si pasó >7 días:**
+- Los daily backups solo retienen 7 días en Pro.
+- Necesitarías PITR (\$100-400/mes) o backup externo manual.
+- Por ahora no aplica.
 
-> Recomendado para producción. Incluido en el plan Pro.
+## ¿Cuándo activar PITR?
 
-1. Dashboard → tu proyecto prod → Database → Backups → Point in time recovery
-2. Click "Enable PITR"
-3. Confirmar (sin costo adicional en Pro)
-4. A partir de ese momento, todos los cambios quedan en el WAL durante 7 días — restaurable a cualquier minuto.
+Cuesta \$100/mes (7 días) hasta \$400/mes (28 días). **Lo activamos cuando**:
+- Tengamos cliente externo con contrato/SLA que exija RPO/RTO de minutos
+- O empecemos a manejar datos críticos no recuperables (ej: transacciones financieras directas)
+- O el ERP escale a >100 usuarios activos
+
+Mientras tanto: daily backup + backup manual pre-migración cubre los casos reales.
 
 ## Cuándo PEDIR ayuda antes de mergear
 

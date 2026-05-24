@@ -1,32 +1,69 @@
 # Super Techos Control
 
-Aplicación interna de control y gestión de Super Techos SRL, desplegada en Vercel
+ERP interno de Super Techos SRL para control de obras de impermeabilización en RD. Producción en Vercel.
 
 ## Stack
 
-- **Next.js** - Framework React para aplicaciones web
-- **Tailwind CSS** - Framework de utilidades CSS
-- **JavaScript** - Lenguaje de programación principal
-- **Deployment** - Vercel para despliegue automático
+- **Next.js 14.2.5** (App Router, JavaScript)
+- **Supabase** (Postgres + Storage + Auth — no usada todavía, login a nivel app)
+- **Tailwind CSS** (paleta zinc/red semántica)
+- **Anthropic Claude Sonnet 4.5** (parse facturas + reportes audio)
+- **Odoo** (importación de cotizaciones y sincronización de facturas)
+- **Deployment**: Vercel, deploy automático al mergear a `main`
 
 ## Estructura del proyecto
 
-- **`app/`** - Directorio principal de Next.js con rutas de páginas y API endpoints
-- **`components/`** - Componentes React reutilizables organizados por funcionalidad (dashboard, proyectos, nómina, etc.)
-- **`lib/`** - Utilidades, helpers, configuración de base de datos y funciones auxiliares
-- **`public/`** - Archivos estáticos como iconos y manifest para PWA
-
-## Desarrollo local
-
-Para ejecutar el proyecto en modo desarrollo:
-
-```bash
-npm install
-npm run dev
+```
+app/             # Páginas Next.js + endpoints API
+components/      # Componentes React por dominio
+  caja-chica/    # Módulo de caja chica (admin + maestro)
+  onboarding/    # Wizard primer login + cambio PIN
+  nomina/        # Nómina, cortes, ajustes
+  proyecto/      # Tabs del detalle de un proyecto
+  admin/         # Vistas globales admin
+  common/        # UI reusable
+lib/
+  db.js          # CRUD principal (~3800 líneas — pendiente modularizar)
+  helpers/       # Cálculos, exports CSV/ZIP, helpers de cuadre
+  odoo.js        # Integración con Odoo
+  docuseal.js    # Cliente DocuSeal (firmas)
+  biometria.js   # WebAuthn (Face ID / huella)
+migrations/      # SQL deltas históricos (NO usar para setup nuevo)
+supabase/        # Setup Supabase CLI para desarrollo local
+docs/            # Documentación del proyecto
 ```
 
-El servidor se ejecutará en `http://localhost:3000`
+## Setup de desarrollo
+
+Ver **[docs/DESARROLLO.md](./docs/DESARROLLO.md)** para el setup completo (Supabase CLI local + Docker + workflow de cambios sin afectar prod).
+
+Resumen:
+
+```bash
+# Una sola vez
+brew install supabase/tap/supabase
+supabase link --project-ref zqvlvlwraaugcwylryop
+npm run db:dump:prod     # genera baseline.sql local
+npm install
+
+# Cada sesión
+npm run db:start         # arranca DB local en Docker
+npm run dev              # arranca Next.js → http://localhost:3000
+```
+
+Usuarios de prueba en la DB local (ver `supabase/seed.sql`):
+- Admin: tel `809-000-0000`, PIN `1234`
+- Supervisor: tel `809-000-0001`, PIN `5678`
+- Maestro: tel `809-000-0002`, PIN `4321`
+
+## Documentación
+
+- **[docs/DESARROLLO.md](./docs/DESARROLLO.md)** — Workflow de desarrollo, migraciones, restauración.
 
 ## Deployment
 
-El deployment es automático vía Vercel al hacer push a la rama `main`. Los cambios se despliegan automáticamente sin intervención manual.
+Automático vía Vercel al mergear a `main`. Migraciones de DB se aplican manualmente (ver `docs/DESARROLLO.md`).
+
+## Versionado
+
+`lib/constants.js` exporta `APP_VERSION`. Bumpear en cada PR. Convención semver: major en breaking, minor en features, patch en fixes.

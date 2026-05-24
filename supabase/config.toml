@@ -1,0 +1,52 @@
+# Configuración de Supabase CLI para desarrollo local.
+# Docs: https://supabase.com/docs/guides/cli/config
+
+# project_id arbitrario para el setup local (no afecta a prod).
+project_id = "supertechos-control-local"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[db.pooler]
+enabled = false
+
+[realtime]
+enabled = true
+
+[studio]
+enabled = true
+port = 54323
+
+[inbucket]
+# Inbucket es un mailcatcher local — todos los emails que envíe la app
+# durante development quedan acá en lugar de irse al mundo. Práctico
+# para probar resets de PIN, notificaciones, etc. sin spamear gente real.
+enabled = true
+port = 54324
+
+[storage]
+enabled = true
+file_size_limit = "50MiB"
+
+[auth]
+# Supabase Auth no se usa todavía (PR 2 / Fase 2). Por ahora desactivado
+# para no consumir recursos. Cuando migremos a Supabase Auth, lo activamos.
+enabled = false
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["https://supertechos-control.vercel.app"]
+jwt_expiry = 3600
+
+[edge_runtime]
+enabled = false
+
+[analytics]
+enabled = false

@@ -3,7 +3,7 @@
 // v8.14: Pantalla obligatoria de cambio de PIN tras la invitación.
 // Aparece cuando usuario.pinTemporal === true. Bloquea el resto del app.
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Loader2, ShieldCheck } from 'lucide-react';
 import * as db from '../../lib/db';
 
@@ -12,6 +12,41 @@ export default function PantallaCambiarPin({ usuario, onListo }) {
   const [confirma, setConfirma] = useState('');
   const [error, setError] = useState('');
   const [guardando, setGuardando] = useState(false);
+  // v8.17.86: guard defensivo contra state stale.
+  const [verificandoEstado, setVerificandoEstado] = useState(true);
+
+  useEffect(() => {
+    let cancelado = false;
+    (async () => {
+      try {
+        const estado = await db.obtenerEstadoOnboardingPersona(usuario.id);
+        if (cancelado) return;
+        if (estado && estado.pinTemporal === false) {
+          // DB ya dice que el PIN NO es temporal → saltar esta pantalla.
+          try {
+            db.registrarAudit({
+              usuarioId: usuario.id,
+              usuarioNombre: usuario.nombre,
+              accion: 'persona.cambio_pin_skipped_guard',
+              recursoTipo: 'persona',
+              recursoId: usuario.id,
+              severidad: 'warning',
+              metadata: {
+                motivo: 'cliente_tenia_pinTemporal_true_pero_db_false',
+                userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+              },
+            });
+          } catch {}
+          onListo({ ...usuario, pinTemporal: false });
+        } else {
+          setVerificandoEstado(false);
+        }
+      } catch {
+        if (!cancelado) setVerificandoEstado(false);
+      }
+    })();
+    return () => { cancelado = true; };
+  }, [usuario.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const validar = () => {
     if (!/^\d{4,6}$/.test(nuevo)) return 'El PIN debe tener entre 4 y 6 dígitos.';
@@ -34,6 +69,15 @@ export default function PantallaCambiarPin({ usuario, onListo }) {
     }
     setGuardando(false);
   };
+
+  // v8.17.86: pantalla neutra mientras se verifica contra DB.
+  if (verificandoEstado) {
+    return (
+      <div className="min-h-screen bg-zinc-950 text-zinc-100 flex items-center justify-center" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
+        <Loader2 className="w-6 h-6 text-red-500 animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col items-center justify-center px-4" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>

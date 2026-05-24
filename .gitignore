@@ -10,6 +10,13 @@ out/
 .env.local
 .env*.local
 
+# Supabase CLI — artefactos temporales que NO se versionan
+supabase/.temp/
+supabase/.branches/
+# Baseline del schema de prod — cada dev genera el suyo con `npm run db:dump:prod`.
+# Las migraciones futuras SÍ se versionan (sin guion bajo inicial en el nombre).
+supabase/migrations/00000000000000_baseline.sql
+
 # logs / debug
 *.log
 npm-debug.log*

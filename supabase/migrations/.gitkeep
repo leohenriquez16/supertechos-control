@@ -1,0 +1,7 @@
+# Esta carpeta queda vacía en el repo a propósito.
+#
+# El baseline del schema de producción se genera en el setup local
+# (paso 3 de docs/DESARROLLO.md) corriendo `npm run db:dump:prod`.
+# El archivo resultante `00000000000000_baseline.sql` queda local
+# (en .gitignore) porque puede contener nombres de tablas/funciones
+# privadas. Las migraciones nuevas SÍ se commitean acá.

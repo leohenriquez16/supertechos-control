@@ -1,15 +1,20 @@
-// v8.17.89: Login server-side con PIN hash bcrypt.
+// v8.17.91: Login server-side con PIN hash bcrypt + emisión de sesión Supabase.
 //
-// Antes: lib/db.js loginConTelefono hacía SELECT * desde el browser con
-// anon key — cualquier cliente con la anon key podía leer todos los PINs
-// en plaintext. Ahora el endpoint usa service role, bcrypt.compare, y
-// nunca devuelve el PIN al frontend.
+// Histórico:
+//   - v8.17.89 (PR 2): mover login al server con bcrypt. Cliente solo recibe
+//     persona, nunca el hash.
+//   - v8.17.90 (PR 2A): agregar bridge personal.auth_user_id ↔ auth.users.
+//   - v8.17.91 (este, PR 2B): tras validar el PIN, emitir un magiclink token_hash
+//     via Admin API. El cliente lo verifica con verifyOtp y queda con sesión
+//     Supabase real (auth.uid() poblado) — base para RLS gradual en PR 2C+.
 //
-// Lazy migration: si la columna `pin` aún trae plaintext (legacy de
-// antes de hashear), compara directo y re-hashea on-the-fly. Así no se
-// rompen logins existentes aunque el script de migración no se haya
-// corrido. El script idempotente debe correrse una vez para dejar todo
-// limpio en producción.
+// Fallback de defensa en profundidad: si por cualquier razón (persona sin
+// auth_user_id, Admin API caída, race de backfill) no se puede emitir
+// sesión, el endpoint devuelve solo { persona } y el cliente sigue
+// funcionando como en PR 2. NUNCA bloquea el login.
+//
+// Lazy migration de PINs (heredada de PR 2): si la columna `pin` aún trae
+// plaintext, compara directo y re-hashea on-the-fly.
 
 import { createClient } from '@supabase/supabase-js';
 import bcrypt from 'bcryptjs';
@@ -46,10 +51,11 @@ export async function POST(request) {
   // Trae candidatos por sufijo del teléfono y normaliza en memoria.
   // El teléfono guardado puede tener formato variado ("+1 809…", con espacios,
   // con guiones) — el sufijo de 10 dígitos es lo confiable.
+  // v8.17.91: incluir auth_user_id para emitir sesión Supabase si está disponible.
   const sufijo = tel.slice(-10);
   const { data: candidatos, error } = await sb
     .from('personal')
-    .select('id, telefono, pin, archivado')
+    .select('id, telefono, pin, archivado, auth_user_id')
     .ilike('telefono', `%${sufijo.slice(-4)}%`);
 
   if (error) {
@@ -106,5 +112,45 @@ export async function POST(request) {
     return Response.json({ error: ERROR_GENERICO }, { status: 401 });
   }
 
-  return Response.json({ persona: mapPersonaRow(full) });
+  // v8.17.91: intentar emitir sesión Supabase via Admin API. Si falla por
+  // cualquier razón, el endpoint sigue devolviendo { persona } y el cliente
+  // funciona como en PR 2 (sin sesión Supabase). NUNCA bloquea el login.
+  const otp = await emitirSesionSupabase(sb, persona.auth_user_id);
+
+  return Response.json({ persona: mapPersonaRow(full), ...(otp && { otp }) });
+}
+
+// Emite un token_hash de magiclink para que el cliente lo intercambie por
+// sesión via supabase.auth.verifyOtp. Patrón documentado de Supabase para
+// custom auth bridge (cuando ya validaste credenciales con tu propio mecanismo).
+//
+// Devuelve { token_hash, type, email } o null si no fue posible emitir
+// (persona sin auth_user_id, Admin API caída, etc.).
+async function emitirSesionSupabase(sb, authUserId) {
+  if (!authUserId) return null;
+  try {
+    const { data: user, error: userErr } = await sb.auth.admin.getUserById(authUserId);
+    if (userErr || !user?.user?.email) {
+      console.warn('login: no se pudo obtener email del auth.user', authUserId, userErr?.message);
+      return null;
+    }
+    const email = user.user.email;
+    const { data: linkData, error: linkErr } = await sb.auth.admin.generateLink({
+      type: 'magiclink',
+      email,
+    });
+    if (linkErr) {
+      console.warn('login: generateLink falló para', email, linkErr.message);
+      return null;
+    }
+    const tokenHash = linkData?.properties?.hashed_token;
+    if (!tokenHash) {
+      console.warn('login: generateLink no devolvió hashed_token para', email);
+      return null;
+    }
+    return { token_hash: tokenHash, type: 'magiclink', email };
+  } catch (e) {
+    console.warn('login: emisión de sesión Supabase falló:', e.message);
+    return null;
+  }
 }

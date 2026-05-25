@@ -138,6 +138,66 @@ node scripts/hash-existing-pins.mjs
 El script es idempotente: detecta hashes bcrypt y no los toca. Si lo
 corres dos veces, el segundo run es no-op.
 
+### Backfill de auth.users (PR 2A de Fase 2 — una sola vez)
+
+Tras aplicar `migrations/023_auth_users_bridge.sql`, cada row de
+`personal` queda con `auth_user_id = NULL`. El backfill script crea
+un user en `auth.users` por cada persona activa y vincula la columna.
+
+```bash
+# 1. Aplicar la migración (en DB local o prod). Ej. local:
+psql "$DATABASE_URL_LOCAL" -f migrations/023_auth_users_bridge.sql
+
+# 2. Backfill — dry-run primero
+node scripts/backfill-auth-users.mjs --dry-run         # contra prod (.env.local)
+node scripts/backfill-auth-users.mjs --dry-run --local # contra DB local
+
+# 3. Run real
+node scripts/backfill-auth-users.mjs                    # prod
+node scripts/backfill-auth-users.mjs --local            # local
+```
+
+El script:
+
+- Es idempotente: solo procesa rows con `auth_user_id IS NULL`. Correrlo dos veces es seguro.
+- Omite personas archivadas.
+- Si una persona tiene `email` real, lo usa. Si no, genera uno sintético `{id}@local.supertechos.do` (auth.users requiere email único).
+- El password en `auth.users` es random de 24 chars y NUNCA se usa para login. PR 2B (que sigue) emitirá sesión via Admin API tras validar el PIN bcrypt — no por `signInWithPassword`.
+- Guarda en `user_metadata`: `{ persona_id, nombre, roles, telefono, email_sintetico, creado_por: 'backfill-auth-users' }` — útil para introspección desde el dashboard de Supabase.
+
+**Tras este PR**, el flujo de login del ERP SIGUE SIENDO igual (tel+PIN
+bcrypt server-side de PR 2). El bridge solo deja el terreno listo para
+PR 2B (login emite sesión Supabase real) y PR 2C+ (RLS gradual).
+
+### PR 2B — Login + WebAuthn emiten sesión Supabase (v8.17.91)
+
+Tras desplegar v8.17.91, los endpoints `/api/auth/login` y
+`/api/webauthn/login-finish` intentan emitir sesión Supabase real
+después de validar credenciales. El cliente la canjea con `verifyOtp`.
+
+**Defense in depth:** si por cualquier razón la emisión falla (persona
+sin `auth_user_id`, Admin API caída, etc.), el endpoint devuelve solo
+`{ persona }` y la app sigue funcionando exactamente como en PR 2 — sin
+sesión Supabase. **El login nunca queda bloqueado.**
+
+**Para que funcione end-to-end:**
+1. Aplicar `023_auth_users_bridge.sql` (PR 2A).
+2. Correr `node scripts/backfill-auth-users.mjs` para poblar `personal.auth_user_id`.
+3. Deploy de v8.17.91.
+
+**Cómo verificar tras deploy:** en la consola del browser después de
+loguear:
+
+```js
+const { data } = await window.supabase?.auth?.getSession?.();
+console.log(data?.session ? 'Sesión Supabase activa' : 'Fallback PR 2 (sin sesión)');
+```
+
+Si no hay sesión pero el login funcionó: el fallback se activó. Mirar
+logs server-side por warnings de `generateLink` o `verifyOtp`. El
+usuario puede usar el ERP normalmente; solo no tendrá `auth.uid()` para
+las policies de RLS — relevante a partir de PR 2C.
+
 ## Workflow para un cambio típico (sin tocar DB)
 
 La mayoría de cambios son UI o lógica de aplicación. **No requieren la DB local.** Pueden probarse contra DB de prod o contra DB local indistintamente.

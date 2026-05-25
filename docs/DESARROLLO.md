@@ -169,6 +169,35 @@ El script:
 bcrypt server-side de PR 2). El bridge solo deja el terreno listo para
 PR 2B (login emite sesión Supabase real) y PR 2C+ (RLS gradual).
 
+### PR 2B — Login + WebAuthn emiten sesión Supabase (v8.17.91)
+
+Tras desplegar v8.17.91, los endpoints `/api/auth/login` y
+`/api/webauthn/login-finish` intentan emitir sesión Supabase real
+después de validar credenciales. El cliente la canjea con `verifyOtp`.
+
+**Defense in depth:** si por cualquier razón la emisión falla (persona
+sin `auth_user_id`, Admin API caída, etc.), el endpoint devuelve solo
+`{ persona }` y la app sigue funcionando exactamente como en PR 2 — sin
+sesión Supabase. **El login nunca queda bloqueado.**
+
+**Para que funcione end-to-end:**
+1. Aplicar `023_auth_users_bridge.sql` (PR 2A).
+2. Correr `node scripts/backfill-auth-users.mjs` para poblar `personal.auth_user_id`.
+3. Deploy de v8.17.91.
+
+**Cómo verificar tras deploy:** en la consola del browser después de
+loguear:
+
+```js
+const { data } = await window.supabase?.auth?.getSession?.();
+console.log(data?.session ? 'Sesión Supabase activa' : 'Fallback PR 2 (sin sesión)');
+```
+
+Si no hay sesión pero el login funcionó: el fallback se activó. Mirar
+logs server-side por warnings de `generateLink` o `verifyOtp`. El
+usuario puede usar el ERP normalmente; solo no tendrá `auth.uid()` para
+las policies de RLS — relevante a partir de PR 2C.
+
 ## Workflow para un cambio típico (sin tocar DB)
 
 La mayoría de cambios son UI o lógica de aplicación. **No requieren la DB local.** Pueden probarse contra DB de prod o contra DB local indistintamente.

@@ -95,7 +95,9 @@ const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
 const getMaestros = (personal) => personal.filter(p => tieneRol(p, 'maestro'));
 const getAyudantesDeMaestro = (personal, mId) => personal.filter(p => tieneRol(p, 'ayudante') && p.maestroId === mId);
-const getPersonasConLogin = (personal) => personal.filter(p => p.pin);
+// v8.17.89: el campo p.pin ya no se envía al cliente. Se usa p.tienePin
+// (boolean derivado server-side en mapPersonaRow).
+const getPersonasConLogin = (personal) => personal.filter(p => p.tienePin);
 const puedeVerProyecto = (persona, proy) => tieneRol(persona, 'admin') || proy.supervisorId === persona.id || proy.maestroId === persona.id;
 const puedeReportar = (persona, proy) => tieneRol(persona, 'admin') || proy.supervisorId === persona.id || proy.maestroId === persona.id;
 
@@ -4118,13 +4120,25 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
   const [modalInvitar, setModalInvitar] = useState(false); // v8.14: invitar maestro al app
   const [activando, setActivando] = useState(null); // v8.14.1: persona existente a activar para app
 
-  const guardar = () => {
+  const guardar = async () => {
     if (!form.nombre) return;
     const esAy = form.roles.length === 1 && form.roles[0] === 'ayudante';
-    const pf = { ...form, pin: esAy ? undefined : form.pin || undefined, maestroId: esAy ? form.maestroId || null : null };
+    const pf = { ...form, maestroId: esAy ? form.maestroId || null : null };
     if (!pf.maestroId) delete pf.maestroId;
-    if (!pf.pin) delete pf.pin;
-    onActualizar(editando === 'new' ? [...personal, pf] : personal.map(p => p.id === editando ? pf : p));
+    // v8.17.89: el `pin` ya NO viaja por el bulk upsert (reemplazarPersonal).
+    // Si admin tecleó un PIN, va por /api/auth/cambiar-pin en un paso separado
+    // (server lo hashea con bcrypt).
+    const pinNuevo = !esAy && form.pin ? String(form.pin).trim() : null;
+    delete pf.pin;
+    await onActualizar(editando === 'new' ? [...personal, pf] : personal.map(p => p.id === editando ? pf : p));
+    if (pinNuevo) {
+      try {
+        await db.cambiarPin(form.id, pinNuevo);
+      } catch (e) {
+        alert('Persona guardada pero no se pudo setear el PIN: ' + (e?.message || e));
+      }
+      onRecargar?.();
+    }
     setEditando(null); setForm(null);
   };
 
@@ -4164,7 +4178,7 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
           type="text"
           value={busqueda}
           onChange={e => setBusqueda(e.target.value)}
-          placeholder="Nombre, PIN o teléfono…"
+          placeholder="Nombre o teléfono…"
           className="flex-1 bg-zinc-900 border border-zinc-800 px-2 py-1 text-xs text-white outline-none focus:border-red-500"
         />
         {busqueda && <button onClick={() => setBusqueda('')} className="text-zinc-500 hover:text-white px-2"><X className="w-3 h-3" /></button>}
@@ -4196,7 +4210,11 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
               <RolToggle active={form.roles.includes('ayudante')} onClick={() => toggleRol('ayudante')}>Ayudante</RolToggle>
             </div>
           </Campo>
-          {(form.roles.includes('supervisor') || form.roles.includes('maestro') || form.roles.includes('admin')) && <Campo label="PIN"><Input value={form.pin || ''} onChange={v => setForm({ ...form, pin: v })} /></Campo>}
+          {/* v8.17.89: el PIN guardado es hash bcrypt server-side y nunca se
+              expone al cliente. Si admin deja el campo vacío, el PIN existente
+              no se toca. Si admin teclea un PIN nuevo, se hashea en el endpoint
+              /api/auth/cambiar-pin. */}
+          {(form.roles.includes('supervisor') || form.roles.includes('maestro') || form.roles.includes('admin')) && <Campo label={editando === 'new' ? 'PIN' : 'PIN (dejar vacío = mantener actual)'}><Input value={form.pin || ''} onChange={v => setForm({ ...form, pin: v })} placeholder={editando === 'new' ? '4-6 dígitos' : ''} /></Campo>}
           {form.roles.length === 1 && form.roles[0] === 'ayudante' && (
             <Campo label="Maestro"><select value={form.maestroId || ''} onChange={e => setForm({ ...form, maestroId: e.target.value })} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-4 py-3 text-white"><option value="">Seleccionar...</option>{maestros.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select></Campo>
           )}
@@ -4286,10 +4304,12 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
             const ac = personaTieneAccesoCliente(p.id, filtroAccesoCliente, data);
             if (!ac.acceso) return false;
           }
-          // v8.17.2: búsqueda por nombre, PIN o teléfono
+          // v8.17.2: búsqueda por nombre o teléfono.
+          // v8.17.89: ya no se incluye el PIN en el haystack — el front no
+          // recibe PINs (son hash bcrypt server-side).
           if (busqueda) {
             const q = busqueda.toLowerCase().trim();
-            const haystack = `${p.nombre || ''} ${p.pin || ''} ${p.telefono || ''} ${p.whatsapp || ''}`.toLowerCase();
+            const haystack = `${p.nombre || ''} ${p.telefono || ''} ${p.whatsapp || ''}`.toLowerCase();
             if (!haystack.includes(q)) return false;
           }
           if (rol === 'admin') return tieneRol(p, 'admin');
@@ -4314,17 +4334,17 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
                       <div className="font-bold text-sm flex items-center gap-2">
                         <span className="truncate">{p.nombre}</span>
                         {/* v8.14.1: indicador de pendiente de activación al app */}
-                        {p.pin && !p.cedulaNumero && !tieneRol(p, 'admin') && !p.pinTemporal && (
+                        {p.tienePin && !p.cedulaNumero && !tieneRol(p, 'admin') && !p.pinTemporal && (
                           <span className="text-[9px] bg-yellow-900/50 border border-yellow-700 text-yellow-300 px-1.5 py-0.5 tracking-wider uppercase font-bold flex-shrink-0" title="Aún no ha completado el onboarding del app">⚠ Sin app</span>
                         )}
                         {p.pinTemporal && (
                           <span className="text-[9px] bg-blue-900/50 border border-blue-700 text-blue-300 px-1.5 py-0.5 tracking-wider uppercase font-bold flex-shrink-0" title="Invitación pendiente de cambio de PIN">📨 Invitado</span>
                         )}
                       </div>
-                      <div className="text-[10px] text-zinc-500">{rolLabel(p)}{p.pin && ` · PIN ${p.pin}`}{maestro && ` · Con ${maestro.nombre}`}{ayudantes.length > 0 && ` · ${ayudantes.length} ayudante${ayudantes.length > 1 ? 's' : ''}`}{p.telefono && ` · ${p.telefono}`}</div>
+                      <div className="text-[10px] text-zinc-500">{rolLabel(p)}{p.tienePin && ' · 🔐 Con login'}{maestro && ` · Con ${maestro.nombre}`}{ayudantes.length > 0 && ` · ${ayudantes.length} ayudante${ayudantes.length > 1 ? 's' : ''}`}{p.telefono && ` · ${p.telefono}`}</div>
                     </div>
                     {/* v8.14.1: botón "Activar para app" — solo para personas con PIN, sin cédula y que no son admin */}
-                    {p.pin && !p.cedulaNumero && !tieneRol(p, 'admin') && (
+                    {p.tienePin && !p.cedulaNumero && !tieneRol(p, 'admin') && (
                       <button onClick={() => setActivando(p)} className="bg-green-700 hover:bg-green-600 text-white px-2 py-1.5 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider" title="Activar para el app y generar credenciales para WhatsApp">
                         <Send className="w-3 h-3" /> {p.pinTemporal ? 'Reinvitar' : 'Activar'}
                       </button>

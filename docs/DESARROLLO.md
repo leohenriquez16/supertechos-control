@@ -113,6 +113,31 @@ Vas a poder loguearte con los usuarios sintéticos del seed:
 - Supervisor: tel `809-000-0001`, PIN `5678`
 - Maestro: tel `809-000-0002`, PIN `4321`
 
+> **v8.17.89:** Los PINs se guardan como hash bcrypt. Los del seed son
+> hashes pre-computados que validan contra los PINs plaintext arriba.
+> Si quieres regenerar otro hash:
+> ```bash
+> node -e "require('bcryptjs').hash('1234', 10).then(console.log)"
+> ```
+
+### Migrar PINs legacy en producción (una sola vez)
+
+Tras desplegar v8.17.89, los PINs viejos en producción siguen siendo
+plaintext. El endpoint `/api/auth/login` los re-hashea automáticamente
+al primer login válido (lazy migration), pero conviene correr el script
+una vez para dejar todo limpio sin esperar a que cada usuario entre:
+
+```bash
+# dry-run primero, reporta cuántos PINs plaintext quedan
+node scripts/hash-existing-pins.mjs --dry-run
+
+# correrlo de verdad
+node scripts/hash-existing-pins.mjs
+```
+
+El script es idempotente: detecta hashes bcrypt y no los toca. Si lo
+corres dos veces, el segundo run es no-op.
+
 ## Workflow para un cambio típico (sin tocar DB)
 
 La mayoría de cambios son UI o lógica de aplicación. **No requieren la DB local.** Pueden probarse contra DB de prod o contra DB local indistintamente.

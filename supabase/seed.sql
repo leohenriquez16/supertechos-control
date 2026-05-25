@@ -7,24 +7,31 @@
 -- Si necesitas más datos, agrégalos aquí. Mantén PII sintética
 -- (nombres de prueba, no copies datos reales de clientes/maestros).
 --
--- Nota: los PINs están en plaintext porque el modelo actual los guarda
--- así. Cuando hagamos PR de hashear PINs, este seed se actualizará.
+-- v8.17.89: PINs guardados como hash bcrypt (cost 10). Los PINs plaintext
+-- que se usan al loguear localmente son:
+--   Admin       8090000000  PIN 1234
+--   Supervisor  8090000001  PIN 5678
+--   Juan        8090000002  PIN 4321
+--   Pedro       8090000003  PIN 4321
+-- Los hashes de abajo fueron pre-computados con bcrypt cost 10. Cualquier
+-- hash bcrypt válido del mismo PIN funciona — los puedes regenerar corriendo:
+--   node -e "require('bcryptjs').hash('1234', 10).then(console.log)"
 
 -- ============================================================
 -- 1. Personal
 -- ============================================================
 INSERT INTO personal (id, nombre, telefono, pin, pin_temporal, onboarding_completado, roles, caja_chica_habilitada, limite_caja_chica)
-VALUES ('admin_local', 'Admin Local', '8090000000', '1234', false, true, '{"admin"}'::text[], false, null)
+VALUES ('admin_local', 'Admin Local', '8090000000', '$2b$10$J4SDTgQSeR9xlfHjDZLuauslmlmXxH5cBrSXgYlbO2tWDWIO5P.A6', false, true, '{"admin"}'::text[], false, null)
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO personal (id, nombre, telefono, pin, pin_temporal, onboarding_completado, roles, caja_chica_habilitada, limite_caja_chica, dieta_habilitada)
-VALUES ('sup_local_1', 'Carlos Supervisor', '8090000001', '5678', false, true, '{"supervisor"}'::text[], true, 50000, true)
+VALUES ('sup_local_1', 'Carlos Supervisor', '8090000001', '$2b$10$IBm4NGPiD5cG6C0McyKkMustwzkQstVzZQbk7KkCB6fQ2NMscSo6K', false, true, '{"supervisor"}'::text[], true, 50000, true)
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO personal (id, nombre, telefono, pin, pin_temporal, onboarding_completado, roles, maestro_id, caja_chica_habilitada, limite_caja_chica, modo_pago, tarifa_dia)
 VALUES
-  ('mae_local_1', 'Juan Maestro', '8090000002', '4321', false, true, '{"maestro"}'::text[], null, true, 10000, 'dia', 1500),
-  ('mae_local_2', 'Pedro Maestro', '8090000003', '4321', false, true, '{"maestro"}'::text[], null, true, 10000, 'm2', null)
+  ('mae_local_1', 'Juan Maestro', '8090000002', '$2b$10$H1KwtwWceneK8157P.TPhucuavqPzqODxBhfmiFntH9t.UCYz.k0S', false, true, '{"maestro"}'::text[], null, true, 10000, 'dia', 1500),
+  ('mae_local_2', 'Pedro Maestro', '8090000003', '$2b$10$Tlm830U0xqKeFcAgmOEFa.CZHn2anzJYYvylr/z25XrpH1anS/kGi', false, true, '{"maestro"}'::text[], null, true, 10000, 'm2', null)
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO personal (id, nombre, telefono, pin, pin_temporal, onboarding_completado, roles, maestro_id, modo_pago, tarifa_dia)

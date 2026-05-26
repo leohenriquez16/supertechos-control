@@ -8,10 +8,11 @@
 // proyecto + sites + DynamicSurveyForm + photos.
 
 import React, { useState, useEffect } from 'react';
-import { Loader2, Plus, MapPin, Building, ChevronRight, ArrowLeft } from 'lucide-react';
+import { Loader2, Plus, MapPin, Building, ChevronRight, ArrowLeft, List, Map as MapIcon } from 'lucide-react';
 import { listarProyectosSurveys, listarSitesProyectoSurvey, COMPANIES, PROJECT_STATUS, SITE_STATUS } from '../../lib/surveys';
 import ServiceLineBadge from './ServiceLineBadge';
 import SurveySiteDetail from './SurveySiteDetail';
+import SurveySitesMap from './SurveySitesMap';
 
 export default function ModuloSurveys({ usuario }) {
   // Subvistas: 'lista' (default) | 'proyecto' | 'site'
@@ -149,6 +150,7 @@ function SurveyProjectDetail({ proyecto, onAbrirSite, onVolver }) {
   const [loading, setLoading] = useState(true);
   const [sites, setSites] = useState([]);
   const [errorMsg, setErrorMsg] = useState(null);
+  const [vistaSites, setVistaSites] = useState('lista'); // 'lista' | 'mapa'
 
   useEffect(() => {
     let cancelado = false;
@@ -216,13 +218,42 @@ function SurveyProjectDetail({ proyecto, onAbrirSite, onVolver }) {
       )}
 
       {!loading && !errorMsg && (
-        <div className="space-y-2">
-          <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">
-            Sitios ({sites.length})
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">
+              Sitios ({sites.length})
+            </div>
+            <div className="flex border border-zinc-800">
+              <button
+                onClick={() => setVistaSites('lista')}
+                className={`px-3 py-1 text-[10px] uppercase tracking-wider font-bold flex items-center gap-1 ${
+                  vistaSites === 'lista' ? 'bg-red-600 text-white' : 'bg-zinc-900 text-zinc-400 hover:text-white'
+                }`}
+              >
+                <List className="w-3 h-3" /> Lista
+              </button>
+              <button
+                onClick={() => setVistaSites('mapa')}
+                className={`px-3 py-1 text-[10px] uppercase tracking-wider font-bold flex items-center gap-1 ${
+                  vistaSites === 'mapa' ? 'bg-red-600 text-white' : 'bg-zinc-900 text-zinc-400 hover:text-white'
+                }`}
+              >
+                <MapIcon className="w-3 h-3" /> Mapa
+              </button>
+            </div>
           </div>
-          {sites.map(s => (
-            <SiteRow key={s.id} site={s} onClick={() => onAbrirSite(s)} />
-          ))}
+
+          {vistaSites === 'lista' && (
+            <div className="space-y-2">
+              {sites.map(s => (
+                <SiteRow key={s.id} site={s} onClick={() => onAbrirSite(s)} />
+              ))}
+            </div>
+          )}
+
+          {vistaSites === 'mapa' && (
+            <SurveySitesMap sites={sites} onAbrirSite={onAbrirSite} />
+          )}
         </div>
       )}
     </div>

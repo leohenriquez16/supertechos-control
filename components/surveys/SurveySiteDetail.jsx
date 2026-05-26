@@ -9,12 +9,14 @@
 //  - Notas
 //  - Botón "Iniciar levantamiento" (placeholder — se conecta en PR 3B.4)
 
-import React from 'react';
+import React, { useState } from 'react';
 import { ArrowLeft, Building, MapPin, Calendar, Clock, FileText, AlertTriangle, Play } from 'lucide-react';
 import QuickActions from './QuickActions';
+import DynamicSurveyForm from './DynamicSurveyForm';
 import { SITE_STATUS } from '../../lib/surveys';
 
 export default function SurveySiteDetail({ site, proyecto, usuario, onVolver }) {
+  const [formAbierto, setFormAbierto] = useState(false);
   const status = SITE_STATUS[site.survey_status] || SITE_STATUS.pending;
   const hasGeo = site.latitude != null && site.longitude != null;
   const tieneInfoFaltante = site.survey_status === 'missing_info';
@@ -137,17 +139,29 @@ export default function SurveySiteDetail({ site, proyecto, usuario, onVolver }) 
         </div>
       )}
 
-      {/* CTA placeholder — se conecta a DynamicSurveyForm en PR 3B.4 */}
+      {/* CTA: iniciar levantamiento */}
       <div className="pt-2">
         <button
-          disabled
-          className="w-full bg-red-600/30 border-2 border-red-600/50 text-red-200 font-black uppercase tracking-wider py-4 flex items-center justify-center gap-2 cursor-not-allowed"
-          title="Disponible en PR 3B.4 — formulario dinámico de levantamiento"
+          onClick={() => setFormAbierto(true)}
+          className="w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-wider py-4 flex items-center justify-center gap-2"
         >
           <Play className="w-4 h-4" />
-          Iniciar levantamiento (próximamente)
+          Iniciar levantamiento
         </button>
       </div>
+
+      {formAbierto && (
+        <DynamicSurveyForm
+          site={site}
+          proyecto={proyecto}
+          usuario={usuario}
+          onCerrar={() => setFormAbierto(false)}
+          onCompletado={() => {
+            setFormAbierto(false);
+            onVolver();
+          }}
+        />
+      )}
     </div>
   );
 }

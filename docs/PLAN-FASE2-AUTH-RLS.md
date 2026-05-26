@@ -272,3 +272,80 @@ Si algo falla: rollback de ESE sub-PR (cada uno es revertible) y diagnosticar an
 4. **PR 2A** — bridge sin cambiar login. Es el paso más seguro para empezar.
 
 Cuando arranquemos PR 2A, este documento se convierte en checklist viviente. Actualizamos el estado de cada sub-PR a medida que se ejecuta.
+
+---
+
+## CHECKLIST DE IMPLEMENTACIÓN — estado actualizado 2026-05-25
+
+Todos los sub-PRs de Fase 2 fueron **implementados localmente sin push**.
+La pila vive en worktrees `.claude/worktrees/fase2-pr2*-*` con commits lineales encima de PR 2 hash-pins. Aplicación a prod queda pendiente del setup local Supabase + push + deploy.
+
+- [x] **PR 2A** v8.17.90 — bridge `personal.auth_user_id` + helpers SQL (`personal_id_from_auth`, `persona_tiene_rol`) + `scripts/backfill-auth-users.mjs`. Migration `023`.
+- [x] **PR 2B** v8.17.91 — `/api/auth/login` y `/api/webauthn/login-finish` emiten sesión Supabase via `admin.generateLink({type:'magiclink'})`. Cliente `verifyOtp`. Fallback que no rompe nada.
+- [x] **PR 2C.1** v8.17.92 — RLS `webauthn_credentials` + endpoints WebAuthn (register-finish, login-begin) migrados a node+service role. Migration `024`.
+- [x] **PR 2C.2** v8.17.93 — RLS catálogos `permisos_roles` + `caja_chica_categorias`. Migration `025`.
+- [x] **PR 2C.3** v8.17.94 — RLS `personal`. Migration `026`. SELECT permissive (status quo), mutaciones restringidas.
+- [x] **PR 2C.4** v8.17.95 — RLS caja chica (movimientos + proveedores + historiales). Migration `027`.
+- [x] **PR 2C.5** v8.17.96 — RLS `proyectos` + derivadas (reportes, envios, jornadas, ajustes_nomina, detalle_nomina) + helper `puede_ver_proyecto()`. Migration `028`.
+- [x] **PR 2C.6** v8.17.97 — RLS resto (cubicaciones, proyecto_archivos, proyecto_contactos, avances_unidades, estadias_empresa, propiedades_empresa, odoo_cotizaciones_ocultas, personal_acceso_cliente, personal_accesos_log, audit_logs, sistemas, categorias_sistemas, config, config_dieta). Migration `029`. **Cierra el ciclo RLS.**
+- [x] **PR 2D** v8.17.98 — Storage policies endurecidas (3 buckets). UPDATE/DELETE solo admin/supervisor. SELECT/INSERT abiertos para no romper cámara. Migration `030`.
+- [x] **PR 2E** v8.17.99 — `scripts/verify-fase2-deploy.mjs` + actualización de docs. **Sin cleanup destructivo todavía** (eso queda para PR 2F futuro tras observación en prod).
+
+### Orden de aplicación en producción
+
+```
+# 0. Push de todas las ramas (con OK explícito en cada paso)
+git push origin claude/hash-pins-bcrypt
+git push origin claude/fase2-pr2a-auth-bridge
+git push origin claude/fase2-pr2b-supabase-session
+git push origin claude/fase2-pr2c1-rls-webauthn
+git push origin claude/fase2-pr2c2-rls-catalogos
+git push origin claude/fase2-pr2c3-rls-personal
+git push origin claude/fase2-pr2c4-rls-caja-chica
+git push origin claude/fase2-pr2c5-rls-proyectos
+git push origin claude/fase2-pr2c6-rls-resto
+git push origin claude/fase2-pr2d-storage
+git push origin claude/fase2-pr2e-cleanup
+
+# 1. Mergear hash-pins primero (base) y aplicar migrations en orden.
+# 2. Correr backfill (PR 2A) ANTES de mergear PR 2B.
+# 3. Deploy de PR 2B → users empiezan a tener sesión Supabase real al loguear.
+# 4. Aplicar migrations 024-030 progresivamente, mergear cada PR y observar.
+# 5. Tras aplicar todo: scripts/verify-fase2-deploy.mjs para sanity check.
+
+# Resumen aplicación SQL en prod (en orden):
+psql "$DB_URL" -f migrations/023_auth_users_bridge.sql
+node scripts/backfill-auth-users.mjs
+# (deploy v8.17.91)
+psql "$DB_URL" -f migrations/024_rls_webauthn_credentials.sql
+# (deploy v8.17.92, observar 24-48h)
+psql "$DB_URL" -f migrations/025_rls_catalogos.sql
+# (deploy v8.17.93)
+psql "$DB_URL" -f migrations/026_rls_personal.sql
+# (deploy v8.17.94, observar)
+psql "$DB_URL" -f migrations/027_rls_caja_chica.sql
+# (deploy v8.17.95, observar)
+psql "$DB_URL" -f migrations/028_rls_proyectos_y_derivadas.sql
+# (deploy v8.17.96, observar)
+psql "$DB_URL" -f migrations/029_rls_resto.sql
+# (deploy v8.17.97)
+psql "$DB_URL" -f migrations/030_storage_policies_endurecidas.sql
+# (deploy v8.17.98)
+# Verificar:
+node scripts/verify-fase2-deploy.mjs
+# (deploy v8.17.99)
+```
+
+### Lo que queda pendiente tras Fase 2
+
+- **PR 2F (futuro)** — cleanup destructivo:
+  - Quitar `localStorage.getItem('supertechos_usuario_id')` y el restore-on-reload basado en él.
+  - Refactor de `lib/db.js` para usar el cliente con sesión Supabase en vez de anon key.
+  - Quitar `setAuditContext` / `getAuditContext` (leer de sesión).
+  - Endurecer SELECT en `audit_logs` (cerrar a anon) y catálogos.
+  - Migrar paths de storage a usar `auth.uid()::text` en primer segmento.
+
+- **Módulo de surveys** (Banreservas + Prouco + Super Techos):
+  - Ahora compatible con el modelo Auth + RLS.
+  - Aplicar migrations del módulo. Schema `surveys.*` ya asume auth.uid().
+  - Adaptar `created_by UUID REFERENCES auth.users(id)` → encaja con el bridge ya creado.

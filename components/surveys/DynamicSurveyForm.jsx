@@ -17,9 +17,25 @@
 //   - Sync offline (PWA / IndexedDB)
 
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { Loader2, X, Save, Check, Plus, Copy, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Loader2, X, Save, Check, Plus, Copy, Trash2, ChevronDown, ChevronUp, Zap } from 'lucide-react';
 import { obtenerTemplateSurvey, crearVisita, actualizarVisita, cerrarVisita, listarAreasDeVisita, crearArea, actualizarArea, eliminarArea } from '../../lib/surveys';
 import SurveyFieldRenderer from './SurveyFieldRenderer';
+
+// v8.19.6: detecta si un campo es "de medida" (visible cuando un área es
+// marcada como 'similar a otra'). Reglas:
+//   - tablas measurement_table / openings_table → siempre medidas
+//   - number cuyo id incluye largo/alto/ancho/área/profundidad → medida
+//   - computed → siempre visible (depende de medidas, debe recalcularse)
+//   - resto (text, select, boolean, rating, photos, signature) → no medida
+function esCampoMedida(field) {
+  if (field.type === 'measurement_table' || field.type === 'openings_table') return true;
+  if (field.type === 'computed') return true;
+  if (field.type === 'number') {
+    const id = (field.id || '').toLowerCase();
+    return /(length|width|height|depth|area|m2|largo|ancho|alto|profund|metro|cantidad)/.test(id);
+  }
+  return false;
+}
 
 export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, onCompletado }) {
   const [loading, setLoading] = useState(true);
@@ -101,14 +117,24 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
     }
   };
 
-  // Actualizar campos de un area (debounce manual via timer si quisieras)
+  // Actualizar campos de un area. Maneja un caso especial:
+  //   campo === '__similar_to_area_id__'  → actualiza la columna nativa,
+  //                                          no el JSON data.
   const actualizarCampoArea = async (areaId, campo, valor) => {
+    if (campo === '__similar_to_area_id__') {
+      setAreas(prev => prev.map(a => a.id === areaId ? { ...a, similar_to_area_id: valor || null } : a));
+      try {
+        await actualizarArea(areaId, { similar_to_area_id: valor || null });
+      } catch (e) {
+        console.warn('No se pudo setear similar_to_area_id:', e?.message);
+      }
+      return;
+    }
     setAreas(prev => prev.map(a => {
       if (a.id !== areaId) return a;
       const data = { ...(a.data || {}), [campo]: valor };
       return { ...a, data };
     }));
-    // Persistir
     const area = areas.find(a => a.id === areaId);
     const data = { ...((area && area.data) || {}), [campo]: valor };
     try {
@@ -307,7 +333,7 @@ function BloqueRepetible({ bloque, areas, onAgregar, onCambioCampo, onRenombrar,
           Aún no hay {bloque.block_label?.toLowerCase() || 'áreas'}. Agrega la primera arriba.
         </div>
       )}
-      {areas.map((area) => (
+      {areas.map((area, idx) => (
         <AreaCard
           key={area.id}
           area={area}
@@ -317,17 +343,40 @@ function BloqueRepetible({ bloque, areas, onAgregar, onCambioCampo, onRenombrar,
           onEliminar={() => onEliminar(area.id)}
           supportsSimilar={supportsSimilar}
           visitId={visitId}
+          areasAnteriores={areas.slice(0, idx)}
         />
       ))}
     </div>
   );
 }
 
-function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, supportsSimilar, visitId }) {
+function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, supportsSimilar, visitId, areasAnteriores = [] }) {
   const [colapsado, setColapsado] = useState(false);
+  const esSimilar = !!area.similar_to_area_id;
+  const areaOrigen = esSimilar
+    ? areasAnteriores.find(a => a.id === area.similar_to_area_id)
+    : null;
+
+  const toggleSimilar = () => {
+    if (esSimilar) {
+      // Quitar atajo: limpia similar_to_area_id en DB
+      onCambioCampo('__similar_to_area_id__', null);
+    }
+    // Si activa, el dropdown abajo le pide elegir el area
+  };
+
+  const setSimilarA = (origenId) => {
+    onCambioCampo('__similar_to_area_id__', origenId || null);
+  };
+
+  // Filtrar campos visibles según modo:
+  // - Normal: todos los campos.
+  // - Similar: solo campos de medida + computed.
+  const camposVisibles = (bloque.fields || []).filter(f => !esSimilar || esCampoMedida(f));
+
   return (
     <div className="border-t border-zinc-800/50">
-      <div className="px-4 py-2 flex items-center gap-2 bg-zinc-900/60">
+      <div className={`px-4 py-2 flex items-center gap-2 ${esSimilar ? 'bg-amber-900/20' : 'bg-zinc-900/60'}`}>
         <button onClick={() => setColapsado(c => !c)} className="text-zinc-500 hover:text-white">
           {colapsado ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
         </button>
@@ -336,6 +385,11 @@ function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, suppor
           onChange={e => onRenombrar(e.target.value)}
           className="flex-1 bg-transparent border-0 outline-none text-sm font-bold text-white"
         />
+        {esSimilar && (
+          <span className="text-[9px] uppercase tracking-wider font-bold text-amber-400 bg-amber-900/40 px-1.5 py-0.5 border border-amber-700/50">
+            ⚡ Igual a {areaOrigen?.name || '#?'}
+          </span>
+        )}
         <button
           onClick={onEliminar}
           className="text-zinc-500 hover:text-red-500"
@@ -344,9 +398,54 @@ function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, suppor
           <Trash2 className="w-3.5 h-3.5" />
         </button>
       </div>
+
       {!colapsado && (
         <div className="px-4 py-3 space-y-3">
-          {(bloque.fields || []).map(f => (
+          {/* Toggle "área similar" si el template lo soporta y hay areas anteriores */}
+          {supportsSimilar && areasAnteriores.length > 0 && (
+            <div className={`border-2 ${esSimilar ? 'border-amber-700/60 bg-amber-900/10' : 'border-zinc-800 bg-zinc-900/50'} p-3`}>
+              <div className="flex items-center gap-2 mb-2">
+                <Zap className={`w-4 h-4 ${esSimilar ? 'text-amber-400' : 'text-zinc-500'}`} />
+                <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-300">
+                  Atajo "igual al elemento anterior"
+                </span>
+              </div>
+              <div className="text-[11px] text-zinc-500 mb-2">
+                Si esta área es igual a una anterior, marca cuál. Sólo necesitarás cambiar las medidas — el resto se hereda al cerrar el levantamiento.
+              </div>
+              <div className="flex gap-2 items-center">
+                <select
+                  value={area.similar_to_area_id || ''}
+                  onChange={e => setSimilarA(e.target.value)}
+                  className="flex-1 bg-zinc-950 border-2 border-zinc-800 focus:border-amber-600 outline-none px-2 py-1.5 text-xs text-white"
+                >
+                  <option value="">— Es una área distinta —</option>
+                  {areasAnteriores.map(a => (
+                    <option key={a.id} value={a.id}>
+                      {a.name || `Área #${a.area_number}`}
+                    </option>
+                  ))}
+                </select>
+                {esSimilar && (
+                  <button
+                    onClick={() => setSimilarA(null)}
+                    className="text-[10px] text-zinc-400 hover:text-white"
+                  >
+                    Quitar
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {esSimilar && camposVisibles.length < (bloque.fields || []).length && (
+            <div className="bg-amber-900/10 border-l-2 border-amber-700 px-3 py-1.5 text-[11px] text-amber-300">
+              Mostrando solo {camposVisibles.length} campos de medida.
+              {' '}{(bloque.fields || []).length - camposVisibles.length} campos se heredarán de "{areaOrigen?.name || 'origen'}".
+            </div>
+          )}
+
+          {camposVisibles.map(f => (
             <SurveyFieldRenderer
               key={f.id}
               field={f}

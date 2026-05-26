@@ -11,11 +11,13 @@ import React, { useState, useEffect } from 'react';
 import { Loader2, Plus, MapPin, Building, ChevronRight, ArrowLeft } from 'lucide-react';
 import { listarProyectosSurveys, listarSitesProyectoSurvey, COMPANIES, PROJECT_STATUS, SITE_STATUS } from '../../lib/surveys';
 import ServiceLineBadge from './ServiceLineBadge';
+import SurveySiteDetail from './SurveySiteDetail';
 
 export default function ModuloSurveys({ usuario }) {
-  // Subvistas: 'lista' (default) | 'proyecto'
+  // Subvistas: 'lista' (default) | 'proyecto' | 'site'
   const [subvista, setSubvista] = useState('lista');
   const [proyectoActivo, setProyectoActivo] = useState(null);
+  const [siteActivo, setSiteActivo] = useState(null);
 
   return (
     <div className="space-y-4">
@@ -28,7 +30,16 @@ export default function ModuloSurveys({ usuario }) {
       {subvista === 'proyecto' && proyectoActivo && (
         <SurveyProjectDetail
           proyecto={proyectoActivo}
+          onAbrirSite={(s) => { setSiteActivo(s); setSubvista('site'); }}
           onVolver={() => { setSubvista('lista'); setProyectoActivo(null); }}
+        />
+      )}
+      {subvista === 'site' && siteActivo && proyectoActivo && (
+        <SurveySiteDetail
+          site={siteActivo}
+          proyecto={proyectoActivo}
+          usuario={usuario}
+          onVolver={() => { setSubvista('proyecto'); setSiteActivo(null); }}
         />
       )}
     </div>
@@ -134,7 +145,7 @@ function ProyectoCard({ proyecto, onClick }) {
 // DETALLE DE PROYECTO (lista de sites)
 // PR 3B.1: versión básica sin mapa todavía. Mapa viene en 3B.2.
 // ============================================================
-function SurveyProjectDetail({ proyecto, onVolver }) {
+function SurveyProjectDetail({ proyecto, onAbrirSite, onVolver }) {
   const [loading, setLoading] = useState(true);
   const [sites, setSites] = useState([]);
   const [errorMsg, setErrorMsg] = useState(null);
@@ -210,7 +221,7 @@ function SurveyProjectDetail({ proyecto, onVolver }) {
             Sitios ({sites.length})
           </div>
           {sites.map(s => (
-            <SiteRow key={s.id} site={s} />
+            <SiteRow key={s.id} site={s} onClick={() => onAbrirSite(s)} />
           ))}
         </div>
       )}
@@ -227,11 +238,14 @@ function StatBox({ label, value, color }) {
   );
 }
 
-function SiteRow({ site }) {
+function SiteRow({ site, onClick }) {
   const status = SITE_STATUS[site.survey_status] || SITE_STATUS.pending;
   const hasGeo = site.latitude != null && site.longitude != null;
   return (
-    <div className="bg-zinc-900 border border-zinc-800 p-3 flex items-center gap-3">
+    <button
+      onClick={onClick}
+      className="w-full text-left bg-zinc-900 border border-zinc-800 hover:border-red-600 p-3 flex items-center gap-3 transition-colors"
+    >
       <Building className="w-5 h-5 text-zinc-500 flex-shrink-0" />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-0.5">
@@ -258,6 +272,7 @@ function SiteRow({ site }) {
           {!hasGeo && ' · ⚠ sin georef'}
         </div>
       </div>
-    </div>
+      <ChevronRight className="w-4 h-4 text-zinc-600 flex-shrink-0" />
+    </button>
   );
 }

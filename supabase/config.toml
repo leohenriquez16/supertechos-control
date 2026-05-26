@@ -7,7 +7,8 @@ project_id = "supertechos-control-local"
 [api]
 enabled = true
 port = 54321
-schemas = ["public", "storage", "graphql_public"]
+# v8.19.1: surveys schema agregado para PR 3B (módulo Levantamientos).
+schemas = ["public", "storage", "graphql_public", "surveys"]
 extra_search_path = ["public", "extensions"]
 max_rows = 1000
 

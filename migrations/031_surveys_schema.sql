@@ -353,6 +353,18 @@ CREATE POLICY photos_via_visit ON surveys.photos
   );
 
 -- ============================================================
+-- GRANTS — exponer schema y tablas a los roles de Supabase REST.
+-- Sin esto la API devuelve "permission denied for schema surveys"
+-- aunque las RLS policies estén en su lugar.
+-- ============================================================
+GRANT USAGE ON SCHEMA surveys TO anon, authenticated, service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA surveys TO authenticated, service_role;
+GRANT SELECT ON ALL TABLES IN SCHEMA surveys TO anon;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA surveys TO authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA surveys GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA surveys GRANT SELECT ON TABLES TO anon;
+
+-- ============================================================
 -- STORAGE BUCKET surveys-photos (privado)
 -- ============================================================
 INSERT INTO storage.buckets (id, name, public)

@@ -63,7 +63,9 @@ export default function PantallaCambiarPin({ usuario, onListo }) {
     setGuardando(true); setError('');
     try {
       await db.cambiarPin(usuario.id, nuevo);
-      onListo({ ...usuario, pin: nuevo, pinTemporal: false });
+      // v8.17.89: el cliente nunca conserva el PIN plaintext en el state.
+      // Solo necesita saber que ya no es temporal para salir del wizard.
+      onListo({ ...usuario, tienePin: true, pinTemporal: false });
     } catch (e) {
       setError(e.message || 'Error guardando el PIN');
     }

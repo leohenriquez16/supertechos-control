@@ -758,8 +758,9 @@ export default function App() {
         proyectosMenu={proyectosMenu}
         seccionesColapsadas={seccionesColapsadas}
         toggleSeccion={toggleSeccion}
-        onCerrarSesion={() => {
-          try { localStorage.removeItem('supertechos_usuario_id'); } catch {}
+        onCerrarSesion={async () => {
+          // v8.17.91: db.logout() además cierra la sesión Supabase (si existe).
+          await db.logout();
           setUsuario(null);
           setProyectoActivo(null);
           setVista('dashboard');

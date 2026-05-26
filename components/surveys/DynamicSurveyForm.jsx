@@ -16,7 +16,7 @@
 //   - GPS check-in con validación contra coordenadas del site
 //   - Sync offline (PWA / IndexedDB)
 
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { Loader2, X, Save, Check, Plus, Copy, Trash2, ChevronDown, ChevronUp, Zap } from 'lucide-react';
 import { obtenerTemplateSurvey, crearVisita, actualizarVisita, cerrarVisita, listarAreasDeVisita, crearArea, actualizarArea, eliminarArea } from '../../lib/surveys';
 import SurveyFieldRenderer from './SurveyFieldRenderer';
@@ -98,17 +98,18 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
     }
   }, [visit]);
 
-  // Agregar nueva área a un bloque repetible
+  // Agregar nueva área a un bloque repetible. El nombre queda vacío
+  // para que el levantador lo escriba (ej. "Fachada norte", "Cubierta principal").
+  // El AreaCard autoenfoca el input cuando name está vacío.
   const agregarArea = async (bloque) => {
     if (!visit) return;
     const nextNum = areas.filter(a => a.block_id === bloque.id).length + 1;
-    const nombreSugerido = `${bloque.block_label || bloque.title || 'Área'} #${nextNum}`;
     try {
       const a = await crearArea({
         visitId: visit.id,
         blockId: bloque.id,
         areaNumber: nextNum,
-        name: nombreSugerido,
+        name: '', // vacío — el levantador lo escribe
         data: {},
       });
       setAreas(prev => [...prev, a]);
@@ -352,10 +353,28 @@ function BloqueRepetible({ bloque, areas, onAgregar, onCambioCampo, onRenombrar,
 
 function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, supportsSimilar, visitId, areasAnteriores = [] }) {
   const [colapsado, setColapsado] = useState(false);
+  const nombreInputRef = useRef(null);
   const esSimilar = !!area.similar_to_area_id;
+  const sinNombre = !(area.name && area.name.trim());
   const areaOrigen = esSimilar
     ? areasAnteriores.find(a => a.id === area.similar_to_area_id)
     : null;
+
+  // Autofoco en el input de nombre cuando el área se crea sin nombre.
+  useEffect(() => {
+    if (sinNombre && nombreInputRef.current) {
+      nombreInputRef.current.focus();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [area.id]);
+
+  const placeholderEjemplo = bloque.example_name
+    || ({
+         'exterior': 'Ej: Fachada norte, Marquesina, Muro principal…',
+         'interior': 'Ej: Oficina 201, Pasillo, Lobby, Sala de juntas…',
+         'roof': 'Ej: Cubierta principal, Techo área parqueo…',
+         'floor': 'Ej: Piso planta baja, Almacén nave A…',
+       }[bloque.id] || `Ej: ${bloque.block_label || 'Nombre'} 1, ${bloque.block_label || 'Nombre'} 2…`);
 
   const toggleSimilar = () => {
     if (esSimilar) {
@@ -376,28 +395,40 @@ function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, suppor
 
   return (
     <div className="border-t border-zinc-800/50">
-      <div className={`px-4 py-2 flex items-center gap-2 ${esSimilar ? 'bg-amber-900/20' : 'bg-zinc-900/60'}`}>
+      <div className={`px-3 py-2 flex items-center gap-2 ${esSimilar ? 'bg-amber-900/20' : 'bg-zinc-900/60'}`}>
         <button onClick={() => setColapsado(c => !c)} className="text-zinc-500 hover:text-white">
           {colapsado ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
         </button>
+        <span className="text-[10px] font-mono bg-zinc-800 text-zinc-400 px-1.5 py-0.5 flex-shrink-0">
+          #{area.area_number}
+        </span>
         <input
+          ref={nombreInputRef}
           value={area.name || ''}
           onChange={e => onRenombrar(e.target.value)}
-          className="flex-1 bg-transparent border-0 outline-none text-sm font-bold text-white"
+          placeholder={placeholderEjemplo}
+          className={`flex-1 min-w-0 bg-zinc-950 border-2 ${
+            sinNombre ? 'border-amber-600' : 'border-zinc-800'
+          } focus:border-red-600 outline-none px-2 py-1 text-sm font-bold text-white placeholder:text-zinc-600 placeholder:font-normal placeholder:italic`}
         />
         {esSimilar && (
-          <span className="text-[9px] uppercase tracking-wider font-bold text-amber-400 bg-amber-900/40 px-1.5 py-0.5 border border-amber-700/50">
+          <span className="text-[9px] uppercase tracking-wider font-bold text-amber-400 bg-amber-900/40 px-1.5 py-0.5 border border-amber-700/50 flex-shrink-0">
             ⚡ Igual a {areaOrigen?.name || '#?'}
           </span>
         )}
         <button
           onClick={onEliminar}
-          className="text-zinc-500 hover:text-red-500"
+          className="text-zinc-500 hover:text-red-500 flex-shrink-0"
           title="Eliminar"
         >
           <Trash2 className="w-3.5 h-3.5" />
         </button>
       </div>
+      {sinNombre && (
+        <div className="px-3 py-1 bg-amber-900/10 border-l-2 border-amber-600 text-[10px] text-amber-400">
+          Escribe un nombre para identificar el espacio (ej. "Fachada norte", "Oficina 201").
+        </div>
+      )}
 
       {!colapsado && (
         <div className="px-4 py-3 space-y-3">

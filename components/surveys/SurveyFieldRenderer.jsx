@@ -21,8 +21,9 @@
 
 import React from 'react';
 import { Star, Camera, Plus, Trash2, Calculator } from 'lucide-react';
+import PhotoCapture from './PhotoCapture';
 
-export default function SurveyFieldRenderer({ field, value, onChange, allValues = {} }) {
+export default function SurveyFieldRenderer({ field, value, onChange, allValues = {}, context = {} }) {
   // Soporte de show_if simple: "field_id == valor" o "field_id == true"
   if (field.show_if && !evaluarShowIf(field.show_if, allValues)) {
     return null;
@@ -237,32 +238,16 @@ export default function SurveyFieldRenderer({ field, value, onChange, allValues 
       );
     }
 
-    case 'photos': {
-      const fotos = Array.isArray(value) ? value : [];
+    case 'photos':
       return (
-        <div>
-          {label}
-          <div className="bg-zinc-900 border-2 border-dashed border-zinc-700 p-4 text-center">
-            <Camera className="w-8 h-8 mx-auto mb-2 text-zinc-600" />
-            <div className="text-sm text-zinc-400 mb-2">
-              {fotos.length === 0
-                ? `Cámara y upload en PR 3B.5 (próximamente)`
-                : `${fotos.length} foto${fotos.length === 1 ? '' : 's'} registrada${fotos.length === 1 ? '' : 's'}`}
-            </div>
-            {field.min != null && (
-              <div className="text-[10px] text-zinc-500">
-                Mínimo: {field.min} · Máximo: {field.max || '∞'}
-              </div>
-            )}
-            {field.required_labels && (
-              <div className="text-[10px] text-zinc-500 mt-1">
-                Requeridas: {field.required_labels.join(', ')}
-              </div>
-            )}
-          </div>
-        </div>
+        <PhotoCapture
+          visitId={context.visitId}
+          areaId={context.areaId || null}
+          field={field}
+          value={value}
+          onChange={onChange}
+        />
       );
-    }
 
     case 'measurement_table':
       return <MeasurementTableField field={field} value={value} onChange={onChange} />;

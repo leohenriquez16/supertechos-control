@@ -210,6 +210,7 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
               seccion={secGeneral}
               values={generalData}
               onChange={guardarGeneralData}
+              visitId={visit?.id}
             />
           )}
 
@@ -224,6 +225,7 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
               onRenombrar={renombrarArea}
               onEliminar={eliminarAreaLocal}
               supportsSimilar={template.schema?.supports_similar_shortcut}
+              visitId={visit?.id}
             />
           ))}
 
@@ -258,7 +260,7 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
 // ============================================================
 // Sección general (no repetible)
 // ============================================================
-function SeccionGeneral({ seccion, values, onChange }) {
+function SeccionGeneral({ seccion, values, onChange, visitId }) {
   const setField = (id, val) => {
     onChange({ ...values, [id]: val });
   };
@@ -275,6 +277,7 @@ function SeccionGeneral({ seccion, values, onChange }) {
             value={values[f.id]}
             onChange={(v) => setField(f.id, v)}
             allValues={values}
+            context={{ visitId, areaId: null }}
           />
         ))}
       </div>
@@ -285,7 +288,7 @@ function SeccionGeneral({ seccion, values, onChange }) {
 // ============================================================
 // Bloque repetible (N areas)
 // ============================================================
-function BloqueRepetible({ bloque, areas, onAgregar, onCambioCampo, onRenombrar, onEliminar, supportsSimilar }) {
+function BloqueRepetible({ bloque, areas, onAgregar, onCambioCampo, onRenombrar, onEliminar, supportsSimilar, visitId }) {
   return (
     <div className="border-b border-zinc-800">
       <div className="bg-zinc-900 px-4 py-2 flex items-center justify-between">
@@ -313,13 +316,14 @@ function BloqueRepetible({ bloque, areas, onAgregar, onCambioCampo, onRenombrar,
           onRenombrar={(n) => onRenombrar(area.id, n)}
           onEliminar={() => onEliminar(area.id)}
           supportsSimilar={supportsSimilar}
+          visitId={visitId}
         />
       ))}
     </div>
   );
 }
 
-function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, supportsSimilar }) {
+function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, supportsSimilar, visitId }) {
   const [colapsado, setColapsado] = useState(false);
   return (
     <div className="border-t border-zinc-800/50">
@@ -349,6 +353,7 @@ function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, suppor
               value={(area.data || {})[f.id]}
               onChange={(v) => onCambioCampo(f.id, v)}
               allValues={area.data || {}}
+              context={{ visitId, areaId: area.id }}
             />
           ))}
         </div>

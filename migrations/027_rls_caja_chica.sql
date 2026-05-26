@@ -142,7 +142,10 @@ CREATE POLICY caja_prov_delete ON caja_chica_proveedores
   USING (public.persona_tiene_rol('admin'));
 
 -- ============================================================
--- caja_chica_historiales (existe si migration 016 aplicada)
+-- caja_chica_historiales — solo si la tabla existe. En algunas instancias
+-- de prod no aplicó migration 016 (o se renombró). Todo el bloque va dentro
+-- de un DO IF EXISTS para que la migration sea idempotente sin importar
+-- el estado de la tabla.
 -- ============================================================
 DO $$ BEGIN
   IF EXISTS (
@@ -150,33 +153,33 @@ DO $$ BEGIN
     WHERE table_schema = 'public' AND table_name = 'caja_chica_historiales'
   ) THEN
     EXECUTE 'ALTER TABLE caja_chica_historiales ENABLE ROW LEVEL SECURITY';
+    EXECUTE 'DROP POLICY IF EXISTS caja_hist_select ON caja_chica_historiales';
+    EXECUTE $sql$
+      CREATE POLICY caja_hist_select ON caja_chica_historiales
+        FOR SELECT TO authenticated
+        USING (
+          public.persona_tiene_rol('admin')
+          OR persona_id = public.personal_id_from_auth()
+          OR (
+            proyecto_id IS NOT NULL
+            AND EXISTS (
+              SELECT 1 FROM proyectos p
+              WHERE p.id = caja_chica_historiales.proyecto_id
+              AND p.supervisor_id = public.personal_id_from_auth()
+            )
+          )
+        )
+    $sql$;
+    EXECUTE 'DROP POLICY IF EXISTS caja_hist_insert ON caja_chica_historiales';
+    EXECUTE $sql$
+      CREATE POLICY caja_hist_insert ON caja_chica_historiales
+        FOR INSERT TO authenticated
+        WITH CHECK (
+          public.persona_tiene_rol('admin')
+          OR public.persona_tiene_rol('supervisor')
+        )
+    $sql$;
   END IF;
 END $$;
-
-DROP POLICY IF EXISTS caja_hist_select ON caja_chica_historiales;
-CREATE POLICY caja_hist_select ON caja_chica_historiales
-  FOR SELECT TO authenticated
-  USING (
-    public.persona_tiene_rol('admin')
-    OR persona_id = public.personal_id_from_auth()
-    OR (
-      proyecto_id IS NOT NULL
-      AND EXISTS (
-        SELECT 1 FROM proyectos p
-        WHERE p.id = caja_chica_historiales.proyecto_id
-        AND p.supervisor_id = public.personal_id_from_auth()
-      )
-    )
-  );
-
--- Historiales son append-only (snapshots de cuadre). Solo admin + supervisor
--- pueden generar uno (al rotar caja). Sin UPDATE/DELETE policies → bloqueado.
-DROP POLICY IF EXISTS caja_hist_insert ON caja_chica_historiales;
-CREATE POLICY caja_hist_insert ON caja_chica_historiales
-  FOR INSERT TO authenticated
-  WITH CHECK (
-    public.persona_tiene_rol('admin')
-    OR public.persona_tiene_rol('supervisor')
-  );
 
 NOTIFY pgrst, 'reload schema';

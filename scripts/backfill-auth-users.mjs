@@ -82,7 +82,7 @@ if (schemaErr) {
 
 const { data: rows, error } = await sb
   .from('personal')
-  .select('id, nombre, telefono, email, roles, auth_user_id, archivado')
+  .select('id, nombre, telefono, email, roles, auth_user_id')
   .is('auth_user_id', null);
 
 if (error) {
@@ -90,12 +90,11 @@ if (error) {
   process.exit(1);
 }
 
-const pendientes = (rows || []).filter(r => !r.archivado);
-const archivadosOmitidos = (rows || []).length - pendientes.length;
+// Nota: la tabla personal NO tiene columna `archivado` en prod. Si se agrega
+// luego, restablecer el filtro aquí.
+const pendientes = rows || [];
 
-console.log(`Personas sin auth_user_id:        ${rows?.length || 0}`);
-console.log(`  - Activas (a procesar):         ${pendientes.length}`);
-console.log(`  - Archivadas (se omiten):       ${archivadosOmitidos}`);
+console.log(`Personas sin auth_user_id: ${pendientes.length}`);
 console.log('');
 
 if (pendientes.length === 0) {

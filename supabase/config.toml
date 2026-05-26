@@ -14,7 +14,7 @@ max_rows = 1000
 [db]
 port = 54322
 shadow_port = 54320
-major_version = 15
+major_version = 17
 
 [db.pooler]
 enabled = false
@@ -38,9 +38,9 @@ enabled = true
 file_size_limit = "50MiB"
 
 [auth]
-# Supabase Auth no se usa todavía (PR 2 / Fase 2). Por ahora desactivado
-# para no consumir recursos. Cuando migremos a Supabase Auth, lo activamos.
-enabled = false
+# v8.17.99: habilitado para Fase 2 (PR 2A onwards) — bridge personal.auth_user_id
+# requiere que auth.users exista y que el servicio de Auth emita sesiones.
+enabled = true
 site_url = "http://localhost:3000"
 additional_redirect_urls = ["https://supertechos-control.vercel.app"]
 jwt_expiry = 3600

@@ -53,9 +53,8 @@ export async function POST(req) {
       return Response.json({ error: 'Persona no encontrada' }, { status: 404 });
     }
 
-    if (persona.archivado) {
-      return Response.json({ error: 'Persona archivada' }, { status: 403 });
-    }
+    // (En prod la tabla personal no tiene columna `archivado`. Si se agrega
+    // luego, restablecer el check aquí.)
 
     // Actualizar last_used_at
     await supabase.from('webauthn_credentials').update({

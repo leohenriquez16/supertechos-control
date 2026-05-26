@@ -55,7 +55,7 @@ export async function POST(request) {
   const sufijo = tel.slice(-10);
   const { data: candidatos, error } = await sb
     .from('personal')
-    .select('id, telefono, pin, archivado, auth_user_id')
+    .select('id, telefono, pin, auth_user_id')
     .ilike('telefono', `%${sufijo.slice(-4)}%`);
 
   if (error) {
@@ -64,7 +64,7 @@ export async function POST(request) {
   }
 
   const persona = (candidatos || []).find(
-    p => !p.archivado && normalizarTelefono(p.telefono) === tel
+    p => normalizarTelefono(p.telefono) === tel
   );
   if (!persona || !persona.pin) {
     return Response.json({ error: ERROR_GENERICO }, { status: 401 });

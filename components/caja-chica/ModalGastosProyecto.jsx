@@ -91,7 +91,7 @@ export default function ModalGastosProyecto({ proyecto, movimientos, usuario, da
   if (typeof document === 'undefined') return null;
   return createPortal(
     <>
-      <div className="fixed inset-0 bg-black/80 z-40 flex items-center justify-center p-2 sm:p-4" onClick={onCerrar}>
+      <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-2 sm:p-4" onClick={onCerrar}>
         <div
           className="bg-zinc-900 border-2 border-zinc-800 w-full max-w-6xl flex flex-col"
           style={{ maxHeight: 'calc(100vh - 1rem)' }}

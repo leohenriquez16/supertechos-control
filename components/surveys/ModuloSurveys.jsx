@@ -13,6 +13,7 @@ import { listarProyectosSurveys, listarSitesProyectoSurvey, COMPANIES, PROJECT_S
 import ServiceLineBadge from './ServiceLineBadge';
 import SurveySiteDetail from './SurveySiteDetail';
 import SurveySitesMap from './SurveySitesMap';
+import ModalNuevoProyecto from './ModalNuevoProyecto';
 
 export default function ModuloSurveys({ usuario }) {
   // Subvistas: 'lista' (default) | 'proyecto' | 'site'
@@ -54,6 +55,8 @@ function SurveysList({ usuario, onAbrirProyecto }) {
   const [loading, setLoading] = useState(true);
   const [proyectos, setProyectos] = useState([]);
   const [errorMsg, setErrorMsg] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [modalNuevoAbierto, setModalNuevoAbierto] = useState(false);
 
   useEffect(() => {
     let cancelado = false;
@@ -72,19 +75,37 @@ function SurveysList({ usuario, onAbrirProyecto }) {
       }
     })();
     return () => { cancelado = true; };
-  }, []);
+  }, [reloadKey]);
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
           <h1 className="text-3xl font-black tracking-tight">Levantamientos</h1>
           <div className="text-xs text-zinc-500 mt-1">
             Levantamientos en sitio para cotización (pintura, impermeabilización, aislamiento, pisos).
           </div>
         </div>
-        {/* Botón "Nuevo proyecto" se habilita en PR 3B siguiente */}
+        <button
+          onClick={() => setModalNuevoAbierto(true)}
+          className="bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-wider px-4 py-2 text-xs flex items-center gap-1 flex-shrink-0"
+        >
+          <Plus className="w-3 h-3" /> Nuevo proyecto
+        </button>
       </div>
+
+      {modalNuevoAbierto && (
+        <ModalNuevoProyecto
+          usuario={usuario}
+          onCerrar={() => setModalNuevoAbierto(false)}
+          onCreado={(proy) => {
+            setModalNuevoAbierto(false);
+            setReloadKey(k => k + 1);
+            // Auto-abre el proyecto recién creado
+            onAbrirProyecto(proy);
+          }}
+        />
+      )}
 
       {loading && (
         <div className="flex items-center gap-2 text-zinc-500 py-8 justify-center">

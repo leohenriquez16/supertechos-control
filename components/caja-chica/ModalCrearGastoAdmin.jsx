@@ -159,9 +159,19 @@ export default function ModalCrearGastoAdmin({ usuario, data, onCerrar, onCreado
                 onChange={e => set('tipo', e.target.value)}
                 className="w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-2 text-white text-sm"
               >
-                <option value="gasto_factura">Gasto con factura</option>
-                <option value="ajuste">Ajuste manual</option>
+                <option value="gasto_factura">Gasto (con o sin factura)</option>
+                {/* v8.19.10: "Ajuste contable" solo visible para owner (Leo).
+                    Antes los otros admins lo usaban para gastos sin factura,
+                    causando que sumara al saldo en vez de restar. */}
+                {(usuario?.roles || []).includes('owner') && (
+                  <option value="ajuste">⚠ Ajuste contable (solo cuadre)</option>
+                )}
               </select>
+              {campos.tipo === 'ajuste' && (
+                <div className="mt-1 text-[10px] text-amber-400 bg-amber-900/20 border border-amber-700/40 px-2 py-1.5">
+                  Usa "Ajuste contable" SOLO para correcciones de saldo (errores de tipeo, cuadre fin de mes). Para gastos sin factura usa "Gasto" con el toggle "Sin factura".
+                </div>
+              )}
             </Field>
           </div>
 

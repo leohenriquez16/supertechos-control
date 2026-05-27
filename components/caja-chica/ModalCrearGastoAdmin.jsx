@@ -50,6 +50,9 @@ export default function ModalCrearGastoAdmin({ usuario, data, onCerrar, onCreado
     proyectoId: '',
     empresaReceptora: '',
     sinFactura: false,
+    // v8.19.9: para tipo='ajuste'. -1 = SALIDA (gasto sin factura, lo común);
+    //   +1 = ENTRADA (admin agrega dinero, raro pero válido).
+    signoAjuste: -1,
   });
   const [foto, setFoto] = useState(null); // { dataUrl, name }
   const [guardando, setGuardando] = useState(false);
@@ -88,6 +91,9 @@ export default function ModalCrearGastoAdmin({ usuario, data, onCerrar, onCreado
         tipo: campos.tipo,
         fecha: campos.fecha,
         monto: Number(campos.monto),
+        // v8.19.9: solo aplica a 'ajuste'. -1 = salida (gasto sin factura),
+        //   +1 = entrada (admin agrega dinero).
+        ...(campos.tipo === 'ajuste' ? { signoAjuste: Number(campos.signoAjuste) || -1 } : {}),
         proveedor: campos.proveedor || null,
         rnc: rncLimpio ? formatRNC(rncLimpio) : null,
         concepto: campos.concepto || null,
@@ -158,6 +164,40 @@ export default function ModalCrearGastoAdmin({ usuario, data, onCerrar, onCreado
               </select>
             </Field>
           </div>
+
+          {/* v8.19.9: cuando es 'ajuste', preguntar si suma o resta del saldo */}
+          {campos.tipo === 'ajuste' && (
+            <Field label="Dirección del ajuste *" icon={<FileText className="w-3 h-3" />}>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => set('signoAjuste', -1)}
+                  className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider border-2 ${
+                    Number(campos.signoAjuste) === -1
+                      ? 'bg-red-600 border-red-600 text-white'
+                      : 'bg-zinc-900 border-zinc-700 text-zinc-300 hover:border-red-600'
+                  }`}
+                >
+                  − Resta del saldo (gasto sin factura)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => set('signoAjuste', 1)}
+                  className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider border-2 ${
+                    Number(campos.signoAjuste) === 1
+                      ? 'bg-green-600 border-green-600 text-white'
+                      : 'bg-zinc-900 border-zinc-700 text-zinc-300 hover:border-green-600'
+                  }`}
+                >
+                  + Suma al saldo (entrada extra)
+                </button>
+              </div>
+              <div className="text-[10px] text-zinc-500 mt-1">
+                Por defecto es <strong>resta</strong> (lo común para gastos sin factura).
+                Marca <strong>suma</strong> solo si estás agregando dinero al saldo del maestro.
+              </div>
+            </Field>
+          )}
 
           {/* Fecha + Monto */}
           <div className="grid grid-cols-2 gap-2">

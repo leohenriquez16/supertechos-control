@@ -90,7 +90,7 @@ function SurveysList({ usuario, onAbrirProyecto }) {
           onClick={() => setModalNuevoAbierto(true)}
           className="bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-wider px-4 py-2 text-xs flex items-center gap-1 flex-shrink-0"
         >
-          <Plus className="w-3 h-3" /> Nuevo proyecto
+          <Plus className="w-3 h-3" /> Nuevo levantamiento
         </button>
       </div>
 
@@ -123,7 +123,7 @@ function SurveysList({ usuario, onAbrirProyecto }) {
         <div className="bg-zinc-950 border border-zinc-800 p-8 text-center text-zinc-500">
           <MapPin className="w-12 h-12 mx-auto mb-3 opacity-30" />
           <div className="font-bold mb-1">Aún no hay proyectos de levantamiento</div>
-          <div className="text-xs">Crea el primero desde "Nuevo proyecto" (próximamente)</div>
+          <div className="text-xs">Crea el primero desde "Nuevo levantamiento"</div>
         </div>
       )}
 

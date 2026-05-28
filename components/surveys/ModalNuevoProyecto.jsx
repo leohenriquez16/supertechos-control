@@ -1,6 +1,6 @@
 'use client';
 
-// v8.19.8: Wizard "Nuevo proyecto" — admin crea proyectos de surveys.
+// v8.19.8: Wizard "Nuevo levantamiento" — admin crea proyectos de surveys.
 //
 // 3 pasos:
 //   1. Tipo de servicio (template) + empresa
@@ -176,11 +176,11 @@ export default function ModalNuevoProyecto({ usuario, onCerrar, onCreado }) {
         <div className="border-b-2 border-red-600 px-4 py-3 flex items-center justify-between sticky top-0 bg-zinc-950 z-10">
           <div>
             <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
-              Nuevo proyecto · paso {paso} de 3
+              Nuevo levantamiento · paso {paso} de 3
             </div>
             <div className="font-black text-sm">
               {paso === 1 && 'Tipo de servicio'}
-              {paso === 2 && 'Datos del proyecto'}
+              {paso === 2 && 'Datos del levantamiento'}
               {paso === 3 && 'Sitios a levantar'}
             </div>
           </div>
@@ -341,12 +341,12 @@ function Paso1({ templates, loading, templateId, setTemplateId, company, setComp
 function Paso2({ name, setName, clientName, setClientName, description, setDescription }) {
   return (
     <div className="space-y-3">
-      <Field label="Nombre del proyecto" required>
+      <Field label="Nombre del levantamiento" required>
         <input
           type="text"
           value={name}
           onChange={e => setName(e.target.value)}
-          placeholder="Ej: Banreservas Pintura 2026"
+          placeholder="Ej: Techo Edificio Esperanza, Banreservas Pintura 2026…"
           autoFocus
           className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-sm text-white"
         />

@@ -5954,7 +5954,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
 
       {tab === 'avance' && <TabAvance proyecto={proyecto} reportes={data.reportes} sistema={sistema} sistemas={data.sistemas} esSupervisor={esSupervisor} onEliminarReporte={onEliminarReporte} onEditarReporte={onEditarReporte} data={data} usuario={usuario} />}
       {tab === 'info' && <TabInfo proyecto={proyecto} clientes={data.clientes || []} contactos={data.contactos || []} documentos={data.documentos || []} sistemas={data.sistemas || {}} usuario={usuario} personal={data.personal} esAdmin={esAdmin} esSupervisor={esSupervisor} onRecargar={onRecargar} />}
-      {tab === 'jornada' && <TabAsistencia usuario={usuario} proyecto={proyecto} personal={data.personal} checkins={data.checkins || []} esAdmin={esAdmin} onActualizarProyecto={onActualizarProyecto} onRecargar={onRecargar} onEliminarJornada={onEliminarJornada} TabJornada={TabJornada} />}
+      {/* v8.19.13: removida rama muerta `tab === 'jornada'` (sin botón, inalcanzable). */}
       {tab === 'asistencia' && <TabAsistencia usuario={usuario} proyecto={proyecto} personal={data.personal} checkins={data.checkins || []} esAdmin={esAdmin} onActualizarProyecto={onActualizarProyecto} onRecargar={onRecargar} onEliminarJornada={onEliminarJornada} TabJornada={TabJornada} />}
       {tab === 'equipo' && <TabEquipoProyecto proyecto={proyecto} data={data} sistema={sistema} />}
       {tab === 'fotos' && <TabFotos usuario={usuario} proyecto={proyecto} />}

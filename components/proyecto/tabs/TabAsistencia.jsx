@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { CheckCircle2, ChevronLeft, ChevronRight, Loader2, Trash2, UserCircle } from 'lucide-react';
 import * as db from '../../../lib/db';
 import { obtenerUbicacion, distanciaMetros, formatDistancia } from '../../../lib/geo';
@@ -12,6 +12,9 @@ export default function TabAsistencia({ usuario, proyecto, personal, checkins, e
   const [fechaRef, setFechaRef] = useState(new Date());
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState('');
+  // v8.19.13: la asistencia real del equipo está en las JORNADAS
+  // (personasPresentesIds), no solo en los check-ins GPS. Las cargamos aquí.
+  const [jornadas, setJornadas] = useState([]);
   const hoyStr = new Date().toISOString().split('T')[0];
   const checkinsProyecto = React.useMemo(() => checkinsDelProyecto(proyecto, checkins), [checkins, proyecto.id]);
   const miCheckinHoy = checkinsProyecto.find(c => c.personaId === usuario.id && c.fecha === hoyStr);
@@ -21,6 +24,16 @@ export default function TabAsistencia({ usuario, proyecto, personal, checkins, e
   }, [proyecto, personal]);
 
   const pausaActiv = pausaActiva(proyecto);
+
+  // v8.19.13: carga de jornadas del proyecto (fuente real de asistencia).
+  const cargarJornadas = useCallback(async () => {
+    try {
+      const js = await db.listarJornadasProyecto(proyecto.id);
+      setJornadas(js || []);
+    } catch (e) { console.warn('No se pudieron cargar jornadas:', e?.message); }
+  }, [proyecto.id]);
+  // Recarga al montar / cambiar proyecto, y cuando el padre refresca check-ins.
+  useEffect(() => { cargarJornadas(); }, [cargarJornadas, checkins]);
 
   const hacerCheckin = async () => {
     if (miCheckinHoy) return;
@@ -86,8 +99,46 @@ export default function TabAsistencia({ usuario, proyecto, personal, checkins, e
 
   const checkinsRango = checkinsProyecto.filter(c => c.fecha >= rangos.desde && c.fecha <= rangos.hasta);
 
-  // Días únicos con check-in en rango
-  const diasConTrabajo = new Set(checkinsRango.map(c => c.fecha));
+  // v8.19.13: presencia real por día = unión de personas en la JORNADA
+  // (personasPresentesIds) + quienes hicieron check-in GPS ese día.
+  const presenciaPorDia = useMemo(() => {
+    const map = new Map(); // fecha -> Set(personaId)
+    for (const j of (jornadas || [])) {
+      if (!j.fecha) continue;
+      const set = map.get(j.fecha) || new Set();
+      (j.personasPresentesIds || []).forEach(id => { if (id) set.add(id); });
+      map.set(j.fecha, set);
+    }
+    for (const c of checkinsProyecto) {
+      if (!c.fecha) continue;
+      const set = map.get(c.fecha) || new Set();
+      if (c.personaId) set.add(c.personaId);
+      map.set(c.fecha, set);
+    }
+    return map;
+  }, [jornadas, checkinsProyecto]);
+
+  // Días marcados como "doble" en la jornada.
+  const doblePorDia = useMemo(() => {
+    const s = new Set();
+    for (const j of (jornadas || [])) {
+      if (j.diaDoble || j.condicionDia === 'doble') s.add(j.fecha);
+    }
+    return s;
+  }, [jornadas]);
+
+  const personasEnDia = (iso) => (presenciaPorDia.get(iso)?.size || 0);
+
+  // Días únicos con asistencia (jornada con gente o check-in) dentro del rango.
+  const fechasConPresencia = [...presenciaPorDia.keys()].filter(f => f >= rangos.desde && f <= rangos.hasta);
+  const diasConTrabajo = new Set(fechasConPresencia.filter(f => personasEnDia(f) > 0));
+  // Total persona·día = suma de personas presentes en cada día del rango.
+  const totalAsistencias = fechasConPresencia.reduce((acc, f) => acc + personasEnDia(f), 0);
+
+  // Jornada y presentes del día seleccionado (para vista 'día').
+  const jornadaDiaSel = (jornadas || []).find(j => j.fecha === rangos.desde) || null;
+  const presentesDiaSel = [...(presenciaPorDia.get(rangos.desde) || new Set())];
+
   const pausasRango = (proyecto.pausas || []).map(p => ({
     id: p.id,
     desde: p.fechaInicio,
@@ -108,6 +159,7 @@ export default function TabAsistencia({ usuario, proyecto, personal, checkins, e
     else if (vistaRango === 'mes') nueva.setMonth(nueva.getMonth() + delta);
     else nueva.setFullYear(nueva.getFullYear() + delta);
     setFechaRef(nueva);
+    cargarJornadas(); // refresca por si se editaron jornadas en esta sesión
   };
 
   // === Render ===
@@ -199,8 +251,9 @@ export default function TabAsistencia({ usuario, proyecto, personal, checkins, e
           <div className="text-xl font-black text-yellow-400">{diasPausa}</div>
         </div>
         <div className="bg-zinc-900 border border-zinc-800 p-3 text-center">
-          <div className="text-[9px] text-zinc-500 uppercase">Check-ins</div>
-          <div className="text-xl font-black text-blue-400">{checkinsRango.length}</div>
+          <div className="text-[9px] text-zinc-500 uppercase">Asistencias</div>
+          <div className="text-xl font-black text-blue-400">{totalAsistencias}</div>
+          <div className="text-[8px] text-zinc-600 leading-tight">persona·día{checkinsRango.length ? ` · ${checkinsRango.length} GPS` : ''}</div>
         </div>
         <div className="bg-zinc-900 border border-zinc-800 p-3 text-center">
           <div className="text-[9px] text-zinc-500 uppercase">Total días</div>
@@ -209,8 +262,8 @@ export default function TabAsistencia({ usuario, proyecto, personal, checkins, e
       </div>
 
       {/* Vista según rango */}
-      {vistaRango === 'mes' && <CalendarioMes fechaRef={fechaRef} diasConTrabajo={diasConTrabajo} esFechaPausa={esFechaPausa} checkinsRango={checkinsRango} personal={personal} />}
-      {vistaRango === 'dia' && <VistaDiaCheckins fecha={rangos.desde} checkinsDelDia={checkinsRango} personasDelProyecto={personasDelProyecto} personal={personal} esPausa={esFechaPausa(rangos.desde)} esAdmin={esAdmin} onRecargar={onRecargar} />}
+      {vistaRango === 'mes' && <CalendarioMes fechaRef={fechaRef} esFechaPausa={esFechaPausa} presenciaPorDia={presenciaPorDia} doblePorDia={doblePorDia} />}
+      {vistaRango === 'dia' && <VistaDiaCheckins fecha={rangos.desde} checkinsDelDia={checkinsRango} presentesIds={presentesDiaSel} jornadaDia={jornadaDiaSel} personasDelProyecto={personasDelProyecto} personal={personal} esPausa={esFechaPausa(rangos.desde)} esDoble={doblePorDia.has(rangos.desde)} esAdmin={esAdmin} onRecargar={onRecargar} />}
       {vistaRango === 'año' && <VistaAño año={fechaRef.getFullYear()} diasConTrabajo={diasConTrabajo} esFechaPausa={esFechaPausa} />}
 
       {/* Leyenda */}
@@ -224,7 +277,7 @@ export default function TabAsistencia({ usuario, proyecto, personal, checkins, e
   );
 }
 
-function CalendarioMes({ fechaRef, diasConTrabajo, esFechaPausa, checkinsRango, personal }) {
+function CalendarioMes({ fechaRef, esFechaPausa, presenciaPorDia, doblePorDia }) {
   const y = fechaRef.getFullYear();
   const m = fechaRef.getMonth();
   const primero = new Date(y, m, 1);
@@ -248,10 +301,11 @@ function CalendarioMes({ fechaRef, diasConTrabajo, esFechaPausa, checkinsRango, 
       <div className="grid grid-cols-7 gap-1">
         {dias.map((dia, i) => {
           if (!dia) return <div key={i} />;
-          const trabajo = diasConTrabajo.has(dia.iso);
+          const nPersonas = presenciaPorDia.get(dia.iso)?.size || 0;
+          const trabajo = nPersonas > 0;
           const pausa = esFechaPausa(dia.iso);
           const esHoy = dia.iso === hoyStr;
-          const checkinsDia = checkinsRango.filter(c => c.fecha === dia.iso);
+          const esDoble = doblePorDia.has(dia.iso);
           let bg = 'bg-zinc-800 text-zinc-600';
           if (pausa) bg = 'bg-yellow-900/40 text-yellow-200 border border-yellow-700';
           else if (trabajo) bg = 'bg-green-900/40 text-green-200 border border-green-700';
@@ -259,11 +313,14 @@ function CalendarioMes({ fechaRef, diasConTrabajo, esFechaPausa, checkinsRango, 
             <div
               key={i}
               className={`${bg} ${esHoy ? 'ring-2 ring-red-500' : ''} aspect-square p-1 text-center relative`}
-              title={`${formatFecha(dia.iso)}${checkinsDia.length ? ` · ${checkinsDia.length} check-in` : ''}`}
+              title={`${formatFecha(dia.iso)}${nPersonas ? ` · ${nPersonas} persona${nPersonas !== 1 ? 's' : ''}` : ''}${esDoble ? ' · día doble' : ''}`}
             >
               <div className="text-xs font-bold">{dia.num}</div>
-              {checkinsDia.length > 0 && (
-                <div className="text-[8px] text-green-300">{checkinsDia.length}👤</div>
+              {nPersonas > 0 && (
+                <div className="text-[8px] text-green-300">{nPersonas}👤</div>
+              )}
+              {esDoble && (
+                <div className="absolute top-0 right-0.5 text-[7px] text-orange-300 font-black">2×</div>
               )}
             </div>
           );
@@ -273,7 +330,7 @@ function CalendarioMes({ fechaRef, diasConTrabajo, esFechaPausa, checkinsRango, 
   );
 }
 
-function VistaDiaCheckins({ fecha, checkinsDelDia, personasDelProyecto, personal, esPausa, esAdmin, onRecargar }) {
+function VistaDiaCheckins({ fecha, checkinsDelDia, presentesIds = [], jornadaDia, personasDelProyecto, personal, esPausa, esDoble, esAdmin, onRecargar }) {
   const eliminarCheckin = async (id) => {
     if (!confirm('¿Eliminar este check-in?')) return;
     try {
@@ -282,6 +339,20 @@ function VistaDiaCheckins({ fecha, checkinsDelDia, personasDelProyecto, personal
     } catch (e) { alert('Error: ' + (e.message || e)); }
   };
 
+  // Mapa personaId -> check-in GPS (si lo hizo)
+  const checkinPorPersona = new Map(checkinsDelDia.map(c => [c.personaId, c]));
+  // Orden: por hora de check-in si existe, luego por nombre
+  const presentesOrdenados = [...presentesIds].sort((a, b) => {
+    const ha = checkinPorPersona.get(a)?.hora || '';
+    const hb = checkinPorPersona.get(b)?.hora || '';
+    if (ha && hb) return ha.localeCompare(hb);
+    if (ha) return -1;
+    if (hb) return 1;
+    const na = (personal.find(p => p.id === a)?.nombre || '');
+    const nb = (personal.find(p => p.id === b)?.nombre || '');
+    return na.localeCompare(nb);
+  });
+
   return (
     <div className="bg-zinc-900 border border-zinc-800 p-3 space-y-2">
       {esPausa && (
@@ -289,40 +360,52 @@ function VistaDiaCheckins({ fecha, checkinsDelDia, personasDelProyecto, personal
           ⏸️ Este día está en pausa del proyecto
         </div>
       )}
+      {esDoble && (
+        <div className="bg-orange-900/20 border border-orange-700 p-2 text-[10px] text-orange-300 font-bold">
+          2× Día doble
+        </div>
+      )}
       <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">
-        {checkinsDelDia.length > 0 ? `${checkinsDelDia.length} persona${checkinsDelDia.length !== 1 ? 's' : ''} en obra` : 'Sin check-ins'}
+        {presentesOrdenados.length > 0 ? `${presentesOrdenados.length} persona${presentesOrdenados.length !== 1 ? 's' : ''} en obra` : 'Sin asistencia'}
       </div>
-      {checkinsDelDia.length === 0 ? (
+      {presentesOrdenados.length === 0 ? (
         <div className="text-xs text-zinc-500 py-4 text-center">Nadie registró asistencia este día.</div>
       ) : (
-        checkinsDelDia.sort((a, b) => (a.hora || '').localeCompare(b.hora || '')).map(c => {
-          const persona = personal.find(p => p.id === c.personaId);
-          const hora = c.hora ? new Date(c.hora).toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' }) : '—';
+        presentesOrdenados.map(pid => {
+          const persona = personal.find(p => p.id === pid);
+          const c = checkinPorPersona.get(pid);
+          const hora = c?.hora ? new Date(c.hora).toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' }) : null;
           return (
-            <div key={c.id} className="bg-zinc-950 border border-zinc-800 p-2 flex items-center gap-2">
+            <div key={pid} className="bg-zinc-950 border border-zinc-800 p-2 flex items-center gap-2">
               {persona?.foto2x2 ? <img src={persona.foto2x2} alt="" className="w-8 h-8 object-cover border border-zinc-700" /> : <UserCircle className="w-8 h-8 text-zinc-500" />}
               <div className="flex-1 min-w-0">
-                <div className="text-xs font-bold truncate">{persona?.nombre || c.personaId}</div>
+                <div className="text-xs font-bold truncate">{persona?.nombre || pid}</div>
                 <div className="text-[10px] text-zinc-500">
-                  🕐 {hora}
-                  {c.ubicacionDistanciaM != null && (
-                    <span className={c.ubicacionDistanciaM < 200 ? ' text-green-400' : ' text-yellow-400'}> · {c.ubicacionDistanciaM}m</span>
+                  {c ? (
+                    <>
+                      📍 {hora}
+                      {c.ubicacionDistanciaM != null && (
+                        <span className={c.ubicacionDistanciaM < 200 ? ' text-green-400' : ' text-yellow-400'}> · {c.ubicacionDistanciaM}m</span>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-green-400">✓ Presente (jornada)</span>
                   )}
                 </div>
               </div>
-              {esAdmin && (
-                <button onClick={() => eliminarCheckin(c.id)} className="text-zinc-500 hover:text-red-400"><Trash2 className="w-3 h-3" /></button>
+              {esAdmin && c && (
+                <button onClick={() => eliminarCheckin(c.id)} title="Eliminar check-in GPS" className="text-zinc-500 hover:text-red-400"><Trash2 className="w-3 h-3" /></button>
               )}
             </div>
           );
         })
       )}
-      {personasDelProyecto.filter(p => !checkinsDelDia.some(c => c.personaId === p.id)).map(p => (
+      {personasDelProyecto.filter(p => !presentesIds.includes(p.id)).map(p => (
         <div key={p.id} className="bg-zinc-950 border border-zinc-900 p-2 flex items-center gap-2 opacity-50">
           {p.foto2x2 ? <img src={p.foto2x2} alt="" className="w-8 h-8 object-cover border border-zinc-800 grayscale" /> : <UserCircle className="w-8 h-8 text-zinc-700" />}
           <div className="flex-1 min-w-0">
             <div className="text-xs truncate line-through">{p.nombre}</div>
-            <div className="text-[9px] text-zinc-600">Sin check-in</div>
+            <div className="text-[9px] text-zinc-600">Ausente</div>
           </div>
         </div>
       ))}

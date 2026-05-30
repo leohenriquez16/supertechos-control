@@ -59,13 +59,12 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
         setTemplate(t);
 
         // Crear visita nueva. (Iteración futura: reusar visita abierta del site.)
-        // Usamos el auth_user_id del usuario. Si no lo tiene (transition), fallamos
-        // con mensaje claro.
-        const authUserId = await obtenerAuthUserIdActual();
-        if (!authUserId) {
-          throw new Error('No se pudo identificar al levantador. Cierra sesión y vuelve a entrar.');
-        }
-        const v = await crearVisita({ siteId: site.id, surveyorAuthUserId: authUserId });
+        // v8.19.51: el levantador se toma de la persona (authUserId) o de la sesión.
+        // Si no hay id válido, NO bloqueamos — la visita se crea sin levantador
+        // ligado a auth (surveyor_id es nullable). crearVisita reintenta sin él si
+        // el FK falla (entornos con auth.users desfasado).
+        const authUserId = (usuario && usuario.authUserId) || await obtenerAuthUserIdActual();
+        const v = await crearVisita({ siteId: site.id, surveyorAuthUserId: authUserId || null });
         if (cancelado) return;
         setVisit(v);
         setGeneralData(v.general_data || {});

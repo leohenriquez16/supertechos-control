@@ -134,6 +134,8 @@ export default function VistaGarantias({ data, usuario, onVolver, onVerProyecto 
     window.open(`https://wa.me/${tel}?text=${encodeURIComponent(msg)}`, '_blank');
   };
   const marcarRealizado = async (m) => { try { await db.actualizarMantenimiento(m.id, { estado: 'realizado' }); setReload(r => r + 1); } catch (e) { alert('Error: ' + (e.message || e)); } };
+  const cambiarEstadoRec = async (id, estado) => { try { await db.actualizarReclamacion(id, { estado }); setReload(r => r + 1); } catch (e) { alert('Error: ' + (e.message || e)); } };
+  const recCliente = (r) => clienteDe(r.clienteId)?.nombre || proyById(r.proyectoId)?.cliente || '—';
 
   // --- Render de una garantía (fila compacta) ---
   const FilaGarantia = (g) => {
@@ -179,6 +181,7 @@ export default function VistaGarantias({ data, usuario, onVolver, onVerProyecto 
     { k: 'ubicacion', label: 'Por ubicación' },
     { k: 'mapa', label: 'Mapa' },
     { k: 'mantenimientos', label: `Mantenimientos (${proximos.length})` },
+    { k: 'reclamaciones', label: `Reclamaciones (${reclamaciones.filter(r => r.estado !== 'cerrada' && r.estado !== 'resuelta').length})` },
   ];
 
   // Detalle de ubicación (360 de la localidad)
@@ -357,7 +360,7 @@ export default function VistaGarantias({ data, usuario, onVolver, onVerProyecto 
             </div>
           );
         })()
-      ) : (
+      ) : tab === 'mantenimientos' ? (
         // Mantenimientos
         proximos.length === 0 ? (
           <div className="bg-zinc-950 border border-zinc-800 rounded-card p-8 text-center text-zinc-500">
@@ -428,6 +431,51 @@ export default function VistaGarantias({ data, usuario, onVolver, onVerProyecto 
                 </div>
               );
             })()}
+          </div>
+        )
+      ) : (
+        // Reclamaciones (todas, agrupadas por estado)
+        reclamaciones.length === 0 ? (
+          <div className="bg-zinc-950 border border-zinc-800 rounded-card p-8 text-center text-zinc-500">
+            <div className="font-bold mb-1">Sin reclamaciones</div>
+            <div className="text-xs">Se abren desde el detalle de una ubicación, o las traerá el import de Odoo. Pronto: formulario público para que el cliente la abra por WhatsApp/email.</div>
+          </div>
+        ) : (
+          <div className="space-y-5">
+            {[
+              { e: 'abierta', label: 'Abiertas', cls: 'text-amber-400' },
+              { e: 'en_proceso', label: 'En proceso', cls: 'text-blue-400' },
+              { e: 'resuelta', label: 'Resueltas', cls: 'text-green-400' },
+              { e: 'cerrada', label: 'Cerradas', cls: 'text-zinc-400' },
+              { e: 'rechazada', label: 'Rechazadas', cls: 'text-red-400' },
+            ].map(sec => {
+              const items = reclamaciones.filter(r => r.estado === sec.e);
+              if (items.length === 0) return null;
+              return (
+                <div key={sec.e} className="space-y-2">
+                  <div className={`text-[11px] uppercase tracking-widest font-bold ${sec.cls}`}>{sec.label} ({items.length})</div>
+                  {items.map(r => (
+                    <div key={r.id} className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold">{recCliente(r)}</span>
+                        {r.referenciaCotizacion && <span className="text-[10px] font-mono text-zinc-500">{r.referenciaCotizacion}</span>}
+                        {ubic(r.ubicacionId)?.nombre && <span className="text-[10px] text-zinc-500">· {ubic(r.ubicacionId).nombre}</span>}
+                        <span className="text-[9px] uppercase text-zinc-600">· {r.canal}</span>
+                        <span className="text-[10px] text-zinc-600">· {fmtFecha(r.fechaApertura)}</span>
+                      </div>
+                      <div className="text-sm text-zinc-300 mt-1">{r.descripcion}</div>
+                      <div className="flex gap-1 mt-2">
+                        {r.estado === 'abierta' && <button onClick={() => cambiarEstadoRec(r.id, 'en_proceso')} className="text-[10px] bg-blue-900/50 text-blue-200 hover:bg-blue-800/60 px-2 py-1 rounded-card font-bold uppercase">En proceso</button>}
+                        {(r.estado === 'abierta' || r.estado === 'en_proceso') && <button onClick={() => cambiarEstadoRec(r.id, 'resuelta')} className="text-[10px] bg-green-900/50 text-green-200 hover:bg-green-800/60 px-2 py-1 rounded-card font-bold uppercase">Resuelta</button>}
+                        {r.estado === 'resuelta' && <button onClick={() => cambiarEstadoRec(r.id, 'cerrada')} className="text-[10px] bg-zinc-800 text-zinc-300 hover:bg-zinc-700 px-2 py-1 rounded-card font-bold uppercase">Cerrar</button>}
+                        {(r.estado === 'abierta' || r.estado === 'en_proceso') && <button onClick={() => cambiarEstadoRec(r.id, 'rechazada')} className="text-[10px] bg-zinc-800 text-zinc-400 hover:bg-red-900/50 hover:text-red-300 px-2 py-1 rounded-card font-bold uppercase">Rechazar</button>}
+                        {r.proyectoId && onVerProyecto && <button onClick={() => { const p = proyById(r.proyectoId); if (p) onVerProyecto(p); }} className="text-[10px] text-red-400 hover:underline ml-auto">Ver proyecto →</button>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
           </div>
         )
       )}

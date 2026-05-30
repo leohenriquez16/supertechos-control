@@ -76,13 +76,35 @@ export default function VistaGarantias({ data, usuario, onVolver, onVerProyecto 
     [mantenimientos]);
 
   const garantiaDe = (id) => garantias.find(g => g.id === id);
+  const proyById = (id) => (data.proyectos || []).find(p => p.id === id);
+  // Resuelve el nombre del cliente: por clienteId, o vía el proyecto de la garantía.
+  const clienteDeGarantia = (g) => {
+    if (!g) return '—';
+    const c = (data.clientes || []).find(x => x.id === g.clienteId);
+    if (c) return c.nombre;
+    const p = proyById(g.proyectoId);
+    return p?.cliente || '—';
+  };
+
+  // Agrupa los mantenimientos próximos por urgencia.
+  const buckets = useMemo(() => {
+    const b = { vencidos: [], prox90: [], futuro: [] };
+    for (const m of proximos) {
+      const d = diasHasta(m.fechaProgramada);
+      if (d != null && d < 0) b.vencidos.push(m);
+      else if (d != null && d <= 90) b.prox90.push(m);
+      else b.futuro.push(m);
+    }
+    return b;
+  }, [proximos]);
 
   const recordarWhatsApp = (m) => {
     const g = garantiaDe(m.garantiaId);
-    const cli = clienteDe(m.clienteId);
+    const cli = clienteDe(g?.clienteId);
     const u = ubic(m.ubicacionId);
-    const tel = (u?.contactoTelefono || cli?.telefonoPrincipal || '').replace(/\D/g, '').replace(/^(?!1)(8[024]9)/, '1$1');
-    const msg = `Hola${cli?.nombre ? ' ' + cli.nombre : ''}, le saluda Super Techos. Su sistema impermeabilizante${g?.referenciaCotizacion ? ` (cot. ${g.referenciaCotizacion})` : ''}${u?.nombre ? ` en ${u.nombre}` : ''} tiene programado un mantenimiento de inspección para el ${fmtFecha(m.fechaProgramada)}. ¿Coordinamos la visita?`;
+    const nombre = clienteDeGarantia(g);
+    const tel = (u?.contactoTelefono || cli?.telefonoPrincipal || proyById(g?.proyectoId)?.contactoClienteTelefono || '').replace(/\D/g, '').replace(/^(?!1)(8[024]9)/, '1$1');
+    const msg = `Hola${nombre && nombre !== '—' ? ' ' + nombre : ''}, le saluda Super Techos. Su sistema impermeabilizante${g?.referenciaCotizacion ? ` (cot. ${g.referenciaCotizacion})` : ''}${u?.nombre ? ` en ${u.nombre}` : ''} tiene programado un mantenimiento de inspección para el ${fmtFecha(m.fechaProgramada)}. ¿Coordinamos la visita?`;
     window.open(`https://wa.me/${tel}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
@@ -128,7 +150,7 @@ export default function VistaGarantias({ data, usuario, onVolver, onVerProyecto 
                   <div key={g.id} className="bg-zinc-900 border border-zinc-800 rounded-card p-3 flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-bold">{nombreCliente(g.clienteId)}</span>
+                        <span className="font-bold">{clienteDeGarantia(g)}</span>
                         {g.referenciaCotizacion && <span className="text-[10px] font-mono text-zinc-500">{g.referenciaCotizacion}</span>}
                         <span className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 border rounded-full ${est.cls}`}>{est.label}</span>
                       </div>
@@ -151,39 +173,50 @@ export default function VistaGarantias({ data, usuario, onVolver, onVerProyecto 
           )}
         </>
       ) : (
-        // Mantenimientos próximos
+        // Mantenimientos próximos, agrupados por urgencia
         proximos.length === 0 ? (
           <div className="bg-zinc-950 border border-zinc-800 rounded-card p-8 text-center text-zinc-500">
             <Wrench className="w-12 h-12 mx-auto mb-3 opacity-30" />
             <div className="font-bold mb-1">Sin mantenimientos pendientes</div>
-            <div className="text-xs">Se generan automáticamente según la frecuencia del sistema de cada garantía.</div>
+            <div className="text-xs">Se generan según la periodicidad elegida al entregar cada proyecto.</div>
           </div>
         ) : (
-          <div className="space-y-2">
-            {proximos.map(m => {
-              const g = garantiaDe(m.garantiaId);
-              const d = diasHasta(m.fechaProgramada);
-              const vencido = m.estado === 'vencido' || (d != null && d < 0);
-              const u = ubic(m.ubicacionId);
-              return (
-                <div key={m.id} className={`bg-zinc-900 border rounded-card p-3 flex items-center justify-between gap-3 ${vencido ? 'border-red-800/60' : d != null && d <= 30 ? 'border-amber-700/50' : 'border-zinc-800'}`}>
-                  <div className="min-w-0 flex-1">
-                    <div className="font-bold flex items-center gap-2">
-                      <Calendar className="w-3.5 h-3.5 text-red-500" />
-                      {fmtFecha(m.fechaProgramada)}
-                      {vencido ? <span className="text-[9px] text-red-400 uppercase font-black">vencido</span> : d != null && d <= 30 && <span className="text-[9px] text-amber-400 uppercase font-black">en {d}d</span>}
+          <div className="space-y-5">
+            {[
+              { key: 'vencidos', label: '⚠ Vencidos', items: buckets.vencidos, cls: 'text-red-400' },
+              { key: 'prox90', label: 'Próximos 90 días', items: buckets.prox90, cls: 'text-amber-400' },
+              { key: 'futuro', label: 'Más adelante', items: buckets.futuro, cls: 'text-zinc-400' },
+            ].filter(s => s.items.length > 0).map(sec => (
+              <div key={sec.key} className="space-y-2">
+                <div className={`text-[11px] uppercase tracking-widest font-bold ${sec.cls}`}>{sec.label} ({sec.items.length})</div>
+                {sec.items.map(m => {
+                  const g = garantiaDe(m.garantiaId);
+                  const d = diasHasta(m.fechaProgramada);
+                  const vencido = m.estado === 'vencido' || (d != null && d < 0);
+                  const u = ubic(m.ubicacionId);
+                  const p = proyById(g?.proyectoId);
+                  return (
+                    <div key={m.id} className={`bg-zinc-900 border rounded-card p-3 flex items-center justify-between gap-3 ${vencido ? 'border-red-800/60' : d != null && d <= 30 ? 'border-amber-700/50' : 'border-zinc-800'}`}>
+                      <div className="min-w-0 flex-1">
+                        <div className="font-bold flex items-center gap-2">
+                          <Calendar className="w-3.5 h-3.5 text-red-500" />
+                          {fmtFecha(m.fechaProgramada)}
+                          {vencido ? <span className="text-[9px] text-red-400 uppercase font-black">vencido</span> : d != null && d <= 30 && <span className="text-[9px] text-amber-400 uppercase font-black">en {d}d</span>}
+                        </div>
+                        <div className="text-xs text-zinc-300 mt-0.5 truncate font-bold">{clienteDeGarantia(g)}</div>
+                        <div className="text-[10px] text-zinc-500 truncate">
+                          {g?.referenciaCotizacion ? `${g.referenciaCotizacion} · ` : (p?.referenciaOdoo ? `${p.referenciaOdoo} · ` : '')}{u?.nombre || p?.referenciaProyecto || ''}{g?.sistemaNombre ? ` · ${g.sistemaNombre}` : ''}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button onClick={() => recordarWhatsApp(m)} className="bg-green-700 hover:bg-green-600 text-white text-[10px] font-bold uppercase px-2 py-1.5 rounded-card flex items-center gap-1" title="Recordar al cliente por WhatsApp"><MessageCircle className="w-3 h-3" /> WS</button>
+                        <button onClick={() => marcarRealizado(m)} className="bg-zinc-800 hover:bg-green-700 text-zinc-300 hover:text-white text-[10px] font-bold uppercase px-2 py-1.5 rounded-card flex items-center gap-1" title="Marcar realizado"><Check className="w-3 h-3" /> Hecho</button>
+                      </div>
                     </div>
-                    <div className="text-xs text-zinc-400 mt-0.5 truncate">
-                      {nombreCliente(m.clienteId)}{u?.nombre ? ` · ${u.nombre}` : ''}{g?.sistemaNombre ? ` · ${g.sistemaNombre}` : ''}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button onClick={() => recordarWhatsApp(m)} className="bg-green-700 hover:bg-green-600 text-white text-[10px] font-bold uppercase px-2 py-1.5 rounded-card flex items-center gap-1" title="Recordar al cliente por WhatsApp"><MessageCircle className="w-3 h-3" /> WS</button>
-                    <button onClick={() => marcarRealizado(m)} className="bg-zinc-800 hover:bg-green-700 text-zinc-300 hover:text-white text-[10px] font-bold uppercase px-2 py-1.5 rounded-card flex items-center gap-1" title="Marcar realizado"><Check className="w-3 h-3" /> Hecho</button>
-                  </div>
-                </div>
-              );
-            })}
+                  );
+                })}
+              </div>
+            ))}
           </div>
         )
       )}

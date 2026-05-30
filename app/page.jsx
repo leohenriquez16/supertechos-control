@@ -12270,11 +12270,23 @@ function ModalCambiarEstado({ proyecto, usuario, personal, onCerrar, onConfirmar
   const [guardando, setGuardando] = useState(false);
   const [numeroFactura, setNumeroFactura] = useState(proyecto.numeroFactura || '');
   const [montoFinal, setMontoFinal] = useState(proyecto.montoFinalCubicado || '');
+  // v8.19.57: al entregar, elegir tipo de garantía + periodicidad de mantenimiento.
+  const [garantiaAnos, setGarantiaAnos] = useState(5);
+  const [mantMeses, setMantMeses] = useState(12);
+  const [garantiaCobertura, setGarantiaCobertura] = useState('Garantía total del sistema');
 
   const confirmar = async () => {
     setGuardando(true);
     const extra = {};
-    if (estadoNuevo === 'finalizado_recibido_conforme' && montoFinal) extra.monto_final_cubicado = parseFloat(montoFinal);
+    if (estadoNuevo === 'finalizado_recibido_conforme') {
+      if (montoFinal) extra.monto_final_cubicado = parseFloat(montoFinal);
+      // _garantia se procesa en db.cambiarEstadoProyecto (no se escribe en proyectos).
+      extra._garantia = {
+        duracionMeses: Math.round((parseFloat(garantiaAnos) || 0) * 12),
+        cadaMeses: parseInt(mantMeses) || null,
+        cobertura: garantiaCobertura || null,
+      };
+    }
     if (estadoNuevo === 'facturado' && numeroFactura) extra.numero_factura = numeroFactura;
     await onConfirmar(estadoNuevo, nota, extra);
     setGuardando(false);
@@ -12292,7 +12304,33 @@ function ModalCambiarEstado({ proyecto, usuario, personal, onCerrar, onConfirmar
             ))}
           </div>
         </Campo>
-        {estadoNuevo === 'finalizado_recibido_conforme' && <Campo label="Monto final (RD$)"><Input type="number" value={montoFinal} onChange={setMontoFinal} placeholder="Monto medido/acordado" /></Campo>}
+        {estadoNuevo === 'finalizado_recibido_conforme' && (
+          <>
+            <Campo label="Monto final (RD$)"><Input type="number" value={montoFinal} onChange={setMontoFinal} placeholder="Monto medido/acordado" /></Campo>
+            <div className="bg-zinc-950 border border-green-800/60 rounded-card p-3 space-y-2">
+              <div className="text-[10px] tracking-widest uppercase text-green-400 font-bold flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> Garantía que arranca al entregar</div>
+              <div>
+                <div className="text-[10px] uppercase text-zinc-500 mb-1">Duración</div>
+                <div className="flex gap-1 flex-wrap">
+                  {[1, 3, 5, 10].map(a => (
+                    <button key={a} onClick={() => setGarantiaAnos(a)} className={`px-3 py-1.5 text-xs font-bold rounded-card border ${Number(garantiaAnos) === a ? 'bg-green-700 border-green-600 text-white' : 'bg-zinc-900 border-zinc-800 text-zinc-400'}`}>{a} año{a > 1 ? 's' : ''}</button>
+                  ))}
+                  <input type="number" value={garantiaAnos} onChange={e => setGarantiaAnos(e.target.value)} className="w-16 bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1.5 text-xs text-white text-center" title="Años (personalizado)" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <div className="text-[10px] uppercase text-zinc-500 mb-1">Mantenimiento cada (meses)</div>
+                  <input type="number" value={mantMeses} onChange={e => setMantMeses(e.target.value)} placeholder="12 (0 = sin mantenimiento)" className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1.5 text-xs text-white" />
+                </div>
+                <div>
+                  <div className="text-[10px] uppercase text-zinc-500 mb-1">Cobertura</div>
+                  <input value={garantiaCobertura} onChange={e => setGarantiaCobertura(e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1.5 text-xs text-white" />
+                </div>
+              </div>
+            </div>
+          </>
+        )}
         {estadoNuevo === 'facturado' && <Campo label="Número de factura"><Input value={numeroFactura} onChange={setNumeroFactura} placeholder="B01-..." /></Campo>}
         <Campo label="Nota (opcional)"><textarea value={nota} onChange={e => setNota(e.target.value)} rows={2} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm" /></Campo>
         <div className="flex gap-2"><button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button><button onClick={confirmar} disabled={guardando || estadoNuevo === proyecto.estado} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-3 flex items-center justify-center gap-1">{guardando ? <Loader2 className="w-3 h-3 animate-spin" /> : <><Save className="w-3 h-3" /> Confirmar</>}</button></div>

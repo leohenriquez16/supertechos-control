@@ -9527,6 +9527,7 @@ function GaleriaGlobal({ usuario, data, onVolver }) {
   };
 
   // v8.10.14: filtrar por búsqueda (cotización + cliente + referencia)
+  // v8.19.44: además, buscar por nombre de sistema (primario del proyecto + el de cada área).
   const fotosFiltradas = busqueda.trim()
     ? fotos.filter(f => {
         const proy = data.proyectos.find(p => p.id === f.proyectoId);
@@ -9536,7 +9537,16 @@ function GaleriaGlobal({ usuario, data, onVolver }) {
         const cliente = (proy.cliente || '').toLowerCase();
         const nombre = (proy.nombre || '').toLowerCase();
         const refProy = (proy.referenciaProyecto || '').toLowerCase();
-        return ref.includes(q) || cliente.includes(q) || nombre.includes(q) || refProy.includes(q);
+        // Sistemas asociados al proyecto (primario + por área), por nombre.
+        const sistemasNombres = new Set();
+        const sisPrim = data.sistemas[proy.sistema];
+        if (sisPrim?.nombre) sistemasNombres.add(sisPrim.nombre.toLowerCase());
+        (proy.areas || []).forEach(a => {
+          const s = data.sistemas[a.sistemaId];
+          if (s?.nombre) sistemasNombres.add(s.nombre.toLowerCase());
+        });
+        const matchSistema = [...sistemasNombres].some(n => n.includes(q));
+        return ref.includes(q) || cliente.includes(q) || nombre.includes(q) || refProy.includes(q) || matchSistema;
       })
     : fotos;
 
@@ -9575,7 +9585,7 @@ function GaleriaGlobal({ usuario, data, onVolver }) {
           type="text"
           value={busqueda}
           onChange={e => setBusqueda(e.target.value)}
-          placeholder="🔍 Buscar por # cotización (ST-C5459), cliente o referencia..."
+          placeholder="🔍 Buscar por # cotización (ST-C5459), cliente, referencia o sistema..."
           className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-4 py-3 text-white placeholder-zinc-600 text-sm"
         />
         {busqueda && (

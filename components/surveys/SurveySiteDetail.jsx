@@ -13,7 +13,8 @@ import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Building, MapPin, Calendar, Clock, FileText, AlertTriangle, Play, ClipboardList, Layers, ChevronDown, Loader2 } from 'lucide-react';
 import QuickActions from './QuickActions';
 import DynamicSurveyForm from './DynamicSurveyForm';
-import { SITE_STATUS, listarVisitasDeSite, listarAreasDeVisita } from '../../lib/surveys';
+import { SITE_STATUS, listarVisitasDeSite, listarAreasDeVisita, obtenerTemplateSurvey } from '../../lib/surveys';
+import { imprimirLevantamiento } from './imprimirLevantamiento';
 
 export default function SurveySiteDetail({ site, proyecto, usuario, onVolver }) {
   const [formAbierto, setFormAbierto] = useState(false);
@@ -140,7 +141,7 @@ export default function SurveySiteDetail({ site, proyecto, usuario, onVolver }) 
       )}
 
       {/* Levantamiento(s) ya capturado(s) — solo lectura */}
-      <LevantamientosRealizados site={site} />
+      <LevantamientosRealizados site={site} proyecto={proyecto} />
 
       {/* CTA: iniciar levantamiento */}
       <div className="pt-2">
@@ -203,11 +204,32 @@ function agruparPorPiso(areas) {
 
 // v8.19.14: vista de solo lectura de los levantamientos ya capturados del site.
 // Lista las visitas y, por cada una, las áreas agrupadas por piso con subtotales.
-function LevantamientosRealizados({ site }) {
+function LevantamientosRealizados({ site, proyecto }) {
   const [loading, setLoading] = useState(true);
   const [visitas, setVisitas] = useState([]);
   const [areasPorVisita, setAreasPorVisita] = useState({});
   const [expandida, setExpandida] = useState(null);
+  const [template, setTemplate] = useState(null);
+  const [generandoPdf, setGenerandoPdf] = useState(null); // id de visita en proceso
+
+  // v8.19.48: cargar el template del proyecto (para el PDF autocontenido).
+  useEffect(() => {
+    let cancel = false;
+    (async () => {
+      if (!proyecto?.template_id) return;
+      try { const t = await obtenerTemplateSurvey(proyecto.template_id); if (!cancel) setTemplate(t); }
+      catch (e) { console.warn('No se pudo cargar template para PDF:', e?.message); }
+    })();
+    return () => { cancel = true; };
+  }, [proyecto?.template_id]);
+
+  const exportarPdf = async (visit) => {
+    setGenerandoPdf(visit.id);
+    try {
+      await imprimirLevantamiento({ proyecto, site, visit, areas: areasPorVisita[visit.id] || [], template });
+    } catch (e) { alert('No se pudo generar el PDF: ' + (e?.message || e)); }
+    setGenerandoPdf(null);
+  };
 
   useEffect(() => {
     let cancel = false;
@@ -276,6 +298,16 @@ function LevantamientosRealizados({ site }) {
             </button>
             {abierta && (
               <div className="border-t border-zinc-800 p-3 space-y-3">
+                {/* v8.19.48: exportar PDF autocontenido del levantamiento */}
+                <button
+                  onClick={() => exportarPdf(v)}
+                  disabled={!template || generandoPdf === v.id}
+                  className="w-full flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-xs font-bold uppercase py-2 rounded-card"
+                  title={!template ? 'Cargando plantilla…' : 'Generar PDF autocontenido'}
+                >
+                  {generandoPdf === v.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+                  {generandoPdf === v.id ? 'Generando…' : 'Exportar PDF del levantamiento'}
+                </button>
                 {grupos.map(({ piso, items, subPared, subTecho }) => (
                   <div key={piso}>
                     <div className="flex items-center justify-between text-[11px] font-black uppercase tracking-wider text-zinc-300 mb-1">

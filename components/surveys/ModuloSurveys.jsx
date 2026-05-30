@@ -14,6 +14,7 @@ import ServiceLineBadge from './ServiceLineBadge';
 import SurveySiteDetail from './SurveySiteDetail';
 import SurveySitesMap from './SurveySitesMap';
 import ModalNuevoProyecto from './ModalNuevoProyecto';
+import ModalLevantamientoSimple from './ModalLevantamientoSimple';
 
 export default function ModuloSurveys({ usuario }) {
   // Subvistas: 'lista' (default) | 'proyecto' | 'site'
@@ -27,6 +28,7 @@ export default function ModuloSurveys({ usuario }) {
         <SurveysList
           usuario={usuario}
           onAbrirProyecto={(p) => { setProyectoActivo(p); setSubvista('proyecto'); }}
+          onAbrirSiteDirecto={(p, s) => { setProyectoActivo(p); setSiteActivo(s); setSubvista('site'); }}
         />
       )}
       {subvista === 'proyecto' && proyectoActivo && (
@@ -51,12 +53,13 @@ export default function ModuloSurveys({ usuario }) {
 // ============================================================
 // LISTA DE PROYECTOS
 // ============================================================
-function SurveysList({ usuario, onAbrirProyecto }) {
+function SurveysList({ usuario, onAbrirProyecto, onAbrirSiteDirecto }) {
   const [loading, setLoading] = useState(true);
   const [proyectos, setProyectos] = useState([]);
   const [errorMsg, setErrorMsg] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
-  const [modalNuevoAbierto, setModalNuevoAbierto] = useState(false);
+  const [modalNuevoAbierto, setModalNuevoAbierto] = useState(false);     // multi-sitio (excepción)
+  const [modalSimpleAbierto, setModalSimpleAbierto] = useState(false);   // levantamiento simple (principal)
 
   useEffect(() => {
     let cancelado = false;
@@ -86,14 +89,37 @@ function SurveysList({ usuario, onAbrirProyecto }) {
             Levantamientos en sitio para cotización (pintura, impermeabilización, aislamiento, pisos).
           </div>
         </div>
-        <button
-          onClick={() => setModalNuevoAbierto(true)}
-          className="bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-wider px-4 py-2 text-xs flex items-center gap-1 flex-shrink-0"
-        >
-          <Plus className="w-3 h-3" /> Nuevo levantamiento
-        </button>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <button
+            onClick={() => setModalSimpleAbierto(true)}
+            className="bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-wider px-4 py-2 text-xs flex items-center gap-1 rounded-card"
+          >
+            <Plus className="w-3 h-3" /> Nuevo levantamiento
+          </button>
+          <button
+            onClick={() => setModalNuevoAbierto(true)}
+            className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold uppercase tracking-wider px-3 py-2 text-[10px] rounded-card"
+            title="Proyecto con varios sitios (ej. Banreservas)"
+          >
+            Multi-sitio
+          </button>
+        </div>
       </div>
 
+      {/* Flujo principal: levantamiento simple (un techo) → entra directo a capturar */}
+      {modalSimpleAbierto && (
+        <ModalLevantamientoSimple
+          usuario={usuario}
+          onCerrar={() => setModalSimpleAbierto(false)}
+          onCreado={({ proyecto, site }) => {
+            setModalSimpleAbierto(false);
+            setReloadKey(k => k + 1);
+            onAbrirSiteDirecto?.(proyecto, site);
+          }}
+        />
+      )}
+
+      {/* Excepción: proyecto multi-sitio (Banreservas) */}
       {modalNuevoAbierto && (
         <ModalNuevoProyecto
           usuario={usuario}
@@ -101,7 +127,6 @@ function SurveysList({ usuario, onAbrirProyecto }) {
           onCreado={(proy) => {
             setModalNuevoAbierto(false);
             setReloadKey(k => k + 1);
-            // Auto-abre el proyecto recién creado
             onAbrirProyecto(proy);
           }}
         />

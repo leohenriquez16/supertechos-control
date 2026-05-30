@@ -8,6 +8,23 @@ body {
   font-family: 'Inter', system-ui, sans-serif;
 }
 
+/* v8.19.38: modernización — redondeo por defecto de los controles
+   interactivos. Solo aplica a los que NO declaran ya una clase rounded-*,
+   así que cualquier `rounded-card` / `rounded-full` inline gana. Esto
+   redondea de un golpe botones, inputs y selects de toda la app. */
+@layer base {
+  button:not([class*="rounded"]),
+  input:not([class*="rounded"]),
+  select:not([class*="rounded"]),
+  textarea:not([class*="rounded"]) {
+    border-radius: 0.5rem;
+  }
+  /* Transición suave global en controles para microinteracciones. */
+  button, input, select, textarea, a {
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  }
+}
+
 /* v8.17.75: animación usada por la hover-card del Kanban */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(-2px); }

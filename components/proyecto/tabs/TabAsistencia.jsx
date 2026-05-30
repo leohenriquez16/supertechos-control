@@ -178,7 +178,7 @@ export default function TabAsistencia({ usuario, proyecto, personal, checkins, e
 
       {/* Botón check-in del usuario actual */}
       {personasDelProyecto.some(p => p.id === usuario.id) && (
-        <div className="bg-zinc-900 border border-zinc-800 p-4">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4">
           <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold mb-2">Mi asistencia de hoy</div>
           {miCheckinHoy ? (
             <div className="bg-green-900/20 border border-green-700 p-3 flex items-center gap-2">
@@ -234,7 +234,7 @@ export default function TabAsistencia({ usuario, proyecto, personal, checkins, e
       </div>
 
       {/* Navegación */}
-      <div className="flex items-center justify-between bg-zinc-900 border border-zinc-800 p-3">
+      <div className="flex items-center justify-between bg-zinc-900 border border-zinc-800 rounded-card p-3">
         <button onClick={() => cambiarFecha(-1)} className="text-zinc-400 hover:text-white"><ChevronLeft className="w-5 h-5" /></button>
         <div className="text-lg font-black uppercase tracking-wide">{rangos.titulo}</div>
         <button onClick={() => cambiarFecha(1)} className="text-zinc-400 hover:text-white"><ChevronRight className="w-5 h-5" /></button>
@@ -242,20 +242,20 @@ export default function TabAsistencia({ usuario, proyecto, personal, checkins, e
 
       {/* Totales */}
       <div className="grid grid-cols-4 gap-2">
-        <div className="bg-zinc-900 border border-zinc-800 p-3 text-center">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 text-center">
           <div className="text-[9px] text-zinc-500 uppercase">Días trabajados</div>
           <div className="text-xl font-black text-green-400">{diasConTrabajo.size}</div>
         </div>
-        <div className="bg-zinc-900 border border-zinc-800 p-3 text-center">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 text-center">
           <div className="text-[9px] text-zinc-500 uppercase">Días pausa</div>
           <div className="text-xl font-black text-yellow-400">{diasPausa}</div>
         </div>
-        <div className="bg-zinc-900 border border-zinc-800 p-3 text-center">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 text-center">
           <div className="text-[9px] text-zinc-500 uppercase">Asistencias</div>
           <div className="text-xl font-black text-blue-400">{totalAsistencias}</div>
           <div className="text-[8px] text-zinc-600 leading-tight">persona·día{checkinsRango.length ? ` · ${checkinsRango.length} GPS` : ''}</div>
         </div>
-        <div className="bg-zinc-900 border border-zinc-800 p-3 text-center">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 text-center">
           <div className="text-[9px] text-zinc-500 uppercase">Total días</div>
           <div className="text-xl font-black">{diasTotalesRango}</div>
         </div>
@@ -292,7 +292,7 @@ function CalendarioMes({ fechaRef, esFechaPausa, presenciaPorDia, doblePorDia })
   }
 
   return (
-    <div className="bg-zinc-900 border border-zinc-800 p-3">
+    <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
       <div className="grid grid-cols-7 gap-1 mb-2">
         {['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((d, i) => (
           <div key={i} className="text-center text-[9px] text-zinc-500 uppercase font-bold py-1">{d}</div>
@@ -354,7 +354,7 @@ function VistaDiaCheckins({ fecha, checkinsDelDia, presentesIds = [], jornadaDia
   });
 
   return (
-    <div className="bg-zinc-900 border border-zinc-800 p-3 space-y-2">
+    <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 space-y-2">
       {esPausa && (
         <div className="bg-yellow-900/20 border border-yellow-700 p-2 text-[10px] text-yellow-300">
           ⏸️ Este día está en pausa del proyecto
@@ -376,7 +376,7 @@ function VistaDiaCheckins({ fecha, checkinsDelDia, presentesIds = [], jornadaDia
           const c = checkinPorPersona.get(pid);
           const hora = c?.hora ? new Date(c.hora).toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' }) : null;
           return (
-            <div key={pid} className="bg-zinc-950 border border-zinc-800 p-2 flex items-center gap-2">
+            <div key={pid} className="bg-zinc-950 border border-zinc-800 rounded-card p-2 flex items-center gap-2">
               {persona?.foto2x2 ? <img src={persona.foto2x2} alt="" className="w-8 h-8 object-cover border border-zinc-700" /> : <UserCircle className="w-8 h-8 text-zinc-500" />}
               <div className="flex-1 min-w-0">
                 <div className="text-xs font-bold truncate">{persona?.nombre || pid}</div>
@@ -416,7 +416,7 @@ function VistaDiaCheckins({ fecha, checkinsDelDia, presentesIds = [], jornadaDia
 function VistaAño({ año, diasConTrabajo, esFechaPausa }) {
   const meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
   return (
-    <div className="bg-zinc-900 border border-zinc-800 p-3 space-y-2">
+    <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 space-y-2">
       {meses.map((nom, m) => {
         const primero = new Date(año, m, 1);
         const ultimoDia = new Date(año, m + 1, 0).getDate();

@@ -331,7 +331,7 @@ export default function ModalCartaAcceso({ proyecto, data, usuario, onCerrar }) 
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-start justify-center p-4 overflow-y-auto">
-      <div className="bg-zinc-900 border-2 border-red-600 max-w-7xl w-full my-8 max-h-[90vh] flex flex-col">
+      <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-7xl w-full my-8 max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="sticky top-0 bg-zinc-900 border-b border-zinc-800 p-4 flex items-center justify-between z-10">
           <div className="flex items-center gap-2">

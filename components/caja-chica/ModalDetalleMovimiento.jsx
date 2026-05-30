@@ -952,7 +952,7 @@ function HistorialCambios({ entradas, personal }) {
             const persona = personal.find(p => p.id === e.usuarioId);
             const nombre = persona?.nombre || e.usuarioNombre || e.usuarioId || '—';
             return (
-              <div key={i} className="bg-zinc-900 border border-zinc-800 px-2.5 py-1.5 text-[11px]">
+              <div key={i} className="bg-zinc-900 border border-zinc-800 rounded-card px-2.5 py-1.5 text-[11px]">
                 <div className="flex items-center justify-between gap-2 mb-0.5">
                   <span className="text-zinc-300 font-bold">{nombre}</span>
                   <span className="text-zinc-500 font-mono">{formatFechaHora(e.fecha)}</span>

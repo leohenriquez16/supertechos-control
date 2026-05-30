@@ -139,7 +139,7 @@ export default function DashboardCajaChica({ data }) {
       )}
 
       {/* Selector de período */}
-      <div className="flex gap-1 bg-zinc-900 border border-zinc-800 p-1 flex-wrap">
+      <div className="flex gap-1 bg-zinc-900 border border-zinc-800 rounded-card p-1 flex-wrap">
         <PeriodoBtn activo={presetPeriodo === 'semana_pasada'} onClick={() => setPresetPeriodo('semana_pasada')}>Semana pasada</PeriodoBtn>
         <PeriodoBtn activo={presetPeriodo === 'semana_actual'} onClick={() => setPresetPeriodo('semana_actual')}>Semana actual</PeriodoBtn>
         <PeriodoBtn activo={presetPeriodo === 'mes_actual'} onClick={() => setPresetPeriodo('mes_actual')}>Mes actual</PeriodoBtn>
@@ -155,7 +155,7 @@ export default function DashboardCajaChica({ data }) {
       </div>
 
       {/* v8.17.12: Gastos por semana (últimas 8 semanas, independiente del filtro de período) */}
-      <div className="bg-zinc-900 border border-zinc-800 p-4">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4">
         <div className="flex items-center justify-between mb-3">
           <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Gastos por semana · últimas 8 semanas</div>
           <div className="text-[10px] text-zinc-500">
@@ -166,7 +166,7 @@ export default function DashboardCajaChica({ data }) {
       </div>
 
       {/* Donut de categorías + leyenda */}
-      <div className="bg-zinc-900 border border-zinc-800 p-4">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4">
         <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-3">Gastos por categoría</div>
         <div className="flex flex-col md:flex-row items-center gap-6">
           <DonutChart
@@ -185,7 +185,7 @@ export default function DashboardCajaChica({ data }) {
 
       {/* Top proveedores y por persona */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div className="bg-zinc-900 border border-zinc-800 p-4">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4">
           <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-3">
             Top proveedores <span className="text-zinc-600 normal-case tracking-normal">({dash.proveedoresUnicos} únicos)</span>
           </div>
@@ -194,7 +194,7 @@ export default function DashboardCajaChica({ data }) {
             <div className="text-[10px] text-yellow-400 mt-2">⚠️ {dash.proveedoresSinRNC} factura{dash.proveedoresSinRNC !== 1 ? 's' : ''} sin RNC del proveedor</div>
           )}
         </div>
-        <div className="bg-zinc-900 border border-zinc-800 p-4">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4">
           <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-3">Gasto por persona</div>
           <BarChartHorizontal data={dash.barrasPersonas} maxBars={10} formatValue={(v) => formatRD(v)} />
         </div>
@@ -202,7 +202,7 @@ export default function DashboardCajaChica({ data }) {
 
       {/* Por proyecto + tendencia diaria */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div className="bg-zinc-900 border border-zinc-800 p-4">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4">
           <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-3">
             Por proyecto <span className="text-zinc-600 normal-case tracking-normal">{dash.sinAsignarAProyecto > 0 ? `· ${dash.sinAsignarAProyecto} sin proyecto` : ''}</span>
           </div>
@@ -212,7 +212,7 @@ export default function DashboardCajaChica({ data }) {
             <BarChartHorizontal data={dash.barrasProyectos} maxBars={8} formatValue={(v) => formatRD(v)} />
           )}
         </div>
-        <div className="bg-zinc-900 border border-zinc-800 p-4">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4">
           <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-3">Tendencia diaria</div>
           <Sparkline data={dash.tendenciaDiaria} />
         </div>
@@ -262,7 +262,7 @@ function BarrasSemanales({ semanas }) {
           const pct = (s.total / max) * 100;
           const tieneData = s.total > 0;
           return (
-            <div key={i} className="flex-1 flex flex-col items-center gap-1 min-w-0">
+            <div key={i} className="flex-1 h-full flex flex-col items-center gap-1 min-w-0">
               <div className="flex-1 w-full flex flex-col justify-end relative group">
                 <div
                   className={`w-full transition-all ${s.esActual ? 'bg-red-500' : 'bg-red-600/70 group-hover:bg-red-500'}`}

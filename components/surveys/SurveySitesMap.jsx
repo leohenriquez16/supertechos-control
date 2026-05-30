@@ -150,7 +150,7 @@ export default function SurveySitesMap({ sites, onAbrirSite }) {
     <div className="space-y-3">
       <div
         ref={containerRef}
-        className="w-full bg-zinc-950 border border-zinc-800"
+        className="w-full bg-zinc-950 border border-zinc-800 rounded-card"
         style={{ height: '500px' }}
       />
       {sinGeo.length > 0 && (

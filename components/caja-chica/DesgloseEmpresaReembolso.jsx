@@ -35,7 +35,7 @@ export default function DesgloseEmpresaReembolso({ movimientos, montoEntrega = n
   }
 
   return (
-    <div className={`bg-zinc-950 border border-zinc-800 ${compacto ? 'p-2' : 'p-3'} text-[11px]`}>
+    <div className={`bg-zinc-950 border border-zinc-800 rounded-card ${compacto ? 'p-2' : 'p-3'} text-[11px]`}>
       <div className={`${compacto ? 'text-[9px]' : 'text-[10px]'} uppercase tracking-widest text-zinc-500 font-bold mb-1.5`}>
         {titulo || 'Desglose por empresa'}
       </div>

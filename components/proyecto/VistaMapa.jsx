@@ -213,7 +213,7 @@ export default function VistaMapa({ proyectos, data, onVerProyecto }) {
             <select
               value={filtroEstado}
               onChange={e => setFiltroEstado(e.target.value)}
-              className="bg-zinc-900 border border-zinc-800 text-xs text-white px-2 py-1 outline-none focus:border-red-600"
+              className="bg-zinc-900 border border-zinc-800 rounded-card text-xs text-white px-2 py-1 outline-none focus:border-red-600"
             >
               <option value="">Todos los estados</option>
               {estadosPresentes.map(e => (
@@ -269,7 +269,7 @@ export default function VistaMapa({ proyectos, data, onVerProyecto }) {
               <button
                 key={p.id}
                 onClick={() => onVerProyecto(p)}
-                className="bg-zinc-900 border border-zinc-800 hover:border-red-600 p-3 text-left flex items-center gap-2 transition-colors"
+                className="bg-zinc-900 border border-zinc-800 rounded-card hover:border-red-600 p-3 text-left flex items-center gap-2 transition-colors"
               >
                 <div
                   className="w-2.5 h-2.5 rounded-full flex-shrink-0"

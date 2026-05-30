@@ -46,7 +46,7 @@ export function useDensidad(key, defecto = 'detallado') {
 
 export default function ToggleDensidad({ valor, onChange, className = '' }) {
   return (
-    <div className={`inline-flex bg-zinc-900 border border-zinc-800 ${className}`}>
+    <div className={`inline-flex bg-zinc-900 border border-zinc-800 rounded-card overflow-hidden ${className}`}>
       <button
         type="button"
         onClick={() => onChange('compacto')}

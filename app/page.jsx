@@ -46,6 +46,7 @@ import Input from '../components/common/Input';
 import AutoFitText from '../components/common/AutoFitText';
 // v8.17.30: toggle de densidad para listas/tablas
 import ToggleDensidad, { useDensidad } from '../components/common/ToggleDensidad';
+import { BadgeEmpresa } from '../components/common/Badge';
 // v8.10.4: ModalEditarReporte extraído
 import ModalEditarReporte from '../components/proyecto/modales/ModalEditarReporte';
 // v8.10.4: ModalReporteAvancePDF extraído (incluye ReportePDFContenido)
@@ -1132,7 +1133,7 @@ export default function App() {
                 <button onClick={salir} className="flex items-center gap-1 text-zinc-400 text-sm">
                   <ArrowLeft className="w-4 h-4" /> Cancelar
                 </button>
-                <div className="bg-zinc-900 border border-zinc-800 p-5">
+                <div className="bg-zinc-900 border border-zinc-800 rounded-card p-5">
                   <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">📋 Reportar avance</div>
                   <h1 className="text-xl font-black mt-1">{proyectoActivo.nombre}</h1>
                   <div className="text-xs text-zinc-400 mt-1">¿Cómo quieres reportar hoy?</div>
@@ -1589,7 +1590,7 @@ function AsistenteIA({ usuario, data }) {
                 onKeyDown={(e) => { if (e.key === 'Enter') enviar(); }}
                 placeholder={grabando ? 'Escuchando...' : 'Pregunta algo...'}
                 disabled={cargando || grabando}
-                className="flex-1 bg-zinc-950 border border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm"
+                className="flex-1 bg-zinc-950 border border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm"
               />
               <button
                 onClick={iniciarGrabacion}
@@ -1671,9 +1672,9 @@ function VistaCategorias({ data, onVolver, onRecargar }) {
         <div className="bg-zinc-900 border-2 border-red-600 p-4 space-y-3">
           <div className="text-[10px] uppercase tracking-widest text-red-500 font-bold">{editando === 'new' ? 'Nueva categoría' : 'Editar'}</div>
           <div className="grid grid-cols-4 gap-2">
-            <input placeholder="📂" value={form.icono} onChange={e => setForm({ ...form, icono: e.target.value })} className="bg-zinc-950 border border-zinc-800 px-2 py-2 text-center text-lg" />
-            <input placeholder="Nombre" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} className="bg-zinc-950 border border-zinc-800 px-3 py-2 col-span-2" />
-            <input type="number" placeholder="Orden" value={form.orden} onChange={e => setForm({ ...form, orden: parseInt(e.target.value) || 0 })} className="bg-zinc-950 border border-zinc-800 px-3 py-2" />
+            <input placeholder="📂" value={form.icono} onChange={e => setForm({ ...form, icono: e.target.value })} className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-2 text-center text-lg" />
+            <input placeholder="Nombre" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} className="bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 col-span-2" />
+            <input type="number" placeholder="Orden" value={form.orden} onChange={e => setForm({ ...form, orden: parseInt(e.target.value) || 0 })} className="bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2" />
           </div>
           <div className="flex gap-2">
             <button onClick={() => { setEditando(null); setForm({ id: '', nombre: '', icono: '📂', orden: 0 }); }} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2">Cancelar</button>
@@ -1690,7 +1691,7 @@ function VistaCategorias({ data, onVolver, onRecargar }) {
         {categorias.map(c => {
           const sistemasCat = sistemasDeCategoria(c.id);
           return (
-            <div key={c.id} className="bg-zinc-900 border border-zinc-800 p-3">
+            <div key={c.id} className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-2xl">{c.icono}</span>
                 <div className="flex-1">
@@ -1703,7 +1704,7 @@ function VistaCategorias({ data, onVolver, onRecargar }) {
               {sistemasCat.length > 0 && (
                 <div className="pl-10 flex flex-wrap gap-1">
                   {sistemasCat.map(s => (
-                    <span key={s.id} className="bg-zinc-950 border border-zinc-800 text-[10px] px-2 py-0.5">{s.nombre}</span>
+                    <span key={s.id} className="bg-zinc-950 border border-zinc-800 rounded-card text-[10px] px-2 py-0.5">{s.nombre}</span>
                   ))}
                 </div>
               )}
@@ -1883,7 +1884,7 @@ function VistaDisponibilidad({ usuario, data, onVolver, onVerProyecto, onRecarga
 
         <ControlesGantt escala={escala} setEscala={setEscala} offset={offset} setOffset={setOffset} labelPeriodo={labelPeriodo()} />
 
-        <div className="bg-zinc-900 border border-zinc-800 overflow-x-auto">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card overflow-x-auto">
           <table className="w-full text-[10px]">
             <thead>
               <tr className="border-b border-zinc-800">
@@ -1915,7 +1916,7 @@ function VistaDisponibilidad({ usuario, data, onVolver, onVerProyecto, onRecarga
           </table>
         </div>
 
-        <div className="bg-zinc-900 border border-zinc-800 p-3 text-[10px] flex items-center gap-3 flex-wrap">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 text-[10px] flex items-center gap-3 flex-wrap">
           <span className="text-zinc-400 font-bold">Leyenda:</span>
           <span className="text-zinc-600">· sin trabajo</span>
           <span className="text-green-400 bg-green-900/40 px-2 py-0.5">1-24%</span>
@@ -1993,7 +1994,7 @@ function VistaDisponibilidad({ usuario, data, onVolver, onVerProyecto, onRecarga
       <ControlesGantt escala={escala} setEscala={setEscala} offset={offset} setOffset={setOffset} labelPeriodo={labelPeriodo()} />
 
       {/* Gantt */}
-      <div className="bg-zinc-900 border border-zinc-800 overflow-x-auto">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card overflow-x-auto">
         {/* Header días */}
         <div className="flex border-b border-zinc-800 sticky top-0 bg-zinc-900 z-10">
           <div className="w-32 flex-shrink-0 px-2 py-2 text-[10px] uppercase tracking-widest text-zinc-500 font-bold border-r border-zinc-800">Persona</div>
@@ -2051,7 +2052,7 @@ function VistaDisponibilidad({ usuario, data, onVolver, onVerProyecto, onRecarga
       </div>
 
       {/* Leyenda */}
-      <div className="bg-zinc-900 border border-zinc-800 p-3 text-[10px] flex items-center gap-3 flex-wrap">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 text-[10px] flex items-center gap-3 flex-wrap">
         <span className="text-zinc-400 font-bold">Leyenda:</span>
         <span className="bg-blue-600 text-white px-2 py-0.5">Proyecto</span>
         <span className="bg-zinc-700 text-zinc-400 px-2 py-0.5 border border-zinc-600">❌ Ausente</span>
@@ -2086,7 +2087,7 @@ function VistaDisponibilidad({ usuario, data, onVolver, onVerProyecto, onRecarga
 // --- Controles del Gantt (navegación + escala) ---
 function ControlesGantt({ escala, setEscala, offset, setOffset, labelPeriodo }) {
   return (
-    <div className="bg-zinc-900 border border-zinc-800 p-3 flex items-center justify-between flex-wrap gap-2">
+    <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 flex items-center justify-between flex-wrap gap-2">
       <div className="flex items-center gap-2">
         <button onClick={() => setOffset(offset - 1)} className="bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 text-sm">◀</button>
         <button onClick={() => setOffset(0)} className="bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 text-xs font-bold uppercase">Hoy</button>
@@ -2158,7 +2159,7 @@ function ModalCrearAsignacion({ personaId, fechaSugerida, data, usuario, onCerra
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
-      <div className="bg-zinc-900 border-2 border-red-600 max-w-md w-full p-5 space-y-3 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+      <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-md w-full p-5 space-y-3 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-start">
           <div>
             <div className="text-[10px] tracking-widest uppercase text-red-500 font-bold">Nueva asignación</div>
@@ -2169,7 +2170,7 @@ function ModalCrearAsignacion({ personaId, fechaSugerida, data, usuario, onCerra
 
         <div>
           <label className="text-[10px] uppercase text-zinc-500 font-bold">Proyecto *</label>
-          <select value={proyectoId} onChange={e => { setProyectoId(e.target.value); setAreaId(''); }} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+          <select value={proyectoId} onChange={e => { setProyectoId(e.target.value); setAreaId(''); }} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm">
             <option value="">Seleccionar...</option>
             {proyectosActivos.map(p => (
               <option key={p.id} value={p.id}>{p.referenciaOdoo || ''} {p.cliente || p.nombre}</option>
@@ -2180,7 +2181,7 @@ function ModalCrearAsignacion({ personaId, fechaSugerida, data, usuario, onCerra
         {areasProyecto.length > 0 && (
           <div>
             <label className="text-[10px] uppercase text-zinc-500 font-bold">Área (opcional)</label>
-            <select value={areaId} onChange={e => setAreaId(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+            <select value={areaId} onChange={e => setAreaId(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm">
               <option value="">Todo el proyecto</option>
               {areasProyecto.map(a => <option key={a.id} value={a.id}>{a.nombre} ({a.m2} m²)</option>)}
             </select>
@@ -2190,17 +2191,17 @@ function ModalCrearAsignacion({ personaId, fechaSugerida, data, usuario, onCerra
         <div className="grid grid-cols-2 gap-2">
           <div>
             <label className="text-[10px] uppercase text-zinc-500 font-bold">Desde *</label>
-            <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+            <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm" />
           </div>
           <div>
             <label className="text-[10px] uppercase text-zinc-500 font-bold">Hasta *</label>
-            <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+            <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm" />
           </div>
         </div>
 
         <div>
           <label className="text-[10px] uppercase text-zinc-500 font-bold">Rol</label>
-          <select value={rol} onChange={e => setRol(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+          <select value={rol} onChange={e => setRol(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm">
             <option value="maestro">👷 Maestro (principal)</option>
             <option value="ayudante">🔧 Ayudante</option>
             <option value="supervisor">👁️ Supervisor</option>
@@ -2209,7 +2210,7 @@ function ModalCrearAsignacion({ personaId, fechaSugerida, data, usuario, onCerra
 
         <div>
           <label className="text-[10px] uppercase text-zinc-500 font-bold">Notas</label>
-          <textarea value={notas} onChange={e => setNotas(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" rows={2} placeholder="Opcional..." />
+          <textarea value={notas} onChange={e => setNotas(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm" rows={2} placeholder="Opcional..." />
         </div>
 
         {conflictos.length > 0 && (
@@ -2269,7 +2270,7 @@ function ModalEditarAsignacion({ asignacion, persona, data, onCerrar, onGuardado
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
-      <div className="bg-zinc-900 border-2 border-red-600 max-w-md w-full p-5 space-y-3 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+      <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-md w-full p-5 space-y-3 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-start">
           <div>
             <div className="text-[10px] tracking-widest uppercase text-red-500 font-bold">Editar asignación</div>
@@ -2282,17 +2283,17 @@ function ModalEditarAsignacion({ asignacion, persona, data, onCerrar, onGuardado
         <div className="grid grid-cols-2 gap-2">
           <div>
             <label className="text-[10px] uppercase text-zinc-500 font-bold">Desde</label>
-            <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+            <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm" />
           </div>
           <div>
             <label className="text-[10px] uppercase text-zinc-500 font-bold">Hasta</label>
-            <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+            <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm" />
           </div>
         </div>
 
         <div>
           <label className="text-[10px] uppercase text-zinc-500 font-bold">Rol</label>
-          <select value={rol} onChange={e => setRol(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+          <select value={rol} onChange={e => setRol(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm">
             <option value="maestro">👷 Maestro</option>
             <option value="ayudante">🔧 Ayudante</option>
             <option value="supervisor">👁️ Supervisor</option>
@@ -2301,7 +2302,7 @@ function ModalEditarAsignacion({ asignacion, persona, data, onCerrar, onGuardado
 
         <div>
           <label className="text-[10px] uppercase text-zinc-500 font-bold">Estado</label>
-          <select value={estado} onChange={e => setEstado(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+          <select value={estado} onChange={e => setEstado(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm">
             <option value="planificada">📅 Planificada</option>
             <option value="confirmada">✓ Confirmada</option>
             <option value="en_curso">🟠 En curso</option>
@@ -2312,7 +2313,7 @@ function ModalEditarAsignacion({ asignacion, persona, data, onCerrar, onGuardado
 
         <div>
           <label className="text-[10px] uppercase text-zinc-500 font-bold">Notas</label>
-          <textarea value={notas} onChange={e => setNotas(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" rows={2} />
+          <textarea value={notas} onChange={e => setNotas(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm" rows={2} />
         </div>
 
         <div className="flex gap-2">
@@ -2360,22 +2361,22 @@ function VistaAusencias({ usuario, data, onVolver, onRecargar }) {
 
       {form && (
         <div className="bg-zinc-900 border-2 border-red-600 p-4 space-y-2">
-          <select value={form.personaId} onChange={e => setForm({ ...form, personaId: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+          <select value={form.personaId} onChange={e => setForm({ ...form, personaId: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm">
             <option value="">Seleccionar persona</option>
             {personal.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
           </select>
           <div className="grid grid-cols-2 gap-2">
-            <input type="date" value={form.fechaDesde} onChange={e => setForm({ ...form, fechaDesde: e.target.value })} className="bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
-            <input type="date" value={form.fechaHasta} onChange={e => setForm({ ...form, fechaHasta: e.target.value })} className="bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+            <input type="date" value={form.fechaDesde} onChange={e => setForm({ ...form, fechaDesde: e.target.value })} className="bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm" />
+            <input type="date" value={form.fechaHasta} onChange={e => setForm({ ...form, fechaHasta: e.target.value })} className="bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm" />
           </div>
-          <select value={form.motivo} onChange={e => setForm({ ...form, motivo: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+          <select value={form.motivo} onChange={e => setForm({ ...form, motivo: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm">
             <option value="trabajo_externo">Trabajo externo</option>
             <option value="vacaciones">Vacaciones</option>
             <option value="licencia">Licencia</option>
             <option value="enfermedad">Enfermedad</option>
             <option value="otro">Otro</option>
           </select>
-          <textarea placeholder="Nota (opcional)" value={form.nota} onChange={e => setForm({ ...form, nota: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" rows={2} />
+          <textarea placeholder="Nota (opcional)" value={form.nota} onChange={e => setForm({ ...form, nota: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm" rows={2} />
           <div className="flex gap-2">
             <button onClick={() => setForm(null)} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2">Cancelar</button>
             <button onClick={guardar} className="flex-1 bg-red-600 text-white text-xs font-black uppercase py-2">Guardar</button>
@@ -2389,7 +2390,7 @@ function VistaAusencias({ usuario, data, onVolver, onRecargar }) {
         {ausencias.map(a => {
           const p = personal.find(x => x.id === a.personaId);
           return (
-            <div key={a.id} className="bg-zinc-900 border border-zinc-800 p-3 flex items-center justify-between">
+            <div key={a.id} className="bg-zinc-900 border border-zinc-800 rounded-card p-3 flex items-center justify-between">
               <div className="flex-1">
                 <div className="font-bold text-sm">{p?.nombre || '?'}</div>
                 <div className="text-[10px] text-zinc-500">{formatFecha(a.fechaDesde)} → {formatFecha(a.fechaHasta)} · {a.motivo}</div>
@@ -2436,15 +2437,15 @@ function VistaEquipos({ data, onVolver, onRecargar }) {
 
       {form && (
         <div className="bg-zinc-900 border-2 border-red-600 p-4 space-y-2">
-          <input placeholder="Nombre del equipo" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+          <input placeholder="Nombre del equipo" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm" />
           <div className="grid grid-cols-2 gap-2">
-            <input type="number" placeholder="Cantidad total" value={form.cantidadTotal} onChange={e => setForm({ ...form, cantidadTotal: parseInt(e.target.value) || 1 })} className="bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
-            <select value={form.categoriaId} onChange={e => setForm({ ...form, categoriaId: e.target.value })} className="bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+            <input type="number" placeholder="Cantidad total" value={form.cantidadTotal} onChange={e => setForm({ ...form, cantidadTotal: parseInt(e.target.value) || 1 })} className="bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm" />
+            <select value={form.categoriaId} onChange={e => setForm({ ...form, categoriaId: e.target.value })} className="bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm">
               <option value="">Sin categoría vinculada</option>
               {categorias.map(c => <option key={c.id} value={c.id}>{c.icono} {c.nombre}</option>)}
             </select>
           </div>
-          <textarea placeholder="Notas (opcional)" value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" rows={2} />
+          <textarea placeholder="Notas (opcional)" value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm" rows={2} />
           <div className="flex gap-2">
             <button onClick={() => setForm(null)} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2">Cancelar</button>
             <button onClick={guardar} className="flex-1 bg-red-600 text-white text-xs font-black uppercase py-2">Guardar</button>
@@ -2459,7 +2460,7 @@ function VistaEquipos({ data, onVolver, onRecargar }) {
           const cat = categorias.find(c => c.id === e.categoriaId);
           const enUso = (data.equipoAsignaciones || []).filter(a => a.equipoId === e.id && (!a.fechaHasta || a.fechaHasta >= new Date().toISOString().split('T')[0])).length;
           return (
-            <div key={e.id} className="bg-zinc-900 border border-zinc-800 p-3 flex items-center justify-between">
+            <div key={e.id} className="bg-zinc-900 border border-zinc-800 rounded-card p-3 flex items-center justify-between">
               <div className="flex-1">
                 <div className="font-bold text-sm">{e.nombre}</div>
                 <div className="text-[10px] text-zinc-500">
@@ -2557,10 +2558,10 @@ function VistaCredenciales({ data, onVolver, onRecargar }) {
           {formTipo && (
             <div className="bg-zinc-900 border-2 border-red-600 p-4 space-y-2">
               <div className="flex gap-2">
-                <input placeholder="🔖" value={formTipo.icono} onChange={e => setFormTipo({ ...formTipo, icono: e.target.value })} className="w-16 bg-zinc-950 border border-zinc-800 px-2 py-2 text-center text-lg" />
-                <input placeholder="Nombre" value={formTipo.nombre} onChange={e => setFormTipo({ ...formTipo, nombre: e.target.value })} className="flex-1 bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+                <input placeholder="🔖" value={formTipo.icono} onChange={e => setFormTipo({ ...formTipo, icono: e.target.value })} className="w-16 bg-zinc-950 border border-zinc-800 rounded-card px-2 py-2 text-center text-lg" />
+                <input placeholder="Nombre" value={formTipo.nombre} onChange={e => setFormTipo({ ...formTipo, nombre: e.target.value })} className="flex-1 bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm" />
               </div>
-              <textarea placeholder="Descripción" value={formTipo.descripcion} onChange={e => setFormTipo({ ...formTipo, descripcion: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" rows={2} />
+              <textarea placeholder="Descripción" value={formTipo.descripcion} onChange={e => setFormTipo({ ...formTipo, descripcion: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm" rows={2} />
               <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={formTipo.tieneVencimiento} onChange={e => setFormTipo({ ...formTipo, tieneVencimiento: e.target.checked })} /> Tiene fecha de vencimiento</label>
               <div className="flex gap-2">
                 <button onClick={() => setFormTipo(null)} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2">Cancelar</button>
@@ -2569,7 +2570,7 @@ function VistaCredenciales({ data, onVolver, onRecargar }) {
             </div>
           )}
           {tipos.map(t => (
-            <div key={t.id} className="bg-zinc-900 border border-zinc-800 p-3 flex items-center gap-2">
+            <div key={t.id} className="bg-zinc-900 border border-zinc-800 rounded-card p-3 flex items-center gap-2">
               <span className="text-2xl">{t.icono}</span>
               <div className="flex-1">
                 <div className="font-bold">{t.nombre}</div>
@@ -2587,26 +2588,26 @@ function VistaCredenciales({ data, onVolver, onRecargar }) {
           {!formCred && <button onClick={() => setFormCred({ personaId: '', tipoCredencialId: '', numero: '', fechaEmision: '', fechaVencimiento: '', activa: true, notas: '' })} className="bg-red-600 text-white px-4 py-2 text-xs font-black uppercase flex items-center gap-2"><Plus className="w-3 h-3" /> Registrar credencial</button>}
           {formCred && (
             <div className="bg-zinc-900 border-2 border-red-600 p-4 space-y-2">
-              <select value={formCred.personaId} onChange={e => setFormCred({ ...formCred, personaId: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+              <select value={formCred.personaId} onChange={e => setFormCred({ ...formCred, personaId: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm">
                 <option value="">Persona</option>
                 {personal.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
               </select>
-              <select value={formCred.tipoCredencialId} onChange={e => setFormCred({ ...formCred, tipoCredencialId: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+              <select value={formCred.tipoCredencialId} onChange={e => setFormCred({ ...formCred, tipoCredencialId: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm">
                 <option value="">Tipo de credencial</option>
                 {tipos.map(t => <option key={t.id} value={t.id}>{t.icono} {t.nombre}</option>)}
               </select>
-              <input placeholder="Número / código (opcional)" value={formCred.numero} onChange={e => setFormCred({ ...formCred, numero: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+              <input placeholder="Número / código (opcional)" value={formCred.numero} onChange={e => setFormCred({ ...formCred, numero: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm" />
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="text-[10px] text-zinc-500 uppercase">Emisión</label>
-                  <input type="date" value={formCred.fechaEmision} onChange={e => setFormCred({ ...formCred, fechaEmision: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+                  <input type="date" value={formCred.fechaEmision} onChange={e => setFormCred({ ...formCred, fechaEmision: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm" />
                 </div>
                 <div>
                   <label className="text-[10px] text-zinc-500 uppercase">Vencimiento</label>
-                  <input type="date" value={formCred.fechaVencimiento} onChange={e => setFormCred({ ...formCred, fechaVencimiento: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+                  <input type="date" value={formCred.fechaVencimiento} onChange={e => setFormCred({ ...formCred, fechaVencimiento: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm" />
                 </div>
               </div>
-              <textarea placeholder="Notas (opcional)" value={formCred.notas} onChange={e => setFormCred({ ...formCred, notas: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" rows={2} />
+              <textarea placeholder="Notas (opcional)" value={formCred.notas} onChange={e => setFormCred({ ...formCred, notas: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm" rows={2} />
               <div className="flex gap-2">
                 <button onClick={() => setFormCred(null)} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2">Cancelar</button>
                 <button onClick={guardarCred} className="flex-1 bg-red-600 text-white text-xs font-black uppercase py-2">Guardar</button>
@@ -2619,7 +2620,7 @@ function VistaCredenciales({ data, onVolver, onRecargar }) {
             const t = tipos.find(x => x.id === c.tipoCredencialId);
             const est = credencialVencimientoEstado(c);
             return (
-              <div key={c.id} className="bg-zinc-900 border border-zinc-800 p-3">
+              <div key={c.id} className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
                 <div className="flex items-center gap-2">
                   <span className="text-xl">{t?.icono || '🔖'}</span>
                   <div className="flex-1">
@@ -2649,21 +2650,21 @@ function VistaCredenciales({ data, onVolver, onRecargar }) {
             <div className="bg-zinc-900 border-2 border-red-600 p-4 space-y-2">
               <div className="text-xs font-bold uppercase text-red-500">{formReq.tipoTipo === 'cliente' ? 'Requisito por cliente' : 'Requisito por ubicación'}</div>
               {formReq.tipoTipo === 'cliente' ? (
-                <select value={formReq.clienteId} onChange={e => setFormReq({ ...formReq, clienteId: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+                <select value={formReq.clienteId} onChange={e => setFormReq({ ...formReq, clienteId: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm">
                   <option value="">Cliente</option>
                   {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
                 </select>
               ) : (
                 <>
-                  <input placeholder="Nombre ubicación (ej: CapCana)" value={formReq.nombreUbicacion} onChange={e => setFormReq({ ...formReq, nombreUbicacion: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
-                  <input placeholder="Patrón en dirección (ej: capcana, punta cana)" value={formReq.patronDireccion} onChange={e => setFormReq({ ...formReq, patronDireccion: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+                  <input placeholder="Nombre ubicación (ej: CapCana)" value={formReq.nombreUbicacion} onChange={e => setFormReq({ ...formReq, nombreUbicacion: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm" />
+                  <input placeholder="Patrón en dirección (ej: capcana, punta cana)" value={formReq.patronDireccion} onChange={e => setFormReq({ ...formReq, patronDireccion: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm" />
                 </>
               )}
-              <select value={formReq.tipoCredencialId} onChange={e => setFormReq({ ...formReq, tipoCredencialId: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+              <select value={formReq.tipoCredencialId} onChange={e => setFormReq({ ...formReq, tipoCredencialId: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm">
                 <option value="">Credencial requerida</option>
                 {tipos.map(t => <option key={t.id} value={t.id}>{t.icono} {t.nombre}</option>)}
               </select>
-              <textarea placeholder="Nota" value={formReq.nota} onChange={e => setFormReq({ ...formReq, nota: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" rows={2} />
+              <textarea placeholder="Nota" value={formReq.nota} onChange={e => setFormReq({ ...formReq, nota: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm" rows={2} />
               <div className="flex gap-2">
                 <button onClick={() => setFormReq(null)} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2">Cancelar</button>
                 <button onClick={guardarReq} className="flex-1 bg-red-600 text-white text-xs font-black uppercase py-2">Guardar</button>
@@ -2678,7 +2679,7 @@ function VistaCredenciales({ data, onVolver, onRecargar }) {
                 const cl = clientes.find(c => c.id === r.clienteId);
                 const t = tipos.find(x => x.id === r.tipoCredencialId);
                 return (
-                  <div key={r.id} className="bg-zinc-900 border border-zinc-800 p-2 flex items-center gap-2 text-xs">
+                  <div key={r.id} className="bg-zinc-900 border border-zinc-800 rounded-card p-2 flex items-center gap-2 text-xs">
                     <span className="text-lg">{t?.icono}</span>
                     <div className="flex-1"><strong>{cl?.nombre || '?'}</strong> requiere {t?.nombre}</div>
                     <button onClick={async () => { if (confirm('¿Quitar?')) { await db.quitarClienteRequisito(r.clienteId, r.tipoCredencialId); await onRecargar(); } }} className="text-zinc-500 hover:text-red-400 p-1"><Trash2 className="w-3 h-3" /></button>
@@ -2694,7 +2695,7 @@ function VistaCredenciales({ data, onVolver, onRecargar }) {
               {ubicacionReqs.map(r => {
                 const t = tipos.find(x => x.id === r.tipoCredencialId);
                 return (
-                  <div key={r.id} className="bg-zinc-900 border border-zinc-800 p-2 flex items-center gap-2 text-xs">
+                  <div key={r.id} className="bg-zinc-900 border border-zinc-800 rounded-card p-2 flex items-center gap-2 text-xs">
                     <span className="text-lg">{t?.icono}</span>
                     <div className="flex-1"><strong>{r.nombreUbicacion}</strong> requiere {t?.nombre} <span className="text-zinc-600">(match: "{r.patronDireccion}")</span></div>
                     <button onClick={async () => { if (confirm('¿Eliminar?')) { await db.eliminarUbicacionRequisito(r.id); await onRecargar(); } }} className="text-zinc-500 hover:text-red-400 p-1"><Trash2 className="w-3 h-3" /></button>
@@ -2751,33 +2752,33 @@ function VistaAutorizaciones({ usuario, data, onVolver, onRecargar }) {
 
       {form && (
         <div className="bg-zinc-900 border-2 border-red-600 p-4 space-y-2">
-          <select value={form.personaId} onChange={e => setForm({ ...form, personaId: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+          <select value={form.personaId} onChange={e => setForm({ ...form, personaId: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm">
             <option value="">Persona</option>
             {personal.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
           </select>
-          <select value={form.tipoCredencialId} onChange={e => setForm({ ...form, tipoCredencialId: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+          <select value={form.tipoCredencialId} onChange={e => setForm({ ...form, tipoCredencialId: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm">
             <option value="">Tipo de credencial</option>
             {tipos.map(t => <option key={t.id} value={t.id}>{t.icono} {t.nombre}</option>)}
           </select>
-          <select value={form.clienteId} onChange={e => setForm({ ...form, clienteId: e.target.value, proyectoId: '' })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+          <select value={form.clienteId} onChange={e => setForm({ ...form, clienteId: e.target.value, proyectoId: '' })} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm">
             <option value="">Cliente (opcional)</option>
             {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
           </select>
-          <select value={form.proyectoId} onChange={e => setForm({ ...form, proyectoId: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+          <select value={form.proyectoId} onChange={e => setForm({ ...form, proyectoId: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm">
             <option value="">Proyecto específico (opcional)</option>
             {proyectos.filter(p => !form.clienteId || p.clienteId === form.clienteId).map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo || p.cliente}</option>)}
           </select>
           <div className="grid grid-cols-2 gap-2">
-            <input type="date" value={form.fechaDesde} onChange={e => setForm({ ...form, fechaDesde: e.target.value })} className="bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
-            <input type="date" value={form.fechaHasta} onChange={e => setForm({ ...form, fechaHasta: e.target.value })} className="bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+            <input type="date" value={form.fechaDesde} onChange={e => setForm({ ...form, fechaDesde: e.target.value })} className="bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm" />
+            <input type="date" value={form.fechaHasta} onChange={e => setForm({ ...form, fechaHasta: e.target.value })} className="bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm" />
           </div>
-          <select value={form.estado} onChange={e => setForm({ ...form, estado: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+          <select value={form.estado} onChange={e => setForm({ ...form, estado: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm">
             <option value="solicitada">Solicitada</option>
             <option value="aprobada">Aprobada</option>
             <option value="rechazada">Rechazada</option>
             <option value="usada">Usada</option>
           </select>
-          <textarea placeholder="Notas" value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" rows={2} />
+          <textarea placeholder="Notas" value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm" rows={2} />
           <div className="flex gap-2">
             <button onClick={() => setForm(null)} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2">Cancelar</button>
             <button onClick={guardar} className="flex-1 bg-red-600 text-white text-xs font-black uppercase py-2">Guardar</button>
@@ -2859,26 +2860,26 @@ function VistaBrigadas({ data, onVolver, onRecargar }) {
             <button onClick={() => setForm({ ...form, tipoAsignacion: 'ubicacion' })} className={`flex-1 py-2 text-xs font-bold uppercase ${form.tipoAsignacion === 'ubicacion' ? 'bg-red-600 text-white' : 'bg-zinc-800 text-zinc-400'}`}>Por ubicación</button>
           </div>
           {form.tipoAsignacion === 'cliente' ? (
-            <select value={form.clienteId} onChange={e => setForm({ ...form, clienteId: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+            <select value={form.clienteId} onChange={e => setForm({ ...form, clienteId: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm">
               <option value="">Cliente</option>
               {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
             </select>
           ) : (
-            <input placeholder="Patrón (ej: capcana, aeropuerto)" value={form.ubicacionPatron} onChange={e => setForm({ ...form, ubicacionPatron: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+            <input placeholder="Patrón (ej: capcana, aeropuerto)" value={form.ubicacionPatron} onChange={e => setForm({ ...form, ubicacionPatron: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm" />
           )}
-          <select value={form.personaId} onChange={e => setForm({ ...form, personaId: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+          <select value={form.personaId} onChange={e => setForm({ ...form, personaId: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm">
             <option value="">Persona</option>
             {personal.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
           </select>
           <div className="grid grid-cols-2 gap-2">
-            <select value={form.rolEnBrigada} onChange={e => setForm({ ...form, rolEnBrigada: e.target.value })} className="bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+            <select value={form.rolEnBrigada} onChange={e => setForm({ ...form, rolEnBrigada: e.target.value })} className="bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm">
               <option value="miembro">Miembro</option>
               <option value="lider">Líder</option>
               <option value="suplente">Suplente</option>
             </select>
-            <input type="number" placeholder="Prioridad" value={form.prioridad} onChange={e => setForm({ ...form, prioridad: parseInt(e.target.value) || 1 })} className="bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+            <input type="number" placeholder="Prioridad" value={form.prioridad} onChange={e => setForm({ ...form, prioridad: parseInt(e.target.value) || 1 })} className="bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm" />
           </div>
-          <input placeholder="Nota" value={form.nota} onChange={e => setForm({ ...form, nota: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+          <input placeholder="Nota" value={form.nota} onChange={e => setForm({ ...form, nota: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-sm" />
           <div className="flex gap-2">
             <button onClick={() => setForm(null)} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2">Cancelar</button>
             <button onClick={guardar} className="flex-1 bg-red-600 text-white text-xs font-black uppercase py-2">Guardar</button>
@@ -2893,7 +2894,7 @@ function VistaBrigadas({ data, onVolver, onRecargar }) {
           const p = personal.find(x => x.id === b.personaId);
           const cl = clientes.find(c => c.id === b.clienteId);
           return (
-            <div key={b.id} className="bg-zinc-900 border border-zinc-800 p-3">
+            <div key={b.id} className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
               <div className="flex items-center gap-2">
                 <div className="flex-1">
                   <div className="font-bold text-sm">{p?.nombre || '?'}</div>
@@ -3030,7 +3031,7 @@ function VistaAuditLog({ data, onVolver }) {
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-        <div className="bg-zinc-900 border border-zinc-800 p-3">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
           <div className="text-[10px] tracking-widest uppercase text-zinc-500">Total eventos</div>
           <div className="text-2xl font-black">{stats.total}</div>
         </div>
@@ -3042,41 +3043,41 @@ function VistaAuditLog({ data, onVolver }) {
           <div className="text-[10px] tracking-widest uppercase text-zinc-500">🟡 Advertencias</div>
           <div className="text-2xl font-black text-yellow-400">{stats.warnings}</div>
         </div>
-        <div className="bg-zinc-900 border border-zinc-800 p-3">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
           <div className="text-[10px] tracking-widest uppercase text-zinc-500">Usuarios</div>
           <div className="text-2xl font-black">{stats.usuariosUnicos}</div>
         </div>
       </div>
 
       {/* Filtros */}
-      <div className="bg-zinc-900 border border-zinc-800 p-3 space-y-2">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 space-y-2">
         <div className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">Filtros</div>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
           <div>
             <label className="text-[9px] text-zinc-500 uppercase">Desde</label>
-            <input type="date" value={fDesde} onChange={e => setFDesde(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 px-2 py-1.5 text-xs" />
+            <input type="date" value={fDesde} onChange={e => setFDesde(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1.5 text-xs" />
           </div>
           <div>
             <label className="text-[9px] text-zinc-500 uppercase">Hasta</label>
-            <input type="date" value={fHasta} onChange={e => setFHasta(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 px-2 py-1.5 text-xs" />
+            <input type="date" value={fHasta} onChange={e => setFHasta(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1.5 text-xs" />
           </div>
           <div>
             <label className="text-[9px] text-zinc-500 uppercase">Usuario</label>
-            <select value={fUsuario} onChange={e => setFUsuario(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 px-2 py-1.5 text-xs">
+            <select value={fUsuario} onChange={e => setFUsuario(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1.5 text-xs">
               <option value="">Todos</option>
               {personal.filter(p => !p.archivado).map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
             </select>
           </div>
           <div>
             <label className="text-[9px] text-zinc-500 uppercase">Acción</label>
-            <select value={fAccion} onChange={e => setFAccion(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 px-2 py-1.5 text-xs">
+            <select value={fAccion} onChange={e => setFAccion(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1.5 text-xs">
               <option value="">Todas</option>
               {acciones.map(a => <option key={a} value={a}>{a}</option>)}
             </select>
           </div>
           <div>
             <label className="text-[9px] text-zinc-500 uppercase">Severidad</label>
-            <select value={fSeveridad} onChange={e => setFSeveridad(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 px-2 py-1.5 text-xs">
+            <select value={fSeveridad} onChange={e => setFSeveridad(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1.5 text-xs">
               <option value="">Todas</option>
               <option value="info">Info</option>
               <option value="warning">Advertencia</option>
@@ -3092,7 +3093,7 @@ function VistaAuditLog({ data, onVolver }) {
 
       {/* Timeline */}
       {logs.length === 0 ? (
-        <div className="bg-zinc-900 border border-zinc-800 p-6 text-center text-zinc-500">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-6 text-center text-zinc-500">
           {cargando ? 'Cargando...' : 'No hay eventos registrados en este rango'}
         </div>
       ) : (
@@ -3135,7 +3136,7 @@ function VistaAuditLog({ data, onVolver }) {
       {/* Modal detalle */}
       {detalle && (
         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={() => setDetalle(null)}>
-          <div className="bg-zinc-900 border-2 border-red-600 max-w-lg w-full p-5 space-y-3 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+          <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-lg w-full p-5 space-y-3 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-start">
               <div>
                 <div className="text-[10px] tracking-widest uppercase text-red-500 font-bold">Detalle del evento</div>
@@ -3146,19 +3147,19 @@ function VistaAuditLog({ data, onVolver }) {
             </div>
 
             <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="bg-zinc-950 border border-zinc-800 p-2">
+              <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2">
                 <div className="text-[9px] uppercase text-zinc-500">Usuario</div>
                 <div className="font-bold">{detalle.usuarioNombre || 'Sistema'}</div>
               </div>
-              <div className="bg-zinc-950 border border-zinc-800 p-2">
+              <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2">
                 <div className="text-[9px] uppercase text-zinc-500">Fecha/hora</div>
                 <div>{new Date(detalle.timestamp).toLocaleString('es-DO')}</div>
               </div>
-              <div className="bg-zinc-950 border border-zinc-800 p-2">
+              <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2">
                 <div className="text-[9px] uppercase text-zinc-500">Acción</div>
                 <div className="font-mono text-[10px]">{detalle.accion}</div>
               </div>
-              <div className="bg-zinc-950 border border-zinc-800 p-2">
+              <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2">
                 <div className="text-[9px] uppercase text-zinc-500">Severidad</div>
                 <div className={severidadConfig[detalle.severidad]?.color}>
                   {severidadConfig[detalle.severidad]?.icon} {severidadConfig[detalle.severidad]?.label}
@@ -3167,7 +3168,7 @@ function VistaAuditLog({ data, onVolver }) {
             </div>
 
             {detalle.recursoTipo && (
-              <div className="bg-zinc-950 border border-zinc-800 p-2 text-xs">
+              <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2 text-xs">
                 <div className="text-[9px] uppercase text-zinc-500">Recurso</div>
                 <div><strong>{detalle.recursoTipo}</strong> · <span className="font-mono text-[10px] text-zinc-400">{detalle.recursoId}</span></div>
               </div>
@@ -3194,7 +3195,7 @@ function VistaAuditLog({ data, onVolver }) {
             {detalle.metadata && (
               <div>
                 <div className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold mb-1">Metadata</div>
-                <pre className="bg-zinc-950 border border-zinc-800 p-2 text-[10px] text-zinc-400 overflow-auto max-h-32">
+                <pre className="bg-zinc-950 border border-zinc-800 rounded-card p-2 text-[10px] text-zinc-400 overflow-auto max-h-32">
 {JSON.stringify(detalle.metadata, null, 2)}
                 </pre>
               </div>
@@ -3208,7 +3209,7 @@ function VistaAuditLog({ data, onVolver }) {
 
 
 function IconBtn({ onClick, title, children }) {
-  return <button onClick={onClick} title={title} className="flex items-center gap-1 text-xs text-zinc-400 hover:text-white bg-zinc-900 border border-zinc-800 px-2 py-1.5">{children}</button>;
+  return <button onClick={onClick} title={title} className="flex items-center gap-1 text-xs text-zinc-400 hover:text-white bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1.5">{children}</button>;
 }
 
 // ============================================================
@@ -3430,7 +3431,7 @@ function GestionClientes({ clientes, contactos, proyectos, onVolver, onRecargar 
       <div className="max-w-3xl mx-auto space-y-5">
         <button onClick={() => setClienteSeleccionado(null)} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm"><ArrowLeft className="w-4 h-4" /> Volver a clientes</button>
 
-        <div className="bg-zinc-900 border border-zinc-800 p-5">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-5">
           <div className="flex justify-between items-start mb-3">
             <div>
               <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">{cliente.tipo === 'persona' ? 'Persona' : 'Empresa'}</div>
@@ -3447,11 +3448,11 @@ function GestionClientes({ clientes, contactos, proyectos, onVolver, onRecargar 
             {cliente.telefonoPrincipal && <div><div className="text-[10px] text-zinc-500 uppercase">Teléfono principal</div><a href={`tel:${cliente.telefonoPrincipal}`} className="text-green-400 hover:underline">{cliente.telefonoPrincipal}</a></div>}
             {cliente.emailPrincipal && <div><div className="text-[10px] text-zinc-500 uppercase">Email principal</div><a href={`mailto:${cliente.emailPrincipal}`} className="text-blue-400 hover:underline">{cliente.emailPrincipal}</a></div>}
           </div>
-          {cliente.nota && <div className="mt-3 text-xs bg-zinc-950 border border-zinc-800 p-2 text-zinc-400 italic">{cliente.nota}</div>}
+          {cliente.nota && <div className="mt-3 text-xs bg-zinc-950 border border-zinc-800 rounded-card p-2 text-zinc-400 italic">{cliente.nota}</div>}
         </div>
 
         {/* Contactos */}
-        <div className="bg-zinc-900 border border-zinc-800">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card">
           <div className="flex justify-between items-center p-4 border-b border-zinc-800">
             <div className="text-xs tracking-widest uppercase text-zinc-400 font-bold">Contactos ({misContactos.length})</div>
             <button onClick={() => setModalContacto({ clienteId: cliente.id })} className="text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 font-bold uppercase flex items-center gap-1">
@@ -3505,7 +3506,7 @@ function GestionClientes({ clientes, contactos, proyectos, onVolver, onRecargar 
 
         {/* Proyectos */}
         {misProyectos.length > 0 && (
-          <div className="bg-zinc-900 border border-zinc-800">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-card">
             <div className="p-4 border-b border-zinc-800">
               <div className="text-xs tracking-widest uppercase text-zinc-400 font-bold">Proyectos de este cliente ({misProyectos.length})</div>
             </div>
@@ -3557,7 +3558,7 @@ function GestionClientes({ clientes, contactos, proyectos, onVolver, onRecargar 
             <button
               key={c.id}
               onClick={() => setClienteSeleccionado(c)}
-              className="w-full bg-zinc-900 border border-zinc-800 hover:border-red-600 p-4 text-left"
+              className="w-full bg-zinc-900 border border-zinc-800 rounded-card hover:border-red-600 p-4 text-left"
             >
               <div className="flex justify-between items-start">
                 <div className="flex-1 min-w-0">
@@ -3581,7 +3582,7 @@ function GestionClientes({ clientes, contactos, proyectos, onVolver, onRecargar 
           );
         })}
         {clientesFiltrados.length === 0 && (
-          <div className="bg-zinc-900 border border-zinc-800 p-8 text-center">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-card p-8 text-center">
             <Building2 className="w-12 h-12 text-zinc-600 mx-auto mb-3" />
             {busqueda ? (
               <div className="text-sm text-zinc-500">Sin resultados para "{busqueda}"</div>
@@ -3619,7 +3620,7 @@ function ModalEditarCliente({ cliente, onCerrar, onGuardar, guardando }) {
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
-      <div className="bg-zinc-900 border border-zinc-700 max-w-lg w-full p-5 space-y-3 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+      <div className="bg-zinc-900 border border-zinc-700 rounded-card max-w-lg w-full p-5 space-y-3 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center">
           <h2 className="text-xl font-black">{form.id ? 'Editar Cliente' : 'Nuevo Cliente'}</h2>
           <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
@@ -3673,7 +3674,7 @@ function ModalEditarContacto({ contacto, onCerrar, onGuardar, guardando }) {
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
-      <div className="bg-zinc-900 border border-zinc-700 max-w-lg w-full p-5 space-y-3 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+      <div className="bg-zinc-900 border border-zinc-700 rounded-card max-w-lg w-full p-5 space-y-3 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center">
           <h2 className="text-xl font-black">{form.id ? 'Editar Contacto' : 'Nuevo Contacto'}</h2>
           <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
@@ -3685,7 +3686,7 @@ function ModalEditarContacto({ contacto, onCerrar, onGuardar, guardando }) {
           <Campo label="WhatsApp (si es distinto)"><Input value={form.whatsapp} onChange={v => setForm({ ...form, whatsapp: v })} placeholder="(opcional)" /></Campo>
         </div>
         <Campo label="Email"><Input type="email" value={form.email} onChange={v => setForm({ ...form, email: v })} /></Campo>
-        <label className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 p-3 cursor-pointer">
+        <label className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 rounded-card p-3 cursor-pointer">
           <input type="checkbox" checked={form.esPrincipal} onChange={e => setForm({ ...form, esPrincipal: e.target.checked })} className="w-4 h-4 accent-red-600" />
           <div>
             <div className="text-xs font-bold flex items-center gap-1"><Star className="w-3 h-3 text-yellow-500" /> Marcar como contacto principal</div>
@@ -3774,7 +3775,7 @@ function GestionSistemas({ sistemas, config, onVolver, onActualizarSistemas, onA
       <button onClick={onVolver} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button>
       <div><h1 className="text-3xl font-black tracking-tight">Configuración</h1></div>
 
-      <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-3">
         <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Parámetros Generales</div>
         <div className="grid grid-cols-2 gap-3">
           <Campo label="% Costos Indirectos"><Input type="number" value={configEditada.costos_indirectos_pct} onChange={v => setConfigEditada({ ...configEditada, costos_indirectos_pct: v })} /></Campo>
@@ -3783,19 +3784,19 @@ function GestionSistemas({ sistemas, config, onVolver, onActualizarSistemas, onA
         <button onClick={() => onActualizarConfig({ costos_indirectos_pct: parseFloat(configEditada.costos_indirectos_pct) || 0, margen_objetivo_pct: parseFloat(configEditada.margen_objetivo_pct) || 0 })} className="bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase px-4 py-2 flex items-center gap-1"><Save className="w-3 h-3" /> Guardar</button>
       </div>
 
-      <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-3">
         <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Importar / Exportar</div>
         <div className="grid grid-cols-2 gap-2">
           <button onClick={() => setImportModal('sistemas')} className="bg-zinc-950 border-2 border-dashed border-zinc-700 hover:border-red-600 py-3 flex flex-col items-center gap-1 text-xs font-bold uppercase text-zinc-300"><Upload className="w-4 h-4" /> Importar Sistemas</button>
           <button onClick={() => setImportModal('materiales')} className="bg-zinc-950 border-2 border-dashed border-zinc-700 hover:border-red-600 py-3 flex flex-col items-center gap-1 text-xs font-bold uppercase text-zinc-300"><Upload className="w-4 h-4" /> Importar Materiales</button>
-          <button onClick={() => descargarPlantilla('sistemas')} className="bg-zinc-950 border border-zinc-800 hover:border-red-600 py-2.5 flex items-center justify-center gap-1 text-[11px] font-bold uppercase text-zinc-400"><Download className="w-3 h-3" /> Plantilla Sistemas</button>
-          <button onClick={() => descargarPlantilla('materiales')} className="bg-zinc-950 border border-zinc-800 hover:border-red-600 py-2.5 flex items-center justify-center gap-1 text-[11px] font-bold uppercase text-zinc-400"><Download className="w-3 h-3" /> Plantilla Materiales</button>
+          <button onClick={() => descargarPlantilla('sistemas')} className="bg-zinc-950 border border-zinc-800 rounded-card hover:border-red-600 py-2.5 flex items-center justify-center gap-1 text-[11px] font-bold uppercase text-zinc-400"><Download className="w-3 h-3" /> Plantilla Sistemas</button>
+          <button onClick={() => descargarPlantilla('materiales')} className="bg-zinc-950 border border-zinc-800 rounded-card hover:border-red-600 py-2.5 flex items-center justify-center gap-1 text-[11px] font-bold uppercase text-zinc-400"><Download className="w-3 h-3" /> Plantilla Materiales</button>
         </div>
       </div>
 
       {importModal && !importResult && (
         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-          <div className="bg-zinc-900 border-2 border-red-600 max-w-lg w-full p-5 space-y-4">
+          <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-lg w-full p-5 space-y-4">
             <div className="flex justify-between items-start">
               <div>
                 <div className="text-xs tracking-widest uppercase text-red-500 font-bold">Importar {importModal === 'sistemas' ? 'Sistemas' : 'Materiales'}</div>
@@ -3803,7 +3804,7 @@ function GestionSistemas({ sistemas, config, onVolver, onActualizarSistemas, onA
               </div>
               <button onClick={() => setImportModal(null)} className="text-zinc-500"><X className="w-4 h-4" /></button>
             </div>
-            <div className="bg-zinc-950 border border-zinc-800 p-3 text-[11px] text-zinc-400 space-y-1">
+            <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3 text-[11px] text-zinc-400 space-y-1">
               <div className="font-bold text-zinc-300">Columnas esperadas:</div>
               {importModal === 'sistemas' ? (
                 <div className="font-mono">sistema | precio_m2 | costo_mo_m2 | tarea | peso_pct | reporta | keywords_cotizacion</div>
@@ -3824,9 +3825,9 @@ function GestionSistemas({ sistemas, config, onVolver, onActualizarSistemas, onA
 
       {importResult && (
         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-          <div className="bg-zinc-900 border-2 border-green-600 max-w-lg w-full p-5 space-y-4">
+          <div className="bg-zinc-900 border-2 border-green-600 rounded-card max-w-lg w-full p-5 space-y-4">
             <div className="text-xs tracking-widest uppercase text-green-400 font-bold flex items-center gap-1"><Sparkles className="w-3 h-3" /> Vista Previa</div>
-            <div className="bg-zinc-950 border border-zinc-800 p-3 space-y-2 text-xs">
+            <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3 space-y-2 text-xs">
               {importResult.tipo === 'materiales' ? (
                 <>
                   <div className="flex justify-between"><span className="text-zinc-400">Materiales nuevos:</span><span className="font-bold text-green-400">{importResult.agregados}</span></div>
@@ -3862,7 +3863,7 @@ function GestionSistemas({ sistemas, config, onVolver, onActualizarSistemas, onA
           {sistemasArray.map(s => {
             const isExp = expandidos[s.id];
             return (
-              <div key={s.id} className="bg-zinc-900 border border-zinc-800">
+              <div key={s.id} className="bg-zinc-900 border border-zinc-800 rounded-card">
                 <div className="p-4 flex items-center gap-3">
                   <button onClick={() => setExpandidos({ ...expandidos, [s.id]: !isExp })} className="text-zinc-400">{isExp ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}</button>
                   <div className="flex-1"><div className="font-bold">{s.nombre}</div><div className="text-[10px] text-zinc-500 uppercase tracking-wider">{s.tareas?.length || 0} tareas · {s.materiales?.length || 0} materiales · RD${s.precio_m2}/m²</div></div>
@@ -3985,7 +3986,7 @@ function ModalPlantillasSistemas({ sistemasActuales, onCerrar, onAgregar }) {
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-      <div className="bg-zinc-900 border-2 border-red-600 max-w-2xl w-full max-h-[90vh] overflow-auto">
+      <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-2xl w-full max-h-[90vh] overflow-auto">
         <div className="sticky top-0 bg-zinc-900 border-b border-zinc-800 p-4 flex justify-between items-center">
           <div>
             <div className="text-xs tracking-widest uppercase text-red-500 font-bold">Plantillas de Sistemas</div>
@@ -4070,7 +4071,7 @@ function EditorSistema({ sistema, setSistema, onGuardar, onCancelar, categorias 
     <div className="space-y-5 max-w-4xl mx-auto">
       <button onClick={onCancelar} className="flex items-center gap-2 text-zinc-400 text-sm"><ArrowLeft className="w-4 h-4" /> Cancelar</button>
       <h1 className="text-2xl font-black tracking-tight">{sistema.nombre || 'Nuevo Sistema'}</h1>
-      <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-3">
         <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Información básica</div>
         <Campo label="Nombre"><Input value={sistema.nombre} onChange={v => setSistema({ ...sistema, nombre: v })} /></Campo>
         <Campo label="Categoría (v8.9.23)">
@@ -4082,7 +4083,7 @@ function EditorSistema({ sistema, setSistema, onGuardar, onCancelar, categorias 
         <div className="grid grid-cols-2 gap-3"><Campo label="Precio venta/m²"><Input type="number" value={sistema.precio_m2} onChange={v => setSistema({ ...sistema, precio_m2: v })} /></Campo><Campo label="Costo mano obra/m²"><Input type="number" value={sistema.costo_mo_m2} onChange={v => setSistema({ ...sistema, costo_mo_m2: v })} /></Campo></div>
         <Campo label="Keywords cotización"><Input value={Array.isArray(sistema.keywords_cotizacion) ? sistema.keywords_cotizacion.join(', ') : sistema.keywords_cotizacion} onChange={v => setSistema({ ...sistema, keywords_cotizacion: v })} /></Campo>
       </div>
-      <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-3">
         <div className="flex justify-between items-center"><div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Tareas</div><div className={`text-xs font-bold ${Math.abs(sumaPesos - 100) < 0.1 ? 'text-green-400' : 'text-yellow-400'}`}>Suma: {sumaPesos.toFixed(1)}% {Math.abs(sumaPesos - 100) < 0.1 ? '✓' : '(debe ser 100%)'}</div></div>
         <div className="space-y-2">
           {sistema.tareas.map((t, i) => (
@@ -4099,7 +4100,7 @@ function EditorSistema({ sistema, setSistema, onGuardar, onCancelar, categorias 
       {/* v8.17.62: Herramientas necesarias para el sistema. Una lista que Miguel
           carga por sistema; al combinar los sistemas del proyecto se genera una
           lista total que se puede enviar por WhatsApp. */}
-      <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-3">
         <div className="flex justify-between items-center">
           <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Herramientas necesarias</div>
           <div className="text-[10px] text-zinc-500">{herramientas.length} item{herramientas.length !== 1 ? 's' : ''}</div>
@@ -4117,7 +4118,7 @@ function EditorSistema({ sistema, setSistema, onGuardar, onCancelar, categorias 
         </div>
         <button onClick={() => setSistema({ ...sistema, herramientas: [...herramientas, { id: 'h_' + Date.now() + Math.random().toString(36).slice(2, 6), nombre: '', cantidad: '', unidad: '', notas: '' }] })} className="text-xs text-red-500 flex items-center gap-1"><Plus className="w-3 h-3" /> Agregar herramienta</button>
       </div>
-      <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-3">
         <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Materiales</div>
         <div className="space-y-3">
           {sistema.materiales.map((m, i) => (
@@ -4204,23 +4205,23 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
       {activando && <ModalInvitarMaestro usuario={usuario} personaExistente={activando} onCerrar={() => setActivando(null)} onInvitado={() => { onRecargar?.(); }} />}
 
       {/* v8.17.2: Buscador por nombre / PIN / teléfono */}
-      <div className="bg-zinc-950 border border-zinc-800 p-2 flex items-center gap-2 text-xs">
+      <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2 flex items-center gap-2 text-xs">
         <span className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">🔍 Buscar:</span>
         <input
           type="text"
           value={busqueda}
           onChange={e => setBusqueda(e.target.value)}
           placeholder="Nombre o teléfono…"
-          className="flex-1 bg-zinc-900 border border-zinc-800 px-2 py-1 text-xs text-white outline-none focus:border-red-500"
+          className="flex-1 bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1 text-xs text-white outline-none focus:border-red-500"
         />
         {busqueda && <button onClick={() => setBusqueda('')} className="text-zinc-500 hover:text-white px-2"><X className="w-3 h-3" /></button>}
       </div>
 
       {/* v8.17.0: Filtro por acceso a cliente */}
       {data && (data.clientes || []).length > 0 && (
-        <div className="bg-zinc-950 border border-zinc-800 p-2 flex items-center gap-2 text-xs">
+        <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2 flex items-center gap-2 text-xs">
           <span className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">🔑 Filtrar por acceso a:</span>
-          <select value={filtroAccesoCliente} onChange={e => setFiltroAccesoCliente(e.target.value)} className="flex-1 bg-zinc-900 border border-zinc-800 px-2 py-1 text-xs">
+          <select value={filtroAccesoCliente} onChange={e => setFiltroAccesoCliente(e.target.value)} className="flex-1 bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1 text-xs">
             <option value="">Cualquiera</option>
             {(data.clientes || []).slice().sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '')).map(c => (
               <option key={c.id} value={c.id}>{c.nombre}</option>
@@ -4252,7 +4253,7 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
           )}
           {/* v8.9.11: Toggle reporte con audio IA */}
           {(form.roles.includes('maestro') || form.roles.includes('supervisor') || form.roles.includes('admin')) && (
-            <label className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 p-3 cursor-pointer">
+            <label className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 rounded-card p-3 cursor-pointer">
               <input type="checkbox" checked={!!form.reporteAudioHabilitado} onChange={e => setForm({ ...form, reporteAudioHabilitado: e.target.checked })} className="w-4 h-4 accent-red-600" />
               <div className="flex-1">
                 <div className="text-xs font-bold flex items-center gap-1">🎤 Reporte con audio IA <Sparkles className="w-3 h-3 text-red-500" /></div>
@@ -4262,7 +4263,7 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
           )}
           {/* v8.12: Toggle Caja Chica + límite — admin habilita por persona */}
           {(form.roles.includes('maestro') || form.roles.includes('supervisor')) && (
-            <div className="bg-zinc-950 border border-zinc-800 p-3 space-y-2">
+            <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3 space-y-2">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" checked={!!form.cajaChicaHabilitada} onChange={e => setForm({ ...form, cajaChicaHabilitada: e.target.checked })} className="w-4 h-4 accent-red-600" />
                 <div className="flex-1">
@@ -4281,7 +4282,7 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
                         value={form.limiteCajaChica ?? ''}
                         onChange={e => setForm({ ...form, limiteCajaChica: e.target.value === '' ? null : parseFloat(e.target.value) || 0 })}
                         placeholder="Sin límite"
-                        className="flex-1 bg-zinc-900 border border-zinc-800 px-2 py-1.5 text-white text-xs text-right"
+                        className="flex-1 bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1.5 text-white text-xs text-right"
                       />
                     </div>
                     <div className="text-[10px] text-zinc-500 mt-1">Cuando el saldo cae bajo el 20% se le advierte; si llega a 0 la oficina no puede entregar más caja sin cuadrar primero.</div>
@@ -4295,7 +4296,7 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
                         value={form.maxTransaccionCajaChica ?? ''}
                         onChange={e => setForm({ ...form, maxTransaccionCajaChica: e.target.value === '' ? null : parseFloat(e.target.value) || 0 })}
                         placeholder="Sin máximo"
-                        className="flex-1 bg-zinc-900 border border-zinc-800 px-2 py-1.5 text-white text-xs text-right"
+                        className="flex-1 bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1.5 text-white text-xs text-right"
                       />
                     </div>
                     <div className="text-[10px] text-zinc-500 mt-1">Bloquea gastos individuales mayores a este monto. Si excede, debe pedir reembolso especial al admin.</div>
@@ -4306,7 +4307,7 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
           )}
           {/* v8.17.29: Toggles Dieta + Hospedaje a nivel persona (solo aplican si el proyecto también los tiene activos) */}
           {(form.roles.includes('maestro') || form.roles.includes('supervisor')) && (
-            <div className="bg-zinc-950 border border-zinc-800 p-3 space-y-2">
+            <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3 space-y-2">
               <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">Dieta y Hospedaje en proyectos del interior</div>
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" checked={!!form.dietaHabilitada} onChange={e => setForm({ ...form, dietaHabilitada: e.target.checked })} className="w-4 h-4 accent-red-600" />
@@ -4360,7 +4361,7 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
                 const maestro = p.maestroId ? getPersona(personal, p.maestroId) : null;
                 const ayudantes = tieneRol(p, 'maestro') ? getAyudantesDeMaestro(personal, p.id) : [];
                 return (
-                  <div key={p.id} className="bg-zinc-900 border border-zinc-800 p-3 flex items-center gap-3">
+                  <div key={p.id} className="bg-zinc-900 border border-zinc-800 rounded-card p-3 flex items-center gap-3">
                     {p.foto2x2 ? <img src={p.foto2x2} alt="" className="w-10 h-10 object-cover rounded-sm flex-shrink-0 border border-zinc-700" /> : <UserCircle className="w-10 h-10 text-zinc-500 flex-shrink-0" />}
                     <div className="flex-1 min-w-0">
                       <div className="font-bold text-sm flex items-center gap-2">
@@ -4453,7 +4454,7 @@ function ModalCapacidadesPersona({ persona, data, onCerrar }) {
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
-      <div className="bg-zinc-900 border-2 border-blue-600 max-w-md w-full p-5 space-y-3" onClick={e => e.stopPropagation()}>
+      <div className="bg-zinc-900 border-2 border-blue-600 rounded-card max-w-md w-full p-5 space-y-3" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-start">
           <div>
             <div className="text-[10px] tracking-widest uppercase text-blue-500 font-bold">🧰 Capacidades técnicas</div>
@@ -4498,7 +4499,7 @@ function ModalAccesosPersona({ persona, data, onCerrar, onRecargar }) {
   const [tab, setTab] = useState('accesos');
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
-      <div className="bg-zinc-900 border-2 border-amber-600 max-w-2xl w-full p-5 space-y-3 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+      <div className="bg-zinc-900 border-2 border-amber-600 rounded-card max-w-2xl w-full p-5 space-y-3 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-start">
           <div>
             <div className="text-[10px] tracking-widest uppercase text-amber-500 font-bold">🔐 Accesos y credenciales</div>
@@ -4628,22 +4629,22 @@ function SubCredencialesPersona({ persona, data, onRecargar }) {
       {!form && <button onClick={() => setForm({ tipoCredencialId: '', numero: '', fechaEmision: '', fechaVencimiento: '', notas: '' })} className="bg-red-600 text-white px-3 py-2 text-xs font-black uppercase flex items-center gap-2"><Plus className="w-3 h-3" /> Registrar credencial</button>}
       {form && (
         <div className="bg-zinc-950 border-2 border-red-600 p-3 space-y-2">
-          <select value={form.tipoCredencialId} onChange={e => setForm({ ...form, tipoCredencialId: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm">
+          <select value={form.tipoCredencialId} onChange={e => setForm({ ...form, tipoCredencialId: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-3 py-2 text-sm">
             <option value="">Tipo de credencial</option>
             {tipos.map(t => <option key={t.id} value={t.id}>{t.icono} {t.nombre}</option>)}
           </select>
-          <input placeholder="Número / código (opcional)" value={form.numero} onChange={e => setForm({ ...form, numero: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm" />
+          <input placeholder="Número / código (opcional)" value={form.numero} onChange={e => setForm({ ...form, numero: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-3 py-2 text-sm" />
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className="text-[10px] text-zinc-500 uppercase">Emisión</label>
-              <input type="date" value={form.fechaEmision} onChange={e => setForm({ ...form, fechaEmision: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm" />
+              <input type="date" value={form.fechaEmision} onChange={e => setForm({ ...form, fechaEmision: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-3 py-2 text-sm" />
             </div>
             <div>
               <label className="text-[10px] text-zinc-500 uppercase">Vencimiento</label>
-              <input type="date" value={form.fechaVencimiento} onChange={e => setForm({ ...form, fechaVencimiento: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm" />
+              <input type="date" value={form.fechaVencimiento} onChange={e => setForm({ ...form, fechaVencimiento: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-3 py-2 text-sm" />
             </div>
           </div>
-          <textarea placeholder="Notas (opcional)" value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm" rows={2} />
+          <textarea placeholder="Notas (opcional)" value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-3 py-2 text-sm" rows={2} />
           <div className="flex gap-2">
             <button onClick={() => setForm(null)} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2">Cancelar</button>
             <button onClick={guardar} className="flex-1 bg-red-600 text-white text-xs font-black uppercase py-2">Guardar</button>
@@ -4655,7 +4656,7 @@ function SubCredencialesPersona({ persona, data, onRecargar }) {
         const t = tipos.find(x => x.id === c.tipoCredencialId);
         const est = venceEstado(c);
         return (
-          <div key={c.id} className="bg-zinc-950 border border-zinc-800 p-2 flex items-center gap-2">
+          <div key={c.id} className="bg-zinc-950 border border-zinc-800 rounded-card p-2 flex items-center gap-2">
             <span className="text-xl">{t?.icono || '🔖'}</span>
             <div className="flex-1 min-w-0">
               <div className="font-bold text-sm truncate">{t?.nombre || 'Desconocido'}{c.numero && ` · ${c.numero}`}</div>
@@ -4698,29 +4699,29 @@ function SubAutorizacionesPersona({ persona, data, onRecargar }) {
       {!form && <button onClick={() => setForm({ tipoCredencialId: '', clienteId: '', proyectoId: '', fechaDesde: '', fechaHasta: '', estado: 'aprobada', notas: '' })} className="bg-red-600 text-white px-3 py-2 text-xs font-black uppercase flex items-center gap-2"><Plus className="w-3 h-3" /> Nueva autorización</button>}
       {form && (
         <div className="bg-zinc-950 border-2 border-red-600 p-3 space-y-2">
-          <select value={form.tipoCredencialId} onChange={e => setForm({ ...form, tipoCredencialId: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm">
+          <select value={form.tipoCredencialId} onChange={e => setForm({ ...form, tipoCredencialId: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-3 py-2 text-sm">
             <option value="">Tipo de credencial</option>
             {tipos.map(t => <option key={t.id} value={t.id}>{t.icono} {t.nombre}</option>)}
           </select>
-          <select value={form.clienteId} onChange={e => setForm({ ...form, clienteId: e.target.value, proyectoId: '' })} className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm">
+          <select value={form.clienteId} onChange={e => setForm({ ...form, clienteId: e.target.value, proyectoId: '' })} className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-3 py-2 text-sm">
             <option value="">Cliente (opcional)</option>
             {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
           </select>
-          <select value={form.proyectoId} onChange={e => setForm({ ...form, proyectoId: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm">
+          <select value={form.proyectoId} onChange={e => setForm({ ...form, proyectoId: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-3 py-2 text-sm">
             <option value="">Proyecto específico (opcional)</option>
             {proyectos.filter(p => !form.clienteId || p.clienteId === form.clienteId).map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo || p.cliente}</option>)}
           </select>
           <div className="grid grid-cols-2 gap-2">
-            <input type="date" value={form.fechaDesde} onChange={e => setForm({ ...form, fechaDesde: e.target.value })} className="bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm" />
-            <input type="date" value={form.fechaHasta} onChange={e => setForm({ ...form, fechaHasta: e.target.value })} className="bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm" />
+            <input type="date" value={form.fechaDesde} onChange={e => setForm({ ...form, fechaDesde: e.target.value })} className="bg-zinc-900 border border-zinc-800 rounded-card px-3 py-2 text-sm" />
+            <input type="date" value={form.fechaHasta} onChange={e => setForm({ ...form, fechaHasta: e.target.value })} className="bg-zinc-900 border border-zinc-800 rounded-card px-3 py-2 text-sm" />
           </div>
-          <select value={form.estado} onChange={e => setForm({ ...form, estado: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm">
+          <select value={form.estado} onChange={e => setForm({ ...form, estado: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-3 py-2 text-sm">
             <option value="solicitada">Solicitada</option>
             <option value="aprobada">Aprobada</option>
             <option value="rechazada">Rechazada</option>
             <option value="usada">Usada</option>
           </select>
-          <textarea placeholder="Notas" value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm" rows={2} />
+          <textarea placeholder="Notas" value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-3 py-2 text-sm" rows={2} />
           <div className="flex gap-2">
             <button onClick={() => setForm(null)} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2">Cancelar</button>
             <button onClick={guardar} className="flex-1 bg-red-600 text-white text-xs font-black uppercase py-2">Guardar</button>
@@ -4802,7 +4803,7 @@ function MisProyectos({ usuario, data, onIrAReportar, onVerDetalle }) {
   const renderCard = ({ p, porcentaje, m2Total }) => {
     const esTerminadoOFacturado = ['facturado', 'finalizado_recibido_conforme', 'finalizado_no_entregado'].includes(p.estado);
     return (
-      <div key={p.id} className={`bg-zinc-900 border border-zinc-800 p-4 ${esTerminadoOFacturado ? 'opacity-80' : ''}`}>
+      <div key={p.id} className={`bg-zinc-900 border border-zinc-800 rounded-card p-4 ${esTerminadoOFacturado ? 'opacity-80' : ''}`}>
         <div className="flex justify-between items-start mb-2">
           <div className="min-w-0 flex-1 mr-2">
             <div className="text-[10px] font-mono text-zinc-500">{p.referenciaOdoo}</div>
@@ -4836,7 +4837,7 @@ function MisProyectos({ usuario, data, onIrAReportar, onVerDetalle }) {
           <div key={estado} className="space-y-3">
             <button
               onClick={() => toggleEstado(estado)}
-              className="w-full flex items-center justify-between bg-zinc-950 border border-zinc-800 px-3 py-2 hover:bg-zinc-900/50"
+              className="w-full flex items-center justify-between bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 hover:bg-zinc-900/50"
             >
               <div className="flex items-center gap-2">
                 <span className="text-zinc-500 text-xs w-3">{abierto ? '▼' : '▶'}</span>
@@ -4907,7 +4908,7 @@ function ListaProyectosMultivista({ usuario, data, onVerProyecto, onNuevoProyect
         <div className="flex items-center gap-2">
           {/* v8.17.30: toggle de densidad solo en vista Lista (en desktop tiene sentido) */}
           {vista === 'lista' && <div className="hidden md:block"><ToggleDensidad valor={densidad} onChange={setDensidad} /></div>}
-          <div className="flex bg-zinc-900 border border-zinc-800">
+          <div className="flex bg-zinc-900 border border-zinc-800 rounded-card">
             <button onClick={() => setVista('kanban')} className={`px-2 py-1 text-xs font-bold uppercase ${vista === 'kanban' ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>Kanban</button>
             <button onClick={() => setVista('lista')} className={`px-2 py-1 text-xs font-bold uppercase ${vista === 'lista' ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>Lista</button>
             <button onClick={() => setVista('mapa')} className={`px-2 py-1 text-xs font-bold uppercase ${vista === 'mapa' ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>Mapa</button>
@@ -4918,14 +4919,14 @@ function ListaProyectosMultivista({ usuario, data, onVerProyecto, onNuevoProyect
       </div>
 
       {filtrosAbiertos && (
-        <div className="bg-zinc-900 border border-zinc-800 p-3 space-y-2 mb-3">
-          <input type="text" value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar cliente, referencia..." className="w-full bg-zinc-950 border border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm" />
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 space-y-2 mb-3">
+          <input type="text" value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar cliente, referencia..." className="w-full bg-zinc-950 border border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm" />
           <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-            <select value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-2 text-xs text-white"><option value="">Todos los estados</option>{ORDEN_ESTADOS.map(e => <option key={e} value={e}>{estadoLabel(e)}</option>)}</select>
-            <select value={filtroMaestro} onChange={e => setFiltroMaestro(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-2 text-xs text-white"><option value="">Todos los maestros</option>{maestros.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select>
-            <select value={filtroSupervisor} onChange={e => setFiltroSupervisor(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-2 text-xs text-white"><option value="">Todos los supervisores</option>{supervisores.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select>
-            <select value={filtroCliente} onChange={e => setFiltroCliente(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-2 text-xs text-white"><option value="">Todos los clientes</option>{clientesUnicos.map(c => <option key={c} value={c}>{c}</option>)}</select>
-            <select value={filtroSistema} onChange={e => setFiltroSistema(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-2 text-xs text-white"><option value="">Todos los sistemas</option>{Object.values(data.sistemas).map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select>
+            <select value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-2 text-xs text-white"><option value="">Todos los estados</option>{ORDEN_ESTADOS.map(e => <option key={e} value={e}>{estadoLabel(e)}</option>)}</select>
+            <select value={filtroMaestro} onChange={e => setFiltroMaestro(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-2 text-xs text-white"><option value="">Todos los maestros</option>{maestros.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select>
+            <select value={filtroSupervisor} onChange={e => setFiltroSupervisor(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-2 text-xs text-white"><option value="">Todos los supervisores</option>{supervisores.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select>
+            <select value={filtroCliente} onChange={e => setFiltroCliente(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-2 text-xs text-white"><option value="">Todos los clientes</option>{clientesUnicos.map(c => <option key={c} value={c}>{c}</option>)}</select>
+            <select value={filtroSistema} onChange={e => setFiltroSistema(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-2 text-xs text-white"><option value="">Todos los sistemas</option>{Object.values(data.sistemas).map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select>
             {hayFiltros && <button onClick={limpiarFiltros} className="bg-zinc-800 text-zinc-400 text-xs font-bold uppercase">Limpiar</button>}
           </div>
         </div>
@@ -5105,10 +5106,10 @@ function VistaKanban({ proyectos, data, usuario, onVerProyecto, onCambiarEstadoR
   return (
     <div className="space-y-2">
       {/* Toolbar tipo Odoo */}
-      <div className="bg-zinc-900 border border-zinc-800 p-2 space-y-2 text-xs">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-2 space-y-2 text-xs">
         <div className="flex flex-wrap items-center gap-2">
           {/* Buscador */}
-          <div className="flex items-center gap-1 flex-1 min-w-[180px] bg-zinc-950 border border-zinc-800 px-2 py-1">
+          <div className="flex items-center gap-1 flex-1 min-w-[180px] bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1">
             <Search className="w-3 h-3 text-zinc-500" />
             <input
               type="text"
@@ -5122,7 +5123,7 @@ function VistaKanban({ proyectos, data, usuario, onVerProyecto, onCambiarEstadoR
           {/* Agrupar por */}
           <div className="flex items-center gap-1">
             <span className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold hidden sm:inline">Agrupar</span>
-            <select value={agruparPor} onChange={e => setAgruparPor(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-1 text-white text-xs">
+            <select value={agruparPor} onChange={e => setAgruparPor(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1 text-white text-xs">
               <option value="estado">Estado</option>
               <option value="supervisor">Supervisor</option>
               <option value="empresa">Empresa</option>
@@ -5132,11 +5133,11 @@ function VistaKanban({ proyectos, data, usuario, onVerProyecto, onCambiarEstadoR
           {/* Filtros */}
           <div className="flex items-center gap-1">
             <Filter className="w-3 h-3 text-zinc-500" />
-            <select value={filtroEmpresa} onChange={e => setFiltroEmpresa(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-1 text-white text-xs">
+            <select value={filtroEmpresa} onChange={e => setFiltroEmpresa(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1 text-white text-xs">
               <option value="">Todas las empresas</option>
               {Object.entries(EMPRESAS_RECEPTORAS).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
             </select>
-            <select value={filtroSupervisor} onChange={e => setFiltroSupervisor(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-1 text-white text-xs">
+            <select value={filtroSupervisor} onChange={e => setFiltroSupervisor(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1 text-white text-xs">
               <option value="">Todos los supervisores</option>
               {supervisoresOpciones.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
             </select>
@@ -5227,10 +5228,10 @@ function ColumnaKanban({ grupo, compacto, draggingId, dropTarget, onDragOver, on
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
-      className={`w-72 flex-shrink-0 bg-zinc-950 border ${dropTarget ? 'border-red-600 ring-2 ring-red-600/30' : 'border-zinc-800'} transition-colors`}
+      className={`w-72 flex-shrink-0 bg-zinc-950 border rounded-card ${dropTarget ? 'border-red-600 ring-2 ring-red-600/30' : 'border-zinc-800'} transition-colors`}
     >
       {/* Header con franja de color */}
-      <div className={`h-1 ${grupo.color || 'bg-zinc-700'}`} />
+      <div className={`h-1 rounded-t-card ${grupo.color || 'bg-zinc-700'}`} />
       <div className="px-3 pt-2 pb-1.5 flex items-baseline justify-between gap-2 border-b border-zinc-800">
         <div className="min-w-0">
           <div className={`text-[10px] tracking-widest uppercase font-bold truncate ${grupo.textColor || 'text-zinc-400'}`}>{grupo.label}</div>
@@ -5334,10 +5335,10 @@ function CardKanban({ p, data, compacto, arrastrando, hover, onHover, onClick, o
       onClick={onClick}
       onMouseEnter={() => onHover(true)}
       onMouseLeave={() => onHover(false)}
-      className={`relative bg-zinc-900 border border-zinc-800 hover:border-red-600 text-left cursor-pointer transition-all ${arrastrando ? 'opacity-40 scale-95' : 'opacity-100 scale-100'}`}
+      className={`relative bg-zinc-900 border border-zinc-800 rounded-card hover:border-red-600 text-left cursor-pointer transition-all ${arrastrando ? 'opacity-40 scale-95' : 'opacity-100 scale-100'}`}
     >
       {/* Borde lateral 3px con color de empresa */}
-      <div className={`absolute left-0 top-0 bottom-0 w-[3px] ${sideColor}`} />
+      <div className={`absolute left-0 top-0 bottom-0 w-[3px] rounded-l-card ${sideColor}`} />
       <div className={compacto ? 'pl-2.5 pr-2 py-2' : 'pl-3 pr-3 py-2.5'}>
         {/* Header: ref + alertas */}
         <div className="flex items-start gap-2">
@@ -5561,7 +5562,8 @@ function VistaLista({ proyectos, data, densidad = 'detallado', dx, onVerProyecto
   // Calcular datos por proyecto una vez
   const proyectosConDatos = proyectos.map(p => {
     const sistema = data.sistemas[p.sistema];
-    const m2Total = (p.areas || []).reduce((a, ar) => a + ar.m2, 0);
+    // v8.19.36: Number() defensivo (antes faltaba aquí pero sí estaba en CardKanban).
+    const m2Total = (p.areas || []).reduce((a, ar) => a + (Number(ar.m2) || 0), 0);
     const valorDerivado = m2Total * (sistema?.precio_m2 || 0);
     // v8.17.63: priorizar valor_cotizacion > monto_final_cubicado > derivado.
     // El "valor mostrado" es el que aparece como total del proyecto en lista/kanban.
@@ -5575,7 +5577,10 @@ function VistaLista({ proyectos, data, densidad = 'detallado', dx, onVerProyecto
     const supervisor = getPersona(data.personal, p.supervisorId);
     const maestro = getPersona(data.personal, p.maestroId);
     const dias = diasEnEstado(p);
-    return { p, sistema, m2Total, valor, valorDerivado, fuenteValor, porcentaje, supervisor, maestro, dias };
+    // v8.19.36: datos que ya existían pero no se mostraban en la tabla desktop.
+    const empresa = p.empresaEjecutora || null;
+    const contacto = (p.contactoClienteNombre || '').trim();
+    return { p, sistema, m2Total, valor, valorDerivado, fuenteValor, porcentaje, supervisor, maestro, dias, empresa, contacto };
   });
 
   // Función de comparación para sort. Trata strings (case-insensitive) y números.
@@ -5588,6 +5593,7 @@ function VistaLista({ proyectos, data, densidad = 'detallado', dx, onVerProyecto
         case 'cliente': return (item.p.cliente || '').toLowerCase();
         case 'proyecto': return (item.p.referenciaProyecto || item.p.nombre || '').toLowerCase();
         case 'sistema': return (item.sistema?.nombre || '').toLowerCase();
+        case 'empresa': return (item.empresa || 'zzz').toLowerCase();
         case 'm2': return item.m2Total || 0;
         case 'avance': return item.porcentaje || 0;
         case 'dias': return item.dias ?? -1;
@@ -5668,7 +5674,7 @@ function VistaLista({ proyectos, data, densidad = 'detallado', dx, onVerProyecto
           <div key={estado} className="space-y-2">
             <button
               onClick={() => toggle(estado)}
-              className="w-full flex items-center gap-2 px-3 py-2 bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-left"
+              className="w-full flex items-center gap-2 px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-card hover:border-zinc-700 text-left"
             >
               <span className="text-zinc-500 text-xs">{colapsado ? '▶' : '▼'}</span>
               <div className={`w-2 h-2 ${estadoColor(estado)}`} />
@@ -5683,7 +5689,7 @@ function VistaLista({ proyectos, data, densidad = 'detallado', dx, onVerProyecto
             {!colapsado && (
               <>
                 {/* v8.17.30: DESKTOP — tabla con sticky header, sort, inline edit, acciones */}
-                <div className="hidden md:block bg-zinc-900 border border-zinc-800 overflow-x-auto">
+                <div className="hidden md:block bg-zinc-900 border border-zinc-800 rounded-card overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-zinc-950 border-b border-zinc-800 sticky top-0 z-10">
                       <tr>
@@ -5692,6 +5698,7 @@ function VistaLista({ proyectos, data, densidad = 'detallado', dx, onVerProyecto
                         <Th k="cliente" estado={estado}>Cliente</Th>
                         <Th k="proyecto" estado={estado}>Proyecto</Th>
                         <Th k="sistema" estado={estado}>Sistema</Th>
+                        <Th k="empresa" estado={estado}>Empresa</Th>
                         <Th k="m2" estado={estado} align="right">M²</Th>
                         <Th k="avance" estado={estado} align="right">Avance</Th>
                         <Th k="dias" estado={estado} align="right">Días</Th>
@@ -5702,8 +5709,11 @@ function VistaLista({ proyectos, data, densidad = 'detallado', dx, onVerProyecto
                       </tr>
                     </thead>
                     <tbody>
-                      {items.map(({ p, sistema, m2Total, valor, valorDerivado, fuenteValor, porcentaje, supervisor, maestro, dias }) => {
+                      {items.map(({ p, sistema, m2Total, valor, valorDerivado, fuenteValor, porcentaje, supervisor, maestro, dias, empresa, contacto }) => {
                         const colorDias = dias != null && dias > 14 ? 'text-orange-400' : dias != null && dias > 30 ? 'text-red-400' : 'text-zinc-500';
+                        // v8.19.36: color semáforo del avance (compartido por barra y número).
+                        const colorAvance = porcentaje >= 75 ? 'bg-green-500' : porcentaje >= 40 ? 'bg-yellow-500' : 'bg-zinc-600';
+                        const txtAvance = porcentaje >= 75 ? 'text-green-400' : porcentaje >= 40 ? 'text-yellow-400' : 'text-zinc-500';
                         // v8.17.63: tooltip de valor: mostrar cotizado, cubicado y derivado si difieren
                         const tooltipValor = [
                           p.valorCotizacion != null ? `Cotizado: ${formatRD(p.valorCotizacion)}` : null,
@@ -5719,20 +5729,29 @@ function VistaLista({ proyectos, data, densidad = 'detallado', dx, onVerProyecto
                             {/* v8.17.30: bandita de color del estado a la izquierda */}
                             <td className={`${estadoColor(p.estado)} w-1`} style={{ padding: 0 }} />
                             <td className={`${rowPad} font-mono text-[11px] text-zinc-500 whitespace-nowrap`}>{p.referenciaOdoo || '—'}</td>
-                            <td className={`${rowPad} font-bold max-w-[180px] truncate`}>
-                              {/* v8.17.60: alerta visual si falta location */}
-                              {(p.ubicacionLat == null || p.ubicacionLng == null) && (
-                                <span title="Falta location del proyecto — no se puede pasar a Planificado ni Ejecución" className="text-amber-400 mr-1">⚠</span>
-                              )}
-                              {p.cliente}
+                            <td className={`${rowPad} max-w-[200px]`}>
+                              <div className="font-bold truncate">
+                                {/* v8.17.60: alerta visual si falta location */}
+                                {(p.ubicacionLat == null || p.ubicacionLng == null) && (
+                                  <span title="Falta location del proyecto — no se puede pasar a Planificado ni Ejecución" className="text-amber-400 mr-1">⚠</span>
+                                )}
+                                {p.cliente}
+                              </div>
+                              {/* v8.19.36: contacto como subtítulo — dato que existía pero no se mostraba */}
+                              {contacto && <div className="text-[10px] text-zinc-500 truncate" title={contacto}>{contacto}</div>}
                             </td>
                             <td className={`${rowPad} text-zinc-400 max-w-[180px] truncate text-xs`}>{p.referenciaProyecto || p.nombre || '—'}</td>
                             <td className={`${rowPad} text-zinc-400 text-xs`}>{sistema?.nombre || '—'}</td>
+                            <td className={rowPad}>{empresa ? <BadgeEmpresa empresa={empresa} /> : <span className="text-zinc-600 text-[10px]">—</span>}</td>
                             <td className={`${rowPad} text-right tabular-nums`}>{formatNum(m2Total)}</td>
-                            <td className={`${rowPad} text-right tabular-nums`}>
-                              <span className={porcentaje >= 75 ? 'text-green-400' : porcentaje >= 40 ? 'text-yellow-400' : 'text-zinc-500'}>
-                                {porcentaje.toFixed(0)}%
-                              </span>
+                            {/* v8.19.36: avance ahora con barra inline + número (scanning visual rápido) */}
+                            <td className={`${rowPad} min-w-[110px]`}>
+                              <div className="flex items-center gap-2 justify-end">
+                                <div className="flex-1 h-1.5 bg-zinc-800 rounded-card overflow-hidden max-w-[64px]">
+                                  <div className={`h-full ${colorAvance} rounded-card`} style={{ width: `${Math.min(100, Math.max(0, porcentaje))}%` }} />
+                                </div>
+                                <span className={`tabular-nums text-xs ${txtAvance}`}>{porcentaje.toFixed(0)}%</span>
+                              </div>
                             </td>
                             {/* v8.17.61: tooltip enriquecido con días por cada etapa pasada */}
                             {(() => {
@@ -5750,7 +5769,7 @@ function VistaLista({ proyectos, data, densidad = 'detallado', dx, onVerProyecto
                               <select
                                 value={p.supervisorId || ''}
                                 onChange={e => editarCampo(p, 'supervisorId', e.target.value)}
-                                className="bg-zinc-950 border border-zinc-800 hover:border-red-600 focus:border-red-600 outline-none px-1.5 py-1 text-xs text-white max-w-[140px]"
+                                className="bg-zinc-950 border border-zinc-800 rounded-card hover:border-red-600 focus:border-red-600 outline-none px-1.5 py-1 text-xs text-white max-w-[140px]"
                                 title={supervisor?.nombre || 'Sin supervisor'}
                               >
                                 <option value="">— Sin —</option>
@@ -5761,7 +5780,7 @@ function VistaLista({ proyectos, data, densidad = 'detallado', dx, onVerProyecto
                               <select
                                 value={p.maestroId || ''}
                                 onChange={e => editarCampo(p, 'maestroId', e.target.value)}
-                                className="bg-zinc-950 border border-zinc-800 hover:border-red-600 focus:border-red-600 outline-none px-1.5 py-1 text-xs text-white max-w-[140px]"
+                                className="bg-zinc-950 border border-zinc-800 rounded-card hover:border-red-600 focus:border-red-600 outline-none px-1.5 py-1 text-xs text-white max-w-[140px]"
                                 title={maestro?.nombre || 'Sin maestro'}
                               >
                                 <option value="">— Sin —</option>
@@ -5801,12 +5820,13 @@ function VistaLista({ proyectos, data, densidad = 'detallado', dx, onVerProyecto
 
                 {/* v8.17.30: MOBILE — cards (layout original) */}
                 <div className="md:hidden space-y-2">
-                  {items.map(({ p, sistema, m2Total, valor, porcentaje, supervisor, maestro }) => (
-                    <button key={p.id} onClick={() => onVerProyecto(p)} className="w-full bg-zinc-900 border border-zinc-800 hover:border-red-600 p-3 text-left flex items-center gap-3">
+                  {items.map(({ p, sistema, m2Total, valor, porcentaje, supervisor, maestro, empresa }) => (
+                    <button key={p.id} onClick={() => onVerProyecto(p)} className="w-full bg-zinc-900 border border-zinc-800 rounded-card hover:border-red-600 p-3 text-left flex items-center gap-3">
                       <div className={`w-1 self-stretch ${estadoColor(p.estado)}`} />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <div className="text-[10px] font-mono text-zinc-500">{p.referenciaOdoo}</div>
+                          {empresa && <BadgeEmpresa empresa={empresa} />}
                           {/* v8.17.60: alerta visual si falta location */}
                           {(p.ubicacionLat == null || p.ubicacionLng == null) && (
                             <span title="Falta location" className="text-amber-400 text-[10px]">⚠ sin location</span>
@@ -5945,15 +5965,15 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
 
       {!esSupervisor && (
         <div className="grid grid-cols-3 gap-2">
-          <div className="bg-zinc-900 border border-zinc-800 p-3 min-w-0">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 min-w-0">
             <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Avance</div>
             <AutoFitText maxSize={28} minSize={14} className="font-black">{porcentaje.toFixed(1)}%</AutoFitText>
           </div>
-          <div className="bg-zinc-900 border border-zinc-800 p-3 min-w-0">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 min-w-0">
             <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Producido</div>
             <AutoFitText maxSize={28} minSize={11} className="font-black text-green-400">{formatRD(produccionRD)}</AutoFitText>
           </div>
-          <div className="bg-zinc-900 border border-zinc-800 p-3 min-w-0">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 min-w-0">
             <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Contrato</div>
             <AutoFitText maxSize={28} minSize={11} className="font-black">{formatRD(valorContrato)}</AutoFitText>
           </div>
@@ -6062,7 +6082,7 @@ function TabInfo({ proyecto, clientes = [], contactos = [], documentos = [], sis
       color: '#dc2626',
     } : null;
     return (
-      <React.Suspense fallback={<div className="bg-zinc-950 border border-zinc-800 flex items-center justify-center" style={{height:280}}><span className="text-xs text-zinc-500">Cargando mapa...</span></div>}>
+      <React.Suspense fallback={<div className="bg-zinc-950 border border-zinc-800 rounded-card flex items-center justify-center" style={{height:280}}><span className="text-xs text-zinc-500">Cargando mapa...</span></div>}>
         <MapaLeaflet
           center={[proyecto.ubicacionLat, proyecto.ubicacionLng]}
           zoom={16}
@@ -6080,7 +6100,7 @@ function TabInfo({ proyecto, clientes = [], contactos = [], documentos = [], sis
     <div className="space-y-4">
       {/* v8.17.41: Quick actions del proyecto (cartas, etc.) — solo admin */}
       {esAdmin && (
-        <div className="bg-zinc-900 border border-zinc-800 p-3 flex items-center justify-between gap-3 flex-wrap">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
             <FileText className="w-4 h-4 text-red-400" />
             <div>
@@ -6119,7 +6139,7 @@ function TabInfo({ proyecto, clientes = [], contactos = [], documentos = [], sis
       )}
 
       {/* Ubicación */}
-      <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-3">
         <div className="flex items-center justify-between">
           <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold flex items-center gap-1"><MapPin className="w-3 h-3" /> Ubicación</div>
           {hayUbicacion && <button onClick={() => abrirEnMapa(proyecto.ubicacionLat, proyecto.ubicacionLng)} className="text-xs text-red-500 flex items-center gap-1"><ExternalLink className="w-3 h-3" /> Abrir en Maps</button>}
@@ -6137,7 +6157,7 @@ function TabInfo({ proyecto, clientes = [], contactos = [], documentos = [], sis
         {hayUbicacion ? (
           MapaProyecto
         ) : (
-          <div className="bg-zinc-950 border border-zinc-800 p-6 text-center text-xs text-zinc-500">
+          <div className="bg-zinc-950 border border-zinc-800 rounded-card p-6 text-center text-xs text-zinc-500">
             Sin ubicación registrada. Admin puede agregarla desde Editar → Google Maps.
           </div>
         )}
@@ -6145,7 +6165,7 @@ function TabInfo({ proyecto, clientes = [], contactos = [], documentos = [], sis
 
       {/* v8.9.10: Info del cliente vinculado */}
       {cliente && (
-        <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-2">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-2">
           <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold flex items-center gap-1"><Building2 className="w-3 h-3" /> Cliente</div>
           <div className="pt-1">
             <div className="text-sm font-bold">{cliente.nombre}</div>
@@ -6157,7 +6177,7 @@ function TabInfo({ proyecto, clientes = [], contactos = [], documentos = [], sis
 
       {/* Contactos del cliente vinculado */}
       {cliente && contactosCliente.length > 0 ? (
-        <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-3">
           <div className="flex items-center justify-between">
             <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold flex items-center gap-1"><UserCircle className="w-3 h-3" /> Contactos ({contactosCliente.length})</div>
           </div>
@@ -6189,7 +6209,7 @@ function TabInfo({ proyecto, clientes = [], contactos = [], documentos = [], sis
       ) : (
         /* Fallback: contacto en texto libre del proyecto (retrocompatibilidad) */
         (proyecto.contactoClienteNombre || proyecto.contactoClienteTelefono || proyecto.contactoClienteEmail) && (
-          <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-2">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-2">
             <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold flex items-center gap-1"><UserCircle className="w-3 h-3" /> Contacto del cliente</div>
             <div className="space-y-2 pt-1">
               {proyecto.contactoClienteNombre && <div className="text-sm font-bold">{proyecto.contactoClienteNombre}</div>}
@@ -6211,7 +6231,7 @@ function TabInfo({ proyecto, clientes = [], contactos = [], documentos = [], sis
       )}
 
       {/* Datos adicionales del proyecto */}
-      <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-2">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-2">
         <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Datos del proyecto</div>
         <div className="grid grid-cols-2 gap-3 text-xs">
           <div><div className="text-zinc-500">Ref. Odoo</div><div className="font-mono">{proyecto.referenciaOdoo || '—'}</div></div>
@@ -6281,7 +6301,7 @@ function SeccionDocumentos({ proyecto, documentos, clientes, contactos, personal
   };
 
   return (
-    <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
+    <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-3">
       <div className="flex justify-between items-center">
         <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold flex items-center gap-1">📑 Documentos del proyecto ({docsProyecto.length})</div>
       </div>
@@ -6542,7 +6562,7 @@ function ModalCrearDocumento({ tipo, proyecto, usuario, onCerrar, onGuardado }) 
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
-      <div className="bg-zinc-900 border-2 border-red-600 max-w-lg w-full p-5 space-y-4 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+      <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-lg w-full p-5 space-y-4 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center sticky top-0 bg-zinc-900 pb-2 border-b border-zinc-800">
           <div className="text-xs tracking-widest uppercase text-red-500 font-bold">{titulosEntrega}</div>
           <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
@@ -6607,7 +6627,7 @@ function ModalCrearDocumento({ tipo, proyecto, usuario, onCerrar, onGuardado }) 
                 value={busquedaFotos}
                 onChange={e => setBusquedaFotos(e.target.value)}
                 placeholder="🔍 Buscar por nota, fecha o quien la subió..."
-                className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-xs text-white placeholder-zinc-600"
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-xs text-white placeholder-zinc-600"
               />
             )}
 
@@ -6626,14 +6646,14 @@ function ModalCrearDocumento({ tipo, proyecto, usuario, onCerrar, onGuardado }) 
             )}
 
             {!cargandoFotos && fotosFiltradas.length === 0 && fotosProyecto.length > 0 && (
-              <div className="bg-zinc-950 border border-zinc-800 p-3 text-center text-xs text-zinc-500">
+              <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3 text-center text-xs text-zinc-500">
                 Ninguna foto coincide con "{busquedaFotos}"
               </div>
             )}
 
             {/* Galería con scroll */}
             {!cargandoFotos && fotosFiltradas.length > 0 && (
-              <div className="bg-zinc-950 border border-zinc-800 p-2 max-h-96 overflow-y-auto">
+              <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2 max-h-96 overflow-y-auto">
                 <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                   {fotosFiltradas.map(f => {
                     const seleccionada = fotosSeleccionadas.has(f.id);
@@ -6707,7 +6727,7 @@ function ModalVerDocumento({ documento, proyecto, clientes, contactos, personal,
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
-      <div className="bg-zinc-900 border border-zinc-700 max-w-2xl w-full p-5 space-y-4 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+      <div className="bg-zinc-900 border border-zinc-700 rounded-card max-w-2xl w-full p-5 space-y-4 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center sticky top-0 bg-zinc-900 pb-2 border-b border-zinc-800">
           <div>
             <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">{d.tipo === 'incidente' ? '⚠️ Incidente' : d.tipo === 'entrega_total' ? '🏁 Entrega Final' : '✅ Entrega Parcial'}</div>
@@ -6726,13 +6746,13 @@ function ModalVerDocumento({ documento, proyecto, clientes, contactos, personal,
         </div>
 
         {d.descripcion && (
-          <div className="bg-zinc-950 border border-zinc-800 p-3 text-sm whitespace-pre-wrap">{d.descripcion}</div>
+          <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3 text-sm whitespace-pre-wrap">{d.descripcion}</div>
         )}
 
         {d.m2Entregados != null && (
           <div className="grid grid-cols-2 gap-2 text-xs">
-            <div className="bg-zinc-950 border border-zinc-800 p-2"><div className="text-[10px] text-zinc-500">m² entregados</div><div className="font-bold">{formatNum(d.m2Entregados)}</div></div>
-            <div className="bg-zinc-950 border border-zinc-800 p-2"><div className="text-[10px] text-zinc-500">% avance</div><div className="font-bold">{d.porcentajeAvance || 100}%</div></div>
+            <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2"><div className="text-[10px] text-zinc-500">m² entregados</div><div className="font-bold">{formatNum(d.m2Entregados)}</div></div>
+            <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2"><div className="text-[10px] text-zinc-500">% avance</div><div className="font-bold">{d.porcentajeAvance || 100}%</div></div>
           </div>
         )}
 
@@ -6741,7 +6761,7 @@ function ModalVerDocumento({ documento, proyecto, clientes, contactos, personal,
             <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2">📷 Fotos ({d.fotos.length})</div>
             <div className="grid grid-cols-2 gap-2">
               {d.fotos.map((f, i) => (
-                <div key={i} className="bg-zinc-950 border border-zinc-800 p-2 space-y-1">
+                <div key={i} className="bg-zinc-950 border border-zinc-800 rounded-card p-2 space-y-1">
                   <img src={f.url} alt="" className="w-full aspect-square object-cover border border-zinc-700" />
                   {f.nota && <div className="text-[10px] text-zinc-400">{f.nota}</div>}
                   {f.audioUrl && <audio src={f.audioUrl} controls className="w-full" />}
@@ -6912,7 +6932,7 @@ function ModalEnviarDocumento({ documento, proyecto, clientes, contactos, person
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
-      <div className="bg-zinc-900 border-2 border-red-600 max-w-lg w-full p-5 space-y-4 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+      <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-lg w-full p-5 space-y-4 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center sticky top-0 bg-zinc-900 pb-2 border-b border-zinc-800">
           <div className="text-xs tracking-widest uppercase text-red-500 font-bold flex items-center gap-1">
             <Mail className="w-3 h-3" /> Enviar al cliente
@@ -6920,7 +6940,7 @@ function ModalEnviarDocumento({ documento, proyecto, clientes, contactos, person
           <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
         </div>
 
-        <div className="bg-zinc-950 border border-zinc-800 p-2 text-xs">
+        <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2 text-xs">
           <div className="text-[10px] text-zinc-500 uppercase">Documento</div>
           <div className="font-bold">{d.codigo} · {d.titulo}</div>
         </div>
@@ -6931,7 +6951,7 @@ function ModalEnviarDocumento({ documento, proyecto, clientes, contactos, person
               <div className="text-xs text-zinc-500 italic">No hay emails en contactos. Escribe uno abajo.</div>
             )}
             {emailsDisponibles.map(em => (
-              <label key={em.email} className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 p-2 cursor-pointer">
+              <label key={em.email} className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 rounded-card p-2 cursor-pointer">
                 <input type="checkbox" checked={emailsSel.has(em.email)} onChange={() => toggleEmail(em.email)} className="w-4 h-4 accent-red-600" />
                 <div className="flex-1">
                   <div className="text-xs font-bold">{em.email}</div>
@@ -7000,7 +7020,7 @@ function ModalPausarProyecto({ proyecto, onCerrar, onConfirmar }) {
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
-      <div className="bg-zinc-900 border-2 border-yellow-700 max-w-md w-full p-5 space-y-4" onClick={e => e.stopPropagation()}>
+      <div className="bg-zinc-900 border-2 border-yellow-700 rounded-card max-w-md w-full p-5 space-y-4" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center">
           <div className="text-xs tracking-widest uppercase text-yellow-500 font-black flex items-center gap-1">⏸️ Pausar proyecto</div>
           <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
@@ -7134,15 +7154,15 @@ function TabProductosAdicionales({ proyecto, onActualizarProyecto, esAdmin }) {
       {/* Resumen arriba */}
       {productos.length > 0 && (
         <div className="grid grid-cols-3 gap-2">
-          <div className="bg-zinc-900 border border-zinc-800 p-3">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
             <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Venta total</div>
             <div className="text-lg font-black text-green-400">{formatRD(totalVenta)}</div>
           </div>
-          <div className="bg-zinc-900 border border-zinc-800 p-3">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
             <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Pago al maestro</div>
             <div className="text-lg font-black text-red-400">{formatRD(totalManoObra)}</div>
           </div>
-          <div className="bg-zinc-900 border border-zinc-800 p-3">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
             <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Utilidad bruta</div>
             <div className="text-lg font-black text-white">{formatRD(utilidad)}</div>
           </div>
@@ -7191,7 +7211,7 @@ function TabProductosAdicionales({ proyecto, onActualizarProyecto, esAdmin }) {
 
           {/* Preview del cálculo */}
           {(parseFloat(form.cantidad) > 0 && parseFloat(form.precioVenta) > 0) && (
-            <div className="bg-zinc-950 border border-zinc-800 p-3 text-xs space-y-1">
+            <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3 text-xs space-y-1">
               <div className="flex justify-between"><span className="text-zinc-500">Venta total:</span><span className="text-green-400 font-bold">{formatRD((parseFloat(form.cantidad) || 0) * (parseFloat(form.precioVenta) || 0))}</span></div>
               <div className="flex justify-between"><span className="text-zinc-500">Pago al maestro:</span><span className="text-red-400 font-bold">{formatRD((parseFloat(form.cantidad) || 0) * (parseFloat(form.precioManoObraMaestro) || 0))}</span></div>
               <div className="flex justify-between border-t border-zinc-800 pt-1 mt-1"><span className="text-zinc-500 font-bold">Utilidad bruta:</span><span className="text-white font-black">{formatRD((parseFloat(form.cantidad) || 0) * ((parseFloat(form.precioVenta) || 0) - (parseFloat(form.precioManoObraMaestro) || 0)))}</span></div>
@@ -7220,7 +7240,7 @@ function TabProductosAdicionales({ proyecto, onActualizarProyecto, esAdmin }) {
           const totalV = p.cantidad * p.precioVenta;
           const totalMO = p.cantidad * p.precioManoObraMaestro;
           return (
-            <div key={p.id} className="bg-zinc-900 border border-zinc-800 p-3">
+            <div key={p.id} className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
               <div className="flex justify-between items-start gap-2">
                 <div className="flex-1 min-w-0">
                   <div className="font-bold text-sm">{p.nombre}</div>
@@ -7560,7 +7580,7 @@ function VistaCostosMateriales({ proyecto, envios, sistemas }) {
   if (envios.length === 0) {
     return (
       <div className="space-y-4">
-        <div className="bg-zinc-950 border border-zinc-800 p-8 text-center">
+        <div className="bg-zinc-950 border border-zinc-800 rounded-card p-8 text-center">
           <Package className="w-12 h-12 text-zinc-600 mx-auto mb-3" />
           <div className="font-bold text-sm">Sin envíos registrados</div>
           <div className="text-xs text-zinc-500 mt-1">Ve a la pestaña "Por Sistema" para registrar el primer envío de material.</div>
@@ -7572,7 +7592,7 @@ function VistaCostosMateriales({ proyecto, envios, sistemas }) {
   return (
     <div className="space-y-4">
       {/* Resumen total */}
-      <div className="bg-zinc-900 border border-zinc-800 p-4">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4">
         <div className="flex items-center justify-between">
           <div>
             <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">💰 Total invertido en materiales</div>
@@ -7592,7 +7612,7 @@ function VistaCostosMateriales({ proyecto, envios, sistemas }) {
           const colorDesv = desviacionPct > 5 ? 'text-red-400' : desviacionPct < -5 ? 'text-blue-400' : 'text-green-400';
           const iconoDesv = desviacionPct > 5 ? '↑' : desviacionPct < -5 ? '↓' : '→';
           return (
-            <div key={grupo.materialId} className="bg-zinc-950 border border-zinc-800">
+            <div key={grupo.materialId} className="bg-zinc-950 border border-zinc-800 rounded-card">
               <div className="bg-zinc-900 border-b border-zinc-800 px-4 py-3">
                 <div className="flex justify-between items-start">
                   <div>
@@ -7759,7 +7779,7 @@ function TabAreas({ proyecto, data, usuario, onRecargar }) {
 
   if (areas.length === 0) {
     return (
-      <div className="bg-zinc-900 border border-zinc-800 p-6 text-center">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-6 text-center">
         <div className="text-sm text-zinc-400">Este proyecto no tiene áreas definidas</div>
         <div className="text-xs text-zinc-500 mt-1">Agrega áreas desde el editor del proyecto</div>
       </div>
@@ -7768,7 +7788,7 @@ function TabAreas({ proyecto, data, usuario, onRecargar }) {
 
   return (
     <div className="space-y-3">
-      <div className="text-xs text-zinc-400 bg-zinc-900 border border-zinc-800 p-3">
+      <div className="text-xs text-zinc-400 bg-zinc-900 border border-zinc-800 rounded-card p-3">
         💡 Cada área tiene su propio estado. Marca como "Disponible" cuando el cliente libere el área y el sistema te sugerirá maestros aptos según capacidades, credenciales y disponibilidad.
       </div>
 
@@ -7843,7 +7863,7 @@ function TabAreas({ proyecto, data, usuario, onRecargar }) {
             </div>
 
             {esEdicion && (
-              <div className="mt-3 bg-zinc-950 border border-zinc-800 p-3 space-y-2">
+              <div className="mt-3 bg-zinc-950 border border-zinc-800 rounded-card p-3 space-y-2">
                 <div className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">Cambiar estado</div>
                 <div className="grid grid-cols-4 gap-1">
                   {Object.entries(estadoConfig).map(([k, v]) => (
@@ -7868,7 +7888,7 @@ function TabAreas({ proyecto, data, usuario, onRecargar }) {
                       type="date"
                       value={estado?.fechaEstimadaDisponible || ''}
                       onChange={e => guardarEstado(area.id, { ...estado, estado: estadoActual, fechaEstimadaDisponible: e.target.value })}
-                      className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm"
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-3 py-2 text-sm"
                     />
                   </div>
                 )}
@@ -7880,7 +7900,7 @@ function TabAreas({ proyecto, data, usuario, onRecargar }) {
                       type="date"
                       value={estado?.fechaFinEstimada || ''}
                       onChange={e => guardarEstado(area.id, { ...estado, estado: estadoActual, fechaFinEstimada: e.target.value })}
-                      className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm"
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-3 py-2 text-sm"
                     />
                   </div>
                 )}
@@ -7891,7 +7911,7 @@ function TabAreas({ proyecto, data, usuario, onRecargar }) {
                     placeholder="Ej: El cliente aún está haciendo taller hasta el 15 de mayo"
                     value={estado?.notasCliente || ''}
                     onChange={e => guardarEstado(area.id, { ...estado, estado: estadoActual, notasCliente: e.target.value })}
-                    className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm"
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-3 py-2 text-sm"
                     rows={2}
                   />
                 </div>
@@ -7922,7 +7942,7 @@ function ModalSugerenciasPersonal({ area, sugeridos, proyecto, data, fecha, onCe
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
-      <div className="bg-zinc-900 border-2 border-green-600 max-w-lg w-full p-5 space-y-3 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+      <div className="bg-zinc-900 border-2 border-green-600 rounded-card max-w-lg w-full p-5 space-y-3 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-start">
           <div>
             <div className="text-[10px] tracking-widest uppercase text-green-500 font-bold">👥 Sugerencias de personal</div>
@@ -7934,7 +7954,7 @@ function ModalSugerenciasPersonal({ area, sugeridos, proyecto, data, fecha, onCe
           <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
         </div>
 
-        <div className="text-[10px] text-zinc-500 bg-zinc-950 border border-zinc-800 p-2">
+        <div className="text-[10px] text-zinc-500 bg-zinc-950 border border-zinc-800 rounded-card p-2">
           💡 Filtros aplicados: capacidades técnicas + ausencias + credenciales requeridas + brigada preferente
         </div>
 
@@ -8174,7 +8194,7 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
       {subTab === 'resumen' && (
         <div className="space-y-5">
           {/* ===== TOTAL POR MATERIAL ===== */}
-          <div className="bg-zinc-950 border border-zinc-800">
+          <div className="bg-zinc-950 border border-zinc-800 rounded-card">
             <div className="bg-zinc-900 border-b border-zinc-800 px-4 py-3">
               <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">📦 Total por Material</div>
               <div className="text-[10px] text-zinc-500 mt-0.5">Suma de todas las áreas del proyecto por cada material</div>
@@ -8230,7 +8250,7 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
           </div>
 
           {/* ===== TOTAL POR ÁREA ===== */}
-          <div className="bg-zinc-950 border border-zinc-800">
+          <div className="bg-zinc-950 border border-zinc-800 rounded-card">
             <div className="bg-zinc-900 border-b border-zinc-800 px-4 py-3">
               <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">🏢 Total por Área</div>
               <div className="text-[10px] text-zinc-500 mt-0.5">Cada área del proyecto con sus materiales requeridos</div>
@@ -8247,7 +8267,7 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
                     </div>
                   </div>
                   {area.materiales.length === 0 ? (
-                    <div className="text-xs text-zinc-500 italic bg-zinc-900 border border-zinc-800 p-2">
+                    <div className="text-xs text-zinc-500 italic bg-zinc-900 border border-zinc-800 rounded-card p-2">
                       Sin materiales configurados para {area.sistemaNombre}
                     </div>
                   ) : (
@@ -8352,7 +8372,7 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
         </div>
       )}
       {pdfExtraido && (
-        <div className="space-y-3 bg-zinc-900 border border-zinc-800 p-4">
+        <div className="space-y-3 bg-zinc-900 border border-zinc-800 rounded-card p-4">
           <div className="flex justify-between items-start"><div><div className="text-xs tracking-widest uppercase text-green-400 font-bold flex items-center gap-1"><Sparkles className="w-3 h-3" /> {pdfExtraido.numeroSalida}</div><div className="text-[11px] text-zinc-500 mt-1">Orden: <span className="font-mono">{pdfExtraido.ordenReferencia}</span></div></div><button onClick={() => { setPdfExtraido(null); setLineasConfirmar([]); }} className="text-zinc-500"><X className="w-4 h-4" /></button></div>
           {errorPDF && <div className="text-xs text-yellow-400 bg-yellow-900/20 border border-yellow-700 p-2">{errorPDF}</div>}
           <div className="space-y-2">{lineasConfirmar.map((l, i) => <div key={l.key} className={`border p-3 ${l.incluir ? 'border-green-700 bg-green-900/10' : 'border-zinc-800 bg-zinc-950'}`}>
@@ -8406,7 +8426,7 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
           setMatForm({ ...matForm, destino: 'areas', asignaciones: nueva });
         };
         return (
-          <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-3">
             <div className="flex justify-between items-center"><div className="text-xs tracking-widest uppercase text-zinc-400 font-bold">Manual</div><button onClick={() => setModo(null)} className="text-zinc-500"><X className="w-4 h-4" /></button></div>
             <Campo label="Material">
               <select value={matForm.materialId} onChange={e => {
@@ -8428,7 +8448,7 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
 
             {/* v8.9.6: Asignación a áreas */}
             {materialElegido && cantidadTotal > 0 && areasCompat.length > 0 && (
-              <div className="bg-zinc-950 border border-zinc-800 p-3 space-y-2">
+              <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3 space-y-2">
                 <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">🏢 ¿A qué área va este envío?</div>
 
                 <div className="grid grid-cols-2 gap-2">
@@ -8462,7 +8482,7 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
                       const asig = asignaciones[area.id] || '';
                       const reqArea = materialElegido.rinde_m2 > 0 ? (area.m2 / materialElegido.rinde_m2) : 0;
                       return (
-                        <div key={area.id} className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 p-2">
+                        <div key={area.id} className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-card p-2">
                           <div className="flex-1 min-w-0">
                             <div className="text-xs font-bold truncate">{area.nombre}</div>
                             <div className="text-[10px] text-zinc-500">{formatNum(area.m2)} m² · requiere {formatNum(reqArea)} {materialElegido.unidad_plural || materialElegido.unidad}</div>
@@ -8538,7 +8558,7 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
       {/* v8.9.3: Renderizar por sistema, con desglose por área */}
       <div className="space-y-4">
         {gruposFinal.map(grupo => (
-          <div key={grupo.sistemaId} className="bg-zinc-950 border border-zinc-800 overflow-hidden">
+          <div key={grupo.sistemaId} className="bg-zinc-950 border border-zinc-800 rounded-card overflow-hidden">
             {/* Header del sistema */}
             <div className="bg-zinc-900 border-b border-zinc-800 px-4 py-3">
               <div className="flex items-center justify-between">
@@ -8579,7 +8599,7 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
               ) : (
                 <>
                   {/* v8.17.39: DESKTOP — tabla con sort + bandita de color por pendiente */}
-                  <div className="hidden md:block bg-zinc-900 border border-zinc-800 overflow-x-auto">
+                  <div className="hidden md:block bg-zinc-900 border border-zinc-800 rounded-card overflow-x-auto">
                     <TablaMaterialesSistema
                       grupo={grupo}
                       sort={sortMat}
@@ -8597,7 +8617,7 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
                       const expandKey = `${grupo.sistemaId}:${mat.id}`;
                       const abierto = expandidos[expandKey];
                       return (
-                        <div key={mat.id} className="bg-zinc-900 border border-zinc-800 p-3">
+                        <div key={mat.id} className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
                           <div className="flex justify-between items-start mb-2">
                             <div>
                               <div className="font-bold text-sm">{mat.nombre}</div>
@@ -9063,7 +9083,7 @@ function FormReporteRapidoAudio({ usuario, proyecto, sistema, sistemas, personal
         </button>
       </div>
 
-      <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-3">
         <div>
           <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">🎤 Reporte rápido con IA</div>
           <h1 className="text-xl font-black mt-1">{proyecto.nombre}</h1>
@@ -9091,7 +9111,7 @@ function FormReporteRapidoAudio({ usuario, proyecto, sistema, sistemas, personal
 
       {paso === 'grabar' && (
         <div className="space-y-4">
-          <div className="bg-zinc-900 border border-zinc-800 p-6 text-center space-y-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-card p-6 text-center space-y-4">
             {!grabando && !audioBlob && (
               <>
                 <div className="text-sm text-zinc-400">
@@ -9125,7 +9145,7 @@ function FormReporteRapidoAudio({ usuario, proyecto, sistema, sistemas, personal
                 </button>
                 <div className="text-xs text-zinc-500">Pulsa para detener</div>
                 {transcripcion && (
-                  <div className="bg-zinc-950 border border-zinc-800 p-3 text-xs text-zinc-300 text-left max-h-32 overflow-auto">
+                  <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3 text-xs text-zinc-300 text-left max-h-32 overflow-auto">
                     {transcripcion}
                   </div>
                 )}
@@ -9137,7 +9157,7 @@ function FormReporteRapidoAudio({ usuario, proyecto, sistema, sistemas, personal
                 <div className="text-sm font-bold">✓ Audio grabado · {fmtDuracion(duracion)}</div>
                 <audio src={audioUrl} controls className="mx-auto" />
                 {transcripcion && (
-                  <div className="bg-zinc-950 border border-zinc-800 p-3 text-xs text-zinc-300 text-left max-h-40 overflow-auto">
+                  <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3 text-xs text-zinc-300 text-left max-h-40 overflow-auto">
                     <div className="text-[10px] text-zinc-500 uppercase mb-1">Transcripción</div>
                     <textarea
                       value={transcripcion}
@@ -9160,7 +9180,7 @@ function FormReporteRapidoAudio({ usuario, proyecto, sistema, sistemas, personal
       )}
 
       {paso === 'procesando' && (
-        <div className="bg-zinc-900 border border-zinc-800 p-8 text-center space-y-3">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-8 text-center space-y-3">
           <Loader2 className="w-12 h-12 text-red-600 animate-spin mx-auto" />
           <div className="font-bold">Procesando con IA...</div>
           <div className="text-xs text-zinc-500">Claude está extrayendo los datos de tu reporte</div>
@@ -9174,13 +9194,13 @@ function FormReporteRapidoAudio({ usuario, proyecto, sistema, sistemas, personal
           </div>
 
           {/* Avances */}
-          <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-2">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-2">
             <div className="flex justify-between items-center">
               <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">🎯 Avances detectados ({avancesEdit.length})</div>
               <button onClick={() => setAvancesEdit([...avancesEdit, { areaNombre: '', tareaNombre: '', m2: 0, notaEspecifica: '' }])} className="text-[10px] bg-zinc-800 px-2 py-1 uppercase font-bold text-zinc-400">+ Agregar</button>
             </div>
             {avancesEdit.map((av, i) => (
-              <div key={i} className="bg-zinc-950 border border-zinc-800 p-3 space-y-2">
+              <div key={i} className="bg-zinc-950 border border-zinc-800 rounded-card p-3 space-y-2">
                 <div className="flex justify-between">
                   <div className="text-[10px] text-zinc-500 uppercase">Avance #{i + 1}</div>
                   <button onClick={() => setAvancesEdit(avancesEdit.filter((_, idx) => idx !== i))} className="text-zinc-500 hover:text-red-400"><X className="w-3 h-3" /></button>
@@ -9193,7 +9213,7 @@ function FormReporteRapidoAudio({ usuario, proyecto, sistema, sistemas, personal
                       const nuevos = [...avancesEdit];
                       nuevos[i] = { ...av, areaId: e.target.value, areaNombre: area?.nombre || av.areaNombre };
                       setAvancesEdit(nuevos);
-                    }} className="w-full bg-zinc-900 border border-zinc-800 px-2 py-1 text-white text-xs">
+                    }} className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1 text-white text-xs">
                       <option value="">— Seleccionar —</option>
                       {proyecto.areas.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
                     </select>
@@ -9208,7 +9228,7 @@ function FormReporteRapidoAudio({ usuario, proyecto, sistema, sistemas, personal
                       const nuevos = [...avancesEdit];
                       nuevos[i] = { ...av, tareaId: e.target.value, tareaNombre: tarea?.nombre || av.tareaNombre };
                       setAvancesEdit(nuevos);
-                    }} className="w-full bg-zinc-900 border border-zinc-800 px-2 py-1 text-white text-xs">
+                    }} className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1 text-white text-xs">
                       <option value="">— Seleccionar —</option>
                       {(() => {
                         const sisId = proyecto.areas.find(a => a.id === av.areaId)?.sistemaId || proyecto.sistema;
@@ -9225,7 +9245,7 @@ function FormReporteRapidoAudio({ usuario, proyecto, sistema, sistemas, personal
                     const nuevos = [...avancesEdit];
                     nuevos[i] = { ...av, m2: parseFloat(e.target.value) || 0 };
                     setAvancesEdit(nuevos);
-                  }} className="w-full bg-zinc-900 border border-zinc-800 px-2 py-1 text-white text-sm" />
+                  }} className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1 text-white text-sm" />
                 </div>
                 {av.notaEspecifica && <div className="text-[10px] text-zinc-500 italic">Nota: {av.notaEspecifica}</div>}
               </div>
@@ -9235,10 +9255,10 @@ function FormReporteRapidoAudio({ usuario, proyecto, sistema, sistemas, personal
 
           {/* Materiales usados */}
           {materialesEdit.length > 0 && (
-            <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-2">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-2">
               <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">📦 Materiales usados</div>
               {materialesEdit.map((m, i) => (
-                <div key={i} className="bg-zinc-950 border border-zinc-800 p-2 flex items-center gap-2 text-xs">
+                <div key={i} className="bg-zinc-950 border border-zinc-800 rounded-card p-2 flex items-center gap-2 text-xs">
                   <div className="flex-1">{m.nombre} · {m.cantidad} {m.unidad}</div>
                   <button onClick={() => setMaterialesEdit(materialesEdit.filter((_, idx) => idx !== i))} className="text-zinc-500"><X className="w-3 h-3" /></button>
                 </div>
@@ -9251,7 +9271,7 @@ function FormReporteRapidoAudio({ usuario, proyecto, sistema, sistemas, personal
             <div className="bg-yellow-900/10 border border-yellow-700 p-4 space-y-2">
               <div className="text-[11px] tracking-widest uppercase text-yellow-400 font-bold">⚠️ Problemas / Bloqueos</div>
               {bloqueosEdit.map((b, i) => (
-                <div key={i} className="bg-zinc-950 border border-zinc-800 p-2 flex items-center gap-2 text-xs text-yellow-300">
+                <div key={i} className="bg-zinc-950 border border-zinc-800 rounded-card p-2 flex items-center gap-2 text-xs text-yellow-300">
                   <div className="flex-1">{b}</div>
                   <button onClick={() => setBloqueosEdit(bloqueosEdit.filter((_, idx) => idx !== i))} className="text-zinc-500"><X className="w-3 h-3" /></button>
                 </div>
@@ -9261,11 +9281,11 @@ function FormReporteRapidoAudio({ usuario, proyecto, sistema, sistemas, personal
 
           {/* Personal ausente */}
           {personalAusenteEdit.length > 0 && (
-            <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-2">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-2">
               <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">👥 Personal ausente</div>
               <div className="flex flex-wrap gap-1">
                 {personalAusenteEdit.map((p, i) => (
-                  <span key={i} className="bg-zinc-950 border border-zinc-800 px-2 py-1 text-[10px] flex items-center gap-1">
+                  <span key={i} className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1 text-[10px] flex items-center gap-1">
                     {p}
                     <button onClick={() => setPersonalAusenteEdit(personalAusenteEdit.filter((_, idx) => idx !== i))} className="text-zinc-500"><X className="w-2.5 h-2.5" /></button>
                   </span>
@@ -9276,7 +9296,7 @@ function FormReporteRapidoAudio({ usuario, proyecto, sistema, sistemas, personal
 
           {/* Otros datos */}
           {(datosIA.clima !== 'normal' || datosIA.horaInicio || datosIA.horaFin || datosIA.notasCalidad || datosIA.tareasAdicionales || (datosIA.necesitaMaterial || []).length > 0) && (
-            <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-2">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-2">
               <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">📋 Otros datos detectados</div>
               <div className="space-y-1 text-xs">
                 {datosIA.clima && datosIA.clima !== 'normal' && <div>Clima: <span className="text-yellow-400">{datosIA.clima}</span></div>}
@@ -9297,7 +9317,7 @@ function FormReporteRapidoAudio({ usuario, proyecto, sistema, sistemas, personal
       )}
 
       {paso === 'guardando' && (
-        <div className="bg-zinc-900 border border-zinc-800 p-8 text-center space-y-3">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-8 text-center space-y-3">
           <Loader2 className="w-12 h-12 text-green-500 animate-spin mx-auto" />
           <div className="font-bold">Guardando reporte...</div>
         </div>
@@ -9368,7 +9388,7 @@ function FormReporte({ usuario, proyecto, reportes, sistema, sistemas, onGuardar
     <div className="max-w-md mx-auto flex flex-col items-center py-12 text-center space-y-4">
       <CheckCircle2 className="w-20 h-20 text-green-500" />
       <div className="text-2xl font-black">{ultimo.completada ? '¡Tarea Completada!' : 'Reporte Guardado'}</div>
-      <div className="bg-zinc-900 border border-zinc-800 p-4 w-full text-left">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 w-full text-left">
         <div className="text-xs text-zinc-500 uppercase tracking-wider">{ultimo.area}</div>
         <div className="font-bold">{ultimo.tarea}</div>
         <div className="text-sm text-zinc-400 mt-1">{ultimo.rollos && <>🧻 {formatNum(ultimo.rollos)} rollos · </>}{ultimo.cubetas && <>🪣 {formatNum(ultimo.cubetas)} cubetas · </>}{formatNum(ultimo.m2)} m²</div>
@@ -9403,16 +9423,16 @@ function FormReporte({ usuario, proyecto, reportes, sistema, sistemas, onGuardar
       </div>}
 
       {paso === 3 && area && tarea && <div className="space-y-3">
-        <div className="bg-zinc-900 border border-zinc-800 p-3 text-xs"><div className="text-zinc-500 uppercase tracking-wider">Reportando</div><div className="font-bold text-sm">{area.nombre} · {tarea.nombre}</div><div className="text-zinc-400 mt-1">Faltan <span className="text-white font-bold">{formatNum(m2Rest)} m²</span>{tarea.reporta === 'rollos' && <> (<span className="text-white font-bold">{formatNum(m2Rest / 8.5)} rollos</span>)</>}</div></div>
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 text-xs"><div className="text-zinc-500 uppercase tracking-wider">Reportando</div><div className="font-bold text-sm">{area.nombre} · {tarea.nombre}</div><div className="text-zinc-400 mt-1">Faltan <span className="text-white font-bold">{formatNum(m2Rest)} m²</span>{tarea.reporta === 'rollos' && <> (<span className="text-white font-bold">{formatNum(m2Rest / 8.5)} rollos</span>)</>}</div></div>
         {m2Rest > 0 && !guardando && <button onClick={completar} className="w-full bg-green-600 text-white font-black uppercase py-4 flex items-center justify-center gap-2 border-2 border-green-500"><Zap className="w-5 h-5" /> Completé los {formatNum(m2Rest)} m² restantes</button>}
         <div className="text-center text-xs text-zinc-500 uppercase tracking-widest">— o reporta parcial —</div>
-        {tarea.reporta === 'rollos' && <><Label>🧻 Rollos</Label><Input type="number" value={form.rollos} onChange={v => setForm({ ...form, rollos: v })} />{form.rollos && <div className="text-xs text-zinc-400 bg-zinc-900 border border-zinc-800 p-2">{form.rollos} × 8.5 = <span className="text-white font-bold">{formatNum(parseFloat(form.rollos) * 8.5)} m²</span></div>}</>}
+        {tarea.reporta === 'rollos' && <><Label>🧻 Rollos</Label><Input type="number" value={form.rollos} onChange={v => setForm({ ...form, rollos: v })} />{form.rollos && <div className="text-xs text-zinc-400 bg-zinc-900 border border-zinc-800 rounded-card p-2">{form.rollos} × 8.5 = <span className="text-white font-bold">{formatNum(parseFloat(form.rollos) * 8.5)} m²</span></div>}</>}
         {tarea.reporta === 'm2_y_cubetas' && <><Label>📐 m²</Label><Input type="number" value={form.m2} onChange={v => setForm({ ...form, m2: v })} /><Label>🪣 Cubetas</Label><Input type="number" value={form.cubetas} onChange={v => setForm({ ...form, cubetas: v })} step="0.1" /></>}
         {tarea.reporta === 'm2' && <><Label>📐 m²</Label><Input type="number" value={form.m2} onChange={v => setForm({ ...form, m2: v })} /></>}
         {tarea.reporta === 'unidades' && <><Label>Unidades</Label><Input type="number" value={form.m2} onChange={v => setForm({ ...form, m2: v })} /></>}
 
         {/* BLOQUE DE FOTOS OPCIONALES */}
-        <div className="bg-zinc-900 border border-zinc-800 p-3 space-y-2">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 space-y-2">
           <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold flex items-center gap-1"><Camera className="w-3 h-3" /> Fotos (opcional) {fotos.length > 0 && <span className="text-red-500">· {fotos.length}</span>}</div>
           {fotos.length > 0 && <div className="grid grid-cols-4 gap-1">{fotos.map((f, i) => <div key={i} className="relative aspect-square bg-zinc-950"><img src={f} className="w-full h-full object-cover" alt="" /><button onClick={() => setFotos(fotos.filter((_, x) => x !== i))} className="absolute top-0 right-0 bg-black/80 p-0.5"><X className="w-3 h-3 text-white" /></button></div>)}</div>}
           <div className="relative">
@@ -9550,7 +9570,7 @@ function GaleriaGlobal({ usuario, data, onVolver }) {
       <h1 className="text-3xl font-black tracking-tight">Galería</h1>
 
       {/* v8.10.14: Buscador rápido */}
-      <div className="bg-zinc-900 border border-zinc-800 p-3 space-y-2">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 space-y-2">
         <input
           type="text"
           value={busqueda}
@@ -9566,9 +9586,9 @@ function GaleriaGlobal({ usuario, data, onVolver }) {
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-          <select value={filtros.sistemaId} onChange={e => setFiltros({ ...filtros, sistemaId: e.target.value })} className="bg-zinc-950 border border-zinc-800 px-2 py-2 text-xs text-white"><option value="">Todos los sistemas</option>{Object.values(data.sistemas).map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select>
-          <select value={filtros.proyectoId} onChange={e => setFiltros({ ...filtros, proyectoId: e.target.value })} className="bg-zinc-950 border border-zinc-800 px-2 py-2 text-xs text-white"><option value="">Todos los proyectos</option>{data.proyectos.map(p => <option key={p.id} value={p.id}>{labelProyecto(p)}</option>)}</select>
-          <label className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 px-3 py-2 cursor-pointer text-xs text-white"><input type="checkbox" checked={filtros.favoritasSolo} onChange={e => setFiltros({ ...filtros, favoritasSolo: e.target.checked })} className="w-4 h-4 accent-red-600" />⭐ Solo favoritas</label>
+          <select value={filtros.sistemaId} onChange={e => setFiltros({ ...filtros, sistemaId: e.target.value })} className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-2 text-xs text-white"><option value="">Todos los sistemas</option>{Object.values(data.sistemas).map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select>
+          <select value={filtros.proyectoId} onChange={e => setFiltros({ ...filtros, proyectoId: e.target.value })} className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-2 text-xs text-white"><option value="">Todos los proyectos</option>{data.proyectos.map(p => <option key={p.id} value={p.id}>{labelProyecto(p)}</option>)}</select>
+          <label className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 cursor-pointer text-xs text-white"><input type="checkbox" checked={filtros.favoritasSolo} onChange={e => setFiltros({ ...filtros, favoritasSolo: e.target.checked })} className="w-4 h-4 accent-red-600" />⭐ Solo favoritas</label>
         </div>
 
         {/* v8.10.14: Toggle agrupación */}
@@ -9713,7 +9733,7 @@ function FotoThumbGlobal({ foto, onClick }) {
     return () => { cancelado = true; };
   }, [foto.id]);
   return (
-    <button onClick={onClick} className="aspect-square bg-zinc-900 border border-zinc-800 hover:border-red-600 overflow-hidden block w-full">
+    <button onClick={onClick} className="aspect-square bg-zinc-900 border border-zinc-800 rounded-card hover:border-red-600 overflow-hidden block w-full">
       {src ? <img src={src} className="w-full h-full object-cover" alt="" /> : <div className="w-full h-full flex items-center justify-center"><Loader2 className="w-4 h-4 text-zinc-600 animate-spin" /></div>}
     </button>
   );
@@ -9784,12 +9804,12 @@ function VistaEstadisticasPersonal({ data, onVolver, onVerProyecto }) {
           <div className="text-3xl font-black mt-1">{formatNum(totalM2Global, 0)}</div>
           <div className="text-[10px] text-red-200">entre todo el equipo</div>
         </div>
-        <div className="bg-zinc-900 border border-zinc-800 p-4">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4">
           <div className="text-[10px] tracking-widest uppercase text-zinc-500">Personas activas</div>
           <div className="text-3xl font-black mt-1">{personasActivas}</div>
           <div className="text-[10px] text-zinc-500">con reportes registrados</div>
         </div>
-        <div className="bg-zinc-900 border border-zinc-800 p-4">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4">
           <div className="text-[10px] tracking-widest uppercase text-zinc-500">Total registros</div>
           <div className="text-3xl font-black mt-1">{formatNum((data.reportes || []).length, 0)}</div>
           <div className="text-[10px] text-zinc-500">reportes de avance</div>
@@ -9798,13 +9818,13 @@ function VistaEstadisticasPersonal({ data, onVolver, onVerProyecto }) {
 
       {/* Filtros */}
       <div className="flex gap-2 flex-wrap items-center">
-        <select value={filtroRol} onChange={e => setFiltroRol(e.target.value)} className="bg-zinc-900 border border-zinc-800 px-3 py-1.5 text-xs text-white">
+        <select value={filtroRol} onChange={e => setFiltroRol(e.target.value)} className="bg-zinc-900 border border-zinc-800 rounded-card px-3 py-1.5 text-xs text-white">
           <option value="">Todos</option>
           <option value="maestro">Maestros</option>
           <option value="ayudante">Ayudantes</option>
           <option value="supervisor">Supervisores</option>
         </select>
-        <select value={orden} onChange={e => setOrden(e.target.value)} className="bg-zinc-900 border border-zinc-800 px-3 py-1.5 text-xs text-white">
+        <select value={orden} onChange={e => setOrden(e.target.value)} className="bg-zinc-900 border border-zinc-800 rounded-card px-3 py-1.5 text-xs text-white">
           <option value="m2">Orden: Más m²</option>
           <option value="proyectos">Orden: Más proyectos</option>
           <option value="nombre">Orden: Nombre A-Z</option>
@@ -9813,7 +9833,7 @@ function VistaEstadisticasPersonal({ data, onVolver, onVerProyecto }) {
 
       {/* Lista de personas con stats */}
       {estadisticasOrdenadas.length === 0 ? (
-        <div className="bg-zinc-900 border border-zinc-800 p-6 text-center text-sm text-zinc-500">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-6 text-center text-sm text-zinc-500">
           No hay personas que coincidan con el filtro
         </div>
       ) : (
@@ -9826,7 +9846,7 @@ function VistaEstadisticasPersonal({ data, onVolver, onVerProyecto }) {
               <button
                 key={p.id}
                 onClick={() => setPersonaDetalle(p)}
-                className="w-full bg-zinc-900 border border-zinc-800 hover:border-red-600 p-3 text-left flex items-center gap-3"
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-card hover:border-red-600 p-3 text-left flex items-center gap-3"
               >
                 <div className="flex-shrink-0">
                   {p.foto2x2 ? (
@@ -9882,7 +9902,7 @@ function ModalExperienciaPersona({ persona, data, onCerrar, onVerProyecto }) {
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
-      <div className="bg-zinc-900 border border-zinc-700 max-w-2xl w-full p-5 space-y-4 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+      <div className="bg-zinc-900 border border-zinc-700 rounded-card max-w-2xl w-full p-5 space-y-4 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-start sticky top-0 bg-zinc-900 pb-2 border-b border-zinc-800">
           <div className="flex items-center gap-3">
             {persona.foto2x2 ? (
@@ -9900,26 +9920,26 @@ function ModalExperienciaPersona({ persona, data, onCerrar, onVerProyecto }) {
         </div>
 
         {s.cantidadProyectos === 0 ? (
-          <div className="bg-zinc-950 border border-zinc-800 p-6 text-center text-sm text-zinc-500">
+          <div className="bg-zinc-950 border border-zinc-800 rounded-card p-6 text-center text-sm text-zinc-500">
             Esta persona aún no tiene reportes registrados en el sistema.
           </div>
         ) : (
           <>
             {/* Resumen */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-              <div className="bg-zinc-950 border border-zinc-800 p-3">
+              <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3">
                 <div className="text-[10px] text-zinc-500 uppercase">Proyectos</div>
                 <div className="text-2xl font-black text-red-400">{s.cantidadProyectos}</div>
               </div>
-              <div className="bg-zinc-950 border border-zinc-800 p-3">
+              <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3">
                 <div className="text-[10px] text-zinc-500 uppercase">m² instalados</div>
                 <div className="text-2xl font-black text-green-400">{formatNum(s.m2Total, 0)}</div>
               </div>
-              <div className="bg-zinc-950 border border-zinc-800 p-3">
+              <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3">
                 <div className="text-[10px] text-zinc-500 uppercase">Meses activo</div>
                 <div className="text-2xl font-black">{s.mesesActivo}</div>
               </div>
-              <div className="bg-zinc-950 border border-zinc-800 p-3">
+              <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3">
                 <div className="text-[10px] text-zinc-500 uppercase">Prom. m²/mes</div>
                 <div className="text-2xl font-black">{formatNum(s.promedioM2Mes, 0)}</div>
               </div>
@@ -9938,7 +9958,7 @@ function ModalExperienciaPersona({ persona, data, onCerrar, onVerProyecto }) {
                 <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2">🏗️ m² por Sistema</div>
                 <div className="space-y-2">
                   {s.porSistema.map(sis => (
-                    <div key={sis.nombre} className="bg-zinc-950 border border-zinc-800 p-3">
+                    <div key={sis.nombre} className="bg-zinc-950 border border-zinc-800 rounded-card p-3">
                       <div className="flex justify-between items-center mb-1">
                         <div className="text-sm font-bold">{sis.nombre}</div>
                         <div className="text-sm">
@@ -9961,7 +9981,7 @@ function ModalExperienciaPersona({ persona, data, onCerrar, onVerProyecto }) {
                 <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2">🎨 m² por Producto</div>
                 <div className="space-y-1">
                   {s.porTarea.map(t => (
-                    <div key={t.nombre} className="flex justify-between items-center bg-zinc-950 border border-zinc-800 p-2 text-xs">
+                    <div key={t.nombre} className="flex justify-between items-center bg-zinc-950 border border-zinc-800 rounded-card p-2 text-xs">
                       <div className="flex-1 truncate">{t.nombre}</div>
                       <div className="font-bold ml-2 flex-shrink-0">{formatNum(t.m2, 1)} m²</div>
                     </div>
@@ -9978,7 +9998,7 @@ function ModalExperienciaPersona({ persona, data, onCerrar, onVerProyecto }) {
                   <button
                     key={pi.proyecto.id}
                     onClick={() => onVerProyecto(pi.proyecto)}
-                    className="w-full bg-zinc-950 border border-zinc-800 hover:border-red-600 p-2 flex items-center justify-between text-left"
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-card hover:border-red-600 p-2 flex items-center justify-between text-left"
                   >
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-mono text-zinc-500">{pi.proyecto.referenciaOdoo}</div>
@@ -10224,7 +10244,7 @@ function VistaMiProduccion({ usuario, data, onVolver, onVerProyecto }) {
       </div>
 
       {/* Selector quincena */}
-      <div className="flex items-center justify-between bg-zinc-900 border border-zinc-800 p-3">
+      <div className="flex items-center justify-between bg-zinc-900 border border-zinc-800 rounded-card p-3">
         <button onClick={() => cambiarQuincena(-1)} className="text-zinc-400 hover:text-white p-2">
           <ChevronLeft className="w-5 h-5" />
         </button>
@@ -10255,18 +10275,18 @@ function VistaMiProduccion({ usuario, data, onVolver, onVerProyecto }) {
       </div>
 
       {/* Acumulado HISTÓRICO de TODOS tus proyectos como maestro */}
-      <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-3">
         <div className="flex items-center justify-between">
           <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">📊 Acumulado total (todos tus proyectos)</div>
           {cargandoHist && <Loader2 className="w-3 h-3 animate-spin text-zinc-500" />}
         </div>
         <div className="grid grid-cols-3 gap-2">
-          <div className="bg-zinc-950 border border-zinc-800 p-3">
+          <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3">
             <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">Devengado</div>
             <div className="text-base sm:text-lg font-black text-white mt-1">RD$ {formatNum(totalHist.devengado, 0)}</div>
             <div className="text-[10px] text-zinc-500 mt-0.5">por todo lo reportado</div>
           </div>
-          <div className="bg-zinc-950 border border-zinc-800 p-3">
+          <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3">
             <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">Pagado</div>
             <div className="text-base sm:text-lg font-black text-green-400 mt-1">RD$ {formatNum(totalHist.pagado, 0)}</div>
             <div className="text-[10px] text-zinc-500 mt-0.5">en cortes cerrados</div>
@@ -10281,7 +10301,7 @@ function VistaMiProduccion({ usuario, data, onVolver, onVerProyecto }) {
 
       {/* Desglose por proyecto */}
       {produccionPorProyecto.length === 0 ? (
-        <div className="bg-zinc-900 border border-zinc-800 p-6 text-center">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-6 text-center">
           <div className="text-4xl mb-2">📊</div>
           <div className="text-sm font-bold">Sin producción en esta quincena</div>
           <div className="text-xs text-zinc-500 mt-1">
@@ -10299,7 +10319,7 @@ function VistaMiProduccion({ usuario, data, onVolver, onVerProyecto }) {
             const isExp = expandido.has(g.proyecto.id);
             const porFecha = reportesPorFecha(g.reportes);
             return (
-              <div key={g.proyecto.id} className="bg-zinc-900 border border-zinc-800">
+              <div key={g.proyecto.id} className="bg-zinc-900 border border-zinc-800 rounded-card">
                 <button
                   onClick={() => toggleExpandido(g.proyecto.id)}
                   className="w-full p-3 flex items-start gap-2 text-left hover:bg-zinc-800/50"
@@ -10339,7 +10359,7 @@ function VistaMiProduccion({ usuario, data, onVolver, onVerProyecto }) {
                   <div className="border-t border-zinc-800 p-3 space-y-1 bg-zinc-950">
                     {/* Histórico del proyecto (no solo la quincena) */}
                     {estadoPorProyecto[g.proyecto.id] && (
-                      <div className="bg-zinc-900 border border-zinc-800 p-2 mb-2">
+                      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-2 mb-2">
                         <div className="text-[9px] tracking-widest uppercase text-zinc-500 font-bold mb-1">Acumulado histórico de este proyecto</div>
                         <div className="grid grid-cols-3 gap-1 text-[10px]">
                           <div>
@@ -10378,7 +10398,7 @@ function VistaMiProduccion({ usuario, data, onVolver, onVerProyecto }) {
                     ))}
                     <button
                       onClick={(e) => { e.stopPropagation(); onVerProyecto(g.proyecto); }}
-                      className="mt-2 w-full bg-zinc-900 border border-zinc-800 hover:border-red-600 py-2 text-[10px] font-bold uppercase text-zinc-400 hover:text-red-400"
+                      className="mt-2 w-full bg-zinc-900 border border-zinc-800 rounded-card hover:border-red-600 py-2 text-[10px] font-bold uppercase text-zinc-400 hover:text-red-400"
                     >
                       Abrir proyecto →
                     </button>
@@ -10402,7 +10422,7 @@ function VistaMiProduccion({ usuario, data, onVolver, onVerProyecto }) {
 
       {/* Consejos para subir la producción */}
       {esQuincenaActual && diasRestantes > 0 && (
-        <div className="bg-zinc-900 border border-zinc-800 p-3 space-y-1">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 space-y-1">
           <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">
             💡 Consejo
           </div>
@@ -10752,14 +10772,14 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto }) {
           <div className="text-xs text-zinc-500">Vista semanal interactiva · asigna personal haciendo click en celdas vacías</div>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => cambiarSemana(-1)} className="bg-zinc-900 border border-zinc-800 px-3 py-2 text-xs hover:border-red-500"><ChevronLeft className="w-3 h-3 inline" /> Anterior</button>
+          <button onClick={() => cambiarSemana(-1)} className="bg-zinc-900 border border-zinc-800 rounded-card px-3 py-2 text-xs hover:border-red-500"><ChevronLeft className="w-3 h-3 inline" /> Anterior</button>
           <button onClick={irAEstaSemana} className="bg-zinc-800 px-3 py-2 text-xs font-bold uppercase">Hoy</button>
-          <button onClick={() => cambiarSemana(1)} className="bg-zinc-900 border border-zinc-800 px-3 py-2 text-xs hover:border-red-500">Siguiente <ChevronRight className="w-3 h-3 inline" /></button>
+          <button onClick={() => cambiarSemana(1)} className="bg-zinc-900 border border-zinc-800 rounded-card px-3 py-2 text-xs hover:border-red-500">Siguiente <ChevronRight className="w-3 h-3 inline" /></button>
         </div>
       </div>
 
       {/* Toggle vista */}
-      <div className="flex gap-1 bg-zinc-900 border border-zinc-800 p-1 w-fit">
+      <div className="flex gap-1 bg-zinc-900 border border-zinc-800 rounded-card p-1 w-fit">
         <button onClick={() => setVistaModo('personal')} className={`px-4 py-1.5 text-[11px] font-bold uppercase ${vistaModo === 'personal' ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>Por Personal</button>
         <button onClick={() => setVistaModo('proyecto')} className={`px-4 py-1.5 text-[11px] font-bold uppercase ${vistaModo === 'proyecto' ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>Por Proyecto</button>
       </div>
@@ -10768,24 +10788,24 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto }) {
       <div className="flex gap-2 flex-wrap items-center">
         {vistaModo === 'personal' && (
           <>
-            <select value={filtroRol} onChange={e => setFiltroRol(e.target.value)} className="bg-zinc-900 border border-zinc-800 px-3 py-1.5 text-xs text-white">
+            <select value={filtroRol} onChange={e => setFiltroRol(e.target.value)} className="bg-zinc-900 border border-zinc-800 rounded-card px-3 py-1.5 text-xs text-white">
               <option value="">Todos (maestros + ayudantes)</option>
               <option value="maestro">Solo Maestros</option>
               <option value="ayudante">Solo Ayudantes</option>
             </select>
-            <label className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 px-3 py-1.5 text-xs cursor-pointer">
+            <label className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-card px-3 py-1.5 text-xs cursor-pointer">
               <input type="checkbox" checked={soloConProyecto} onChange={e => setSoloConProyecto(e.target.checked)} className="w-3 h-3 accent-red-600" />
               <span>Solo con proyecto asignado</span>
             </label>
           </>
         )}
-        <select value={filtroProyecto} onChange={e => setFiltroProyecto(e.target.value)} className="bg-zinc-900 border border-zinc-800 px-3 py-1.5 text-xs text-white">
+        <select value={filtroProyecto} onChange={e => setFiltroProyecto(e.target.value)} className="bg-zinc-900 border border-zinc-800 rounded-card px-3 py-1.5 text-xs text-white">
           <option value="">Todos los proyectos</option>
           {proyectosFiltrados.map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo ? p.referenciaOdoo + ' · ' : ''}{p.cliente}</option>)}
         </select>
         {/* v8.17.2: filtro por supervisor */}
         {esAdmin && supervisores.length > 0 && (
-          <select value={filtroSupervisor} onChange={e => { setFiltroSupervisor(e.target.value); setFiltroProyecto(''); }} className="bg-zinc-900 border border-zinc-800 px-3 py-1.5 text-xs text-white" title="Filtrar por supervisor">
+          <select value={filtroSupervisor} onChange={e => { setFiltroSupervisor(e.target.value); setFiltroProyecto(''); }} className="bg-zinc-900 border border-zinc-800 rounded-card px-3 py-1.5 text-xs text-white" title="Filtrar por supervisor">
             <option value="">Todos los supervisores</option>
             {supervisores.map(s => <option key={s.id} value={s.id}>👁️ {s.nombre}</option>)}
           </select>
@@ -10802,7 +10822,7 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto }) {
 
       {/* Grid: vista por Personal */}
       {vistaModo === 'personal' && (
-        <div className="bg-zinc-900 border border-zinc-800 overflow-x-auto">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card overflow-x-auto">
           <table className="w-full text-xs">
             <thead className="bg-zinc-950">
               <tr>
@@ -10883,7 +10903,7 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto }) {
 
       {/* Grid: vista por Proyecto */}
       {vistaModo === 'proyecto' && (
-        <div className="bg-zinc-900 border border-zinc-800 overflow-x-auto">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card overflow-x-auto">
           <table className="w-full text-xs">
             <thead className="bg-zinc-950">
               <tr>
@@ -10992,7 +11012,7 @@ function PopupDetalleJornada({ personaId, proyectoInfo, fecha, data, gridProyect
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
-      <div className="bg-zinc-900 border-2 border-red-600 max-w-md w-full p-5 space-y-3 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+      <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-md w-full p-5 space-y-3 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-start">
           <div>
             <div className="text-[10px] font-mono text-zinc-500">{proyecto.referenciaOdoo}</div>
@@ -11005,13 +11025,13 @@ function PopupDetalleJornada({ personaId, proyectoInfo, fecha, data, gridProyect
         {info && (
           <>
             <div className="grid grid-cols-2 gap-2">
-              <div className="bg-zinc-950 border border-zinc-800 p-2">
+              <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2">
                 <div className="text-[9px] uppercase text-zinc-500">Avance reportado</div>
                 <div className={`text-sm font-bold ${info.hayReporte ? 'text-green-400' : 'text-yellow-400'}`}>
                   {info.hayReporte ? `${formatNum(m2Total)} m²` : '⚠ sin reporte'}
                 </div>
               </div>
-              <div className="bg-zinc-950 border border-zinc-800 p-2">
+              <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2">
                 <div className="text-[9px] uppercase text-zinc-500">Condición</div>
                 <div className="text-sm font-bold">
                   {info.condicionDia === 'lluvia' ? '☔ Lluvia' : info.condicionDia === 'no_laborable' ? '🚫 No laborable' : '☀️ Normal'}
@@ -11055,7 +11075,7 @@ function PopupDetalleJornada({ personaId, proyectoInfo, fecha, data, gridProyect
                 <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1">Reportes del día</div>
                 <div className="space-y-1">
                   {reportes.map(r => (
-                    <div key={r.id} className="bg-zinc-950 border border-zinc-800 p-2 text-[11px]">
+                    <div key={r.id} className="bg-zinc-950 border border-zinc-800 rounded-card p-2 text-[11px]">
                       <div className="flex justify-between">
                         <span>{r.supervisor || '—'}</span>
                         <span className="text-green-400 font-bold">{formatNum(r.m2 || 0)} m²</span>
@@ -11105,7 +11125,7 @@ function ModalAsignarDesdeGrid({ personaId, fecha, data, usuario, onCerrar, onCo
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
-      <div className="bg-zinc-900 border-2 border-red-600 max-w-md w-full p-5 space-y-3" onClick={e => e.stopPropagation()}>
+      <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-md w-full p-5 space-y-3" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-start">
           <div>
             <div className="text-xs tracking-widest uppercase text-red-500 font-bold">Asignar a proyecto</div>
@@ -11127,7 +11147,7 @@ function ModalAsignarDesdeGrid({ personaId, fecha, data, usuario, onCerrar, onCo
                 {proyectosElegibles.map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo ? p.referenciaOdoo + ' · ' : ''}{p.cliente}</option>)}
               </select>
             </Campo>
-            <div className="text-[10px] text-zinc-500 bg-zinc-950 border border-zinc-800 p-2">
+            <div className="text-[10px] text-zinc-500 bg-zinc-950 border border-zinc-800 rounded-card p-2">
               💡 Si ya existe una jornada ese día para el proyecto, se agregará a la persona. Si no, se creará una nueva jornada programada.
             </div>
           </>
@@ -11194,7 +11214,7 @@ function VistaEquipoGlobal({ data, onVolver, onVerProyecto }) {
       {loading && <div className="text-center py-8"><Loader2 className="w-6 h-6 text-red-500 animate-spin mx-auto" /></div>}
       {!loading && ordenados.length === 0 && <div className="text-center py-10 text-zinc-500 text-sm">Nadie en obra todavía. Las jornadas se registran desde el tab Jornada de cada proyecto.</div>}
       <div className="space-y-2">{ordenados.map(({ persona, proyectos }) => (
-        <div key={persona.id} className="bg-zinc-900 border border-zinc-800 p-3 flex items-center gap-3">
+        <div key={persona.id} className="bg-zinc-900 border border-zinc-800 rounded-card p-3 flex items-center gap-3">
           {persona.foto2x2 ? <img src={persona.foto2x2} alt="" className="w-10 h-10 object-cover border border-zinc-700" /> : <UserCircle className="w-10 h-10 text-zinc-500" />}
           <div className="flex-1 min-w-0">
             <div className="font-bold text-sm">{persona.nombre}</div>
@@ -11233,7 +11253,7 @@ function ProduccionPropia({ persona }) {
       } catch (e) { console.error(e); setDatos({ m2Mes: 0, ganadoMes: 0, proyectos: 0 }); }
     })();
   }, [persona.id]);
-  if (!datos) return <div className="bg-zinc-900 border border-zinc-800 p-4 text-xs text-zinc-500"><Loader2 className="w-4 h-4 animate-spin inline mr-1" /> Calculando...</div>;
+  if (!datos) return <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 text-xs text-zinc-500"><Loader2 className="w-4 h-4 animate-spin inline mr-1" /> Calculando...</div>;
   return (
     <div className="bg-gradient-to-br from-green-900/30 to-zinc-950 border border-green-900/50 p-4 space-y-2">
       <div className="text-[11px] tracking-widest uppercase text-green-400 font-bold flex items-center gap-1"><DollarSign className="w-3 h-3" /> Mi producción este mes</div>
@@ -11503,7 +11523,7 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
 
         {/* Horas + GPS */}
         <div className="grid grid-cols-2 gap-3">
-          <div className="bg-zinc-950 border border-zinc-800 p-3">
+          <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3">
             <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold mb-1 flex items-center gap-1"><Play className="w-3 h-3 text-green-400" /> Entrada</div>
             <div className="text-2xl font-black">{formatHora(jornadaHoy?.horaInicio)}</div>
             {jornadaHoy?.iniciadaPorNombre && <div className="text-[10px] text-zinc-500 truncate">{jornadaHoy.iniciadaPorNombre}</div>}
@@ -11521,7 +11541,7 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
               </button>
             )}
           </div>
-          <div className="bg-zinc-950 border border-zinc-800 p-3">
+          <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3">
             <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold mb-1 flex items-center gap-1"><Square className="w-3 h-3 text-red-400" /> Salida</div>
             <div className="text-2xl font-black">{formatHora(jornadaHoy?.horaFin)}</div>
             {jornadaHoy?.finalizadaPorNombre && <div className="text-[10px] text-zinc-500 truncate">{jornadaHoy.finalizadaPorNombre}</div>}
@@ -11590,7 +11610,7 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
       </div>
 
       {/* Ubicación del proyecto */}
-      <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-2">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-2">
         <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold flex items-center gap-1"><MapPin className="w-3 h-3" /> Ubicación de la obra</div>
         {proyecto.ubicacionLat != null && proyecto.ubicacionLng != null ? (
           <div className="space-y-2">
@@ -11793,7 +11813,7 @@ function ModalFinalizarJornada({ onCerrar, onConfirmar, procesando, proyecto, pe
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-zinc-900 border-2 border-red-600 max-w-md w-full p-5 space-y-4 my-8 max-h-[90vh] overflow-y-auto">
+      <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-md w-full p-5 space-y-4 my-8 max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-start">
           <div className="text-xs tracking-widest uppercase text-red-500 font-bold">Finalizar Jornada</div>
           <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
@@ -11845,7 +11865,7 @@ function ModalFinalizarJornada({ onCerrar, onConfirmar, procesando, proyecto, pe
                 : 'Describe el motivo'
               }
               rows={3}
-              className="w-full bg-zinc-950 border border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-xs"
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-xs"
             />
           </div>
         )}
@@ -11872,7 +11892,7 @@ function ModalFinalizarJornada({ onCerrar, onConfirmar, procesando, proyecto, pe
             </div>
             <div className="space-y-2">
               {elegibles.map(({ persona, conDieta, conHospedaje }) => (
-                <div key={persona.id} className="bg-zinc-950 border border-zinc-800 p-2.5 space-y-1.5">
+                <div key={persona.id} className="bg-zinc-950 border border-zinc-800 rounded-card p-2.5 space-y-1.5">
                   <div className="text-xs font-bold truncate">{persona.nombre}</div>
                   <div className="flex flex-wrap gap-1">
                     {TODOS_SUB_TIPOS.map(st => {
@@ -11987,7 +12007,7 @@ function ModalProgramarJornada({ proyecto, personal, personasElegibles, onCerrar
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto">
-      <div className="bg-zinc-900 border-2 border-red-600 max-w-md w-full p-5 space-y-4 max-h-[90vh] overflow-auto">
+      <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-md w-full p-5 space-y-4 max-h-[90vh] overflow-auto">
         <div className="flex justify-between items-start">
           <div>
             <div className="text-xs tracking-widest uppercase text-red-500 font-bold">Programar Jornada</div>
@@ -12010,7 +12030,7 @@ function ModalProgramarJornada({ proyecto, personal, personasElegibles, onCerrar
           <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2">Personas presentes ({personasSel.length})</div>
           <div className="space-y-1 max-h-48 overflow-auto">
             {personasElegibles.map(p => (
-              <label key={p.id} className="flex items-center gap-2 p-2 bg-zinc-950 border border-zinc-800 cursor-pointer hover:border-zinc-600">
+              <label key={p.id} className="flex items-center gap-2 p-2 bg-zinc-950 border border-zinc-800 rounded-card cursor-pointer hover:border-zinc-600">
                 <input
                   type="checkbox"
                   checked={personasSel.includes(p.id)}
@@ -12028,7 +12048,7 @@ function ModalProgramarJornada({ proyecto, personal, personasElegibles, onCerrar
           </div>
         </div>
 
-        <label className="flex items-center gap-2 cursor-pointer bg-zinc-950 border border-zinc-800 p-2">
+        <label className="flex items-center gap-2 cursor-pointer bg-zinc-950 border border-zinc-800 rounded-card p-2">
           <input
             type="checkbox"
             checked={incluirHoras}
@@ -12042,14 +12062,14 @@ function ModalProgramarJornada({ proyecto, personal, personasElegibles, onCerrar
         </label>
 
         {incluirHoras && (
-          <div className="space-y-3 bg-zinc-950 border border-zinc-800 p-3">
+          <div className="space-y-3 bg-zinc-950 border border-zinc-800 rounded-card p-3">
             <div className="grid grid-cols-2 gap-2">
               <Campo label="Hora inicio"><Input type="time" value={horaInicio} onChange={setHoraInicio} /></Campo>
               <Campo label="Hora fin"><Input type="time" value={horaFin} onChange={setHoraFin} /></Campo>
             </div>
             <div>
               <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1">Condición del día</div>
-              <select value={condicionDia} onChange={e => setCondicionDia(e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 px-2 py-2 text-white text-xs">
+              <select value={condicionDia} onChange={e => setCondicionDia(e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-2 py-2 text-white text-xs">
                 <option value="normal">☀️ Día normal</option>
                 <option value="lluvia">☔ Día de lluvia</option>
                 <option value="no_laborable">🚫 No laborable</option>
@@ -12103,7 +12123,7 @@ function ModalCambiarEstado({ proyecto, usuario, personal, onCerrar, onConfirmar
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-      <div className="bg-zinc-900 border-2 border-red-600 max-w-md w-full p-5 space-y-4 max-h-[90vh] overflow-auto">
+      <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-md w-full p-5 space-y-4 max-h-[90vh] overflow-auto">
         <div className="flex justify-between items-start"><div className="text-xs tracking-widest uppercase text-red-500 font-bold">Cambiar estado</div><button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button></div>
         <div className="text-sm text-zinc-400">Estado actual: <span className={`font-bold ${estadoTextColor(proyecto.estado)}`}>{estadoLabel(proyecto.estado)}</span></div>
         <Campo label="Nuevo estado">
@@ -12202,7 +12222,7 @@ function ModalCrearTarea({ usuario, proyectos, personal, onCerrar, onCrear }) {
   };
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-      <div className="bg-zinc-900 border-2 border-red-600 max-w-md w-full p-5 space-y-3">
+      <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-md w-full p-5 space-y-3">
         <div className="flex justify-between items-start"><div className="text-xs tracking-widest uppercase text-red-500 font-bold">Nueva tarea</div><button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button></div>
         <Campo label="Título"><Input value={titulo} onChange={setTitulo} /></Campo>
         <Campo label="Descripción"><textarea value={descripcion} onChange={e => setDescripcion(e.target.value)} rows={2} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm" /></Campo>
@@ -12290,7 +12310,7 @@ function MiPerfil({ usuario, persona, onVolver, onGuardar }) {
         </div>
       </div>
 
-      <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-3">
         <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Contacto</div>
         <Campo label="Teléfono"><Input value={form.telefono} onChange={v => actualizar('telefono', v)} placeholder="809-555-5555" /></Campo>
         <Campo label="Dirección"><Input value={form.direccion} onChange={v => actualizar('direccion', v)} placeholder="Calle, sector, ciudad" /></Campo>
@@ -12302,7 +12322,7 @@ function MiPerfil({ usuario, persona, onVolver, onGuardar }) {
 
       {/* v8.14: información laboral solo visible a admin */}
       {tieneRol(usuario, 'admin') && (
-        <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-3">
           <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Información laboral</div>
           <div className="grid grid-cols-2 gap-3">
             <Campo label="Fecha de ingreso"><Input type="date" value={form.fechaIngreso} onChange={v => actualizar('fechaIngreso', v)} /></Campo>
@@ -12313,7 +12333,7 @@ function MiPerfil({ usuario, persona, onVolver, onGuardar }) {
 
       {/* Modo de pago - solo visible a admin */}
       {tieneRol(usuario, 'admin') && (tieneRol(persona, 'maestro') || tieneRol(persona, 'ayudante') || tieneRol(persona, 'supervisor')) && (
-        <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-3">
           <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold flex items-center gap-1"><Wallet className="w-3 h-3" /> Nómina</div>
           <Campo label="Modo de pago">
             <div className="grid grid-cols-3 gap-1">
@@ -12334,7 +12354,7 @@ function MiPerfil({ usuario, persona, onVolver, onGuardar }) {
       )}
 
       {puedoVerCedula && (
-        <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-3">
           <div className="flex items-center justify-between">
             <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold flex items-center gap-1"><CreditCard className="w-3 h-3" /> Cédula</div>
             <button onClick={() => setMostrarCedula(!mostrarCedula)} className="text-xs text-zinc-500 flex items-center gap-1">{mostrarCedula ? <><EyeOff className="w-3 h-3" /> Ocultar</> : <><Eye className="w-3 h-3" /> Mostrar</>}</button>
@@ -12458,7 +12478,7 @@ function SeccionBiometria({ usuario }) {
   };
 
   return (
-    <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3 mt-6">
+    <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-3 mt-6">
       <div className="flex items-center justify-between">
         <div>
           <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">🔐 Face ID / Biometría</div>
@@ -12478,7 +12498,7 @@ function SeccionBiometria({ usuario }) {
         <div className="space-y-1">
           <div className="text-[10px] text-zinc-500 uppercase">Dispositivos registrados ({credenciales.length})</div>
           {credenciales.map(c => (
-            <div key={c.id} className="bg-zinc-950 border border-zinc-800 p-2 flex items-center gap-2">
+            <div key={c.id} className="bg-zinc-950 border border-zinc-800 rounded-card p-2 flex items-center gap-2">
               <div className="text-xl">{iconoDispositivo(c.deviceType)}</div>
               <div className="flex-1 min-w-0">
                 <div className="text-xs font-bold">{c.deviceName}</div>

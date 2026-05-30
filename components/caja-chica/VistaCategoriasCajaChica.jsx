@@ -145,12 +145,12 @@ export default function VistaCategoriasCajaChica({ onVolver, onCambio, usuario }
         )}
       </div>
 
-      <div className="bg-zinc-950 border border-zinc-800 p-2 text-[10px] text-zinc-500">
+      <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2 text-[10px] text-zinc-500">
         💡 Las categorías se usan para clasificar gastos. La AI las usa al interpretar facturas — entre más descriptiva la "Descripción", mejor decide. Las categorías por defecto se pueden editar/desactivar pero no eliminar.
       </div>
 
       {/* v8.17.29: Config global de montos de dieta + hospedaje */}
-      <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-3">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div>
             <div className="text-xs tracking-widest uppercase text-orange-400 font-bold flex items-center gap-2">
@@ -166,19 +166,19 @@ export default function VistaCategoriasCajaChica({ onVolver, onCambio, usuario }
         </div>
         {!editandoDieta ? (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-            <div className="bg-zinc-950 border border-zinc-800 p-2 text-center">
+            <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2 text-center">
               <div className="text-[10px] uppercase text-zinc-500">Desayuno</div>
               <div className="font-black text-orange-300">RD$ {configDieta.desayunoRd.toLocaleString()}</div>
             </div>
-            <div className="bg-zinc-950 border border-zinc-800 p-2 text-center">
+            <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2 text-center">
               <div className="text-[10px] uppercase text-zinc-500">Comida</div>
               <div className="font-black text-orange-300">RD$ {configDieta.comidaRd.toLocaleString()}</div>
             </div>
-            <div className="bg-zinc-950 border border-zinc-800 p-2 text-center">
+            <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2 text-center">
               <div className="text-[10px] uppercase text-zinc-500">Cena</div>
               <div className="font-black text-orange-300">RD$ {configDieta.cenaRd.toLocaleString()}</div>
             </div>
-            <div className="bg-zinc-950 border border-zinc-800 p-2 text-center">
+            <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2 text-center">
               <div className="text-[10px] uppercase text-zinc-500">Hotel</div>
               <div className="font-black text-purple-300">RD$ {configDieta.hotelRd.toLocaleString()}</div>
             </div>
@@ -192,7 +192,7 @@ export default function VistaCategoriasCajaChica({ onVolver, onCambio, usuario }
                 { key: 'cenaRd', label: 'Cena', color: 'orange' },
                 { key: 'hotelRd', label: 'Hotel', color: 'purple' },
               ].map(({ key, label }) => (
-                <div key={key} className="bg-zinc-950 border border-zinc-800 p-2">
+                <div key={key} className="bg-zinc-950 border border-zinc-800 rounded-card p-2">
                   <div className="text-[10px] uppercase text-zinc-500">{label}</div>
                   <div className="flex items-center gap-1 mt-1">
                     <span className="text-[10px] text-zinc-500">RD$</span>
@@ -200,7 +200,7 @@ export default function VistaCategoriasCajaChica({ onVolver, onCambio, usuario }
                       type="number"
                       value={formDieta[key]}
                       onChange={e => setFormDieta({ ...formDieta, [key]: e.target.value })}
-                      className="flex-1 bg-zinc-900 border border-zinc-800 px-1.5 py-1 text-white text-xs text-right font-bold"
+                      className="flex-1 bg-zinc-900 border border-zinc-800 rounded-card px-1.5 py-1 text-white text-xs text-right font-bold"
                     />
                   </div>
                 </div>
@@ -292,7 +292,7 @@ export default function VistaCategoriasCajaChica({ onVolver, onCambio, usuario }
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-sm font-bold">{c.nombre}</span>
                 {c.isDefault && <span className="text-[9px] uppercase tracking-wider px-1 bg-zinc-800 border border-zinc-700 text-zinc-400">Default</span>}
-                {!c.activa && <span className="text-[9px] uppercase tracking-wider px-1 bg-red-900/40 text-red-300 border border-red-800">Inactiva</span>}
+                {!c.activa && <span className="text-[9px] uppercase tracking-wider px-1 bg-red-900/40 text-red-300 border border-red-800 rounded-full">Inactiva</span>}
                 {c.aplicaA === 'dieta' && <span className="text-[9px] uppercase tracking-wider px-1 bg-orange-900/40 text-orange-300 border border-orange-800" title="Consume presupuesto de dieta">🍽 Dieta</span>}
                 {c.aplicaA === 'hospedaje' && <span className="text-[9px] uppercase tracking-wider px-1 bg-purple-900/40 text-purple-300 border border-purple-800" title="Consume presupuesto de hospedaje">🛏 Hospedaje</span>}
               </div>

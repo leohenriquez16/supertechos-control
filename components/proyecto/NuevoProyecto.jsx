@@ -219,7 +219,7 @@ export default function NuevoProyecto({ personal, sistemas, clientes = [], conta
       {/* v8.9.1: Modal de revisión de sistemas nuevos */}
       {mostrarRevision && (
         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto">
-          <div className="bg-zinc-900 border-2 border-yellow-500 max-w-2xl w-full p-5 space-y-4 max-h-[90vh] overflow-auto">
+          <div className="bg-zinc-900 border-2 border-yellow-500 rounded-card max-w-2xl w-full p-5 space-y-4 max-h-[90vh] overflow-auto">
             <div className="flex justify-between items-start">
               <div>
                 <div className="text-xs tracking-widest uppercase text-yellow-400 font-bold">⚠️ Sistemas nuevos detectados</div>
@@ -367,7 +367,7 @@ export default function NuevoProyecto({ personal, sistemas, clientes = [], conta
                           contactoClienteEmail: cont?.email || '',
                         });
                       }}
-                      className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-white text-xs"
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-3 py-2 text-white text-xs"
                     >
                       <option value="">— Seleccionar contacto —</option>
                       {contsCliente.map(ct => <option key={ct.id} value={ct.id}>{ct.esPrincipal ? '⭐ ' : ''}{ct.nombre}{ct.cargo ? ` · ${ct.cargo}` : ''}{ct.telefono ? ` · ${ct.telefono}` : ''}</option>)}
@@ -379,7 +379,7 @@ export default function NuevoProyecto({ personal, sistemas, clientes = [], conta
                       <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold mb-1">Otros contactos asociados al proyecto</div>
                       <div className="space-y-1">
                         {otrosContactos.map(ct => (
-                          <label key={ct.id} className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 p-1.5 cursor-pointer hover:border-red-600">
+                          <label key={ct.id} className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 rounded-card p-1.5 cursor-pointer hover:border-red-600">
                             <input
                               type="checkbox"
                               checked={(form.contactosExtraIds || []).includes(ct.id)}
@@ -440,7 +440,7 @@ export default function NuevoProyecto({ personal, sistemas, clientes = [], conta
         </Campo>
         <Campo label="Supervisor"><select value={form.supervisorId} onChange={e => setForm({ ...form, supervisorId: e.target.value })} className="w-full bg-zinc-900 border-2 border-zinc-800 focus:border-red-600 outline-none px-4 py-3 text-white"><option value="">Seleccionar...</option>{supervisores.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select></Campo>
         <Campo label="Maestro"><select value={form.maestroId} onChange={e => setForm({ ...form, maestroId: e.target.value, ayudantesIds: [] })} className="w-full bg-zinc-900 border-2 border-zinc-800 focus:border-red-600 outline-none px-4 py-3 text-white"><option value="">Seleccionar...</option>{maestros.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select></Campo>
-        {form.maestroId && ayudantesDisp.length > 0 && <Campo label="Ayudantes"><div className="space-y-1">{ayudantesDisp.map(a => <label key={a.id} className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 p-2 cursor-pointer hover:border-red-600"><input type="checkbox" checked={form.ayudantesIds.includes(a.id)} onChange={e => { const n = e.target.checked ? [...form.ayudantesIds, a.id] : form.ayudantesIds.filter(x => x !== a.id); setForm({ ...form, ayudantesIds: n }); }} className="w-4 h-4 accent-red-600" /><span className="text-sm">{a.nombre}</span></label>)}</div></Campo>}
+        {form.maestroId && ayudantesDisp.length > 0 && <Campo label="Ayudantes"><div className="space-y-1">{ayudantesDisp.map(a => <label key={a.id} className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-card p-2 cursor-pointer hover:border-red-600"><input type="checkbox" checked={form.ayudantesIds.includes(a.id)} onChange={e => { const n = e.target.checked ? [...form.ayudantesIds, a.id] : form.ayudantesIds.filter(x => x !== a.id); setForm({ ...form, ayudantesIds: n }); }} className="w-4 h-4 accent-red-600" /><span className="text-sm">{a.nombre}</span></label>)}</div></Campo>}
         <div>
           <div className="flex justify-between items-center mb-2"><div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Áreas</div><div className="text-xs text-zinc-500">{formatNum(totalM2)} m²</div></div>
           <div className="space-y-2">{form.areas.map((area, i) => {
@@ -451,7 +451,7 @@ export default function NuevoProyecto({ personal, sistemas, clientes = [], conta
             const sistemaLabel = sistemaAreaObj?.nombre || sistemaNuevoObj?.nombre;
             const sistemaPrecio = sistemaAreaObj?.precio_m2 ?? sistemaNuevoObj?.precio_m2 ?? 0;
             return (
-              <div key={i} className="bg-zinc-950 border border-zinc-800 p-2 space-y-2">
+              <div key={i} className="bg-zinc-950 border border-zinc-800 rounded-card p-2 space-y-2">
                 <div className="flex gap-2 items-center">
                   <Input value={area.nombre} onChange={v => { const n = [...form.areas]; n[i].nombre = v; setForm({ ...form, areas: n }); }} placeholder="Nombre del área" />
                   <div className="w-28"><Input type="number" value={area.m2} onChange={v => { const n = [...form.areas]; n[i].m2 = v; setForm({ ...form, areas: n }); }} placeholder="m²" /></div>
@@ -462,7 +462,7 @@ export default function NuevoProyecto({ personal, sistemas, clientes = [], conta
                   <select
                     value={area.sistemaId || ''}
                     onChange={e => { const n = [...form.areas]; n[i] = { ...n[i], sistemaId: e.target.value || null }; setForm({ ...form, areas: n }); }}
-                    className="flex-1 bg-zinc-900 border border-zinc-800 px-2 py-1 text-white text-xs"
+                    className="flex-1 bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1 text-white text-xs"
                   >
                     <option value="">🔧 Usar sistema del proyecto{form.sistema ? ` (${sistemas[form.sistema]?.nombre || ''})` : ''}</option>
                     {sistemasArray.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
@@ -515,11 +515,11 @@ export default function NuevoProyecto({ personal, sistemas, clientes = [], conta
             </div>
           )}
         </div>
-        <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-3">
           <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={form.dieta.habilitada} onChange={e => setForm({ ...form, dieta: { ...form.dieta, habilitada: e.target.checked } })} className="w-4 h-4 accent-red-600" /><div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold flex items-center gap-1"><Utensils className="w-3 h-3" /> Proyecto en el interior</div></label>
           {form.dieta.habilitada && <div className="space-y-3 pt-2 border-t border-zinc-800">
             <div className="grid grid-cols-2 gap-2"><Campo label="Tarifa día/persona"><Input type="number" value={form.dieta.tarifa_dia_persona} onChange={v => setForm({ ...form, dieta: { ...form.dieta, tarifa_dia_persona: v } })} /></Campo><Campo label="Días-hombre"><Input type="number" value={form.dieta.dias_hombre_presupuestados} onChange={v => setForm({ ...form, dieta: { ...form.dieta, dias_hombre_presupuestados: v } })} /></Campo></div>
-            <Campo label="Personas"><div className="space-y-1">{[form.maestroId, ...form.ayudantesIds].filter(Boolean).map(pid => { const pe = getPersona(personal, pid); if (!pe) return null; return <label key={pid} className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 p-2 cursor-pointer"><input type="checkbox" checked={form.dieta.personasIds.includes(pid)} onChange={e => { const n = e.target.checked ? [...form.dieta.personasIds, pid] : form.dieta.personasIds.filter(x => x !== pid); setForm({ ...form, dieta: { ...form.dieta, personasIds: n } }); }} className="w-4 h-4 accent-red-600" /><span className="text-sm">{pe.nombre}</span></label>; })}</div></Campo>
+            <Campo label="Personas"><div className="space-y-1">{[form.maestroId, ...form.ayudantesIds].filter(Boolean).map(pid => { const pe = getPersona(personal, pid); if (!pe) return null; return <label key={pid} className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 rounded-card p-2 cursor-pointer"><input type="checkbox" checked={form.dieta.personasIds.includes(pid)} onChange={e => { const n = e.target.checked ? [...form.dieta.personasIds, pid] : form.dieta.personasIds.filter(x => x !== pid); setForm({ ...form, dieta: { ...form.dieta, personasIds: n } }); }} className="w-4 h-4 accent-red-600" /><span className="text-sm">{pe.nombre}</span></label>; })}</div></Campo>
           </div>}
         </div>
         <div className="flex gap-2 pt-4"><button onClick={onCancelar} className="px-6 bg-zinc-900 border-2 border-zinc-800 text-zinc-400 font-bold uppercase py-4">Cancelar</button>

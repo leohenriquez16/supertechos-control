@@ -15,7 +15,7 @@ export default function ModalAyudaDieta({ vista = 'maestro', configDieta, onCerr
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-      <div className="bg-zinc-900 border-2 border-orange-600 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-zinc-900 border-2 border-orange-600 rounded-card max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="sticky top-0 bg-zinc-900 border-b border-zinc-800 p-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -135,7 +135,7 @@ function VistaAdmin({ configDieta }) {
           v8.17.47 — La dieta es del <b>equipo</b>, no de cada persona individual.
           Se debita de la caja chica del responsable (maestro o supervisor con caja).
         </p>
-        <div className="bg-zinc-950 border border-zinc-800 p-2 text-xs space-y-1">
+        <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2 text-xs space-y-1">
           <div><b>Proyecto → toggle:</b> <code>aplica_dieta</code> / <code>aplica_hospedaje</code> (en proyectos del interior).</div>
           <div><b>Personal → toggle:</b> <code>caja_chica_habilitada</code> en el maestro o supervisor del proyecto (es la caja desde donde se debita).</div>
           <div className="text-[10px] text-zinc-500 italic">El equipo completo (incluyendo ayudantes) puede recibir dieta — no hace falta que cada uno tenga su propio toggle.</div>

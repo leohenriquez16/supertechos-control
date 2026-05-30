@@ -252,7 +252,7 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto">
-      <div className="bg-zinc-900 border-2 border-red-600 max-w-2xl w-full p-5 space-y-4 max-h-[90vh] overflow-auto my-8">
+      <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-2xl w-full p-5 space-y-4 max-h-[90vh] overflow-auto my-8">
         <div className="flex justify-between items-start sticky top-0 bg-zinc-900 pb-2 border-b border-zinc-800"><div className="text-xs tracking-widest uppercase text-red-500 font-bold">Editar proyecto</div><button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button></div>
 
         <div className="space-y-3">
@@ -309,7 +309,7 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
                             contactoClienteEmail: cont?.email || form.contactoClienteEmail,
                           });
                         }}
-                        className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-white text-xs"
+                        className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-3 py-2 text-white text-xs"
                       >
                         <option value="">— Contacto principal —</option>
                         {contsCliente.map(ct => <option key={ct.id} value={ct.id}>{ct.esPrincipal ? '⭐ ' : ''}{ct.nombre}{ct.cargo ? ` · ${ct.cargo}` : ''}</option>)}
@@ -321,7 +321,7 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
                         <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold mb-1">Otros contactos asociados al proyecto</div>
                         <div className="space-y-1">
                           {otrosContactos.map(ct => (
-                            <label key={ct.id} className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 p-1.5 cursor-pointer hover:border-red-600">
+                            <label key={ct.id} className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 rounded-card p-1.5 cursor-pointer hover:border-red-600">
                               <input
                                 type="checkbox"
                                 checked={(form.contactosExtraIds || []).includes(ct.id)}
@@ -408,7 +408,7 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
           <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Equipo</div>
           <Campo label="Supervisor"><select value={form.supervisorId} onChange={e => setForm({ ...form, supervisorId: e.target.value })} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="">Sin asignar</option>{supervisores.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select></Campo>
           <Campo label="Maestro"><select value={form.maestroId} onChange={e => setForm({ ...form, maestroId: e.target.value, ayudantesIds: [] })} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="">Sin asignar</option>{maestros.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select></Campo>
-          {ayudantesDisp.length > 0 && <Campo label="Ayudantes"><div className="space-y-1">{ayudantesDisp.map(a => <label key={a.id} className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 p-2 cursor-pointer hover:border-red-600"><input type="checkbox" checked={form.ayudantesIds.includes(a.id)} onChange={e => setForm({ ...form, ayudantesIds: e.target.checked ? [...form.ayudantesIds, a.id] : form.ayudantesIds.filter(x => x !== a.id) })} className="w-4 h-4 accent-red-600" /><span className="text-sm">{a.nombre}</span></label>)}</div></Campo>}
+          {ayudantesDisp.length > 0 && <Campo label="Ayudantes"><div className="space-y-1">{ayudantesDisp.map(a => <label key={a.id} className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 rounded-card p-2 cursor-pointer hover:border-red-600"><input type="checkbox" checked={form.ayudantesIds.includes(a.id)} onChange={e => setForm({ ...form, ayudantesIds: e.target.checked ? [...form.ayudantesIds, a.id] : form.ayudantesIds.filter(x => x !== a.id) })} className="w-4 h-4 accent-red-600" /><span className="text-sm">{a.nombre}</span></label>)}</div></Campo>}
         </div>
 
         <div className="space-y-3 border-t border-zinc-800 pt-3">
@@ -441,10 +441,10 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
             const sistemaArea = area.sistemaId || form.sistema;
             const sistemaAreaObj = sistemaArea ? data.sistemas[sistemaArea] : null;
             return (
-              <div key={area.id} className="bg-zinc-950 border border-zinc-800 p-2 space-y-1">
+              <div key={area.id} className="bg-zinc-950 border border-zinc-800 rounded-card p-2 space-y-1">
                 <div className="flex items-center gap-2">
-                  <input type="text" value={area.nombre} onChange={e => { const n = [...form.areas]; n[i] = { ...area, nombre: e.target.value }; setForm({ ...form, areas: n }); }} placeholder="Nombre (ej: Techo Hombres)" className="flex-1 bg-zinc-900 border border-zinc-800 px-2 py-1.5 text-white text-xs" />
-                  <input type="number" value={area.m2 || ''} onChange={e => { const n = [...form.areas]; n[i] = { ...area, m2: parseFloat(e.target.value) || 0 }; setForm({ ...form, areas: n }); }} placeholder="m²" className="w-20 bg-zinc-900 border border-zinc-800 px-2 py-1.5 text-white text-xs text-right" />
+                  <input type="text" value={area.nombre} onChange={e => { const n = [...form.areas]; n[i] = { ...area, nombre: e.target.value }; setForm({ ...form, areas: n }); }} placeholder="Nombre (ej: Techo Hombres)" className="flex-1 bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1.5 text-white text-xs" />
+                  <input type="number" value={area.m2 || ''} onChange={e => { const n = [...form.areas]; n[i] = { ...area, m2: parseFloat(e.target.value) || 0 }; setForm({ ...form, areas: n }); }} placeholder="m²" className="w-20 bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1.5 text-white text-xs text-right" />
                   <button onClick={() => { if (confirm('¿Eliminar esta área? Se perderán los reportes asociados.')) { setForm({ ...form, areas: form.areas.filter(x => x.id !== area.id) }); } }} className="text-zinc-500 hover:text-red-400"><Trash2 className="w-3 h-3" /></button>
                 </div>
                 {/* v8.9: selector de sistema por área */}
@@ -453,7 +453,7 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
                   <select
                     value={area.sistemaId || ''}
                     onChange={e => { const n = [...form.areas]; n[i] = { ...area, sistemaId: e.target.value || null }; setForm({ ...form, areas: n }); }}
-                    className="flex-1 bg-zinc-900 border border-zinc-800 px-2 py-1 text-white text-[10px]"
+                    className="flex-1 bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1 text-white text-[10px]"
                   >
                     <option value="">🔧 Por defecto del proyecto{form.sistema ? ` (${data.sistemas[form.sistema]?.nombre || ''})` : ''}</option>
                     {sistemasArray.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
@@ -474,7 +474,7 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
                         setForm({ ...form, areas: n });
                       }}
                       placeholder={`${sistemaAreaObj?.precio_m2 || 0}`}
-                      className="w-24 bg-zinc-900 border border-zinc-800 px-2 py-1 text-white text-[10px] text-right"
+                      className="w-24 bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1 text-white text-[10px] text-right"
                     />
                     <span className="text-[9px] text-zinc-500 shrink-0">
                       {area.precioVentaM2 !== undefined && area.precioVentaM2 !== null && area.precioVentaM2 !== '' ? (
@@ -485,7 +485,7 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
                     </span>
                   </div>
                 )}
-                <select value={area.maestroAreaId || ''} onChange={e => { const n = [...form.areas]; n[i] = { ...area, maestroAreaId: e.target.value || null }; setForm({ ...form, areas: n }); }} className="w-full bg-zinc-900 border border-zinc-800 px-2 py-1.5 text-white text-[10px]">
+                <select value={area.maestroAreaId || ''} onChange={e => { const n = [...form.areas]; n[i] = { ...area, maestroAreaId: e.target.value || null }; setForm({ ...form, areas: n }); }} className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1.5 text-white text-[10px]">
                   <option value="">Usar maestro principal del proyecto</option>
                   {maestros.map(m => <option key={m.id} value={m.id}>🔨 {m.nombre}</option>)}
                 </select>
@@ -506,7 +506,7 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
 
         <div className="space-y-3 border-t border-zinc-800 pt-3">
           <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Configuración</div>
-          <label className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 p-3 cursor-pointer">
+          <label className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 rounded-card p-3 cursor-pointer">
             <input type="checkbox" checked={form.cronogramaVisibleMaestro} onChange={e => setForm({ ...form, cronogramaVisibleMaestro: e.target.checked })} className="w-4 h-4 accent-red-600" />
             <div className="flex-1">
               <div className="text-xs font-bold">Mostrar cronograma al maestro/supervisor</div>
@@ -522,7 +522,7 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
             <button onClick={() => setForm({ ...form, tipoAvance: 'unidades' })} className={`p-2 text-xs font-bold uppercase border-2 ${form.tipoAvance === 'unidades' ? 'bg-red-600 text-white border-transparent' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>Por unidades (edificios)</button>
           </div>
           {form.tipoAvance === 'unidades' && (
-            <div className="text-[10px] text-zinc-500 bg-zinc-950 border border-zinc-800 p-2">
+            <div className="text-[10px] text-zinc-500 bg-zinc-950 border border-zinc-800 rounded-card p-2">
               💡 Podrás configurar torres/niveles/espacios (baños, balcones, etc.) desde la tab "Unidades" del proyecto.
             </div>
           )}
@@ -571,7 +571,7 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
 
           {/* Detalle según modo seleccionado */}
           {form.modoPagoManoObra === 'm2_fijo' && (
-            <div className="bg-zinc-950 border border-zinc-800 p-3 space-y-3">
+            <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3 space-y-3">
               <div>
                 <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1">Precio fijo al maestro por m² del sistema</div>
                 <div className="text-[10px] text-zinc-500">Se paga este monto por cada m² ejecutado, sin importar qué tarea.</div>
@@ -588,7 +588,7 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
                 <span className="text-xs text-zinc-500 shrink-0">/m²</span>
               </div>
               {previewM2Fijo > 0 && (
-                <div className="text-[10px] text-zinc-400 bg-zinc-900 border border-zinc-800 p-2">
+                <div className="text-[10px] text-zinc-400 bg-zinc-900 border border-zinc-800 rounded-card p-2">
                   💡 {formatNum(m2TotalProyecto)} m² × RD${formatNum(form.precioM2FijoMaestro || 0)}/m² = <span className="text-green-400 font-bold">{formatRD(previewM2Fijo)}</span> al maestro al completar el proyecto.
                 </div>
               )}
@@ -596,7 +596,7 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
           )}
 
           {form.modoPagoManoObra === 'm2' && sistema && (
-            <div className="bg-zinc-950 border border-zinc-800 p-3 space-y-3">
+            <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3 space-y-3">
               <div>
                 <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1">Precio al maestro por cada paso del sistema</div>
                 <div className="text-[10px] text-zinc-500">Cada paso se paga al m² ejecutado de esa tarea.</div>
@@ -613,7 +613,7 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
                         <div className="text-[9px] text-zinc-500">{t.peso}% · ≈ {formatNum(m2Tarea)} m²</div>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
-                        <input type="number" value={form.preciosTareasM2[t.id] || ''} onChange={e => setPrecio(t.id, e.target.value)} placeholder="0" className="w-20 bg-zinc-900 border border-zinc-800 px-2 py-1 text-white text-xs text-right" />
+                        <input type="number" value={form.preciosTareasM2[t.id] || ''} onChange={e => setPrecio(t.id, e.target.value)} placeholder="0" className="w-20 bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1 text-white text-xs text-right" />
                         <span className="text-[9px] text-zinc-600 w-6">/m²</span>
                       </div>
                       <div className="text-[10px] text-green-400 font-bold w-24 text-right shrink-0">{subtotal > 0 ? formatRD(subtotal) : '—'}</div>
@@ -622,7 +622,7 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
                 })}
               </div>
               {previewM2PorTarea > 0 && (
-                <div className="text-[10px] text-zinc-400 bg-zinc-900 border border-zinc-800 p-2 flex justify-between">
+                <div className="text-[10px] text-zinc-400 bg-zinc-900 border border-zinc-800 rounded-card p-2 flex justify-between">
                   <span>Total estimado al maestro:</span>
                   <span className="text-green-400 font-bold">{formatRD(previewM2PorTarea)}</span>
                 </div>
@@ -631,7 +631,7 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
           )}
 
           {form.modoPagoManoObra === 'tarea' && sistema && (
-            <div className="bg-zinc-950 border border-zinc-800 p-3 space-y-3">
+            <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3 space-y-3">
               <div>
                 <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1">Precio de venta y pago al maestro por tarea</div>
                 <div className="text-[10px] text-zinc-500">El maestro cubre sus ayudantes con su pago.</div>
@@ -650,7 +650,7 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
                   return (
                     <div key={t.id} className="grid grid-cols-[1fr_auto_auto_auto] gap-2 items-center">
                       <div className="text-xs truncate">{t.nombre} <span className="text-zinc-600 text-[9px]">{t.peso}%</span></div>
-                      <input type="number" value={form.preciosTareasM2[t.id] || ''} onChange={e => setPrecio(t.id, e.target.value)} placeholder="venta" className="w-20 bg-zinc-900 border border-zinc-800 px-2 py-1 text-white text-xs text-right" />
+                      <input type="number" value={form.preciosTareasM2[t.id] || ''} onChange={e => setPrecio(t.id, e.target.value)} placeholder="venta" className="w-20 bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1 text-white text-xs text-right" />
                       <input
                         type="number"
                         value={(form.preciosManoObraTareas || {})[t.id] || ''}
@@ -666,7 +666,7 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
                 })}
               </div>
               {(previewTareaVenta > 0 || previewTareaMaestro > 0) && (
-                <div className="text-[10px] bg-zinc-900 border border-zinc-800 p-2 space-y-1">
+                <div className="text-[10px] bg-zinc-900 border border-zinc-800 rounded-card p-2 space-y-1">
                   <div className="flex justify-between"><span className="text-zinc-400">Venta total estimada:</span><span className="text-white font-bold">{formatRD(previewTareaVenta)}</span></div>
                   <div className="flex justify-between"><span className="text-zinc-400">Pago al maestro estimado:</span><span className="text-green-400 font-bold">{formatRD(previewTareaMaestro)}</span></div>
                   <div className="flex justify-between border-t border-zinc-800 pt-1"><span className="text-zinc-400">Margen mano de obra:</span><span className={`font-bold ${(previewTareaVenta - previewTareaMaestro) > 0 ? 'text-green-400' : 'text-red-400'}`}>{formatRD(previewTareaVenta - previewTareaMaestro)}</span></div>
@@ -676,7 +676,7 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
           )}
 
           {form.modoPagoManoObra === 'dia' && (
-            <div className="bg-zinc-950 border border-zinc-800 p-3 space-y-3">
+            <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3 space-y-3">
               <div>
                 <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1">Costo por día por persona (RD$)</div>
                 <div className="text-[10px] text-zinc-500">Cada persona del proyecto cobra su tarifa diaria. Día doble cuenta como 2 días.</div>
@@ -692,7 +692,7 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
                     const icono = rol === 'supervisor' ? '👔' : rol === 'maestro' ? '🔨' : '🧰';
                     const costo = Number(getCostoPersona(p.id)) || 0;
                     return (
-                      <div key={p.id} className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 p-2">
+                      <div key={p.id} className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-card p-2">
                         <span className="text-base shrink-0">{icono}</span>
                         <div className="flex-1 min-w-0">
                           <div className="text-xs truncate">{p.nombre}</div>
@@ -715,7 +715,7 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
                 </div>
               )}
               {costoDiarioTotal > 0 && (
-                <div className="text-[10px] bg-zinc-900 border border-zinc-800 p-2 space-y-1">
+                <div className="text-[10px] bg-zinc-900 border border-zinc-800 rounded-card p-2 space-y-1">
                   <div className="flex justify-between"><span className="text-zinc-400">Costo del equipo por día:</span><span className="text-white font-bold">{formatRD(costoDiarioTotal)}</span></div>
                   <div className="flex justify-between"><span className="text-zinc-400">Estimado para {diasReferencia} día{diasReferencia !== 1 ? 's' : ''}{form.fecha_inicio && form.fecha_entrega ? ' (calendario)' : ' (referencia)'}:</span><span className="text-green-400 font-bold">{formatRD(previewDia)}</span></div>
                 </div>
@@ -756,7 +756,7 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
           </div>
 
           {form.dietaModo !== 'desactivada' && (
-            <div className="bg-zinc-950 border border-zinc-800 p-3 space-y-2">
+            <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3 space-y-2">
               <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">Monto diario al maestro responsable</div>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-zinc-400">RD$</span>
@@ -775,7 +775,7 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
                   : '✋ MANUAL: el maestro registra "consumí dieta de hoy" desde la app cuando aplique. Hay protección contra duplicados.'}
               </div>
               {(form.dietaDiariaRd > 0) && (
-                <div className="text-[10px] bg-zinc-900 border border-zinc-800 p-2 flex justify-between">
+                <div className="text-[10px] bg-zinc-900 border border-zinc-800 rounded-card p-2 flex justify-between">
                   <span className="text-zinc-400">Por 14 días de obra:</span>
                   <span className="text-blue-300 font-bold">{formatRD((Number(form.dietaDiariaRd) || 0) * 14)}</span>
                 </div>
@@ -790,14 +790,14 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
         <div className="space-y-3 border-t border-zinc-800 pt-3">
           <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">🥪 Dieta granular + 🛏 Hospedaje (interior)</div>
           <div className="text-[10px] text-zinc-500">Activa estos toggles si el proyecto está en el interior y la empresa paga comida/hotel a maestros/supervisores. Solo se aplica a personas que también tengan el toggle activo en su perfil.</div>
-          <label className="flex items-center gap-2 cursor-pointer bg-zinc-950 border border-zinc-800 p-3">
+          <label className="flex items-center gap-2 cursor-pointer bg-zinc-950 border border-zinc-800 rounded-card p-3">
             <input type="checkbox" checked={!!form.aplicaDieta} onChange={e => setForm({ ...form, aplicaDieta: e.target.checked })} className="w-4 h-4 accent-red-600" />
             <div className="flex-1">
               <div className="text-xs font-bold">🍽 Aplica dieta granular</div>
               <div className="text-[10px] text-zinc-500">El maestro marca al cerrar jornada qué comidas consumió (desayuno/comida/cena). Las facturas de comida ya no se reembolsan: consumen el presupuesto de dieta.</div>
             </div>
           </label>
-          <label className="flex items-center gap-2 cursor-pointer bg-zinc-950 border border-zinc-800 p-3">
+          <label className="flex items-center gap-2 cursor-pointer bg-zinc-950 border border-zinc-800 rounded-card p-3">
             <input type="checkbox" checked={!!form.aplicaHospedaje} onChange={e => setForm({ ...form, aplicaHospedaje: e.target.checked })} className="w-4 h-4 accent-red-600" />
             <div className="flex-1">
               <div className="text-xs font-bold">🛏 Aplica hospedaje</div>

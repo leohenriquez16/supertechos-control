@@ -45,14 +45,14 @@ export default function MiProduccionCard({ usuario, data }) {
 
   if (loading) {
     return (
-      <div className="bg-zinc-900 border border-zinc-800 p-4 flex items-center justify-center">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 flex items-center justify-center">
         <Loader2 className="w-4 h-4 animate-spin text-red-500" />
       </div>
     );
   }
   if (!corte) {
     return (
-      <div className="bg-zinc-900 border border-zinc-800 p-4 text-center text-zinc-500 text-sm">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 text-center text-zinc-500 text-sm">
         <Wallet className="w-5 h-5 mx-auto mb-1 opacity-50" />
         No hay un corte de nómina abierto en este momento.
       </div>
@@ -93,7 +93,7 @@ export default function MiProduccionCard({ usuario, data }) {
           {mio.porProyecto.slice(0, 8).map(p => {
             const pct = max > 0 ? Math.min(100, (p.montoTotal / max) * 100) : 0;
             return (
-              <div key={p.id} className="bg-zinc-950 border border-zinc-800 px-2 py-1.5">
+              <div key={p.id} className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1.5">
                 <div className="flex items-center justify-between text-[11px] gap-2">
                   <div className="font-bold truncate flex-1">{p.proyectoNombre || '—'}</div>
                   <div className="text-zinc-500 text-[10px] shrink-0">

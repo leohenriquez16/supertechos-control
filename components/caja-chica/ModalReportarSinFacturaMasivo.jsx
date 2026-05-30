@@ -117,7 +117,7 @@ export default function ModalReportarSinFacturaMasivo({ usuario, proyectos, cate
   if (resumen && !enviando && resumen.errores.length > 0) {
     return (
       <div className="fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4 overflow-auto">
-        <div className="bg-zinc-900 border-2 border-yellow-600 max-w-md w-full p-5 space-y-4 my-8">
+        <div className="bg-zinc-900 border-2 border-yellow-600 rounded-card max-w-md w-full p-5 space-y-4 my-8">
           <div className="flex items-start justify-between">
             <div>
               <div className="text-[10px] tracking-widest uppercase text-yellow-500 font-bold">Envío parcial</div>
@@ -141,7 +141,7 @@ export default function ModalReportarSinFacturaMasivo({ usuario, proyectos, cate
 
   return (
     <div className="fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-2 sm:p-4 overflow-auto">
-      <div className="bg-zinc-900 border-2 border-orange-600 max-w-2xl w-full my-4 max-h-[95vh] flex flex-col">
+      <div className="bg-zinc-900 border-2 border-orange-600 rounded-card max-w-2xl w-full my-4 max-h-[95vh] flex flex-col">
         {/* Header */}
         <div className="p-4 border-b border-zinc-800 flex items-start justify-between">
           <div>

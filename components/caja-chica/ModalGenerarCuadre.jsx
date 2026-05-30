@@ -83,7 +83,7 @@ export default function ModalGenerarCuadre({ data, onCerrar }) {
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto">
-      <div className="bg-zinc-900 border-2 border-red-600 max-w-md w-full p-5 space-y-4 my-8">
+      <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-md w-full p-5 space-y-4 my-8">
         <div className="flex justify-between items-start">
           <div>
             <div className="text-xs tracking-widest uppercase text-red-500 font-bold">Generar cuadre</div>
@@ -147,7 +147,7 @@ export default function ModalGenerarCuadre({ data, onCerrar }) {
           </div>
         </div>
 
-        <div className="bg-zinc-950 border border-zinc-800 p-2 text-[10px] text-zinc-500">
+        <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2 text-[10px] text-zinc-500">
           💡 El cuadre incluye: saldo inicial, entregas, gastos aprobados, dietas, ajustes, saldo final, egresos por categoría, conciliación firmable y movimientos pendientes/rechazados como anexo informativo.
         </div>
 

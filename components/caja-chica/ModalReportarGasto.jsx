@@ -186,7 +186,7 @@ export default function ModalReportarGasto({ usuario, proyectos = [], proyectoId
 
   return (
     <div className="fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4 overflow-auto">
-      <div className="bg-zinc-900 border-2 border-red-600 max-w-md w-full p-5 space-y-4 my-8">
+      <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-md w-full p-5 space-y-4 my-8">
         <div className="flex justify-between items-start">
           <div>
             <div className="text-xs tracking-widest uppercase text-red-500 font-bold">Reportar gasto</div>
@@ -304,7 +304,7 @@ export default function ModalReportarGasto({ usuario, proyectos = [], proyectoId
               </div>
             )}
             {!errorAI && datosIA && (
-              <div className="bg-zinc-950 border border-zinc-800 p-2 text-[10px] flex items-start gap-2">
+              <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2 text-[10px] flex items-start gap-2">
                 <Sparkles className="w-3 h-3 shrink-0 mt-0.5 text-yellow-400" />
                 <div className="flex-1">
                   <div className="text-zinc-400">Datos extraídos por IA · confianza <b className={
@@ -419,7 +419,7 @@ export default function ModalReportarGasto({ usuario, proyectos = [], proyectoId
               )}
             </Campo>
 
-            <div className="bg-zinc-950 border border-zinc-800 p-2 text-[10px] text-zinc-500">
+            <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2 text-[10px] text-zinc-500">
               💡 El gasto quedará pendiente de aprobación. Una vez aprobado, se descuenta de tu caja chica.
             </div>
 

@@ -525,30 +525,30 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
         </div>
         <div className="flex gap-2 items-center flex-wrap">
           <ToggleDensidad valor={densidad} onChange={setDensidad} />
-          <button onClick={() => setModalCuadre(true)} className="bg-zinc-900 border border-zinc-800 hover:border-blue-500 text-zinc-300 text-xs font-bold uppercase px-3 py-2 flex items-center gap-1">
+          <button onClick={() => setModalCuadre(true)} className="bg-zinc-900 border border-zinc-800 rounded-card hover:border-blue-500 text-zinc-300 text-xs font-bold uppercase px-3 py-2 flex items-center gap-1">
             <FileText className="w-3 h-3 text-blue-400" /> Cuadre PDF
           </button>
-          <button onClick={() => setModalExport(true)} className="bg-zinc-900 border border-zinc-800 hover:border-purple-500 text-zinc-300 text-xs font-bold uppercase px-3 py-2 flex items-center gap-1">
+          <button onClick={() => setModalExport(true)} className="bg-zinc-900 border border-zinc-800 rounded-card hover:border-purple-500 text-zinc-300 text-xs font-bold uppercase px-3 py-2 flex items-center gap-1">
             <FileText className="w-3 h-3 text-purple-400" /> CSV Odoo
           </button>
           {onIrACategorias && (
-            <button onClick={onIrACategorias} className="bg-zinc-900 border border-zinc-800 hover:border-pink-500 text-zinc-300 text-xs font-bold uppercase px-3 py-2 flex items-center gap-1">
+            <button onClick={onIrACategorias} className="bg-zinc-900 border border-zinc-800 rounded-card hover:border-pink-500 text-zinc-300 text-xs font-bold uppercase px-3 py-2 flex items-center gap-1">
               🏷️ Categorías
             </button>
           )}
           {onIrAProveedores && (
-            <button onClick={onIrAProveedores} className="bg-zinc-900 border border-zinc-800 hover:border-yellow-500 text-zinc-300 text-xs font-bold uppercase px-3 py-2 flex items-center gap-1">
+            <button onClick={onIrAProveedores} className="bg-zinc-900 border border-zinc-800 rounded-card hover:border-yellow-500 text-zinc-300 text-xs font-bold uppercase px-3 py-2 flex items-center gap-1">
               <Sparkles className="w-3 h-3 text-yellow-400" /> Proveedores
             </button>
           )}
-          <button onClick={() => setModalAyuda(true)} className="bg-zinc-900 border border-zinc-800 hover:border-orange-500 text-zinc-300 text-xs font-bold uppercase px-3 py-2 flex items-center gap-1" title="Manual de Dieta + Hospedaje">
+          <button onClick={() => setModalAyuda(true)} className="bg-zinc-900 border border-zinc-800 rounded-card hover:border-orange-500 text-zinc-300 text-xs font-bold uppercase px-3 py-2 flex items-center gap-1" title="Manual de Dieta + Hospedaje">
             <HelpCircle className="w-3 h-3 text-orange-400" /> Dieta
           </button>
-          <button onClick={() => setModalCargaMasiva(true)} className="bg-zinc-900 border border-zinc-800 hover:border-green-500 text-zinc-300 text-xs font-bold uppercase px-3 py-2 flex items-center gap-1" title="Sube varias facturas a la vez con AI procesándolas en paralelo">
+          <button onClick={() => setModalCargaMasiva(true)} className="bg-zinc-900 border border-zinc-800 rounded-card hover:border-green-500 text-zinc-300 text-xs font-bold uppercase px-3 py-2 flex items-center gap-1" title="Sube varias facturas a la vez con AI procesándolas en paralelo">
             <Sparkles className="w-3 h-3 text-green-400" /> Carga masiva
           </button>
           {/* v8.17.56: crear gasto manualmente (admin) */}
-          <button onClick={() => setModalNuevoGasto(true)} className="bg-zinc-900 border border-zinc-800 hover:border-blue-500 text-zinc-300 text-xs font-bold uppercase px-3 py-2 flex items-center gap-1" title="Registrar manualmente un gasto sin pasar por el flujo del maestro">
+          <button onClick={() => setModalNuevoGasto(true)} className="bg-zinc-900 border border-zinc-800 rounded-card hover:border-blue-500 text-zinc-300 text-xs font-bold uppercase px-3 py-2 flex items-center gap-1" title="Registrar manualmente un gasto sin pasar por el flujo del maestro">
             <Plus className="w-3 h-3 text-blue-400" /> Nuevo gasto
           </button>
           <button onClick={() => setModalEntrega(true)} className="bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase px-4 py-2 flex items-center gap-1">
@@ -566,7 +566,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-zinc-900 border border-zinc-800 p-1 overflow-x-auto">
+      <div className="flex gap-1 bg-zinc-900 border border-zinc-800 rounded-card p-1 overflow-x-auto">
         <TabBtn activo={tab === 'dashboard'} onClick={() => setTab('dashboard')}>📊 Dashboard</TabBtn>
         <TabBtn activo={tab === 'bandeja'} onClick={() => setTab('bandeja')}>
           📥 Bandeja {pendientes.length > 0 && <span className="ml-1 bg-orange-600 text-white px-1 text-[9px]">{pendientes.length}</span>}
@@ -581,14 +581,14 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
       {tab === 'bandeja' && (
         <div className={dx.listGap}>
           {/* v8.17.74: toolbar tipo Odoo — Agrupar por + Filtrar por */}
-          <div className="bg-zinc-900 border border-zinc-800 p-2 space-y-2 text-xs">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-card p-2 space-y-2 text-xs">
             <div className="flex flex-wrap items-center gap-2">
               <div className="flex items-center gap-1">
                 <span className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">Agrupar por</span>
                 <select
                   value={agruparBandeja}
                   onChange={e => { setAgruparBandeja(e.target.value); setGruposColapsados(new Set()); }}
-                  className="bg-zinc-950 border border-zinc-800 px-2 py-1 text-white text-xs"
+                  className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1 text-white text-xs"
                 >
                   <option value="persona">Persona</option>
                   <option value="proyecto">Proyecto</option>
@@ -600,11 +600,11 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
               <div className="flex items-center gap-1">
                 <Filter className="w-3 h-3 text-zinc-500" />
                 <span className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">Filtrar por</span>
-                <select value={filtroBandejaProyecto} onChange={e => setFiltroBandejaProyecto(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-1 text-white text-xs">
+                <select value={filtroBandejaProyecto} onChange={e => setFiltroBandejaProyecto(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1 text-white text-xs">
                   <option value="">Todos los proyectos</option>
                   {data.proyectos.filter(p => !p.archivado).map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo || p.cliente || p.nombre}</option>)}
                 </select>
-                <select value={filtroBandejaCategoria} onChange={e => setFiltroBandejaCategoria(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-1 text-white text-xs">
+                <select value={filtroBandejaCategoria} onChange={e => setFiltroBandejaCategoria(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1 text-white text-xs">
                   <option value="">Todas las categorías</option>
                   {(data.categoriasCajaChica || []).filter(c => c.activa).map(c => <option key={c.id} value={c.id}>{c.icono ? c.icono + ' ' : ''}{c.nombre}</option>)}
                   <option value="__sin__">— Sin categoría —</option>
@@ -660,7 +660,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
               const colapsado = gruposColapsados.has(grupo.key);
               const hayHeader = grupo.label !== null;
               return (
-                <div key={grupo.key} className="bg-zinc-950 border border-zinc-800">
+                <div key={grupo.key} className="bg-zinc-950 border border-zinc-800 rounded-card overflow-hidden">
                   {/* Header del grupo (sólo si hay agrupación) */}
                   {hayHeader && (
                     <button
@@ -672,7 +672,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
                         grupo.persona?.foto2x2 ? (
                           <img src={grupo.persona.foto2x2} alt="" className="w-7 h-7 object-cover rounded-sm border border-zinc-700 shrink-0" />
                         ) : (
-                          <div className="w-7 h-7 bg-zinc-800 border border-zinc-700 flex items-center justify-center text-zinc-500 text-[10px] font-bold shrink-0">
+                          <div className="w-7 h-7 bg-zinc-800 border border-zinc-700 rounded-full flex items-center justify-center text-zinc-500 text-[10px] font-bold shrink-0">
                             {(grupo.label || '?').slice(0, 2).toUpperCase()}
                           </div>
                         )
@@ -741,7 +741,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
               .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
 
             return (
-              <div key={p.personaId} className="bg-zinc-900 border border-zinc-800">
+              <div key={p.personaId} className="bg-zinc-900 border border-zinc-800 rounded-card">
                 {/* Header clickeable para expandir/colapsar */}
                 <button
                   onClick={() => togglePersonaExpandida(p.personaId)}
@@ -762,7 +762,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
                       {p.incompletos > 0 && (
                         <span
                           onClick={(e) => { e.stopPropagation(); setFiltroPersona(p.personaId); setFiltroProyecto(''); setSoloIncompletos(true); setTab('movimientos'); }}
-                          className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-amber-900/40 text-amber-300 border border-amber-700 hover:bg-amber-800/50 cursor-pointer"
+                          className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-amber-900/40 text-amber-300 border border-amber-700 rounded-full hover:bg-amber-800/50 cursor-pointer"
                           title="Click para ver solo los gastos con datos incompletos"
                           role="button"
                         >
@@ -795,7 +795,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
                     onClick={(e) => { e.stopPropagation(); imprimirCuadreDePersona(p.personaId); }}
                     role="button"
                     title="Generar cuadre PDF del mes actual"
-                    className="shrink-0 px-2 py-1.5 text-[9px] font-black uppercase tracking-wider bg-blue-900/40 text-blue-300 border border-blue-700 hover:bg-blue-800/50 cursor-pointer flex items-center gap-1"
+                    className="shrink-0 px-2 py-1.5 text-[9px] font-black uppercase tracking-wider bg-blue-900/40 text-blue-300 border border-blue-700 rounded-full hover:bg-blue-800/50 cursor-pointer flex items-center gap-1"
                   >
                     <FileText className="w-3 h-3" /> PDF
                   </span>
@@ -854,7 +854,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
           ) : porProyecto.map(p => (
             <div
               key={p.proyectoId}
-              className={`bg-zinc-900 border border-zinc-800 hover:border-red-600 ${dx.cardPad} cursor-pointer transition`}
+              className={`bg-zinc-900 border border-zinc-800 rounded-card hover:border-red-600 ${dx.cardPad} cursor-pointer transition`}
               onClick={() => {
                 const proy = data.proyectos.find(pr => pr.id === p.proyectoId);
                 setVerGastosProyecto({
@@ -896,11 +896,11 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-2 mt-2 text-[10px]">
-                    <div className="bg-zinc-950 border border-zinc-800 p-2">
+                    <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2">
                       <div className="text-zinc-500">Facturas</div>
                       <div className="text-orange-400 font-bold">{formatRD(p.totalGastado)}</div>
                     </div>
-                    <div className="bg-zinc-950 border border-zinc-800 p-2">
+                    <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2">
                       <div className="text-zinc-500">Dietas</div>
                       <div className="text-blue-400 font-bold">{formatRD(p.totalDieta)}</div>
                     </div>
@@ -921,14 +921,14 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
       {tab === 'movimientos' && (
         <div className={dx.listGap}>
           {/* v8.17.8: barra de filtros + buscador libre */}
-          <div className="bg-zinc-900 border border-zinc-800 p-2 space-y-2 text-xs">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-card p-2 space-y-2 text-xs">
             <div className="flex flex-wrap gap-2 items-center">
               <Filter className="w-3 h-3 text-zinc-500" />
-              <select value={filtroPersona} onChange={e => setFiltroPersona(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-1 text-white">
+              <select value={filtroPersona} onChange={e => setFiltroPersona(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1 text-white">
                 <option value="">Todas las personas</option>
                 {data.personal.filter(p => tieneRol(p, 'maestro') || tieneRol(p, 'supervisor')).map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
               </select>
-              <select value={filtroProyecto} onChange={e => setFiltroProyecto(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-1 text-white">
+              <select value={filtroProyecto} onChange={e => setFiltroProyecto(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1 text-white">
                 <option value="">Todos los proyectos</option>
                 {data.proyectos.filter(p => !p.archivado).map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo || p.cliente}</option>)}
               </select>
@@ -972,7 +972,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
                 </button>
                 {colPickerAbierto && (
                   <div
-                    className="absolute top-full right-0 mt-1 z-20 bg-zinc-900 border border-zinc-700 p-2 w-56 shadow-xl max-h-[60vh] overflow-y-auto"
+                    className="absolute top-full right-0 mt-1 z-20 bg-zinc-900 border border-zinc-700 rounded-card p-2 w-56 shadow-xl max-h-[60vh] overflow-y-auto"
                     onMouseLeave={() => setColPickerAbierto(false)}
                   >
                     <div className="text-[9px] uppercase tracking-widest text-zinc-500 font-bold mb-1 pb-1 border-b border-zinc-800">Columnas visibles</div>
@@ -1000,7 +1000,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
               </div>
             </div>
             {/* Buscador libre */}
-            <div className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 px-2 py-1">
+            <div className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1">
               <span className="text-zinc-500">🔍</span>
               <input
                 type="text"
@@ -1031,7 +1031,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
             <>
               {/* DESKTOP: tabla (con visor lateral opcional) */}
               <div className="hidden md:flex gap-3">
-                <div className={`bg-zinc-900 border border-zinc-800 overflow-x-auto ${viewerAbierto ? 'flex-1 min-w-0' : 'w-full'}`}>
+                <div className={`bg-zinc-900 border border-zinc-800 rounded-card overflow-x-auto ${viewerAbierto ? 'flex-1 min-w-0' : 'w-full'}`}>
                   <TablaMovimientos
                     movimientos={movimientosSorted}
                     todosMovimientos={movimientos}
@@ -1306,20 +1306,20 @@ function FilaPendiente({ m, data, dx, onAprobar, onRechazar, onEliminar, onVerFo
   // En compacto: 1 fila con todo en línea + botones íconos.
   if (dx?.compacto) {
     return (
-      <div onClick={onAbrirDetalle} className={`bg-zinc-900 border p-1.5 flex items-center gap-2 ${dInc.incompleto ? 'border-amber-700/60 border-l-2 border-l-amber-500' : sinFactura ? 'border-red-800/60' : fotoPorWs ? 'border-yellow-700/60' : 'border-orange-800/50'} ${onAbrirDetalle ? 'cursor-pointer hover:border-red-600' : ''}`}>
+      <div onClick={onAbrirDetalle} className={`bg-zinc-900 border rounded-card p-1.5 flex items-center gap-2 ${dInc.incompleto ? 'border-amber-700/60 border-l-2 border-l-amber-500' : sinFactura ? 'border-red-800/60' : fotoPorWs ? 'border-yellow-700/60' : 'border-orange-800/50'} ${onAbrirDetalle ? 'cursor-pointer hover:border-red-600' : ''}`}>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1 flex-wrap">
             <span className="text-[11px] font-bold truncate">{persona?.nombre || m.personaId}</span>
             <span className="text-[9px] text-zinc-500">{m.tipo === 'gasto_factura' ? '🧾' : m.tipo === 'dieta' ? '🍽️' : m.tipo}</span>
-            {fotoPorWs && <span className="text-[9px] px-1 bg-yellow-900/40 text-yellow-300 border border-yellow-700">📱 WS</span>}
-            {sinFactura && <span className="text-[9px] px-1 bg-red-900/40 text-red-300 border border-red-800 font-bold">✍ SIN FACTURA</span>}
+            {fotoPorWs && <span className="text-[9px] px-1 bg-yellow-900/40 text-yellow-300 border border-yellow-700 rounded-full">📱 WS</span>}
+            {sinFactura && <span className="text-[9px] px-1 bg-red-900/40 text-red-300 border border-red-800 rounded-full font-bold">✍ SIN FACTURA</span>}
             {/* v8.17.25: badge empresa receptora */}
-            {empresa && <span className={`text-[9px] px-1 ${empresa.color} text-white border ${empresa.borderColor} font-bold`} title={`Factura a nombre de ${empresa.label}`}>{empresa.short}</span>}
+            {empresa && <span className={`text-[9px] px-1 ${empresa.color} text-white border ${empresa.borderColor} rounded-full font-bold`} title={`Factura a nombre de ${empresa.label}`}>{empresa.short}</span>}
             {!sinFactura && !m.empresaReceptora && m.tipo === 'gasto_factura' && (
-              <span className="text-[9px] px-1 bg-zinc-800 text-zinc-400 border border-zinc-700 font-bold" title="Sin empresa receptora asignada">❓</span>
+              <span className="text-[9px] px-1 bg-zinc-800 text-zinc-400 border border-zinc-700 rounded-full font-bold" title="Sin empresa receptora asignada">❓</span>
             )}
             {dInc.incompleto && (
-              <span className="text-[9px] px-1 bg-amber-900/40 text-amber-300 border border-amber-700 font-bold" title={`Faltan: ${dInc.motivos.map(x => LABEL_MOTIVO[x] || x).join(' · ')}`}>⚠ FALTAN DATOS</span>
+              <span className="text-[9px] px-1 bg-amber-900/40 text-amber-300 border border-amber-700 rounded-full font-bold" title={`Faltan: ${dInc.motivos.map(x => LABEL_MOTIVO[x] || x).join(' · ')}`}>⚠ FALTAN DATOS</span>
             )}
           </div>
           <div className="text-[9px] text-zinc-400 truncate">
@@ -1348,35 +1348,35 @@ function FilaPendiente({ m, data, dx, onAprobar, onRechazar, onEliminar, onVerFo
     );
   }
   return (
-    <div onClick={onAbrirDetalle} className={`bg-zinc-900 border p-3 space-y-2 ${dInc.incompleto ? 'border-amber-700/60 border-l-2 border-l-amber-500' : sinFactura ? 'border-red-800/60' : fotoPorWs ? 'border-yellow-700/60' : 'border-orange-800/50'} ${onAbrirDetalle ? 'cursor-pointer hover:border-red-600' : ''}`}>
+    <div onClick={onAbrirDetalle} className={`bg-zinc-900 border rounded-card p-3 space-y-2 ${dInc.incompleto ? 'border-amber-700/60 border-l-2 border-l-amber-500' : sinFactura ? 'border-red-800/60' : fotoPorWs ? 'border-yellow-700/60' : 'border-orange-800/50'} ${onAbrirDetalle ? 'cursor-pointer hover:border-red-600' : ''}`}>
       <div className="flex items-start gap-2">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <div className="text-xs font-bold">{persona?.nombre || m.personaId}</div>
             {fotoPorWs && (
-              <div className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-yellow-900/40 text-yellow-300 border border-yellow-700 flex items-center gap-1">
+              <div className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-yellow-900/40 text-yellow-300 border border-yellow-700 rounded-full flex items-center gap-1">
                 <MessageSquare className="w-2.5 h-2.5" /> Foto por WS
               </div>
             )}
             {sinFactura && (
-              <div className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-red-900/40 text-red-300 border border-red-800 flex items-center gap-1">
+              <div className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-red-900/40 text-red-300 border border-red-800 rounded-full flex items-center gap-1">
                 <FileX className="w-2.5 h-2.5" /> Sin factura
               </div>
             )}
             {/* v8.17.25: badge empresa receptora */}
             {empresa && (
-              <div className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 ${empresa.color} text-white border ${empresa.borderColor}`} title={`Factura a nombre de ${empresa.label}`}>
+              <div className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 ${empresa.color} text-white border ${empresa.borderColor} rounded-full`} title={`Factura a nombre de ${empresa.label}`}>
                 {empresa.label}
               </div>
             )}
             {!sinFactura && !m.empresaReceptora && m.tipo === 'gasto_factura' && (
-              <div className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-zinc-800 text-zinc-400 border border-zinc-700" title="Sin empresa receptora asignada">
+              <div className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-zinc-800 text-zinc-400 border border-zinc-700 rounded-full" title="Sin empresa receptora asignada">
                 ❓ Empresa
               </div>
             )}
             {dInc.incompleto && (
               <div
-                className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-amber-900/40 text-amber-300 border border-amber-700 flex items-center gap-1"
+                className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-amber-900/40 text-amber-300 border border-amber-700 rounded-full flex items-center gap-1"
                 title={`Faltan: ${dInc.motivos.map(x => LABEL_MOTIVO[x] || x).join(' · ')}`}
               >
                 <AlertCircle className="w-2.5 h-2.5" /> Faltan datos
@@ -1441,23 +1441,23 @@ function FilaMovimiento({ m, data, dx, onAbrirDetalle, onVerFoto, onEliminar, on
   const cMonto = m.tipo === 'entrega' ? 'text-green-400' : (m.status === 'aprobado' ? 'text-orange-400' : 'text-zinc-500');
   const compacto = !!dx?.compacto;
   return (
-    <div className={`bg-zinc-900 border ${incompletoVisible ? 'border-amber-700/60 border-l-2 border-l-amber-500' : 'border-zinc-800'} ${compacto ? 'p-1' : 'p-2'} flex items-center gap-2`}>
+    <div className={`bg-zinc-900 border rounded-card ${incompletoVisible ? 'border-amber-700/60 border-l-2 border-l-amber-500' : 'border-zinc-800'} ${compacto ? 'p-1' : 'p-2'} flex items-center gap-2`}>
       <div className={`${compacto ? 'w-5 h-5 text-xs' : 'w-7 h-7'} shrink-0 flex items-center justify-center ${meta.bg}`}>{meta.icono}</div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1 flex-wrap">
           <div className={`${compacto ? 'text-[11px]' : 'text-xs'} font-bold truncate`}>{persona?.nombre || m.personaId}</div>
           <div className={`text-[9px] font-black uppercase tracking-wider px-1 ${stmeta.cls}`}>{stmeta.label}</div>
-          {fotoPorWs && <div className="text-[9px] font-black uppercase tracking-wider px-1 bg-yellow-900/40 text-yellow-300 border border-yellow-700">📱 WS</div>}
-          {sinFactura && <div className="text-[9px] font-black uppercase tracking-wider px-1 bg-red-900/40 text-red-300 border border-red-800">✍ SIN FACTURA</div>}
+          {fotoPorWs && <div className="text-[9px] font-black uppercase tracking-wider px-1 bg-yellow-900/40 text-yellow-300 border border-yellow-700 rounded-full">📱 WS</div>}
+          {sinFactura && <div className="text-[9px] font-black uppercase tracking-wider px-1 bg-red-900/40 text-red-300 border border-red-800 rounded-full">✍ SIN FACTURA</div>}
           {/* v8.17.25: empresa receptora */}
-          {empresa && <div className={`text-[9px] font-black uppercase tracking-wider px-1 ${empresa.color} text-white border ${empresa.borderColor}`} title={`Factura a ${empresa.label}`}>{empresa.short}</div>}
+          {empresa && <div className={`text-[9px] font-black uppercase tracking-wider px-1 ${empresa.color} text-white border ${empresa.borderColor} rounded-full`} title={`Factura a ${empresa.label}`}>{empresa.short}</div>}
           {!sinFactura && !m.empresaReceptora && m.tipo === 'gasto_factura' && (
-            <div className="text-[9px] font-black uppercase tracking-wider px-1 bg-zinc-800 text-zinc-400 border border-zinc-700" title="Sin empresa receptora asignada">❓</div>
+            <div className="text-[9px] font-black uppercase tracking-wider px-1 bg-zinc-800 text-zinc-400 border border-zinc-700 rounded-full" title="Sin empresa receptora asignada">❓</div>
           )}
           {/* v8.17.6: badge de datos incompletos */}
           {incompletoVisible && (
             <div
-              className="text-[9px] font-black uppercase tracking-wider px-1 bg-amber-900/40 text-amber-300 border border-amber-700"
+              className="text-[9px] font-black uppercase tracking-wider px-1 bg-amber-900/40 text-amber-300 border border-amber-700 rounded-full"
               title={`Faltan: ${dInc.motivos.map(x => LABEL_MOTIVO[x] || x).join(' · ')}`}
             >
               ⚠ FALTAN DATOS
@@ -1570,6 +1570,13 @@ function TablaMovimientos({ movimientos: movsTabla, todosMovimientos, data, sort
     return 'bg-orange-500'; // pendiente_revision
   };
 
+  // v8.19.39: totales por columna (footer). Solo lectura — no altera filtros ni datos.
+  const colsAntesDeMonto = ['fecha','persona','tipo','proyecto','concepto','rnc','ncf','categoria','aplicaA','subTipo','empresa','aprobadoPor','creadoAt','aprobadoAt','status'];
+  const nAntesMonto = colsAntesDeMonto.filter(k => showCol(k)).length;
+  const totMonto = movimientos.reduce((s, m) => s + (Number(m.monto) || 0), 0);
+  const totEntregado = movimientos.filter(m => m.tipo === 'entrega').reduce((s, m) => s + (Number(m.monto) || 0), 0);
+  const totGastado = movimientos.filter(m => (m.tipo === 'gasto_factura' || m.tipo === 'dieta') && m.status === 'aprobado').reduce((s, m) => s + (Number(m.monto) || 0), 0);
+
   return (
     <table className="w-full text-sm">
       <thead className="bg-zinc-950 border-b border-zinc-800 sticky top-0 z-10">
@@ -1673,9 +1680,9 @@ function TablaMovimientos({ movimientos: movsTabla, todosMovimientos, data, sort
                     {!m.proveedor && !m.concepto && <span className="text-zinc-600">—</span>}
                   </div>
                   <div className="flex gap-1 mt-0.5 flex-wrap">
-                    {sinFactura && <span className="text-[8px] font-black uppercase tracking-wider px-1 bg-red-900/40 text-red-300 border border-red-800">SIN FACTURA</span>}
-                    {fotoPorWs && <span className="text-[8px] font-black uppercase tracking-wider px-1 bg-yellow-900/40 text-yellow-300 border border-yellow-700">📱 WS</span>}
-                    {incompletoVisible && <span className="text-[8px] font-black uppercase tracking-wider px-1 bg-amber-900/40 text-amber-300 border border-amber-700" title={`Faltan: ${dInc.motivos.map(x => LABEL_MOTIVO[x] || x).join(' · ')}`}>⚠ FALTAN</span>}
+                    {sinFactura && <span className="text-[8px] font-black uppercase tracking-wider px-1 bg-red-900/40 text-red-300 border border-red-800 rounded-full">SIN FACTURA</span>}
+                    {fotoPorWs && <span className="text-[8px] font-black uppercase tracking-wider px-1 bg-yellow-900/40 text-yellow-300 border border-yellow-700 rounded-full">📱 WS</span>}
+                    {incompletoVisible && <span className="text-[8px] font-black uppercase tracking-wider px-1 bg-amber-900/40 text-amber-300 border border-amber-700 rounded-full" title={`Faltan: ${dInc.motivos.map(x => LABEL_MOTIVO[x] || x).join(' · ')}`}>⚠ FALTAN</span>}
                     {!showCol('rnc') && m.rnc && <span className="text-[9px] text-zinc-500 font-mono">RNC {m.rnc}</span>}
                   </div>
                 </td>
@@ -1685,7 +1692,7 @@ function TablaMovimientos({ movimientos: movsTabla, todosMovimientos, data, sort
               {showCol('categoria') && <td className={`${rowPad} text-xs`}>{cat ? <span className="px-1.5 py-0.5 text-[10px]" style={{ background: (cat.color || '#71717a') + '40', borderLeft: `2px solid ${cat.color || '#71717a'}` }}>{cat.icono} {cat.nombre}</span> : <span className="text-zinc-600">—</span>}</td>}
               {showCol('aplicaA') && (
                 <td className={rowPad}>
-                  {m.aplicaA === 'dieta' && <span className="text-[9px] uppercase tracking-wider px-1 bg-orange-900/40 text-orange-300 border border-orange-700">🍽 Dieta</span>}
+                  {m.aplicaA === 'dieta' && <span className="text-[9px] uppercase tracking-wider px-1 bg-orange-900/40 text-orange-300 border border-orange-700 rounded-full">🍽 Dieta</span>}
                   {m.aplicaA === 'hospedaje' && <span className="text-[9px] uppercase tracking-wider px-1 bg-purple-900/40 text-purple-300 border border-purple-700">🛏 Hospedaje</span>}
                   {!m.aplicaA && <span className="text-zinc-600 text-xs">—</span>}
                 </td>
@@ -1705,7 +1712,7 @@ function TablaMovimientos({ movimientos: movsTabla, todosMovimientos, data, sort
                       {Object.entries(EMPRESAS_RECEPTORAS).map(([k, e]) => <option key={k} value={k}>{e.label}</option>)}
                     </select>
                   ) : empresa ? (
-                    <span className={`text-[9px] font-black uppercase tracking-wider px-1 ${empresa.color} text-white border ${empresa.borderColor}`}>{empresa.short}</span>
+                    <span className={`text-[9px] font-black uppercase tracking-wider px-1 ${empresa.color} text-white border ${empresa.borderColor} rounded-full`}>{empresa.short}</span>
                   ) : (
                     <span className="text-zinc-600 text-xs">—</span>
                   )}
@@ -1760,6 +1767,28 @@ function TablaMovimientos({ movimientos: movsTabla, todosMovimientos, data, sort
           );
         })}
       </tbody>
+      {/* v8.19.39: footer de totales (solo si hay filas y la columna monto es visible) */}
+      {showCol('monto') && movimientos.length > 0 && (
+        <tfoot className="sticky bottom-0 z-10">
+          <tr className="bg-zinc-950 border-t-2 border-zinc-700">
+            <td className="w-1" style={{ padding: 0 }} />
+            <td className={`${rowPad} text-[10px] uppercase tracking-wider text-zinc-500 font-bold whitespace-nowrap`} colSpan={Math.max(1, nAntesMonto)}>
+              {movimientos.length} movimiento{movimientos.length !== 1 ? 's' : ''}
+              {(totEntregado > 0 || totGastado > 0) && (
+                <span className="ml-2 normal-case tracking-normal font-normal text-zinc-600">
+                  {totEntregado > 0 && <span className="text-green-500">entregado {formatRD(totEntregado)}</span>}
+                  {totEntregado > 0 && totGastado > 0 && ' · '}
+                  {totGastado > 0 && <span className="text-orange-500">gastado {formatRD(totGastado)}</span>}
+                </span>
+              )}
+            </td>
+            <td className={`${rowPad} text-right tabular-nums text-sm font-black text-white whitespace-nowrap`} title="Suma de la columna Monto (filas visibles)">
+              Σ {formatRD(totMonto)}
+            </td>
+            {showCol('accion') && <td className={rowPad} />}
+          </tr>
+        </tfoot>
+      )}
     </table>
   );
 }
@@ -1796,7 +1825,7 @@ function PanelVisorFactura({ movimientos, todosMovimientos, movId, setMovId, dat
 
   if (!mov) {
     return (
-      <div className="w-[400px] flex-shrink-0 bg-zinc-900 border border-zinc-800 p-4 text-center text-zinc-500 text-sm">
+      <div className="w-[400px] flex-shrink-0 bg-zinc-900 border border-zinc-800 rounded-card p-4 text-center text-zinc-500 text-sm">
         Selecciona una fila para verla aquí.
         <button onClick={onCerrar} className="block mx-auto mt-3 text-[10px] uppercase text-red-400 hover:text-red-300">Cerrar visor</button>
       </div>
@@ -1814,7 +1843,7 @@ function PanelVisorFactura({ movimientos, todosMovimientos, movId, setMovId, dat
   const guardando = guardandoId === mov.id;
 
   return (
-    <div className="w-[440px] flex-shrink-0 bg-zinc-900 border border-zinc-800 flex flex-col" style={{ maxHeight: '85vh', position: 'sticky', top: '1rem' }}>
+    <div className="w-[440px] flex-shrink-0 bg-zinc-900 border border-zinc-800 rounded-card flex flex-col" style={{ maxHeight: '85vh', position: 'sticky', top: '1rem' }}>
       {/* Header */}
       <div className="px-3 py-2 border-b border-zinc-800 flex items-center gap-2">
         <div className="flex-1 min-w-0">
@@ -1829,7 +1858,7 @@ function PanelVisorFactura({ movimientos, todosMovimientos, movId, setMovId, dat
       {/* Cuerpo scrolleable */}
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
         {/* Foto / placeholder */}
-        <div className="bg-zinc-950 border border-zinc-800 relative" style={{ minHeight: 220 }}>
+        <div className="bg-zinc-950 border border-zinc-800 rounded-card relative" style={{ minHeight: 220 }}>
           {fotoLoading ? (
             <div className="absolute inset-0 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-blue-400" /></div>
           ) : fotoUrl ? (
@@ -1913,7 +1942,7 @@ function PanelVisorFactura({ movimientos, todosMovimientos, movId, setMovId, dat
                   {Object.entries(EMPRESAS_RECEPTORAS).map(([k, e]) => <option key={k} value={k}>{e.label}</option>)}
                 </select>
               ) : empresa ? (
-                <span className={`inline-block text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5 ${empresa.color} text-white border ${empresa.borderColor}`}>{empresa.label}</span>
+                <span className={`inline-block text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5 ${empresa.color} text-white border ${empresa.borderColor} rounded-full`}>{empresa.label}</span>
               ) : (
                 <div className="text-xs text-amber-400">— Sin asignar —</div>
               )}
@@ -2006,7 +2035,7 @@ const TIPOS = {
 const STATUS = {
   pendiente_revision: { label: '⏳', cls: 'bg-orange-900/40 text-orange-300 border border-orange-800' },
   aprobado:           { label: '✓',  cls: 'bg-green-900/40 text-green-300 border border-green-800' },
-  rechazado:          { label: '✕',  cls: 'bg-red-900/40 text-red-300 border border-red-800' },
+  rechazado:          { label: '✕',  cls: 'bg-red-900/40 text-red-300 border border-red-800 rounded-full' },
 };
 
 // Modal para entregar efectivo a una caja chica
@@ -2055,7 +2084,7 @@ function ModalEntregarCaja({ usuario, data, onCerrar, onGuardado, saldosMap = {}
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-      <div className="bg-zinc-900 border-2 border-green-700 max-w-md w-full p-5 space-y-4">
+      <div className="bg-zinc-900 border-2 border-green-700 rounded-card max-w-md w-full p-5 space-y-4">
         <div className="flex justify-between items-start">
           <div>
             <div className="text-xs tracking-widest uppercase text-green-500 font-bold">Entregar caja chica</div>
@@ -2079,7 +2108,7 @@ function ModalEntregarCaja({ usuario, data, onCerrar, onGuardado, saldosMap = {}
         </Campo>
 
         {personaSel && (
-          <div className="bg-zinc-950 border border-zinc-800 p-2 text-[11px] space-y-0.5">
+          <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2 text-[11px] space-y-0.5">
             <div className="flex justify-between"><span className="text-zinc-500">Saldo actual:</span><span className={`font-bold ${saldoSel >= 0 ? 'text-green-400' : 'text-red-400'}`}>RD$ {new Intl.NumberFormat('es-DO').format(saldoSel)}</span></div>
             {limiteSel != null && limiteSel > 0 ? (
               <div className="flex justify-between"><span className="text-zinc-500">Límite asignado:</span><span className="text-zinc-300">RD$ {new Intl.NumberFormat('es-DO').format(limiteSel)}</span></div>

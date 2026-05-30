@@ -85,7 +85,7 @@ export default function ModalReportarAvanceUnidades({ proyecto, usuario, fechaIn
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-zinc-900 border-2 border-red-600 max-w-2xl w-full p-5 space-y-4 my-8 max-h-[90vh] overflow-y-auto">
+      <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-2xl w-full p-5 space-y-4 my-8 max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-start">
           <div>
             <div className="text-xs tracking-widest uppercase text-red-500 font-bold flex items-center gap-1">
@@ -132,7 +132,7 @@ export default function ModalReportarAvanceUnidades({ proyecto, usuario, fechaIn
                 s + (n.espacios || []).reduce((se, e) => se + (cantidades[e.id] || 0), 0)
               , 0);
               return (
-                <div key={torre.id} className="bg-zinc-950 border border-zinc-800">
+                <div key={torre.id} className="bg-zinc-950 border border-zinc-800 rounded-card">
                   <button
                     onClick={() => setExpandidos({ ...expandidos, [torre.id]: !exp })}
                     className="w-full p-2 flex items-center gap-2 text-left hover:bg-zinc-900"
@@ -149,7 +149,7 @@ export default function ModalReportarAvanceUnidades({ proyecto, usuario, fechaIn
                   {exp && (
                     <div className="p-2 border-t border-zinc-800 space-y-2">
                       {(torre.niveles || []).map(nivel => (
-                        <div key={nivel.id} className="bg-zinc-900 border border-zinc-800 p-2">
+                        <div key={nivel.id} className="bg-zinc-900 border border-zinc-800 rounded-card p-2">
                           <div className="text-xs font-bold mb-1.5">{nivel.nombre}</div>
                           {(nivel.espacios || []).length === 0 && (
                             <div className="text-[10px] text-zinc-600 text-center py-2 italic">Sin espacios en este nivel</div>

@@ -30,6 +30,8 @@ export default function VistaGarantias({ data, usuario, onVolver, onVerProyecto 
   const [garantias, setGarantias] = useState([]);
   const [mantenimientos, setMantenimientos] = useState([]);
   const [ubicaciones, setUbicaciones] = useState([]);
+  const [surveysProj, setSurveysProj] = useState([]);
+  const [reclamaciones, setReclamaciones] = useState([]);
   const [busqueda, setBusqueda] = useState('');
   const [ubicSel, setUbicSel] = useState(null); // detalle de ubicación
   const [reload, setReload] = useState(0);
@@ -43,8 +45,12 @@ export default function VistaGarantias({ data, usuario, onVolver, onVerProyecto 
     (async () => {
       setLoading(true);
       try {
-        const [g, m, u] = await Promise.all([db.listarGarantias(), db.listarMantenimientos({}), db.listarUbicacionesCliente(null)]);
-        if (!cancel) { setGarantias(g.map(x => ({ ...x, estado: x.estadoCalc || x.estado }))); setMantenimientos(m); setUbicaciones(u); }
+        const [g, m, u, sp, rec] = await Promise.all([
+          db.listarGarantias(), db.listarMantenimientos({}), db.listarUbicacionesCliente(null),
+          import('../../lib/surveys').then(s => s.listarProyectosSurveys()).catch(() => []),
+          db.listarReclamaciones().catch(() => []),
+        ]);
+        if (!cancel) { setGarantias(g.map(x => ({ ...x, estado: x.estadoCalc || x.estado }))); setMantenimientos(m); setUbicaciones(u); setSurveysProj(sp || []); setReclamaciones(rec || []); }
       } catch (e) { console.warn('Garantías:', e?.message); }
       if (!cancel) setLoading(false);
     })();
@@ -175,11 +181,34 @@ export default function VistaGarantias({ data, usuario, onVolver, onVerProyecto 
     { k: 'mantenimientos', label: `Mantenimientos (${proximos.length})` },
   ];
 
-  // Detalle de ubicación
+  // Detalle de ubicación (360 de la localidad)
   if (ubicSel) {
     const gs = ubicSel.garantias;
     const mants = mantenimientos.filter(m => gs.some(g => g.id === m.garantiaId)).sort((a, b) => (a.fechaProgramada || '').localeCompare(b.fechaProgramada || ''));
     const u = ubicaciones.find(x => x.id === ubicSel.key);
+    const proyIds = [...new Set(gs.map(g => g.proyectoId).filter(Boolean))];
+    const proyectosLoc = proyIds.map(id => proyById(id)).filter(Boolean);
+    // Levantamientos: match best-effort por nombre de cliente.
+    const cliN = (ubicSel.cliente || '').toLowerCase().trim();
+    const primeraPalabra = cliN.split(/\s+/)[0] || '';
+    const levs = primeraPalabra.length >= 3 ? (surveysProj || []).filter(sp => (sp.client_name || '').toLowerCase().includes(primeraPalabra)) : [];
+    // Reclamaciones de la localidad.
+    const recsLoc = reclamaciones.filter(r => proyIds.includes(r.proyectoId) || (u && r.ubicacionId === u.id) || gs.some(g => g.id === r.garantiaId));
+    // Fechas de intervención por área (de los reportes).
+    const intervArea = (pid, areaId) => {
+      const fs = (data.reportes || []).filter(r => r.proyectoId === pid && r.areaId === areaId).map(r => r.fecha).filter(Boolean).sort();
+      return fs.length ? { primera: fs[0], ultima: fs[fs.length - 1], n: fs.length } : null;
+    };
+    const abrirReclamacion = async () => {
+      const desc = prompt('Describe la reclamación del cliente:');
+      if (!desc) return;
+      try {
+        const g0 = gs[0] || {};
+        await db.crearReclamacion({ clienteId: g0.clienteId, ubicacionId: u?.id || g0.ubicacionId, garantiaId: g0.id, proyectoId: g0.proyectoId, referenciaCotizacion: g0.referenciaCotizacion, canal: 'interno', descripcion: desc });
+        setReload(r => r + 1);
+      } catch (e) { alert('Error: ' + (e.message || e)); }
+    };
+    const SEV = { abierta: 'text-amber-300', en_proceso: 'text-blue-300', resuelta: 'text-green-300', cerrada: 'text-zinc-400', rechazada: 'text-red-300' };
     return (
       <div className="space-y-4">
         <button onClick={() => setUbicSel(null)} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm"><ArrowLeft className="w-4 h-4" /> Volver a ubicaciones</button>
@@ -189,17 +218,75 @@ export default function VistaGarantias({ data, usuario, onVolver, onVerProyecto 
           {u?.direccion && <div className="text-xs text-zinc-400 mt-1">{u.direccion}{u.sector ? ` · ${u.sector}` : ''}</div>}
           {ubicSel.coords && <a href={`https://maps.google.com/?q=${ubicSel.coords.lat},${ubicSel.coords.lng}`} target="_blank" rel="noreferrer" className="text-[11px] text-blue-400 hover:underline">Ver en mapa →</a>}
         </div>
-        {ubicSel.coords && <MapaLeaflet center={[ubicSel.coords.lat, ubicSel.coords.lng]} zoom={16} height={200} markers={[{ lat: ubicSel.coords.lat, lng: ubicSel.coords.lng, color: ESTADO_GAR[peorEstado(gs)].color }]} className="rounded-card overflow-hidden" />}
+        {ubicSel.coords && <MapaLeaflet center={[ubicSel.coords.lat, ubicSel.coords.lng]} zoom={16} height={180} markers={[{ lat: ubicSel.coords.lat, lng: ubicSel.coords.lng, color: ESTADO_GAR[peorEstado(gs)].color }]} className="rounded-card overflow-hidden" />}
+
+        {/* Levantamientos */}
+        {levs.length > 0 && (
+          <div>
+            <div className="text-[11px] uppercase tracking-widest text-zinc-400 font-bold mb-2">Levantamientos ({levs.length})</div>
+            <div className="space-y-2">{levs.map(l => (
+              <div key={l.id} className="bg-zinc-900 border border-zinc-800 rounded-card p-3 text-sm"><span className="font-bold">{l.name}</span><span className="text-[10px] text-zinc-500 ml-2 uppercase">{l.service_line}</span></div>
+            ))}</div>
+          </div>
+        )}
+
+        {/* Proyectos + áreas con fechas de intervención */}
+        {proyectosLoc.length > 0 && (
+          <div>
+            <div className="text-[11px] uppercase tracking-widest text-zinc-400 font-bold mb-2">Proyectos ({proyectosLoc.length})</div>
+            <div className="space-y-2">{proyectosLoc.map(p => (
+              <div key={p.id} className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0"><span className="font-bold">{p.referenciaProyecto || p.nombre || p.cliente}</span>{p.referenciaOdoo && <span className="text-[10px] font-mono text-zinc-500 ml-2">{p.referenciaOdoo}</span>}</div>
+                  {onVerProyecto && <button onClick={() => onVerProyecto(p)} className="text-[10px] text-red-400 hover:underline shrink-0">Ver →</button>}
+                </div>
+                {(p.areas || []).length > 0 && (
+                  <div className="mt-2 space-y-1">{(p.areas || []).map(a => {
+                    const iv = intervArea(p.id, a.id);
+                    return (
+                      <div key={a.id} className="flex items-center justify-between text-[11px] border-t border-zinc-800/60 pt-1">
+                        <span className="text-zinc-300 truncate">{a.nombre || 'Área'}{a.m2 ? ` · ${formatNum(a.m2)} m²` : ''}</span>
+                        <span className="text-zinc-500 shrink-0">{iv ? `intervenida ${fmtFecha(iv.ultima)}${iv.n > 1 ? ` (${iv.n} reportes)` : ''}` : 'sin intervención'}</span>
+                      </div>
+                    );
+                  })}</div>
+                )}
+              </div>
+            ))}</div>
+          </div>
+        )}
+
+        {/* Garantías */}
         <div>
           <div className="text-[11px] uppercase tracking-widest text-zinc-400 font-bold mb-2">Garantías ({gs.length})</div>
           <div className="space-y-2">{gs.map(FilaGarantia)}</div>
         </div>
+
+        {/* Mantenimientos */}
         {mants.length > 0 && (
           <div>
             <div className="text-[11px] uppercase tracking-widest text-zinc-400 font-bold mb-2">Mantenimientos ({mants.length})</div>
             <div className="space-y-2">{mants.map(FilaMantenimiento)}</div>
           </div>
         )}
+
+        {/* Reclamaciones */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-[11px] uppercase tracking-widest text-zinc-400 font-bold">Reclamaciones ({recsLoc.length})</div>
+            <button onClick={abrirReclamacion} className="text-[10px] bg-red-600 hover:bg-red-700 text-white px-2 py-1 rounded-card font-bold uppercase">+ Abrir reclamación</button>
+          </div>
+          {recsLoc.length === 0 ? (
+            <div className="text-xs text-zinc-500 bg-zinc-950 border border-zinc-800 rounded-card p-3">Sin reclamaciones en esta localidad.</div>
+          ) : (
+            <div className="space-y-2">{recsLoc.map(r => (
+              <div key={r.id} className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
+                <div className="flex items-center gap-2"><span className={`text-[9px] font-black uppercase ${SEV[r.estado] || 'text-zinc-400'}`}>{r.estado}</span><span className="text-[10px] text-zinc-500 uppercase">{r.canal}</span><span className="text-[10px] text-zinc-500">{fmtFecha(r.fechaApertura)}</span></div>
+                <div className="text-sm text-zinc-300 mt-1">{r.descripcion}</div>
+              </div>
+            ))}</div>
+          )}
+        </div>
       </div>
     );
   }

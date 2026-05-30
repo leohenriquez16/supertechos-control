@@ -8,6 +8,7 @@ import React, { useEffect, useState } from 'react';
 import { X, Loader2, MapPin, Check, Crosshair } from 'lucide-react';
 import { listarTemplatesSurveys, crearProyectoSurvey, crearSiteSurvey, SERVICE_LINES, COMPANIES } from '../../lib/surveys';
 import { obtenerUbicacion } from '../../lib/geo';
+import { expandirYExtraer } from '../../lib/geoutils';
 import ServiceLineBadge from './ServiceLineBadge';
 
 // Helper local (convención del repo: helpers locales para evitar imports circulares).
@@ -33,9 +34,33 @@ export default function ModalLevantamientoSimple({ usuario, onCerrar, onCreado }
   const [contactName, setContactName] = useState('');
   const [mobilePhone, setMobilePhone] = useState('');
   const [notes, setNotes] = useState('');
+  const [locationLink, setLocationLink] = useState('');
+  const [extrayendo, setExtrayendo] = useState(false);
+  const [origenUbicacion, setOrigenUbicacion] = useState(null); // 'link' | 'gps'
   const [gpsCargando, setGpsCargando] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
+
+  // Método principal: el cliente manda su ubicación por WhatsApp o Google Maps.
+  // expandirYExtraer maneja links normales, cortos (maps.app.goo.gl) y coords pegadas.
+  const extraerDelLink = async (raw) => {
+    const link = (raw ?? locationLink).trim();
+    if (!link) return;
+    setExtrayendo(true);
+    setErrorMsg(null);
+    try {
+      const coords = await expandirYExtraer(link);
+      if (!coords || coords.lat == null) {
+        setErrorMsg('No pude leer coordenadas de ese link. Pega un link de Google Maps, una ubicación de WhatsApp, o las coordenadas (lat, lng).');
+      } else {
+        setLat(coords.lat);
+        setLng(coords.lng);
+        setOrigenUbicacion('link');
+      }
+    } catch (e) {
+      setErrorMsg('No se pudo extraer la ubicación: ' + (e?.message || e));
+    } finally { setExtrayendo(false); }
+  };
 
   useEffect(() => {
     (async () => {
@@ -58,6 +83,7 @@ export default function ModalLevantamientoSimple({ usuario, onCerrar, onCreado }
       } else {
         setLat(u.lat);
         setLng(u.lng);
+        setOrigenUbicacion('gps');
       }
     } catch (e) {
       setErrorMsg('No se pudo capturar la ubicación: ' + (e?.message || e));
@@ -156,13 +182,38 @@ export default function ModalLevantamientoSimple({ usuario, onCerrar, onCreado }
             <input value={clientName} onChange={e => setClientName(e.target.value)} placeholder="Ej: Plaza Central, Sr. Pérez…" className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm" />
           </div>
 
-          {/* Dirección + GPS */}
+          {/* Dirección */}
           <div>
-            <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1.5">Dirección y ubicación</div>
-            <input value={address} onChange={e => setAddress(e.target.value)} placeholder="Dirección del sitio" className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm mb-1.5" />
-            <button onClick={capturarGps} disabled={gpsCargando} className="w-full flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 rounded-card text-zinc-200 text-xs font-bold py-2">
-              {gpsCargando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Crosshair className="w-3.5 h-3.5" />}
-              {lat != null ? `Ubicación capturada (${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)})` : 'Capturar ubicación GPS'}
+            <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1.5">Dirección</div>
+            <input value={address} onChange={e => setAddress(e.target.value)} placeholder="Dirección del sitio (opcional)" className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm" />
+          </div>
+
+          {/* Ubicación — método principal: link de Maps / WhatsApp */}
+          <div>
+            <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1.5">Ubicación</div>
+            <div className="flex gap-1.5">
+              <input
+                value={locationLink}
+                onChange={e => setLocationLink(e.target.value)}
+                onBlur={() => locationLink.trim() && extraerDelLink()}
+                placeholder="Pega el link de Google Maps o la ubicación de WhatsApp"
+                className="flex-1 min-w-0 bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm"
+              />
+              <button onClick={() => extraerDelLink()} disabled={extrayendo || !locationLink.trim()} className="bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-xs font-bold uppercase px-3 rounded-card flex items-center gap-1">
+                {extrayendo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Extraer'}
+              </button>
+            </div>
+            {/* Coordenadas resueltas */}
+            {lat != null && (
+              <div className="mt-1.5 flex items-center justify-between gap-2 bg-green-900/20 border border-green-700/50 rounded-card px-2 py-1.5 text-[11px]">
+                <span className="flex items-center gap-1 text-green-300"><MapPin className="w-3 h-3" /> {Number(lat).toFixed(5)}, {Number(lng).toFixed(5)} <span className="text-green-600/70 uppercase text-[9px]">· {origenUbicacion === 'gps' ? 'GPS' : 'link'}</span></span>
+                <button onClick={() => { setLat(null); setLng(null); setOrigenUbicacion(null); }} className="text-zinc-500 hover:text-red-400"><X className="w-3 h-3" /></button>
+              </div>
+            )}
+            {/* GPS actual — secundario, para cuando el técnico está en el sitio */}
+            <button onClick={capturarGps} disabled={gpsCargando} className="mt-1 text-[10px] text-zinc-500 hover:text-zinc-300 flex items-center gap-1">
+              {gpsCargando ? <Loader2 className="w-3 h-3 animate-spin" /> : <Crosshair className="w-3 h-3" />}
+              o capturar mi GPS actual
             </button>
           </div>
 

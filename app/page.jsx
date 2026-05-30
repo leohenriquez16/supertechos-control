@@ -1086,13 +1086,8 @@ export default function App() {
                 }
               }
               // 'finalizado_recibido_conforme' → tarea a admin de facturar + email
+              // (la garantía se crea dentro de db.cambiarEstadoProyecto, cubriendo todas las rutas).
               if (estadoNuevo === 'finalizado_recibido_conforme') {
-                // v8.19.55: arranca la garantía del proyecto al cerrarlo (fecha_inicio = hoy).
-                try {
-                  const proyG = data.proyectos.find(p => p.id === proyId);
-                  const sistemaG = proyG ? data.sistemas[proyG.sistema] : null;
-                  await db.crearGarantiaDesdeProyecto(proyG, sistemaG);
-                } catch (e) { console.warn('No se pudo crear la garantía:', e?.message); }
                 const admins = data.personal.filter(p => tieneRol(p, 'admin'));
                 const admin0 = admins[0];
                 if (admin0) {

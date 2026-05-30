@@ -19,6 +19,7 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { Loader2, X, Save, Check, Plus, Copy, Trash2, ChevronDown, ChevronUp, Zap } from 'lucide-react';
 import { obtenerTemplateSurvey, crearVisita, actualizarVisita, cerrarVisita, listarAreasDeVisita, crearArea, actualizarArea, eliminarArea } from '../../lib/surveys';
+import { obtenerUbicacion, distanciaMetros } from '../../lib/geo';
 import SurveyFieldRenderer from './SurveyFieldRenderer';
 
 // v8.19.6: detecta si un campo es "de medida" (visible cuando un área es
@@ -45,6 +46,8 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
   const [generalData, setGeneralData] = useState({});
   const [errorMsg, setErrorMsg] = useState(null);
   const [guardando, setGuardando] = useState(false);
+  // v8.19.52: validación de ubicación en sitio al abrir el levantamiento.
+  const [gps, setGps] = useState({ estado: 'idle' }); // idle|cargando|ok|sin_referencia|lejos|error
   const [cerrando, setCerrando] = useState(false);
 
   // 1. Cargar template + crear/recuperar visita
@@ -70,6 +73,22 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
         setGeneralData(v.general_data || {});
         setAreas([]);
         setErrorMsg(null);
+
+        // v8.19.52: validar ubicación EN SITIO al abrir (no bloquea el form).
+        // Captura el GPS del técnico, lo guarda en la visita y lo compara con la
+        // ubicación que mandó el cliente (site.latitude/longitude) si existe.
+        (async () => {
+          setGps({ estado: 'cargando' });
+          const u = await obtenerUbicacion();
+          if (cancelado) return;
+          if (!u || u.lat == null) { setGps({ estado: 'error' }); return; }
+          try { await actualizarVisita(v.id, { checkin_latitude: u.lat, checkin_longitude: u.lng }); } catch {}
+          const slat = site?.latitude != null ? Number(site.latitude) : null;
+          const slng = site?.longitude != null ? Number(site.longitude) : null;
+          if (slat == null || slng == null) { setGps({ estado: 'sin_referencia', lat: u.lat, lng: u.lng }); return; }
+          const d = distanciaMetros(u.lat, u.lng, slat, slng);
+          setGps({ estado: (d != null && d > 200) ? 'lejos' : 'ok', distancia: d, lat: u.lat, lng: u.lng });
+        })();
       } catch (e) {
         if (!cancelado) setErrorMsg(e?.message || String(e));
       } finally {
@@ -229,6 +248,22 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
               </button>
             </div>
           </div>
+
+          {/* v8.19.52: validación de ubicación en sitio */}
+          {gps.estado !== 'idle' && (
+            <div className={`mx-4 mt-3 rounded-card px-3 py-2 text-xs flex items-center gap-2 border ${
+              gps.estado === 'ok' ? 'bg-green-900/20 border-green-700/50 text-green-300' :
+              gps.estado === 'lejos' ? 'bg-amber-900/30 border-amber-600 text-amber-200' :
+              gps.estado === 'cargando' ? 'bg-zinc-900 border-zinc-700 text-zinc-400' :
+              'bg-zinc-900 border-zinc-700 text-zinc-400'
+            }`}>
+              {gps.estado === 'cargando' && (<><Loader2 className="w-3.5 h-3.5 animate-spin" /> Validando tu ubicación en el sitio…</>)}
+              {gps.estado === 'ok' && (<><Check className="w-3.5 h-3.5" /> Estás en la ubicación del cliente{gps.distancia != null ? ` (a ${Math.round(gps.distancia)} m)` : ''}.</>)}
+              {gps.estado === 'lejos' && (<><span>⚠</span> Estás a {gps.distancia >= 1000 ? `${(gps.distancia/1000).toFixed(1)} km` : `${Math.round(gps.distancia)} m`} de la ubicación que envió el cliente. Verifica que sea el sitio correcto.</>)}
+              {gps.estado === 'sin_referencia' && (<><span>📍</span> Ubicación capturada. El cliente no envió una ubicación de referencia para comparar.</>)}
+              {gps.estado === 'error' && (<><span>📍</span> No se pudo capturar tu ubicación (permiso denegado o sin señal).</>)}
+            </div>
+          )}
 
           {/* Sección general */}
           {secGeneral && (

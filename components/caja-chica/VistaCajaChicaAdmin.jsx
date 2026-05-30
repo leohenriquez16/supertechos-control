@@ -1637,9 +1637,11 @@ function TablaMovimientos({ movimientos: movsTabla, todosMovimientos, data, sort
               onClick={() => {
                 // Si hay onSeleccionar (visor abierto), sincronizamos selección; si no, abrimos detalle.
                 if (onSeleccionar) onSeleccionar(m);
-                else if (m.tipo !== 'entrega' && onAbrirDetalle) onAbrirDetalle(m);
+                // v8.19.46: una entrega con comprobante abre la foto al hacer click (parity con gastos).
+                else if (m.tipo === 'entrega') { if (m.tieneFoto && onVerFoto) onVerFoto(m); }
+                else if (onAbrirDetalle) onAbrirDetalle(m);
               }}
-              className={`border-b border-zinc-800 ${seleccionada ? 'bg-blue-900/30 hover:bg-blue-900/40' : 'hover:bg-zinc-800/40'} ${m.tipo !== 'entrega' ? 'cursor-pointer' : 'cursor-default'} ${guardandoId === m.id ? 'opacity-60' : ''} ${incompletoVisible && !seleccionada ? 'bg-amber-900/10' : ''}`}
+              className={`border-b border-zinc-800 ${seleccionada ? 'bg-blue-900/30 hover:bg-blue-900/40' : 'hover:bg-zinc-800/40'} ${(m.tipo !== 'entrega' || m.tieneFoto) ? 'cursor-pointer' : 'cursor-default'} ${guardandoId === m.id ? 'opacity-60' : ''} ${incompletoVisible && !seleccionada ? 'bg-amber-900/10' : ''}`}
             >
               {/* color band por status */}
               <td className={`${colorBandStatus(m.status)} w-1`} style={{ padding: 0 }} />
@@ -2046,6 +2048,50 @@ function ModalEntregarCaja({ usuario, data, onCerrar, onGuardado, saldosMap = {}
   const [concepto, setConcepto] = useState('');
   const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
   const [guardando, setGuardando] = useState(false);
+  // v8.19.45: comprobante bancario obligatorio (con excepción justificada) + lectura IA.
+  const [comprobanteData, setComprobanteData] = useState(null); // dataURL base64 (se sube al guardar)
+  const [datosComprobante, setDatosComprobante] = useState(null); // lo que leyó la IA
+  const [procesandoIA, setProcesandoIA] = useState(false);
+  const [errorIA, setErrorIA] = useState(null);
+  const [sinComprobante, setSinComprobante] = useState(false);
+  const [justificacion, setJustificacion] = useState('');
+
+  // Sube/lee el comprobante con IA y autocompleta monto + fecha.
+  const onComprobante = async (file) => {
+    if (!file) return;
+    setErrorIA(null);
+    setDatosComprobante(null);
+    try {
+      const dataUrl = await comprimirImagen(file);
+      setComprobanteData(dataUrl);
+      setProcesandoIA(true);
+      const res = await fetch('/api/caja-chica/parse-comprobante', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ base64Data: dataUrl }),
+      });
+      const json = await res.json();
+      setProcesandoIA(false);
+      if (!res.ok) { setErrorIA(json.error || 'No se pudo leer el comprobante'); return; }
+      const d = json.datos || {};
+      setDatosComprobante(d);
+      if (d.es_comprobante_bancario === false) {
+        setErrorIA('La imagen no parece un comprobante de pago bancario. Súbelo de nuevo o marca "sin comprobante" con justificación.');
+      }
+      // Autocompletar monto + fecha (editables).
+      if (d.monto != null) setMonto(String(d.monto));
+      if (d.fecha) setFecha(d.fecha);
+    } catch (e) {
+      setProcesandoIA(false);
+      setErrorIA(e.message || String(e));
+    }
+  };
+
+  // ¿El monto que escribió el admin difiere de lo que leyó la IA?
+  const montoIA = datosComprobante?.monto;
+  const montoDifiere = !sinComprobante && montoIA != null && Math.abs((parseFloat(monto) || 0) - montoIA) > 1;
+  const fechaIA = datosComprobante?.fecha;
+  const fechaDifiere = !sinComprobante && fechaIA && fecha && fechaIA !== fecha;
 
   const personaSel = titulares.find(p => p.id === personaId);
   const saldoSel = personaSel ? (saldosMap[personaSel.id]?.saldo || 0) : 0;
@@ -2062,6 +2108,20 @@ function ModalEntregarCaja({ usuario, data, onCerrar, onGuardado, saldosMap = {}
   const guardar = async () => {
     if (!personaId) { toast.warning('Selecciona la persona'); return; }
     if (!montoNum || montoNum <= 0) { toast.warning('Ingresa un monto válido'); return; }
+    // v8.19.45: comprobante bancario obligatorio (con excepción justificada).
+    if (!comprobanteData && !sinComprobante) {
+      toast.warning('Sube el comprobante de pago bancario, o marca "sin comprobante" con justificación.');
+      return;
+    }
+    if (sinComprobante && justificacion.trim().length < 15) {
+      toast.warning('Para registrar una entrega sin comprobante, explica por qué (mínimo 15 caracteres).');
+      return;
+    }
+    if (procesandoIA) { toast.warning('Espera a que termine de leerse el comprobante.'); return; }
+    if (montoDifiere) {
+      const msg = `⚠️ El monto que escribiste (RD$${new Intl.NumberFormat('es-DO').format(montoNum)}) NO coincide con el del comprobante leído por la IA (RD$${new Intl.NumberFormat('es-DO').format(montoIA)}).\n\n¿Registrar la entrega de todos modos?`;
+      if (!confirm(msg)) return;
+    }
     if (excedeLimite) {
       const msg = `⚠️ Esta entrega haría que ${personaSel.nombre} tenga RD$${new Intl.NumberFormat('es-DO').format(saldoTrasEntrega)} en caja chica, excediendo su límite de RD$${new Intl.NumberFormat('es-DO').format(limiteSel)}.\n\n¿Confirmas la entrega de todos modos?`;
       if (!confirm(msg)) return;
@@ -2074,6 +2134,13 @@ function ModalEntregarCaja({ usuario, data, onCerrar, onGuardado, saldosMap = {}
         status: 'aprobado', // las entregas no requieren aprobación
         aprobadoPorId: usuario.id,
         creadoPorId: usuario.id,
+        // v8.19.45: comprobante adjunto + datos leídos por la IA (auditoría).
+        fotoDataUrl: comprobanteData || null,
+        datosIA: {
+          ...(datosComprobante ? { comprobante: datosComprobante } : {}),
+          ...(sinComprobante ? { entrega_sin_comprobante: true, justificacion_sin_comprobante: justificacion.trim() } : {}),
+          ...(montoDifiere ? { monto_no_coincide_comprobante: true, monto_comprobante_ia: montoIA } : {}),
+        },
       });
       onGuardado();
     } catch (e) {
@@ -2156,6 +2223,73 @@ function ModalEntregarCaja({ usuario, data, onCerrar, onGuardado, saldosMap = {}
         <Campo label="Concepto (opcional)">
           <Input value={concepto} onChange={v => setConcepto(v)} placeholder="Ej: Entrega semanal" />
         </Campo>
+
+        {/* v8.19.45: comprobante bancario obligatorio (con excepción justificada) */}
+        <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">Comprobante de pago bancario</div>
+            {!comprobanteData && <span className="text-[9px] text-red-400 font-bold uppercase">Obligatorio</span>}
+          </div>
+
+          {!sinComprobante && (
+            <>
+              {!comprobanteData ? (
+                <label className="flex items-center justify-center gap-2 border-2 border-dashed border-zinc-700 hover:border-green-600 rounded-card py-4 cursor-pointer text-xs text-zinc-400 hover:text-white">
+                  <Camera className="w-4 h-4" />
+                  Subir foto del comprobante (transferencia / depósito)
+                  <input type="file" accept="image/*" capture="environment" className="hidden" onChange={e => onComprobante(e.target.files?.[0])} />
+                </label>
+              ) : (
+                <div className="flex items-start gap-3">
+                  <img src={comprobanteData} alt="Comprobante" className="w-16 h-16 object-cover rounded-card border border-zinc-700 shrink-0" />
+                  <div className="flex-1 min-w-0 text-[11px]">
+                    {procesandoIA ? (
+                      <div className="flex items-center gap-1.5 text-zinc-400"><Loader2 className="w-3 h-3 animate-spin" /> Leyendo comprobante con IA…</div>
+                    ) : datosComprobante ? (
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-1 text-green-400 font-bold"><Sparkles className="w-3 h-3" /> La IA leyó:</div>
+                        <div className="text-zinc-300">Monto: <span className="font-bold tabular-nums">{datosComprobante.monto != null ? `RD$ ${new Intl.NumberFormat('es-DO').format(datosComprobante.monto)}` : '—'}</span></div>
+                        <div className="text-zinc-300">Fecha del pago: <span className="font-bold">{datosComprobante.fecha || '—'}</span></div>
+                        {datosComprobante.banco && <div className="text-zinc-500">Banco: {datosComprobante.banco}</div>}
+                        {datosComprobante.referencia && <div className="text-zinc-500">Ref: {datosComprobante.referencia}</div>}
+                        {datosComprobante.confianza && <div className="text-[9px] text-zinc-600 uppercase">Confianza IA: {datosComprobante.confianza}</div>}
+                      </div>
+                    ) : null}
+                    <button onClick={() => { setComprobanteData(null); setDatosComprobante(null); setErrorIA(null); }} className="mt-1 text-[10px] text-zinc-500 hover:text-red-400">Quitar / cambiar foto</button>
+                  </div>
+                </div>
+              )}
+
+              {errorIA && <div className="text-[10px] text-amber-300 flex items-start gap-1"><AlertCircle className="w-3 h-3 shrink-0 mt-px" /> {errorIA}</div>}
+              {(datosComprobante?.advertencias || []).map((a, i) => (
+                <div key={i} className="text-[10px] text-amber-300/80">• {a}</div>
+              ))}
+              {montoDifiere && (
+                <div className="text-[10px] text-red-300 bg-red-900/30 border border-red-800 rounded-card px-2 py-1 flex items-start gap-1">
+                  <AlertCircle className="w-3 h-3 shrink-0 mt-px" />
+                  El monto escrito (RD$ {new Intl.NumberFormat('es-DO').format(montoNum)}) no coincide con el del comprobante (RD$ {new Intl.NumberFormat('es-DO').format(montoIA)}).
+                </div>
+              )}
+              {fechaDifiere && (
+                <div className="text-[10px] text-amber-300/90">⚠ La fecha del pago en el comprobante es {fechaIA}, pero registraste {fecha}.</div>
+              )}
+            </>
+          )}
+
+          <label className="flex items-center gap-2 cursor-pointer text-[10px] text-zinc-500 hover:text-zinc-300 pt-1 border-t border-zinc-800">
+            <input type="checkbox" checked={sinComprobante} onChange={e => { setSinComprobante(e.target.checked); if (e.target.checked) { setComprobanteData(null); setDatosComprobante(null); setErrorIA(null); } }} className="w-3.5 h-3.5 accent-red-600" />
+            Registrar sin comprobante (excepción — requiere justificación)
+          </label>
+          {sinComprobante && (
+            <textarea
+              value={justificacion}
+              onChange={e => setJustificacion(e.target.value)}
+              placeholder="Explica por qué esta entrega no tiene comprobante bancario (ej. entrega en efectivo, comprobante por WhatsApp)…"
+              rows={2}
+              className="w-full bg-zinc-900 border border-red-800 rounded-card focus:border-red-500 outline-none px-2 py-1.5 text-white text-xs"
+            />
+          )}
+        </div>
 
         <div className="flex gap-2 pt-2 border-t border-zinc-800">
           <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2.5">Cancelar</button>

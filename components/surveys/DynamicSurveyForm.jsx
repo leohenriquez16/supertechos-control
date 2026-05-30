@@ -48,6 +48,8 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
   const [guardando, setGuardando] = useState(false);
   // v8.19.52: validación de ubicación en sitio al abrir el levantamiento.
   const [gps, setGps] = useState({ estado: 'idle' }); // idle|cargando|ok|sin_referencia|lejos|error
+  // v8.19.53: check-in pide la foto de fachada de una vez (con opción de diferir).
+  const [fachadaDiferida, setFachadaDiferida] = useState(false);
   const [cerrando, setCerrando] = useState(false);
 
   // 1. Cargar template + crear/recuperar visita
@@ -100,6 +102,9 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
 
   const secciones = template?.schema?.sections || [];
   const secGeneral = secciones.find(s => s.type !== 'repeating_block') || secciones[0];
+  // v8.19.53: la foto de fachada se pide en el check-in (no dentro de la sección general).
+  const fotoFachadaField = (secGeneral?.fields || []).find(f => f.id === 'foto_frontal');
+  const fachadaLista = Array.isArray(generalData.foto_frontal) && generalData.foto_frontal.length > 0;
   const bloquesRepetibles = secciones.filter(s => s.type === 'repeating_block');
 
   // Guardado de general_data (al cambiar)
@@ -265,6 +270,35 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
             </div>
           )}
 
+          {/* v8.19.53: check-in — foto de la fachada de una vez, con opción de diferir */}
+          {fotoFachadaField && (
+            fachadaLista ? (
+              <div className="mx-4 mt-3 rounded-card border border-green-700/50 bg-green-900/15 px-3 py-2 text-xs text-green-300 flex items-center gap-2">
+                <Check className="w-3.5 h-3.5" /> Foto de la fachada capturada.
+              </div>
+            ) : fachadaDiferida ? (
+              <div className="mx-4 mt-3 rounded-card border border-amber-700/50 bg-amber-900/15 px-3 py-2 text-xs text-amber-200 flex items-center justify-between gap-2">
+                <span>⚠ Foto de fachada pendiente — recuerda subirla.</span>
+                <button onClick={() => setFachadaDiferida(false)} className="text-[10px] underline hover:text-white">Tomar ahora</button>
+              </div>
+            ) : (
+              <div className="mx-4 mt-3 rounded-card border-2 border-red-600 bg-red-900/10 p-3">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-red-400">Check-in · Foto de la fachada</div>
+                  <button onClick={() => setFachadaDiferida(true)} className="text-[10px] text-zinc-400 hover:text-white underline">Subir más tarde</button>
+                </div>
+                <div className="text-[11px] text-zinc-400 mb-2">Toma una foto del frente del edificio/local al llegar.</div>
+                <SurveyFieldRenderer
+                  field={{ ...fotoFachadaField, label: '' }}
+                  value={generalData.foto_frontal}
+                  onChange={(v) => guardarGeneralData({ ...generalData, foto_frontal: v })}
+                  allValues={generalData}
+                  context={{ visitId: visit?.id, areaId: null }}
+                />
+              </div>
+            )
+          )}
+
           {/* Sección general */}
           {secGeneral && (
             <SeccionGeneral
@@ -272,6 +306,7 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
               values={generalData}
               onChange={guardarGeneralData}
               visitId={visit?.id}
+              excluirIds={fotoFachadaField ? ['foto_frontal'] : []}
             />
           )}
 
@@ -321,17 +356,18 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
 // ============================================================
 // Sección general (no repetible)
 // ============================================================
-function SeccionGeneral({ seccion, values, onChange, visitId }) {
+function SeccionGeneral({ seccion, values, onChange, visitId, excluirIds = [] }) {
   const setField = (id, val) => {
     onChange({ ...values, [id]: val });
   };
+  const campos = (seccion.fields || []).filter(f => !excluirIds.includes(f.id));
   return (
     <div className="border-b border-zinc-800">
       <div className="bg-zinc-900 px-4 py-2 text-[10px] uppercase tracking-widest text-red-500 font-bold">
         {seccion.title || 'Información general'}
       </div>
       <div className="p-4 space-y-3">
-        {(seccion.fields || []).map(f => (
+        {campos.map(f => (
           <SurveyFieldRenderer
             key={f.id}
             field={f}

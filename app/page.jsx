@@ -77,6 +77,8 @@ import VistaPropiedadesEmpresa from '../components/propiedades/VistaPropiedadesE
 import VistaNomina from '../components/nomina/VistaNomina';
 // v8.19.1: Módulo Levantamientos (surveys)
 import ModuloSurveys from '../components/surveys/ModuloSurveys';
+import VistaGarantias from '../components/garantias/VistaGarantias';
+import ModuloReclamaciones from '../components/reclamaciones/ModuloReclamaciones';
 // v8.12: Caja Chica + Dieta
 import VistaMiCajaChica from '../components/caja-chica/VistaMiCajaChica';
 import VistaCajaChicaAdmin from '../components/caja-chica/VistaCajaChicaAdmin';
@@ -726,6 +728,8 @@ export default function App() {
       { id: 'sistemas', label: 'Sistemas', icon: Settings, vista: 'sistemas' },
       { id: 'categorias', label: 'Categorías', icon: Settings, vista: 'categorias' },
       { id: 'clientes', label: 'Clientes', icon: Building2, vista: 'clientes' },
+      { id: 'garantias', label: 'Garantías', icon: CheckCircle2, vista: 'garantias' },
+      { id: 'reclamaciones', label: 'Reclamaciones', icon: AlertTriangle, vista: 'reclamaciones' },
       { id: 'personal', label: 'Personal', icon: UserIcon, vista: 'personal' },
       { id: 'estadisticasPersonal', label: 'Estadísticas', icon: TrendingUp, vista: 'estadisticasPersonal' },
     ]},
@@ -864,6 +868,8 @@ export default function App() {
         {vista === 'perfilPersona' && perfilViendo && <MiPerfil usuario={usuario} persona={perfilViendo} soloLectura={false} onVolver={() => setVista('personal')} onGuardar={(campos) => withSync(async () => { await db.guardarPerfil(perfilViendo.id, campos); const d = await db.loadAllData(); const actualizada = d.personal.find(p => p.id === perfilViendo.id); if (actualizada) setPerfilViendo(actualizada); })} />}
         {esAdmin && vista === 'sistemas' && <GestionSistemas sistemas={data.sistemas} config={data.config} dataGlobal={data} onVolver={() => setVista('dashboard')} onActualizarSistemas={(s) => withSync(() => db.guardarSistemas(s))} onActualizarConfig={(c) => withSync(() => db.guardarConfig(c))} />}
         {esAdmin && vista === 'clientes' && <GestionClientes clientes={data.clientes || []} contactos={data.contactos || []} proyectos={data.proyectos || []} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
+        {esAdmin && vista === 'garantias' && <VistaGarantias data={data} usuario={usuario} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
+        {esAdmin && vista === 'reclamaciones' && <ModuloReclamaciones data={data} usuario={usuario} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {esAdmin && vista === 'nuevoProyecto' && <NuevoProyecto personal={data.personal} sistemas={data.sistemas} clientes={data.clientes || []} contactos={data.contactos || []} proyectos={data.proyectos || []} onCancelar={() => setVista('dashboard')} onCrear={(proy) => withSync(async () => {
           // v8.9.10: Si no hay clienteId pero hay nombre o RNC, matchear o crear
           if (!proy.clienteId && (proy.cliente || proy.rncCliente)) {
@@ -1083,6 +1089,7 @@ export default function App() {
                 }
               }
               // 'finalizado_recibido_conforme' → tarea a admin de facturar + email
+              // (la garantía se crea dentro de db.cambiarEstadoProyecto, cubriendo todas las rutas).
               if (estadoNuevo === 'finalizado_recibido_conforme') {
                 const admins = data.personal.filter(p => tieneRol(p, 'admin'));
                 const admin0 = admins[0];
@@ -3352,6 +3359,36 @@ function GestionClientes({ clientes, contactos, proyectos, onVolver, onRecargar 
   const [modalCliente, setModalCliente] = useState(null); // null | 'nuevo' | { ...cliente }
   const [modalContacto, setModalContacto] = useState(null); // null | { clienteId } | { ...contacto }
   const [guardando, setGuardando] = useState(false);
+  // v8.19.54: ubicaciones/localidades del cliente seleccionado
+  const [ubicaciones, setUbicaciones] = useState([]);
+  const [modalUbicacion, setModalUbicacion] = useState(null); // null | { clienteId } | { ...ubicacion }
+
+  useEffect(() => {
+    if (!clienteSeleccionado) { setUbicaciones([]); return; }
+    let cancel = false;
+    db.listarUbicacionesCliente(clienteSeleccionado.id)
+      .then(u => { if (!cancel) setUbicaciones(u); })
+      .catch(e => console.warn('ubicaciones:', e?.message));
+    return () => { cancel = true; };
+  }, [clienteSeleccionado?.id]);
+
+  const guardarUbicacion = async (form) => {
+    setGuardando(true);
+    try {
+      if (form.id && ubicaciones.some(u => u.id === form.id)) await db.actualizarUbicacionCliente(form);
+      else await db.crearUbicacionCliente({ ...form, clienteId: clienteSeleccionado.id });
+      setUbicaciones(await db.listarUbicacionesCliente(clienteSeleccionado.id));
+      setModalUbicacion(null);
+    } catch (e) { alert('Error: ' + (e.message || e)); }
+    setGuardando(false);
+  };
+  const eliminarUbicacion = async (id) => {
+    if (!confirm('¿Archivar esta ubicación?')) return;
+    try {
+      await db.eliminarUbicacionCliente(id);
+      setUbicaciones(await db.listarUbicacionesCliente(clienteSeleccionado.id));
+    } catch (e) { alert('Error: ' + (e.message || e)); }
+  };
 
   const clientesFiltrados = React.useMemo(() => {
     const q = busqueda.toLowerCase().trim();
@@ -3451,6 +3488,43 @@ function GestionClientes({ clientes, contactos, proyectos, onVolver, onRecargar 
           {cliente.nota && <div className="mt-3 text-xs bg-zinc-950 border border-zinc-800 rounded-card p-2 text-zinc-400 italic">{cliente.nota}</div>}
         </div>
 
+        {/* v8.19.54: Ubicaciones / localidades */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card">
+          <div className="flex justify-between items-center p-4 border-b border-zinc-800">
+            <div className="text-xs tracking-widest uppercase text-zinc-400 font-bold flex items-center gap-1"><MapPin className="w-3.5 h-3.5 text-red-500" /> Ubicaciones ({ubicaciones.length})</div>
+            <button onClick={() => setModalUbicacion({ clienteId: cliente.id })} className="text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 font-bold uppercase flex items-center gap-1 rounded-card">
+              <Plus className="w-3 h-3" /> Agregar
+            </button>
+          </div>
+          {ubicaciones.length === 0 ? (
+            <div className="p-6 text-center text-sm text-zinc-500">Sin ubicaciones. Agrega la primera localidad del cliente.</div>
+          ) : (
+            <div className="divide-y divide-zinc-800">
+              {ubicaciones.map(u => {
+                const projsUbic = misProyectos.filter(p => p.ubicacionId === u.id);
+                return (
+                  <div key={u.id} className="p-4 flex justify-between items-start gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-bold flex items-center gap-2">{u.nombre}
+                        {u.latitud != null && <a href={`https://maps.google.com/?q=${u.latitud},${u.longitud}`} target="_blank" rel="noreferrer" className="text-[10px] text-blue-400 hover:underline flex items-center gap-0.5"><MapPin className="w-3 h-3" /> mapa</a>}
+                      </div>
+                      {u.direccion && <div className="text-xs text-zinc-400 truncate">{u.direccion}{u.sector ? ` · ${u.sector}` : ''}</div>}
+                      <div className="text-[10px] text-zinc-500 mt-0.5 flex flex-wrap gap-x-3">
+                        {u.contactoNombre && <span>{u.contactoNombre}{u.contactoTelefono ? ` · ${u.contactoTelefono}` : ''}</span>}
+                        <span>{projsUbic.length} proyecto{projsUbic.length !== 1 ? 's' : ''}</span>
+                      </div>
+                    </div>
+                    <div className="flex gap-1 shrink-0">
+                      <button onClick={() => setModalUbicacion({ ...u })} className="text-zinc-500 hover:text-white p-1" title="Editar"><Edit2 className="w-3.5 h-3.5" /></button>
+                      <button onClick={() => eliminarUbicacion(u.id)} className="text-zinc-500 hover:text-red-400 p-1" title="Archivar"><Trash2 className="w-3.5 h-3.5" /></button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         {/* Contactos */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-card">
           <div className="flex justify-between items-center p-4 border-b border-zinc-800">
@@ -3523,6 +3597,7 @@ function GestionClientes({ clientes, contactos, proyectos, onVolver, onRecargar 
 
         {modalCliente && <ModalEditarCliente cliente={modalCliente} onCerrar={() => setModalCliente(null)} onGuardar={guardarCliente} guardando={guardando} />}
         {modalContacto && <ModalEditarContacto contacto={modalContacto} onCerrar={() => setModalContacto(null)} onGuardar={guardarContacto} guardando={guardando} />}
+        {modalUbicacion && <ModalEditarUbicacion ubicacion={modalUbicacion} onCerrar={() => setModalUbicacion(null)} onGuardar={guardarUbicacion} guardando={guardando} />}
       </div>
     );
   }
@@ -3648,6 +3723,83 @@ function ModalEditarCliente({ cliente, onCerrar, onGuardar, guardando }) {
           <button onClick={guardar} disabled={guardando} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-700 text-white text-xs font-black uppercase py-3">
             {guardando ? 'Guardando...' : (form.id ? 'Guardar cambios' : 'Crear cliente')}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// v8.19.54: alta/edición de una ubicación/localidad del cliente (con GPS por link).
+function ModalEditarUbicacion({ ubicacion, onCerrar, onGuardar, guardando }) {
+  const esEdicion = !!ubicacion?.id;
+  const [form, setForm] = useState({
+    id: ubicacion?.id,
+    nombre: ubicacion?.nombre || '',
+    direccion: ubicacion?.direccion || '',
+    sector: ubicacion?.sector || '',
+    ciudad: ubicacion?.ciudad || '',
+    contactoNombre: ubicacion?.contactoNombre || '',
+    contactoTelefono: ubicacion?.contactoTelefono || '',
+    latitud: ubicacion?.latitud ?? null,
+    longitud: ubicacion?.longitud ?? null,
+    notas: ubicacion?.notas || '',
+  });
+  const [link, setLink] = useState('');
+  const [extrayendo, setExtrayendo] = useState(false);
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const extraer = async () => {
+    if (!link.trim()) return;
+    setExtrayendo(true);
+    try {
+      const c = await expandirYExtraer(link.trim());
+      if (c && c.lat != null) { set('latitud', c.lat); set('longitud', c.lng); }
+      else alert('No pude leer coordenadas de ese link. Pega un link de Google Maps o ubicación de WhatsApp.');
+    } catch (e) { alert('Error: ' + (e.message || e)); }
+    setExtrayendo(false);
+  };
+
+  const guardar = () => {
+    if (!form.nombre.trim()) { alert('Ponle un nombre a la ubicación (ej. "Sucursal Naco").'); return; }
+    onGuardar(form);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-[60] flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto">
+      <div className="bg-zinc-950 border-2 border-red-600 rounded-card w-full max-w-lg my-4">
+        <div className="flex items-center justify-between p-4 border-b border-zinc-800">
+          <div className="text-sm font-bold">{esEdicion ? 'Editar ubicación' : 'Nueva ubicación'}</div>
+          <button onClick={onCerrar} className="text-zinc-500 hover:text-white"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="p-4 space-y-3">
+          <div>
+            <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1">Nombre de la localidad *</div>
+            <input value={form.nombre} onChange={e => set('nombre', e.target.value)} placeholder="Ej: Sucursal Naco, Torre principal" className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm" />
+          </div>
+          <div>
+            <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1">Dirección</div>
+            <input value={form.direccion} onChange={e => set('direccion', e.target.value)} placeholder="Dirección" className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm" />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <input value={form.sector} onChange={e => set('sector', e.target.value)} placeholder="Sector" className="bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm" />
+            <input value={form.ciudad} onChange={e => set('ciudad', e.target.value)} placeholder="Ciudad" className="bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm" />
+          </div>
+          <div>
+            <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1">Ubicación (link de Maps / WhatsApp)</div>
+            <div className="flex gap-1.5">
+              <input value={link} onChange={e => setLink(e.target.value)} onBlur={() => link.trim() && extraer()} placeholder="Pega el link y se extraen las coordenadas" className="flex-1 min-w-0 bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm" />
+              <button onClick={extraer} disabled={extrayendo || !link.trim()} className="bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-xs font-bold uppercase px-3 rounded-card">{extrayendo ? '…' : 'Extraer'}</button>
+            </div>
+            {form.latitud != null && <div className="mt-1.5 text-[11px] text-green-300 flex items-center gap-1"><MapPin className="w-3 h-3" /> {Number(form.latitud).toFixed(5)}, {Number(form.longitud).toFixed(5)} <button onClick={() => { set('latitud', null); set('longitud', null); }} className="text-zinc-500 hover:text-red-400 ml-1">quitar</button></div>}
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <input value={form.contactoNombre} onChange={e => set('contactoNombre', e.target.value)} placeholder="Contacto en sitio" className="bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm" />
+            <input value={form.contactoTelefono} onChange={e => set('contactoTelefono', e.target.value)} placeholder="Teléfono" className="bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm" />
+          </div>
+        </div>
+        <div className="flex gap-2 p-4 border-t border-zinc-800">
+          <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2.5 rounded-card">Cancelar</button>
+          <button onClick={guardar} disabled={guardando} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-2.5 rounded-card">{guardando ? 'Guardando…' : 'Guardar ubicación'}</button>
         </div>
       </div>
     </div>
@@ -12121,11 +12273,23 @@ function ModalCambiarEstado({ proyecto, usuario, personal, onCerrar, onConfirmar
   const [guardando, setGuardando] = useState(false);
   const [numeroFactura, setNumeroFactura] = useState(proyecto.numeroFactura || '');
   const [montoFinal, setMontoFinal] = useState(proyecto.montoFinalCubicado || '');
+  // v8.19.57: al entregar, elegir tipo de garantía + periodicidad de mantenimiento.
+  const [garantiaAnos, setGarantiaAnos] = useState(5);
+  const [mantMeses, setMantMeses] = useState(12);
+  const [garantiaCobertura, setGarantiaCobertura] = useState('Garantía total del sistema');
 
   const confirmar = async () => {
     setGuardando(true);
     const extra = {};
-    if (estadoNuevo === 'finalizado_recibido_conforme' && montoFinal) extra.monto_final_cubicado = parseFloat(montoFinal);
+    if (estadoNuevo === 'finalizado_recibido_conforme') {
+      if (montoFinal) extra.monto_final_cubicado = parseFloat(montoFinal);
+      // _garantia se procesa en db.cambiarEstadoProyecto (no se escribe en proyectos).
+      extra._garantia = {
+        duracionMeses: Math.round((parseFloat(garantiaAnos) || 0) * 12),
+        cadaMeses: parseInt(mantMeses) || null,
+        cobertura: garantiaCobertura || null,
+      };
+    }
     if (estadoNuevo === 'facturado' && numeroFactura) extra.numero_factura = numeroFactura;
     await onConfirmar(estadoNuevo, nota, extra);
     setGuardando(false);
@@ -12143,7 +12307,33 @@ function ModalCambiarEstado({ proyecto, usuario, personal, onCerrar, onConfirmar
             ))}
           </div>
         </Campo>
-        {estadoNuevo === 'finalizado_recibido_conforme' && <Campo label="Monto final (RD$)"><Input type="number" value={montoFinal} onChange={setMontoFinal} placeholder="Monto medido/acordado" /></Campo>}
+        {estadoNuevo === 'finalizado_recibido_conforme' && (
+          <>
+            <Campo label="Monto final (RD$)"><Input type="number" value={montoFinal} onChange={setMontoFinal} placeholder="Monto medido/acordado" /></Campo>
+            <div className="bg-zinc-950 border border-green-800/60 rounded-card p-3 space-y-2">
+              <div className="text-[10px] tracking-widest uppercase text-green-400 font-bold flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> Garantía que arranca al entregar</div>
+              <div>
+                <div className="text-[10px] uppercase text-zinc-500 mb-1">Duración</div>
+                <div className="flex gap-1 flex-wrap">
+                  {[1, 3, 5, 10].map(a => (
+                    <button key={a} onClick={() => setGarantiaAnos(a)} className={`px-3 py-1.5 text-xs font-bold rounded-card border ${Number(garantiaAnos) === a ? 'bg-green-700 border-green-600 text-white' : 'bg-zinc-900 border-zinc-800 text-zinc-400'}`}>{a} año{a > 1 ? 's' : ''}</button>
+                  ))}
+                  <input type="number" value={garantiaAnos} onChange={e => setGarantiaAnos(e.target.value)} className="w-16 bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1.5 text-xs text-white text-center" title="Años (personalizado)" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <div className="text-[10px] uppercase text-zinc-500 mb-1">Mantenimiento cada (meses)</div>
+                  <input type="number" value={mantMeses} onChange={e => setMantMeses(e.target.value)} placeholder="12 (0 = sin mantenimiento)" className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1.5 text-xs text-white" />
+                </div>
+                <div>
+                  <div className="text-[10px] uppercase text-zinc-500 mb-1">Cobertura</div>
+                  <input value={garantiaCobertura} onChange={e => setGarantiaCobertura(e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1.5 text-xs text-white" />
+                </div>
+              </div>
+            </div>
+          </>
+        )}
         {estadoNuevo === 'facturado' && <Campo label="Número de factura"><Input value={numeroFactura} onChange={setNumeroFactura} placeholder="B01-..." /></Campo>}
         <Campo label="Nota (opcional)"><textarea value={nota} onChange={e => setNota(e.target.value)} rows={2} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm" /></Campo>
         <div className="flex gap-2"><button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button><button onClick={confirmar} disabled={guardando || estadoNuevo === proyecto.estado} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-3 flex items-center justify-center gap-1">{guardando ? <Loader2 className="w-3 h-3 animate-spin" /> : <><Save className="w-3 h-3" /> Confirmar</>}</button></div>

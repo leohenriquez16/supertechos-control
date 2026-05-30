@@ -33,6 +33,10 @@ export default function VistaGarantias({ data, usuario, onVolver, onVerProyecto 
   const [busqueda, setBusqueda] = useState('');
   const [ubicSel, setUbicSel] = useState(null); // detalle de ubicación
   const [reload, setReload] = useState(0);
+  const [vistaMant, setVistaMant] = useState('lista'); // lista|calendario
+  const [mesCal, setMesCal] = useState(() => new Date());
+  const [mesCalAuto, setMesCalAuto] = useState(false);
+  const [diaSel, setDiaSel] = useState(null); // 'YYYY-MM-DD' seleccionado en el calendario
 
   useEffect(() => {
     let cancel = false;
@@ -109,6 +113,13 @@ export default function VistaGarantias({ data, usuario, onVolver, onVerProyecto 
     for (const m of proximos) { const d = diasHasta(m.fechaProgramada); if (d != null && d < 0) b.vencidos.push(m); else if (d != null && d <= 90) b.prox90.push(m); else b.futuro.push(m); }
     return b;
   }, [proximos]);
+  // Abrir el calendario en el mes del próximo mantenimiento (una vez).
+  useEffect(() => {
+    if (!mesCalAuto && proximos.length > 0 && proximos[0].fechaProgramada) {
+      setMesCal(new Date(proximos[0].fechaProgramada + 'T12:00:00'));
+      setMesCalAuto(true);
+    }
+  }, [proximos, mesCalAuto]);
 
   const recordarWhatsApp = (m) => {
     const g = garantiaDe(m.garantiaId); const u = ubic(g?.ubicacionId); const nombre = clienteNombre(g);
@@ -268,14 +279,68 @@ export default function VistaGarantias({ data, usuario, onVolver, onVerProyecto 
             <div className="text-xs">Se generan según la periodicidad elegida al entregar cada proyecto.</div>
           </div>
         ) : (
-          <div className="space-y-5">
-            {[{ key: 'vencidos', label: '⚠ Vencidos', items: buckets.vencidos, cls: 'text-red-400' }, { key: 'prox90', label: 'Próximos 90 días', items: buckets.prox90, cls: 'text-amber-400' }, { key: 'futuro', label: 'Más adelante', items: buckets.futuro, cls: 'text-zinc-400' }]
-              .filter(s => s.items.length > 0).map(sec => (
-                <div key={sec.key} className="space-y-2">
-                  <div className={`text-[11px] uppercase tracking-widest font-bold ${sec.cls}`}>{sec.label} ({sec.items.length})</div>
-                  {sec.items.map(FilaMantenimiento)}
+          <div className="space-y-4">
+            <div className="flex gap-1 bg-zinc-900 border border-zinc-800 rounded-card p-1 w-fit">
+              <button onClick={() => setVistaMant('lista')} className={`px-3 py-1 text-[10px] font-bold uppercase rounded-card ${vistaMant === 'lista' ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>Lista</button>
+              <button onClick={() => setVistaMant('calendario')} className={`px-3 py-1 text-[10px] font-bold uppercase rounded-card ${vistaMant === 'calendario' ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>Calendario</button>
+            </div>
+
+            {vistaMant === 'lista' ? (
+              <div className="space-y-5">
+                {[{ key: 'vencidos', label: '⚠ Vencidos', items: buckets.vencidos, cls: 'text-red-400' }, { key: 'prox90', label: 'Próximos 90 días', items: buckets.prox90, cls: 'text-amber-400' }, { key: 'futuro', label: 'Más adelante', items: buckets.futuro, cls: 'text-zinc-400' }]
+                  .filter(s => s.items.length > 0).map(sec => (
+                    <div key={sec.key} className="space-y-2">
+                      <div className={`text-[11px] uppercase tracking-widest font-bold ${sec.cls}`}>{sec.label} ({sec.items.length})</div>
+                      {sec.items.map(FilaMantenimiento)}
+                    </div>
+                  ))}
+              </div>
+            ) : (() => {
+              const y = mesCal.getFullYear(), mo = mesCal.getMonth();
+              const pad = (n) => String(n).padStart(2, '0');
+              const offset = (new Date(y, mo, 1).getDay() + 6) % 7; // lunes = 0
+              const diasMes = new Date(y, mo + 1, 0).getDate();
+              const porDia = {};
+              proximos.forEach(m => { if (m.fechaProgramada) (porDia[m.fechaProgramada] = porDia[m.fechaProgramada] || []).push(m); });
+              const celdas = [...Array(offset).fill(null), ...Array.from({ length: diasMes }, (_, i) => i + 1)];
+              const iso = (d) => `${y}-${pad(mo + 1)}-${pad(d)}`;
+              const mesLabel = mesCal.toLocaleDateString('es-DO', { month: 'long', year: 'numeric' });
+              const prefMes = `${y}-${pad(mo + 1)}`;
+              const delMes = proximos.filter(m => (m.fechaProgramada || '').startsWith(prefMes));
+              const lista = diaSel ? proximos.filter(m => m.fechaProgramada === diaSel) : delMes;
+              const irMes = (delta) => { setMesCal(new Date(y, mo + delta, 1)); setDiaSel(null); };
+              return (
+                <div className="space-y-3">
+                  <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <button onClick={() => irMes(-1)} className="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded-card text-zinc-300 text-sm">‹</button>
+                      <div className="font-bold capitalize">{mesLabel}</div>
+                      <button onClick={() => irMes(1)} className="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded-card text-zinc-300 text-sm">›</button>
+                    </div>
+                    <div className="grid grid-cols-7 gap-1 text-center">
+                      {['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sá', 'Do'].map((d, i) => <div key={'h' + i} className="text-[9px] text-zinc-500 uppercase font-bold pb-1">{d}</div>)}
+                      {celdas.map((d, i) => {
+                        if (d === null) return <div key={'e' + i} />;
+                        const k = iso(d); const items = porDia[k] || []; const sel = diaSel === k;
+                        const venc = items.some(x => diasHasta(x.fechaProgramada) < 0);
+                        return (
+                          <button key={k} onClick={() => setDiaSel(sel ? null : (items.length ? k : null))}
+                            className={`aspect-square rounded-card text-xs flex flex-col items-center justify-center transition-colors ${sel ? 'bg-red-600 text-white' : items.length ? (venc ? 'bg-red-900/50 text-red-200 hover:bg-red-900/70' : 'bg-amber-900/40 text-amber-200 hover:bg-amber-900/60') : 'text-zinc-600 hover:bg-zinc-800/50'}`}>
+                            <span>{d}</span>
+                            {items.length > 0 && <span className="text-[8px] font-black">{items.length}</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[11px] uppercase tracking-widest text-zinc-400 font-bold mb-2">{diaSel ? fmtFecha(diaSel) : 'Este mes'} ({lista.length})</div>
+                    <div className="space-y-2">{lista.map(FilaMantenimiento)}</div>
+                    {lista.length === 0 && <div className="text-center text-xs text-zinc-500 py-4">Sin mantenimientos {diaSel ? 'ese día' : 'este mes'}.</div>}
+                  </div>
                 </div>
-              ))}
+              );
+            })()}
           </div>
         )
       )}

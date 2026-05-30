@@ -9,11 +9,11 @@
 //  - Notas
 //  - Botón "Iniciar levantamiento" (placeholder — se conecta en PR 3B.4)
 
-import React, { useState } from 'react';
-import { ArrowLeft, Building, MapPin, Calendar, Clock, FileText, AlertTriangle, Play } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ArrowLeft, Building, MapPin, Calendar, Clock, FileText, AlertTriangle, Play, ClipboardList, Layers, ChevronDown, Loader2 } from 'lucide-react';
 import QuickActions from './QuickActions';
 import DynamicSurveyForm from './DynamicSurveyForm';
-import { SITE_STATUS } from '../../lib/surveys';
+import { SITE_STATUS, listarVisitasDeSite, listarAreasDeVisita } from '../../lib/surveys';
 
 export default function SurveySiteDetail({ site, proyecto, usuario, onVolver }) {
   const [formAbierto, setFormAbierto] = useState(false);
@@ -139,6 +139,9 @@ export default function SurveySiteDetail({ site, proyecto, usuario, onVolver }) 
         </div>
       )}
 
+      {/* Levantamiento(s) ya capturado(s) — solo lectura */}
+      <LevantamientosRealizados site={site} />
+
       {/* CTA: iniciar levantamiento */}
       <div className="pt-2">
         <button
@@ -171,6 +174,153 @@ function Field({ label, value }) {
     <div className="grid grid-cols-[100px,1fr] gap-2 items-baseline text-sm">
       <div className="text-[11px] text-zinc-500 uppercase tracking-wider">{label}</div>
       <div className="text-zinc-200">{value || <span className="text-zinc-600">—</span>}</div>
+    </div>
+  );
+}
+
+// v8.19.14: formato de m² es-DO con 2 decimales.
+function fmtM2(n) {
+  const x = Number(n) || 0;
+  return x.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// Agrupa áreas por piso (block_id) preservando el orden de aparición.
+function agruparPorPiso(areas) {
+  const orden = [];
+  const mapa = new Map();
+  for (const a of areas) {
+    const piso = a.block_id || 'General';
+    if (!mapa.has(piso)) { mapa.set(piso, []); orden.push(piso); }
+    mapa.get(piso).push(a);
+  }
+  return orden.map(piso => {
+    const items = mapa.get(piso);
+    const subPared = items.reduce((s, a) => s + (Number(a.gross_area_m2) || 0), 0);
+    const subTecho = items.reduce((s, a) => s + (Number(a.secondary_area_m2) || 0), 0);
+    return { piso, items, subPared, subTecho };
+  });
+}
+
+// v8.19.14: vista de solo lectura de los levantamientos ya capturados del site.
+// Lista las visitas y, por cada una, las áreas agrupadas por piso con subtotales.
+function LevantamientosRealizados({ site }) {
+  const [loading, setLoading] = useState(true);
+  const [visitas, setVisitas] = useState([]);
+  const [areasPorVisita, setAreasPorVisita] = useState({});
+  const [expandida, setExpandida] = useState(null);
+
+  useEffect(() => {
+    let cancel = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const vs = await listarVisitasDeSite(site.id);
+        if (cancel) return;
+        const mapa = {};
+        for (const v of vs) {
+          const as = await listarAreasDeVisita(v.id);
+          if (cancel) return;
+          mapa[v.id] = as;
+        }
+        if (!cancel) {
+          setVisitas(vs);
+          setAreasPorVisita(mapa);
+          setExpandida(vs[0]?.id || null); // expandir la visita más reciente
+        }
+      } catch (e) { console.warn('LevantamientosRealizados:', e?.message); }
+      if (!cancel) setLoading(false);
+    })();
+    return () => { cancel = true; };
+  }, [site.id]);
+
+  if (loading) {
+    return (
+      <div className="bg-zinc-900 border border-zinc-800 p-4 text-center">
+        <Loader2 className="w-4 h-4 animate-spin text-red-500 mx-auto" />
+      </div>
+    );
+  }
+  if (visitas.length === 0) return null;
+
+  return (
+    <div className="space-y-2">
+      <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold flex items-center gap-1">
+        <ClipboardList className="w-3 h-3" /> Levantamiento realizado
+      </div>
+      {visitas.map(v => {
+        const areas = areasPorVisita[v.id] || [];
+        const abierta = expandida === v.id;
+        const grupos = agruparPorPiso(areas);
+        const totalPared = areas.reduce((s, a) => s + (Number(a.gross_area_m2) || 0), 0);
+        const totalTecho = areas.reduce((s, a) => s + (Number(a.secondary_area_m2) || 0), 0);
+        const nVerif = areas.filter(a => a.data?.por_verificar).length;
+        const fecha = v.checkin_at || v.created_at;
+        return (
+          <div key={v.id} className="bg-zinc-900 border border-zinc-800">
+            <button
+              onClick={() => setExpandida(abierta ? null : v.id)}
+              className="w-full p-3 flex items-center justify-between text-left hover:bg-zinc-800/40"
+            >
+              <div className="min-w-0">
+                <div className="font-bold text-sm">
+                  {areas.length} área{areas.length !== 1 ? 's' : ''} · {fmtM2(totalPared)} m² pared
+                  {totalTecho > 0 ? ` · ${fmtM2(totalTecho)} m² techo` : ''}
+                </div>
+                <div className="text-[10px] text-zinc-500">
+                  {fecha ? new Date(fecha).toLocaleDateString('es-DO', { dateStyle: 'medium' }) : 'Sin fecha'}
+                  {v.is_completed ? ' · cerrado' : ' · abierto'}
+                  {nVerif > 0 ? ` · ${nVerif} por verificar` : ''}
+                </div>
+              </div>
+              <ChevronDown className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform ${abierta ? 'rotate-180' : ''}`} />
+            </button>
+            {abierta && (
+              <div className="border-t border-zinc-800 p-3 space-y-3">
+                {grupos.map(({ piso, items, subPared, subTecho }) => (
+                  <div key={piso}>
+                    <div className="flex items-center justify-between text-[11px] font-black uppercase tracking-wider text-zinc-300 mb-1">
+                      <span className="flex items-center gap-1"><Layers className="w-3 h-3 text-red-500" /> {piso}</span>
+                      <span className="text-zinc-500">{fmtM2(subPared)} m²{subTecho > 0 ? ` + ${fmtM2(subTecho)} techo` : ''}</span>
+                    </div>
+                    <div className="space-y-1">
+                      {items.map(a => (
+                        <div key={a.id} className="bg-zinc-950 border border-zinc-800 px-2 py-1.5 text-xs flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="font-bold truncate">
+                              {a.name}
+                              {a.data?.acabado ? <span className="text-zinc-500 font-normal"> · {a.data.acabado}</span> : ''}
+                            </div>
+                            {a.data?.expresion_perimetro && (
+                              <div className="text-[10px] text-zinc-500 truncate">
+                                {a.data.expresion_perimetro}
+                                {a.data.altura_m ? ` × ${a.data.altura_m} m` : ''}
+                                {a.data.reps > 1 ? ` ×${a.data.reps}` : ''}
+                              </div>
+                            )}
+                            {a.notes && <div className="text-[10px] text-amber-400/80 truncate" title={a.notes}>{a.notes}</div>}
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <div className="font-bold">{a.gross_area_m2 != null ? `${fmtM2(a.gross_area_m2)} m²` : '—'}</div>
+                            {Number(a.secondary_area_m2) > 0 && <div className="text-[9px] text-zinc-500">+{fmtM2(a.secondary_area_m2)} techo</div>}
+                            {a.data?.por_verificar && <div className="text-[8px] text-amber-400 font-bold uppercase">⚠ verificar</div>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                <div className="border-t border-zinc-700 pt-2 flex items-center justify-between text-sm font-black">
+                  <span className="uppercase tracking-wider text-zinc-400">Total</span>
+                  <span>{fmtM2(totalPared)} m² pared{totalTecho > 0 ? ` · ${fmtM2(totalTecho)} m² techo` : ''}</span>
+                </div>
+                {v.general_notes && (
+                  <div className="text-[10px] text-zinc-500 border-t border-zinc-800 pt-2">{v.general_notes}</div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

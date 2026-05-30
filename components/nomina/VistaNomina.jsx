@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { ArrowLeft, FileText, Loader2, Plus, Save, Trash2, X, Wallet } from 'lucide-react';
+import { ArrowLeft, ChevronDown, FileText, Loader2, Plus, Save, Trash2, X, Wallet } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatRD, formatFecha, formatFechaCorta, formatNum } from '../../lib/helpers/formato';
 import { getM2Reporte } from '../../lib/helpers/calculos';
@@ -17,6 +17,114 @@ const labelProyecto = (p) => {
   const nombre = p.cliente || p.nombre || '';
   return ref ? `${ref} · ${nombre}` : nombre;
 };
+
+// v8.19.23: edición inline del "precio acordado". Solo el owner puede tocarlo.
+//   - m²_fijo: actualiza proyecto.precioM2FijoMaestro.
+//   - día:    upsert en costos_dia_proyecto por (proyectoId, personaId).
+//   - m² / tarea / ajuste: no editable inline (precios viven por paso).
+function PrecioEditable({ proyecto, personaId, fila, esOwner, onSaved }) {
+  const [editing, setEditing] = React.useState(false);
+  const [valor, setValor] = React.useState('');
+  const [guardando, setGuardando] = React.useState(false);
+
+  const modo = proyecto?.modoPagoManoObra;
+  let precioActual = 0;
+  if (modo === 'm2_fijo') precioActual = Number(proyecto.precioM2FijoMaestro || 0);
+  else if (modo === 'dia') {
+    const div = Math.max(1, (fila?.diasTrabajados || 0) + (fila?.diasDobles || 0));
+    precioActual = (fila?.montoBase || 0) / div;
+  }
+  const unidad = modo === 'm2_fijo' ? '/m²' : modo === 'dia' ? '/día' : '';
+  const editable = !!esOwner && (modo === 'm2_fijo' || modo === 'dia');
+
+  const guardar = async () => {
+    const n = Number(valor);
+    if (!Number.isFinite(n) || n < 0) { alert('Precio inválido'); return; }
+    setGuardando(true);
+    try {
+      if (modo === 'm2_fijo') {
+        await db.actualizarProyecto({ ...proyecto, precioM2FijoMaestro: n });
+      } else if (modo === 'dia') {
+        await db.guardarCostoDia(proyecto.id, personaId, n);
+      }
+      if (onSaved) await onSaved();
+      setEditing(false);
+    } catch (err) {
+      alert('Error guardando precio: ' + (err.message || err));
+    }
+    setGuardando(false);
+  };
+
+  if (!editable) {
+    if (modo === 'm2_fijo' || modo === 'dia') return <>{formatRD(precioActual)} <span className="text-zinc-500">{unidad}</span></>;
+    if (modo === 'm2' || modo === 'tarea') return <span className="text-zinc-500 italic">por paso</span>;
+    return <>—</>;
+  }
+
+  if (editing) {
+    return (
+      <span className="inline-flex items-center gap-1 justify-end">
+        <input
+          type="number"
+          step="0.01"
+          value={valor}
+          onChange={e => setValor(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') guardar(); else if (e.key === 'Escape') setEditing(false); }}
+          autoFocus
+          className="bg-zinc-950 border-2 border-red-600 px-1.5 py-0.5 text-right w-20 text-xs tabular-nums text-white outline-none"
+          disabled={guardando}
+        />
+        <span className="text-[9px] text-zinc-500">{unidad}</span>
+        {guardando ? <Loader2 className="w-3 h-3 animate-spin text-zinc-400" /> : (
+          <button onClick={guardar} className="text-[9px] text-green-400 hover:text-green-300" title="Guardar (Enter)">✓</button>
+        )}
+        <button onClick={() => setEditing(false)} className="text-[9px] text-zinc-500 hover:text-red-400" title="Cancelar (Esc)" disabled={guardando}>✗</button>
+      </span>
+    );
+  }
+
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); setValor(String(precioActual)); setEditing(true); }}
+      className="text-right group inline-flex items-center gap-1 hover:bg-zinc-800/60 px-1 py-0.5"
+      title="Editar precio (solo owner)"
+    >
+      <span>{formatRD(precioActual)} <span className="text-zinc-500">{unidad}</span></span>
+      <span className="text-[9px] text-red-400 opacity-30 group-hover:opacity-100">✎</span>
+    </button>
+  );
+}
+
+// v8.19.18: helpers visuales reusables para densificar la nómina.
+const MODO_BADGE = {
+  dia:     { label: 'Día',      cls: 'bg-emerald-900/40 border-emerald-700 text-emerald-300' },
+  m2:      { label: 'm²',       cls: 'bg-sky-900/40 border-sky-700 text-sky-300' },
+  m2_fijo: { label: 'm² fijo',  cls: 'bg-purple-900/40 border-purple-700 text-purple-300' },
+  tarea:   { label: 'Tarea',    cls: 'bg-orange-900/40 border-orange-700 text-orange-300' },
+  ajuste:  { label: 'Ajuste',   cls: 'bg-zinc-800 border-zinc-700 text-zinc-400' },
+};
+function ModoBadge({ modo }) {
+  const m = MODO_BADGE[modo] || MODO_BADGE.ajuste;
+  return <span className={`inline-block text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 border ${m.cls}`}>{m.label}</span>;
+}
+const ESTADO_BADGE = {
+  abierto: 'bg-orange-900/40 border-orange-700 text-orange-300',
+  cerrado: 'bg-yellow-900/40 border-yellow-700 text-yellow-300',
+  pagado:  'bg-green-900/40 border-green-700 text-green-300',
+};
+function EstadoBadge({ estado }) {
+  const cls = ESTADO_BADGE[estado] || 'bg-zinc-800 border-zinc-700 text-zinc-400';
+  return <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 border ${cls}`}>{estado}</span>;
+}
+function MiniBar({ value, max, color = 'bg-green-500/50' }) {
+  const pct = max > 0 ? Math.min(100, Math.max(0, (value / max) * 100)) : 0;
+  return (
+    <div className="w-full h-1 bg-zinc-800 mt-1 overflow-hidden">
+      <div className={`h-full ${color}`} style={{ width: pct + '%' }} />
+    </div>
+  );
+}
+const diasEntre = (a, b) => Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 86400000) + 1;
 
 function imprimirReciboNomina(d, corte, data) {
   const proyecto = data.proyectos.find(p => p.id === d.proyectoId);
@@ -257,15 +365,31 @@ ${cuerpo}
 }
 
 
-export default function VistaNomina({ usuario, data, onVolver }) {
+export default function VistaNomina({ usuario, data, onVolver, onRecargarGlobal, onVerProyecto }) {
   const [cortes, setCortes] = useState([]);
   const [todosDetalles, setTodosDetalles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [corteVisto, setCorteVisto] = useState(null);
+  const [initialExpandedId, setInitialExpandedId] = useState(null); // v8.19.30: pre-expandir una fila al entrar a DetalleCorte
+  const abrirCorteConPersona = (corte, personaId) => {
+    setInitialExpandedId(personaId ? 'p_' + personaId : null);
+    setCorteVisto(corte);
+  };
   const [crearModal, setCrearModal] = useState(false);
   const [filtroAnio, setFiltroAnio] = useState('');
   const [filtroBusqueda, setFiltroBusqueda] = useState('');
   const [borrandoCorteId, setBorrandoCorteId] = useState(null);
+  const [guardandoMiProd, setGuardandoMiProd] = useState(false);
+
+  // v8.19.16: live totals por corte abierto (se acumula con cada día de avance,
+  // sin esperar a "cerrar"). Recomputa cuando cambian los cortes o la data.
+  const [liveTotals, setLiveTotals] = useState({}); // { [corteId]: number }
+  const [liveLoading, setLiveLoading] = useState(false);
+  const [liveBreakdown, setLiveBreakdown] = useState({}); // { [corteId]: { porMaestro: [], porProyecto: [], proyectosSinCosto: [] } }
+  const [historicoAbierto, setHistoricoAbierto] = useState(false);
+  const [filtroRapido, setFiltroRapido] = useState('todo'); // 'corte' | 'mes' | 'ano' | 'todo'
+  // v8.19.26: cuáles banners "sin costos" están expandidos para listar todos los proyectos.
+  const [bannerCostosExpandido, setBannerCostosExpandido] = useState(new Set());
 
   const recargar = async () => {
     setLoading(true);
@@ -281,7 +405,55 @@ export default function VistaNomina({ usuario, data, onVolver }) {
   };
   useEffect(() => { recargar(); }, []);
 
-  if (corteVisto) return <DetalleCorte corte={corteVisto} data={data} usuario={usuario} onVolver={() => { setCorteVisto(null); recargar(); }} />;
+  // Calcula el live total de cada corte abierto:
+  //   jornadas en rango + ajustes pendientes/del periodo → calcularDetalle → suma.
+  useEffect(() => {
+    const abiertos = cortes.filter(c => c.estado === 'abierto');
+    if (abiertos.length === 0) { setLiveTotals({}); setLiveBreakdown({}); return; }
+    let cancel = false;
+    (async () => {
+      setLiveLoading(true);
+      const totals = {};
+      const breakdown = {};
+      for (const corte of abiertos) {
+        try {
+          const [jornadas, ajustes] = await Promise.all([
+            db.listarJornadasEnRango(corte.fechaInicio, corte.fechaFin),
+            db.listarAjustes({ sinCorte: true }).catch(() => []),
+          ]);
+          const ajustesPeriodo = (ajustes || []).filter(a => a.fecha >= corte.fechaInicio && a.fecha <= corte.fechaFin);
+          const filas = await calcularDetalle(jornadas, data, corte, ajustesPeriodo);
+          totals[corte.id] = filas.reduce((s, f) => s + (f.montoTotal || 0), 0);
+          // Desglose
+          const porMaestro = {};
+          const porProyecto = {};
+          const proyectosSinCosto = new Set();
+          filas.forEach(f => {
+            const pm = porMaestro[f.personaId] = porMaestro[f.personaId] || { id: f.personaId, nombre: f.personaNombre, monto: 0, dias: 0 };
+            pm.monto += f.montoTotal || 0; pm.dias += f.diasTrabajados || 0;
+            if (f.proyectoId) {
+              const pp = porProyecto[f.proyectoId] = porProyecto[f.proyectoId] || { id: f.proyectoId, nombre: f.proyectoNombre, modo: f.modoPago, monto: 0, m2: 0, personas: new Set() };
+              pp.monto += f.montoTotal || 0; pp.m2 += f.m2Producidos || 0; pp.personas.add(f.personaId);
+              if (f.montoTotal === 0 && f.diasTrabajados > 0 && (f.modoPago === 'dia')) proyectosSinCosto.add(f.proyectoId);
+            }
+          });
+          breakdown[corte.id] = {
+            porMaestro: Object.values(porMaestro).sort((a, b) => b.monto - a.monto),
+            porProyecto: Object.values(porProyecto).map(p => ({ ...p, personas: p.personas.size })).sort((a, b) => b.monto - a.monto),
+            proyectosSinCosto: [...proyectosSinCosto].map(id => {
+              const proy = data.proyectos.find(p => p.id === id);
+              return { id, nombre: proy ? labelProyecto(proy) : id };
+            }),
+          };
+        } catch (e) { console.warn('liveTotal:', corte.id, e?.message); totals[corte.id] = 0; breakdown[corte.id] = { porMaestro: [], porProyecto: [], proyectosSinCosto: [] }; }
+      }
+      if (!cancel) { setLiveTotals(totals); setLiveBreakdown(breakdown); setLiveLoading(false); }
+    })();
+    return () => { cancel = true; };
+  }, [cortes, data.reportes, data.proyectos, data.personal]);
+
+  // v8.19.16: el early return se movió DESPUÉS de todos los useMemo (más abajo,
+  // justo antes del return JSX) para no violar las reglas de hooks de React.
 
   const eliminarCorte = async (corteId) => {
     if (!confirm('¿Eliminar este corte de nómina? Se borrarán también todos los recibos asociados. Esta acción es irreversible.')) return;
@@ -305,6 +477,15 @@ export default function VistaNomina({ usuario, data, onVolver }) {
       const matchFecha = formatFechaCorta(c.fechaInicio).toLowerCase().includes(q) || formatFechaCorta(c.fechaFin).toLowerCase().includes(q);
       const matchNotas = (c.notas || '').toLowerCase().includes(q);
       if (!matchFecha && !matchNotas) return false;
+    }
+    // v8.19.18: filtros rápidos
+    if (filtroRapido === 'corte') return c.estado === 'abierto';
+    if (filtroRapido === 'mes') {
+      const hoy = new Date(); const desde = new Date(hoy.getFullYear(), hoy.getMonth(), 1).toISOString().split('T')[0];
+      return c.fechaFin >= desde;
+    }
+    if (filtroRapido === 'ano') {
+      return new Date(c.fechaInicio).getFullYear() === new Date().getFullYear();
     }
     return true;
   });
@@ -364,17 +545,198 @@ export default function VistaNomina({ usuario, data, onVolver }) {
       .slice(0, 5);
   }, [todosDetalles, data.proyectos, data.sistemas]);
 
+  // Hooks ya ejecutados → ahora sí podemos hacer el early return.
+  if (corteVisto) return <DetalleCorte corte={corteVisto} data={data} usuario={usuario} initialExpandedId={initialExpandedId} onRecargarGlobal={onRecargarGlobal} onVerProyecto={onVerProyecto} onVolver={() => { setCorteVisto(null); setInitialExpandedId(null); recargar(); }} />;
+
   return (
     <div className="space-y-5">
       <button onClick={onVolver} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button>
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center flex-wrap gap-2">
         <h1 className="text-3xl font-black tracking-tight">Nómina</h1>
-        <button onClick={() => setCrearModal(true)} className="bg-red-600 text-white font-black uppercase px-4 py-2 text-xs flex items-center gap-1"><Plus className="w-3 h-3" /> Nuevo corte</button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* v8.19.19: toggle global "Mostrar Mi Producción" en dashboard */}
+          {tieneRol(usuario, 'admin') && (
+            <label className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 px-3 py-2 cursor-pointer hover:border-red-600">
+              <input
+                type="checkbox"
+                checked={!!data.config?.mostrarMiProduccionNomina}
+                disabled={guardandoMiProd}
+                onChange={async (e) => {
+                  setGuardandoMiProd(true);
+                  try {
+                    await db.guardarConfig({
+                      costos_indirectos_pct: data.config?.costos_indirectos_pct ?? 15,
+                      margen_objetivo_pct: data.config?.margen_objetivo_pct ?? 30,
+                      mostrarMiProduccionNomina: e.target.checked,
+                    });
+                    if (onRecargarGlobal) await onRecargarGlobal();
+                  } catch (err) { alert('Error guardando toggle: ' + (err.message || err)); }
+                  setGuardandoMiProd(false);
+                }}
+                className="accent-red-600"
+              />
+              <div className="text-[10px]">
+                <div className="font-bold uppercase tracking-wider text-zinc-300">Mostrar "Mi Producción"</div>
+                <div className="text-zinc-500">en dashboard de maestros y admins</div>
+              </div>
+              {guardandoMiProd && <Loader2 className="w-3 h-3 animate-spin text-zinc-500" />}
+            </label>
+          )}
+          <button onClick={() => setCrearModal(true)} className="bg-red-600 text-white font-black uppercase px-4 py-2 text-xs flex items-center gap-1"><Plus className="w-3 h-3" /> Nuevo corte</button>
+        </div>
       </div>
 
-      {/* Dashboard de nómina: KPIs globales */}
+      {/* v8.19.18: Hero "Corte en curso" — panel grande con desglose en vivo */}
+      {cortesAbiertos.map(corte => {
+        const bd = liveBreakdown[corte.id] || { porMaestro: [], porProyecto: [], proyectosSinCosto: [] };
+        const total = liveTotals[corte.id] || 0;
+        const maxMaestro = Math.max(1, ...bd.porMaestro.map(m => m.monto));
+        const maxProyecto = Math.max(1, ...bd.porProyecto.map(p => p.monto));
+        const dias = diasEntre(corte.fechaInicio, corte.fechaFin);
+        const hoy = new Date().toISOString().split('T')[0];
+        const diasTranscurridos = Math.min(dias, Math.max(0, diasEntre(corte.fechaInicio, hoy < corte.fechaFin ? hoy : corte.fechaFin)));
+        const pctPeriodo = dias > 0 ? Math.round((diasTranscurridos / dias) * 100) : 0;
+        return (
+          <div key={corte.id} className="bg-zinc-900 border-l-4 border-orange-500 p-4 lg:p-5 space-y-4">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-[10px] tracking-widest uppercase text-orange-300 font-bold flex items-center gap-1">● Corte en curso</div>
+                <div className="font-black text-lg sm:text-xl text-white mt-0.5 truncate">
+                  {formatFechaCorta(corte.fechaInicio)} → {formatFechaCorta(corte.fechaFin)}
+                </div>
+                <div className="text-[10px] text-zinc-500 mt-0.5">Día {diasTranscurridos} de {dias} · {pctPeriodo}% del periodo</div>
+                <div className="w-full h-1 bg-zinc-800 mt-1 max-w-xs"><div className="h-full bg-orange-500/60" style={{ width: pctPeriodo + '%' }} /></div>
+              </div>
+              <div className="text-right shrink-0">
+                <div className="text-[10px] tracking-widest uppercase text-zinc-500">Acumulado</div>
+                <div className="text-3xl sm:text-4xl font-black text-orange-400 leading-tight">{formatRD(total)}</div>
+                <div className="text-[10px] text-zinc-500">{liveLoading ? 'calculando…' : 'live · suma según avances'}</div>
+              </div>
+            </div>
+            {/* Banner accionable si hay proyectos sin costo (#8) */}
+            {bd.proyectosSinCosto.length > 0 && (() => {
+              const expandido = bannerCostosExpandido.has(corte.id);
+              const lista = expandido ? bd.proyectosSinCosto : bd.proyectosSinCosto.slice(0, 3);
+              const restantes = bd.proyectosSinCosto.length - lista.length;
+              const toggle = () => {
+                const next = new Set(bannerCostosExpandido);
+                if (next.has(corte.id)) next.delete(corte.id); else next.add(corte.id);
+                setBannerCostosExpandido(next);
+              };
+              return (
+                <div className="bg-yellow-900/20 border border-yellow-700 px-3 py-2 text-[11px] text-yellow-300">
+                  <div className="flex items-start gap-2">
+                    <div className="mt-0.5">⚠</div>
+                    <div className="flex-1 min-w-0">
+                      <button
+                        onClick={toggle}
+                        className="font-bold text-yellow-200 hover:text-white inline-flex items-center gap-1"
+                        title={expandido ? 'Colapsar' : 'Ver todos'}
+                      >
+                        <ChevronDown className={`w-3 h-3 transition-transform ${expandido ? 'rotate-180' : ''}`} />
+                        {bd.proyectosSinCosto.length} proyecto{bd.proyectosSinCosto.length !== 1 ? 's' : ''} sin costos por día configurados
+                      </button>
+                      <div className="text-zinc-400 mt-0.5">
+                        Configura sus costos en el tab "Mano de Obra" del proyecto para que se sumen aquí.
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {lista.map(p => (
+                          <button
+                            key={p.id}
+                            onClick={() => {
+                              if (onVerProyecto) {
+                                const proy = data.proyectos.find(x => x.id === p.id);
+                                if (proy) onVerProyecto(proy, 'mdo');
+                              }
+                            }}
+                            className="bg-zinc-900 border border-yellow-700/60 hover:border-yellow-400 hover:bg-zinc-800 px-2 py-1 text-[10px] text-yellow-100 flex items-center gap-1 group"
+                            title={`Abrir "${p.nombre}" en Mano de Obra`}
+                          >
+                            <span className="truncate max-w-[280px]">{p.nombre}</span>
+                            <span className="text-yellow-400 opacity-50 group-hover:opacity-100">→</span>
+                          </button>
+                        ))}
+                        {!expandido && restantes > 0 && (
+                          <button
+                            onClick={toggle}
+                            className="text-[10px] text-yellow-400 hover:text-yellow-200 px-2 py-1 underline"
+                          >
+                            + {restantes} más
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+            {/* Desglose: top maestros y proyectos */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold mb-1">🥇 Maestros del corte ({bd.porMaestro.length})</div>
+                {bd.porMaestro.length === 0 ? <div className="text-[11px] text-zinc-600 italic">Sin asistencia aún en este corte.</div> :
+                  <div className="space-y-1">{bd.porMaestro.slice(0, 6).map(m => (
+                    <button
+                      key={m.id}
+                      onClick={() => abrirCorteConPersona(corte, m.id)}
+                      className="w-full text-left bg-zinc-950 border border-zinc-800 hover:border-orange-500/60 hover:bg-zinc-900 px-2 py-1.5 group"
+                      title="Ver detalle del corte por este maestro"
+                    >
+                      <div className="flex items-center justify-between text-[11px]">
+                        <div className="font-bold truncate flex-1 group-hover:underline underline-offset-2">{m.nombre}</div>
+                        <div className="text-zinc-500 text-[10px] shrink-0 ml-2">{m.dias}d</div>
+                        <div className="font-bold text-orange-300 ml-2 shrink-0">{formatRD(m.monto)}</div>
+                        <span className="text-[9px] text-orange-400 opacity-30 group-hover:opacity-100 ml-1">→</span>
+                      </div>
+                      <MiniBar value={m.monto} max={maxMaestro} color="bg-orange-500/50" />
+                    </button>
+                  ))}</div>}
+              </div>
+              <div>
+                <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold mb-1">🏗️ Proyectos del corte ({bd.porProyecto.length})</div>
+                {bd.porProyecto.length === 0 ? <div className="text-[11px] text-zinc-600 italic">Sin actividad asignada.</div> :
+                  <div className="space-y-1">{bd.porProyecto.slice(0, 6).map(p => {
+                    const proy = data.proyectos.find(x => x.id === p.id);
+                    return (
+                      <button
+                        key={p.id}
+                        onClick={() => { if (proy && onVerProyecto) onVerProyecto(proy, 'mdo'); }}
+                        disabled={!proy || !onVerProyecto}
+                        className="w-full text-left bg-zinc-950 border border-zinc-800 hover:border-orange-500/60 hover:bg-zinc-900 disabled:hover:border-zinc-800 disabled:hover:bg-zinc-950 px-2 py-1.5 group"
+                        title={proy ? 'Abrir proyecto en tab Mano de Obra' : 'Proyecto no encontrado'}
+                      >
+                        <div className="flex items-center justify-between text-[11px] gap-2">
+                          <div className="font-bold truncate flex-1 group-hover:underline underline-offset-2">{p.nombre}</div>
+                          <ModoBadge modo={p.modo} />
+                          <div className="text-zinc-500 text-[10px] shrink-0">{p.personas}p</div>
+                          <div className="font-bold text-orange-300 shrink-0">{formatRD(p.monto)}</div>
+                          <span className="text-[9px] text-orange-400 opacity-30 group-hover:opacity-100">→</span>
+                        </div>
+                        <MiniBar value={p.monto} max={maxProyecto} color="bg-orange-500/50" />
+                      </button>
+                    );
+                  })}</div>}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+
+      {/* v8.19.18: Histórico plegable — los KPIs y "tops" pasan a un acordeón */}
       {cortes.length > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="border border-zinc-800">
+          <button onClick={() => setHistoricoAbierto(!historicoAbierto)} className="w-full bg-zinc-900 hover:bg-zinc-800/60 px-3 py-2 flex items-center justify-between text-left">
+            <div className="flex items-center gap-2">
+              <ChevronDown className={`w-3 h-3 text-zinc-500 transition-transform ${historicoAbierto ? 'rotate-180' : ''}`} />
+              <span className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">Histórico</span>
+              <span className="text-[10px] text-zinc-500">{cortes.length} corte{cortes.length !== 1 ? 's' : ''} · {formatRD(totalHistorico)} total</span>
+            </div>
+            <span className="text-[10px] text-zinc-500">{historicoAbierto ? 'ocultar' : 'ver detalles'}</span>
+          </button>
+          {historicoAbierto && (
+            <div className="p-3 border-t border-zinc-800 space-y-3">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div className="bg-zinc-900 border border-zinc-800 p-3">
             <div className="text-[10px] text-zinc-500 uppercase tracking-widest">Total histórico</div>
             <div className="text-lg sm:text-xl font-black text-green-400 mt-1">{formatRD(totalHistorico)}</div>
@@ -388,7 +750,7 @@ export default function VistaNomina({ usuario, data, onVolver }) {
           <div className={`p-3 border ${cortesAbiertos.length > 0 ? 'bg-zinc-950 border-orange-700/40' : 'bg-zinc-900 border-zinc-800'}`}>
             <div className="text-[10px] text-zinc-500 uppercase tracking-widest">Abiertos</div>
             <div className={`text-lg sm:text-xl font-black mt-1 ${cortesAbiertos.length > 0 ? 'text-orange-400' : 'text-zinc-300'}`}>{cortesAbiertos.length}</div>
-            <div className="text-[10px] text-zinc-500 mt-0.5">en preparación</div>
+            <div className="text-[10px] text-zinc-500 mt-0.5">{formatRD(cortesAbiertos.reduce((s, c) => s + (liveTotals[c.id] || 0), 0))} acumulado</div>
           </div>
           <div className={`p-3 border ${cortesPorPagar.length > 0 ? 'bg-zinc-950 border-yellow-700/40' : 'bg-zinc-900 border-zinc-800'}`}>
             <div className="text-[10px] text-zinc-500 uppercase tracking-widest">Por pagar</div>
@@ -396,11 +758,8 @@ export default function VistaNomina({ usuario, data, onVolver }) {
             <div className="text-[10px] text-zinc-500 mt-0.5">{formatRD(cortesPorPagar.reduce((s, c) => s + (c.totalMonto || 0), 0))}</div>
           </div>
         </div>
-      )}
-
-      {/* Top maestros y proyectos por nómina histórica */}
-      {(topMaestros.length > 0 || topProyectos.length > 0 || topSistemas.length > 0) && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {(topMaestros.length > 0 || topProyectos.length > 0 || topSistemas.length > 0) && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div className="bg-zinc-900 border border-zinc-800 p-3 space-y-2">
             <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">🥇 Top maestros (histórico)</div>
             {topMaestros.length === 0 ? (
@@ -459,17 +818,37 @@ export default function VistaNomina({ usuario, data, onVolver }) {
           </div>
         </div>
       )}
+            </div>
+          )}
+        </div>
+      )}
 
-      {/* Filtros */}
+      {/* v8.19.18: Filtros — pills rápidos + búsqueda + select año */}
       {cortes.length > 0 && (
         <div className="bg-zinc-900 border border-zinc-800 p-3 flex gap-2 items-center flex-wrap">
-          <div className="text-[10px] text-zinc-500 uppercase tracking-widest">Filtrar:</div>
+          <div className="flex gap-1 flex-wrap">
+            {[
+              { id: 'todo', label: 'Todo' },
+              { id: 'corte', label: 'Corte actual' },
+              { id: 'mes', label: 'Mes' },
+              { id: 'ano', label: 'Año' },
+            ].map(o => (
+              <button
+                key={o.id}
+                onClick={() => setFiltroRapido(o.id)}
+                className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider border ${filtroRapido === o.id ? 'bg-red-600 border-red-600 text-white' : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'}`}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+          <div className="w-px h-5 bg-zinc-800 mx-1" />
           <select value={filtroAnio} onChange={e => setFiltroAnio(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-1 text-xs text-white">
             <option value="">Todos los años</option>
             {aniosDisponibles.map(a => <option key={a} value={a}>{a}</option>)}
           </select>
           <input type="text" placeholder="Buscar fecha o nota..." value={filtroBusqueda} onChange={e => setFiltroBusqueda(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-1 text-xs text-white flex-1 min-w-[150px]" />
-          {(filtroAnio || filtroBusqueda) && <button onClick={() => { setFiltroAnio(''); setFiltroBusqueda(''); }} className="text-xs text-red-500">Limpiar</button>}
+          {(filtroAnio || filtroBusqueda || filtroRapido !== 'todo') && <button onClick={() => { setFiltroAnio(''); setFiltroBusqueda(''); setFiltroRapido('todo'); }} className="text-xs text-red-500">Limpiar</button>}
           {cortesFiltrados.length !== cortes.length && <div className="text-[10px] text-zinc-500 ml-auto">{cortesFiltrados.length} de {cortes.length} · {formatRD(totalFiltrado)}</div>}
         </div>
       )}
@@ -478,29 +857,79 @@ export default function VistaNomina({ usuario, data, onVolver }) {
       {!loading && cortesFiltrados.length === 0 && cortes.length > 0 && <div className="text-center py-10 text-zinc-500 text-sm">Sin resultados con los filtros actuales.</div>}
       {!loading && cortes.length === 0 && <div className="text-center py-10 text-zinc-500 text-sm">Sin cortes aún.</div>}
 
-      <div className="space-y-2">{cortesFiltrados.map(c => (
-        <div key={c.id} className="bg-zinc-900 border border-zinc-800 hover:border-red-600 flex">
-          <button onClick={() => setCorteVisto(c)} className="flex-1 p-4 text-left">
-            <div className="flex justify-between items-start">
-              <div>
-                <div className="font-bold text-sm">{formatFechaCorta(c.fechaInicio)} → {formatFechaCorta(c.fechaFin)}</div>
-                <div className="text-[10px] text-zinc-500 uppercase">{c.estado}{c.notas && ` · ${c.notas.substring(0, 40)}${c.notas.length > 40 ? '...' : ''}`}</div>
+      {/* v8.19.18: Cards en móvil */}
+      <div className="space-y-2 md:hidden">{cortesFiltrados.map(c => {
+        const isOpen = c.estado === 'abierto';
+        const monto = isOpen ? (liveTotals[c.id] || 0) : (c.totalMonto || 0);
+        const maxMonto = Math.max(1, ...cortesFiltrados.map(x => x.estado === 'abierto' ? (liveTotals[x.id] || 0) : (x.totalMonto || 0)));
+        return (
+          <div key={c.id} className="bg-zinc-900 border border-zinc-800 hover:border-red-600 flex">
+            <button onClick={() => setCorteVisto(c)} className="flex-1 p-4 text-left">
+              <div className="flex justify-between items-start">
+                <div>
+                  <div className="font-bold text-sm">{formatFechaCorta(c.fechaInicio)} → {formatFechaCorta(c.fechaFin)}</div>
+                  <div className="text-[10px] text-zinc-500 uppercase mt-0.5 flex items-center gap-1"><EstadoBadge estado={c.estado} /> · {diasEntre(c.fechaInicio, c.fechaFin)}d{c.notas && ` · ${c.notas.substring(0, 30)}${c.notas.length > 30 ? '…' : ''}`}</div>
+                </div>
+                <div className="text-right">
+                  <div className={`text-lg font-black ${isOpen ? 'text-orange-400' : 'text-green-400'}`}>{formatRD(monto)}</div>
+                  <div className="text-[9px] text-zinc-500 uppercase tracking-wider">{isOpen ? (liveLoading ? 'calculando…' : 'live · acumulando') : c.estado}</div>
+                </div>
               </div>
-              <div className="text-right"><div className="text-lg font-black text-green-400">{formatRD(c.totalMonto)}</div></div>
-            </div>
-          </button>
-          {tieneRol(usuario, 'admin') && (
-            <button
-              onClick={() => eliminarCorte(c.id)}
-              disabled={borrandoCorteId === c.id}
-              className="px-3 text-zinc-500 hover:text-red-400 border-l border-zinc-800"
-              title="Eliminar corte"
-            >
-              {borrandoCorteId === c.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+              <MiniBar value={monto} max={maxMonto} color={isOpen ? 'bg-orange-500/50' : 'bg-green-500/50'} />
             </button>
-          )}
-        </div>
-      ))}</div>
+            {tieneRol(usuario, 'admin') && (
+              <button onClick={() => eliminarCorte(c.id)} disabled={borrandoCorteId === c.id} className="px-3 text-zinc-500 hover:text-red-400 border-l border-zinc-800" title="Eliminar corte">
+                {borrandoCorteId === c.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+              </button>
+            )}
+          </div>
+        );
+      })}</div>
+
+      {/* v8.19.18: Tabla en desktop (md+) */}
+      <div className="hidden md:block bg-zinc-900 border border-zinc-800">
+        <table className="w-full text-sm">
+          <thead className="bg-zinc-950 border-b border-zinc-800">
+            <tr className="text-[10px] uppercase tracking-widest text-zinc-500">
+              <th className="text-left px-3 py-2 font-bold">Periodo</th>
+              <th className="text-left px-3 py-2 font-bold">Estado</th>
+              <th className="text-right px-3 py-2 font-bold">Días</th>
+              <th className="text-left px-3 py-2 font-bold">Notas</th>
+              <th className="text-right px-3 py-2 font-bold">Monto</th>
+              <th className="w-10"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {(() => {
+              const maxMonto = Math.max(1, ...cortesFiltrados.map(x => x.estado === 'abierto' ? (liveTotals[x.id] || 0) : (x.totalMonto || 0)));
+              return cortesFiltrados.map(c => {
+                const isOpen = c.estado === 'abierto';
+                const monto = isOpen ? (liveTotals[c.id] || 0) : (c.totalMonto || 0);
+                return (
+                  <tr key={c.id} className="border-b border-zinc-800 hover:bg-zinc-800/30 cursor-pointer" onClick={() => setCorteVisto(c)}>
+                    <td className="px-3 py-2 font-bold whitespace-nowrap">{formatFechaCorta(c.fechaInicio)} → {formatFechaCorta(c.fechaFin)}</td>
+                    <td className="px-3 py-2"><EstadoBadge estado={c.estado} /></td>
+                    <td className="text-right px-3 py-2 text-zinc-400 tabular-nums">{diasEntre(c.fechaInicio, c.fechaFin)}</td>
+                    <td className="px-3 py-2 text-[11px] text-zinc-400 truncate max-w-[200px]">{c.notas || '—'}</td>
+                    <td className="text-right px-3 py-2 min-w-[140px]">
+                      <div className={`font-black tabular-nums ${isOpen ? 'text-orange-400' : 'text-green-400'}`}>{formatRD(monto)}</div>
+                      <div className="text-[9px] text-zinc-500 uppercase">{isOpen ? (liveLoading ? 'calculando…' : 'live') : c.estado}</div>
+                      <MiniBar value={monto} max={maxMonto} color={isOpen ? 'bg-orange-500/60' : 'bg-green-500/60'} />
+                    </td>
+                    <td className="px-2">
+                      {tieneRol(usuario, 'admin') && (
+                        <button onClick={(e) => { e.stopPropagation(); eliminarCorte(c.id); }} disabled={borrandoCorteId === c.id} className="text-zinc-500 hover:text-red-400 p-1" title="Eliminar corte">
+                          {borrandoCorteId === c.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              });
+            })()}
+          </tbody>
+        </table>
+      </div>
       {crearModal && <ModalCrearCorte ultimoCorte={cortes.filter(c => c.estado === 'cerrado' || c.estado === 'pagado')[0]} onCerrar={() => setCrearModal(false)} onCrear={async (c) => { await db.crearCorte(c); setCrearModal(false); recargar(); }} />}
     </div>
   );
@@ -558,7 +987,227 @@ function ModalCrearCorte({ onCerrar, onCrear, ultimoCorte }) {
   );
 }
 
-function DetalleCorte({ corte, data, usuario, onVolver }) {
+// v8.19.17: muestra el sistema aplicado al proyecto y sus pasos con el precio
+// que se le paga al maestro (según modo de pago). Da transparencia de cómo se
+// arma el monto del recibo.
+function SistemaPasosBreakdown({ rp, data }) {
+  const [abierto, setAbierto] = useState(false);
+  const proy = data.proyectos.find(p => p.id === rp.proyectoId);
+  const sis = proy ? data.sistemas[proy.sistema] : null;
+  if (!proy || !sis) return null;
+  const tareas = sis.tareas || [];
+  const modoPago = proy.modoPagoManoObra || 'dia';
+  const precioMaestroParaTarea = (tareaId) => {
+    if (modoPago === 'tarea') return Number(proy.preciosManoObraTareas?.[tareaId] || 0);
+    if (modoPago === 'm2') return Number(proy.preciosTareasM2?.[tareaId] || 0);
+    if (modoPago === 'm2_fijo') return Number(proy.precioM2FijoMaestro || 0);
+    return 0;
+  };
+  const modoLabel = modoPago === 'dia' ? 'por día' : modoPago === 'm2' ? 'por m² (cliente)' : modoPago === 'm2_fijo' ? 'm² fijo del sistema' : modoPago === 'tarea' ? 'por paso (m² del maestro)' : modoPago;
+
+  return (
+    <div className="mt-3 border-t border-zinc-800 pt-2">
+      <button
+        onClick={() => setAbierto(!abierto)}
+        className="w-full text-left text-[10px] uppercase tracking-widest text-zinc-400 font-bold flex items-center gap-1 hover:text-white"
+      >
+        <ChevronDown className={`w-3 h-3 transition-transform ${abierto ? 'rotate-180' : ''}`} />
+        Sistema: <span className="text-red-400 normal-case tracking-normal">{sis.nombre}</span>
+        <span className="text-zinc-600">· {tareas.length} paso{tareas.length !== 1 ? 's' : ''}</span>
+        <span className="text-zinc-600 ml-auto normal-case tracking-normal">{modoLabel}</span>
+      </button>
+      {abierto && (
+        <div className="mt-2 space-y-1">
+          {tareas.length === 0 ? (
+            <div className="text-[10px] text-zinc-500 italic px-1">Este sistema no tiene pasos definidos.</div>
+          ) : tareas.map((t, i) => {
+            const precio = precioMaestroParaTarea(t.id);
+            return (
+              <div key={t.id} className="bg-zinc-950 border border-zinc-800 px-2 py-1.5 text-[10px] flex items-center gap-2">
+                <div className="w-5 text-zinc-500 font-black">#{i + 1}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold truncate">{t.nombre || '—'}</div>
+                  <div className="text-zinc-500">
+                    {t.peso ? `${t.peso}% del sistema` : ''}
+                    {t.reporta ? `${t.peso ? ' · ' : ''}reporta en ${t.reporta}` : ''}
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  {precio > 0 ? (
+                    <>
+                      <div className="font-bold text-green-400">RD$ {formatNum(precio)}</div>
+                      <div className="text-[8px] text-zinc-600 uppercase">/m² al maestro</div>
+                    </>
+                  ) : modoPago === 'dia' ? (
+                    <div className="text-[9px] text-zinc-600">paga por día</div>
+                  ) : (
+                    <div className="text-[9px] text-zinc-600">sin precio</div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          {modoPago === 'm2_fijo' && (
+            <div className="text-[10px] text-zinc-500 italic px-1 pt-1">
+              <b className="text-zinc-300">m² fijo:</b> al maestro se le paga RD$ {formatNum(proy.precioM2FijoMaestro || 0)}/m² sobre el total ejecutado, sin importar el paso.
+            </div>
+          )}
+          {modoPago === 'dia' && (
+            <div className="text-[10px] text-zinc-500 italic px-1 pt-1">
+              <b className="text-zinc-300">Por día:</b> el pago se calcula por días trabajados, no por paso. La lista de pasos es de referencia.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// v8.19.16: calcularDetalle a nivel de módulo. Se llama tanto desde DetalleCorte
+// (preview/persistencia al abrir/cerrar) como desde el dashboard (live total
+// del corte abierto). Pura — todas sus deps vienen por parámetro o por import.
+export async function calcularDetalle(jornadas, data, corte, ajustesLista) {
+  const buckets = {}; // key: `${personaId}__${proyectoId}`
+  const getK = (pid, proyId) => `${pid}__${proyId}`;
+  const getBucket = (pid, proyId) => {
+    const k = getK(pid, proyId);
+    if (!buckets[k]) buckets[k] = { personaId: pid, proyectoId: proyId, dias: new Set(), diasDobles: new Set(), m2: 0 };
+    return buckets[k];
+  };
+  // Días trabajados por jornada
+  jornadas.forEach(j => {
+    (j.personasPresentesIds || []).forEach(pid => {
+      const b = getBucket(pid, j.proyectoId);
+      b.dias.add(j.fecha);
+      if (j.diaDoble) b.diasDobles.add(j.fecha);
+    });
+  });
+  // m² del maestro en cada proyecto - respeta maestroAreaId si está asignado
+  (data.reportes || []).filter(r => r.fecha >= corte.fechaInicio && r.fecha <= corte.fechaFin).forEach(r => {
+    const proy = data.proyectos.find(p => p.id === r.proyectoId);
+    if (!proy) return;
+    const sistema = data.sistemas[proy.sistema];
+    if (!sistema) return;
+    const m2 = getM2Reporte(r, sistema);
+    const area = (proy.areas || []).find(a => a.id === r.areaId);
+    const maestroId = area?.maestroAreaId || proy.maestroId;
+    if (!maestroId) return;
+    const b = getBucket(maestroId, proy.id);
+    b.m2 += m2;
+    b.tareaReportes = b.tareaReportes || {};
+    b.tareaReportes[r.tareaId] = (b.tareaReportes[r.tareaId] || 0) + m2;
+  });
+
+  // Costos de día para los proyectos involucrados
+  const proyectosInvolucrados = [...new Set(Object.values(buckets).map(b => b.proyectoId))];
+  const costosDiaMap = {};
+  for (const pid of proyectosInvolucrados) {
+    try {
+      const lista = await db.listarCostosDia(pid);
+      costosDiaMap[pid] = {};
+      lista.forEach(c => { costosDiaMap[pid][c.personaId] = c.costoDia; });
+    } catch {}
+  }
+
+  const filas = [];
+  Object.values(buckets).forEach(b => {
+    const p = data.personal.find(x => x.id === b.personaId);
+    const proy = data.proyectos.find(x => x.id === b.proyectoId);
+    if (!p || !proy) return;
+    const diasN = b.dias.size;
+    const dobles = b.diasDobles.size;
+    const diasEfectivos = diasN + dobles;
+    let montoBase = 0;
+    if (proy.modoPagoManoObra === 'dia') {
+      const costoDia = costosDiaMap[proy.id]?.[b.personaId] || 0;
+      montoBase = diasEfectivos * costoDia;
+    } else if (proy.modoPagoManoObra === 'm2_fijo') {
+      // v8.19.20: el precio fijo cubre el SISTEMA COMPLETO. Si un avance solo
+      // reportó parte de las tareas, el maestro cobra el peso% de cada tarea
+      // sobre el precio. Antes era b.m2 × precio (doble cobro al reportar
+      // varios pasos sobre la misma área).
+      const precioFijo = proy.precioM2FijoMaestro || 0;
+      const sistema = data.sistemas[proy.sistema];
+      const tareas = sistema?.tareas || [];
+      const totalPesoCfg = tareas.reduce((s, t) => s + (Number(t.peso) || 0), 0);
+      if (tareas.length > 0 && totalPesoCfg > 0 && b.tareaReportes) {
+        const pesoMap = {};
+        tareas.forEach(t => { pesoMap[t.id] = Number(t.peso) || 0; });
+        montoBase = 0;
+        Object.entries(b.tareaReportes).forEach(([tid, m2]) => {
+          const peso = pesoMap[tid] || 0;
+          montoBase += m2 * precioFijo * (peso / 100);
+        });
+      } else {
+        // Fallback: sistema sin pesos definidos → comportamiento anterior.
+        montoBase = b.m2 * precioFijo;
+      }
+    } else if (proy.modoPagoManoObra === 'm2') {
+      const precios = proy.preciosTareasM2 || {};
+      if (b.tareaReportes) {
+        Object.entries(b.tareaReportes).forEach(([tid, m2]) => { montoBase += m2 * (precios[tid] || 0); });
+      }
+    } else if (proy.modoPagoManoObra === 'tarea') {
+      const preciosMO = proy.preciosManoObraTareas || {};
+      if (b.tareaReportes) {
+        Object.entries(b.tareaReportes).forEach(([tid, m2]) => { montoBase += m2 * (preciosMO[tid] || 0); });
+      }
+    }
+    // v8.19.20: m² efectivos = el área "real" que se está pagando.
+    //   Para m²_fijo es montoBase / precioFijo (porque ya viene ponderado por peso).
+    //   Para otros modos cae a la suma cruda. m2Producidos se conserva como la
+    //   suma total reportada (puede ser mayor por reportes en múltiples pasos
+    //   sobre la misma área).
+    let m2Efectivo = b.m2;
+    if (proy.modoPagoManoObra === 'm2_fijo' && (proy.precioM2FijoMaestro || 0) > 0) {
+      m2Efectivo = montoBase / proy.precioM2FijoMaestro;
+    }
+    filas.push({
+      id: 'd_' + corte.id + '_' + b.personaId + '_' + b.proyectoId,
+      corteId: corte.id, personaId: b.personaId, personaNombre: p.nombre,
+      proyectoId: b.proyectoId, proyectoNombre: labelProyecto(proy),
+      modoPago: proy.modoPagoManoObra || 'dia',
+      diasTrabajados: diasN, diasDobles: dobles,
+      m2Producidos: b.m2, m2Efectivo,
+      montoBase, montoDieta: 0, montoAdelantos: 0, montoOtros: 0,
+      montoApoyo: 0, notaApoyo: '',
+      montoTotal: montoBase,
+    });
+  });
+
+  // Filas vacías para personas con ajustes pero sin jornadas en el periodo
+  const personasConAjuste = [...new Set(ajustesLista.map(a => a.personaId))];
+  personasConAjuste.forEach(pid => {
+    if (filas.filter(f => f.personaId === pid).length === 0) {
+      const p = data.personal.find(x => x.id === pid);
+      if (!p) return;
+      filas.push({
+        id: 'd_' + corte.id + '_' + pid + '_ajuste',
+        corteId: corte.id, personaId: pid, personaNombre: p.nombre,
+        proyectoId: null, proyectoNombre: '(Ajustes)',
+        modoPago: 'ajuste', diasTrabajados: 0, m2Producidos: 0,
+        montoBase: 0, montoDieta: 0, montoAdelantos: 0, montoOtros: 0, montoTotal: 0,
+      });
+    }
+  });
+  // Distribuir ajustes (a fila por proyecto si aplica; sino, a la fila con más días).
+  ajustesLista.forEach(a => {
+    const filasP = filas.filter(f => f.personaId === a.personaId);
+    if (filasP.length === 0) return;
+    let target = null;
+    if (a.proyectoId) target = filasP.find(f => f.proyectoId === a.proyectoId);
+    if (!target) target = filasP.sort((x, y) => y.diasTrabajados - x.diasTrabajados)[0];
+    if (a.tipo === 'adelanto') target.montoAdelantos += a.monto;
+    else if (a.tipo === 'descuento') target.montoOtros -= a.monto;
+    else target.montoOtros += a.monto;
+  });
+  filas.forEach(f => { f.montoTotal = f.montoBase + f.montoOtros - f.montoAdelantos; });
+  return filas;
+}
+
+function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerProyecto, initialExpandedId }) {
+  const esOwner = tieneRol(usuario, 'owner');
+  const [vistaInicialAplicada, setVistaInicialAplicada] = useState(false);
   const [detalle, setDetalle] = useState([]);
   const [loading, setLoading] = useState(true);
   const [jornadasCorte, setJornadasCorte] = useState([]);
@@ -566,6 +1215,15 @@ function DetalleCorte({ corte, data, usuario, onVolver }) {
   const [ajusteModal, setAjusteModal] = useState(null);
   const [vistaDetalle, setVistaDetalle] = useState('persona'); // persona | proyecto | supervisor | recibos
   const [soloMaestros, setSoloMaestros] = useState(true); // v8.6: default solo maestros
+  const [expandedId, setExpandedId] = useState(initialExpandedId || null); // v8.19.18: filas expandidas en tabla desktop
+  // v8.19.30: si vino del hero con una persona específica, asegura la vista 'persona'
+  useEffect(() => {
+    if (initialExpandedId && !vistaInicialAplicada) {
+      setVistaDetalle('persona');
+      setExpandedId(initialExpandedId);
+      setVistaInicialAplicada(true);
+    }
+  }, [initialExpandedId, vistaInicialAplicada]);
 
   // v8.6: Detalle filtrado por modo "solo maestros"
   const detalleFiltrado = React.useMemo(() => {
@@ -580,11 +1238,12 @@ function DetalleCorte({ corte, data, usuario, onVolver }) {
   const resumenPersonas = React.useMemo(() => {
     const g = {};
     detalleFiltrado.forEach(r => {
-      if (!g[r.personaId]) g[r.personaId] = { personaId: r.personaId, personaNombre: r.personaNombre, proyectos: [], total: 0, totalDias: 0, totalM2: 0 };
+      if (!g[r.personaId]) g[r.personaId] = { personaId: r.personaId, personaNombre: r.personaNombre, proyectos: [], total: 0, totalDias: 0, totalM2: 0, totalM2Efectivo: 0 };
       g[r.personaId].proyectos.push(r);
       g[r.personaId].total += r.montoTotal;
       g[r.personaId].totalDias += r.diasTrabajados || 0;
       g[r.personaId].totalM2 += r.m2Producidos || 0;
+      g[r.personaId].totalM2Efectivo += (typeof r.m2Efectivo === 'number' ? r.m2Efectivo : (r.m2Producidos || 0));
     });
     return Object.values(g).sort((a, b) => b.total - a.total);
   }, [detalleFiltrado]);
@@ -647,135 +1306,14 @@ function DetalleCorte({ corte, data, usuario, onVolver }) {
   };
   useEffect(() => { cargar(); }, []);
 
-  const calcularDetalle = async (jornadas, data, corte, ajustesLista) => {
-    // Agrupamos por persona × proyecto
-    const buckets = {}; // key: `${personaId}__${proyectoId}`
-    const getK = (pid, proyId) => `${pid}__${proyId}`;
-    const getBucket = (pid, proyId) => {
-      const k = getK(pid, proyId);
-      if (!buckets[k]) buckets[k] = { personaId: pid, proyectoId: proyId, dias: new Set(), diasDobles: new Set(), m2: 0 };
-      return buckets[k];
-    };
-    // Días trabajados por jornada
-    jornadas.forEach(j => {
-      (j.personasPresentesIds || []).forEach(pid => {
-        const b = getBucket(pid, j.proyectoId);
-        b.dias.add(j.fecha);
-        if (j.diaDoble) b.diasDobles.add(j.fecha);
-      });
-    });
-    // m² del maestro en cada proyecto - respeta maestroAreaId si está asignado
-    data.reportes.filter(r => r.fecha >= corte.fechaInicio && r.fecha <= corte.fechaFin).forEach(r => {
-      const proy = data.proyectos.find(p => p.id === r.proyectoId);
-      if (!proy) return;
-      const sistema = data.sistemas[proy.sistema];
-      if (!sistema) return;
-      const m2 = getM2Reporte(r, sistema);
-      // Determinar qué maestro cobra este reporte: el de su área o el principal del proyecto
-      const area = (proy.areas || []).find(a => a.id === r.areaId);
-      const maestroId = area?.maestroAreaId || proy.maestroId;
-      if (!maestroId) return;
-      const b = getBucket(maestroId, proy.id);
-      b.m2 += m2;
-      b.tareaReportes = b.tareaReportes || {};
-      b.tareaReportes[r.tareaId] = (b.tareaReportes[r.tareaId] || 0) + m2;
-    });
-
-    // Cargar costos de día para los proyectos involucrados
-    const proyectosInvolucrados = [...new Set(Object.values(buckets).map(b => b.proyectoId))];
-    const costosDiaMap = {}; // { [proyId]: { [personaId]: costoDia } }
-    for (const pid of proyectosInvolucrados) {
-      try {
-        const lista = await db.listarCostosDia(pid);
-        costosDiaMap[pid] = {};
-        lista.forEach(c => { costosDiaMap[pid][c.personaId] = c.costoDia; });
-      } catch {}
-    }
-
-    // Generar una fila por bucket (recibo persona × proyecto)
-    const filas = [];
-    Object.values(buckets).forEach(b => {
-      const p = data.personal.find(x => x.id === b.personaId);
-      const proy = data.proyectos.find(x => x.id === b.proyectoId);
-      if (!p || !proy) return;
-      const diasN = b.dias.size;
-      const dobles = b.diasDobles.size;
-      const diasEfectivos = diasN + dobles; // doble cuenta como 2
-      let montoBase = 0;
-
-      if (proy.modoPagoManoObra === 'dia') {
-        const costoDia = costosDiaMap[proy.id]?.[b.personaId] || 0;
-        montoBase = diasEfectivos * costoDia;
-      } else if (proy.modoPagoManoObra === 'm2_fijo') {
-        // v8.6: Precio fijo por m² total ejecutado (sin distinguir tarea)
-        const precioFijo = proy.precioM2FijoMaestro || 0;
-        montoBase = b.m2 * precioFijo;
-      } else if (proy.modoPagoManoObra === 'm2') {
-        // Pago por m² según precio por tarea del proyecto (o 0 si no configurado)
-        const precios = proy.preciosTareasM2 || {};
-        if (b.tareaReportes) {
-          Object.entries(b.tareaReportes).forEach(([tid, m2]) => {
-            montoBase += m2 * (precios[tid] || 0);
-          });
-        }
-      } else if (proy.modoPagoManoObra === 'tarea') {
-        // v8.5: Pago al maestro por tarea - cada tarea tiene su precio al maestro
-        const preciosMO = proy.preciosManoObraTareas || {};
-        if (b.tareaReportes) {
-          Object.entries(b.tareaReportes).forEach(([tid, m2]) => {
-            montoBase += m2 * (preciosMO[tid] || 0);
-          });
-        }
-      }
-
-      filas.push({
-        id: 'd_' + corte.id + '_' + b.personaId + '_' + b.proyectoId,
-        corteId: corte.id, personaId: b.personaId, personaNombre: p.nombre,
-        proyectoId: b.proyectoId, proyectoNombre: labelProyecto(proy),
-        modoPago: proy.modoPagoManoObra || 'dia',
-        diasTrabajados: diasN, diasDobles: dobles, m2Producidos: b.m2,
-        montoBase, montoDieta: 0, montoAdelantos: 0, montoOtros: 0,
-        montoApoyo: 0, // v8.5: ajuste manual admin
-        notaApoyo: '', // v8.5: motivo del ajuste
-        montoTotal: montoBase,
-      });
-    });
-
-    // Ajustes a nivel persona — los sumamos al bucket con más días de esa persona
-    const personasConAjuste = [...new Set(ajustesLista.map(a => a.personaId))];
-    personasConAjuste.forEach(pid => {
-      const filasP = filas.filter(f => f.personaId === pid);
-      if (filasP.length === 0) {
-        // La persona tiene ajustes pero no trabajó en ningún proyecto — crear fila sin proyecto
-        const p = data.personal.find(x => x.id === pid);
-        if (!p) return;
-        filas.push({
-          id: 'd_' + corte.id + '_' + pid + '_ajuste',
-          corteId: corte.id, personaId: pid, personaNombre: p.nombre,
-          proyectoId: null, proyectoNombre: '(Ajustes)',
-          modoPago: 'ajuste', diasTrabajados: 0, m2Producidos: 0,
-          montoBase: 0, montoDieta: 0, montoAdelantos: 0, montoOtros: 0, montoTotal: 0,
-        });
-      }
-    });
-    // Distribuir ajustes:
-    //  - Si el ajuste tiene proyectoId, va a la fila de esa persona en ese proyecto (avance dirigido).
-    //  - Si no la hay (ej: el maestro no trabajó allí este corte), cae a la fila con más días.
-    //  - Si el ajuste no tiene proyectoId, mantiene la heurística vieja (más días).
-    ajustesLista.forEach(a => {
-      const filasP = filas.filter(f => f.personaId === a.personaId);
-      if (filasP.length === 0) return;
-      let target = null;
-      if (a.proyectoId) target = filasP.find(f => f.proyectoId === a.proyectoId);
-      if (!target) target = filasP.sort((x, y) => y.diasTrabajados - x.diasTrabajados)[0];
-      if (a.tipo === 'adelanto') target.montoAdelantos += a.monto;
-      else if (a.tipo === 'descuento') target.montoOtros -= a.monto;
-      else target.montoOtros += a.monto; // bono, dieta_extra
-    });
-    // Recalcular montoTotal
-    filas.forEach(f => { f.montoTotal = f.montoBase + f.montoOtros - f.montoAdelantos; });
-    return filas;
+  // v8.19.23: tras editar un precio, refresca data global + recomputa el corte.
+  const recargarTodo = async () => {
+    if (onRecargarGlobal) await onRecargarGlobal();
+    await cargar();
   };
+
+  // v8.19.16: `calcularDetalle` se movió a nivel de módulo (más abajo) para
+  // que el dashboard también pueda computar el live total del corte abierto.
 
   const totalCorte = detalle.reduce((s, d) => s + (d.montoTotal || 0), 0);
 
@@ -823,7 +1361,21 @@ function DetalleCorte({ corte, data, usuario, onVolver }) {
   if (loading) return <div className="text-center py-8"><Loader2 className="w-6 h-6 text-red-500 animate-spin mx-auto" /></div>;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 pb-16">
+      {/* v8.19.18: sticky bottom bar con el total y acciones — siempre visible al scrollear */}
+      <div className="fixed bottom-0 left-0 right-0 bg-zinc-950/95 backdrop-blur border-t-2 border-red-600 px-3 py-2 z-40 flex items-center gap-3 shadow-lg">
+        <div className="flex-1 min-w-0">
+          <div className="text-[9px] tracking-widest uppercase text-zinc-500">{formatFechaCorta(corte.fechaInicio)} → {formatFechaCorta(corte.fechaFin)} · {corte.estado}</div>
+          <div className="text-lg sm:text-xl font-black text-green-400 tabular-nums">{formatRD(totalCorte)}</div>
+        </div>
+        <button
+          onClick={() => imprimirCorteCompleto({ corte, vistaDetalle, resumenPersonas, resumenProyectos, resumenSupervisores, detalleFiltrado, totalCorte, soloMaestros, data })}
+          className="hidden sm:flex items-center gap-1 bg-zinc-900 border border-zinc-800 hover:border-red-600 px-3 py-1.5 text-[10px] font-black uppercase text-zinc-300 hover:text-red-400"
+        >
+          <FileText className="w-3 h-3" /> Imprimir
+        </button>
+      </div>
+
       <button onClick={onVolver} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button>
       <div className="flex items-start justify-between">
         <div>
@@ -875,35 +1427,270 @@ function DetalleCorte({ corte, data, usuario, onVolver }) {
           <button onClick={() => setAjusteModal({})} className="text-xs text-red-500 flex items-center gap-1"><Plus className="w-3 h-3" /> Ajuste</button>
         </div>
 
-        {vistaDetalle === 'persona' && resumenPersonas.map(rp => (
-          <div key={rp.personaId} className="bg-zinc-900 border border-zinc-800 p-3">
-            <div className="flex justify-between items-start">
-              <div><div className="font-bold text-sm">{rp.personaNombre}</div><div className="text-[10px] text-zinc-500 uppercase">{rp.proyectos.length} proyecto{rp.proyectos.length !== 1 ? 's' : ''} · {rp.totalDias} días{rp.totalM2 > 0 ? ` · ${formatNum(rp.totalM2)} m²` : ''}</div></div>
-              <div className="text-right"><div className="text-lg font-black text-green-400">{formatRD(rp.total)}</div></div>
+        {/* v8.19.18: Por persona — card en móvil, tabla densa en desktop */}
+        {vistaDetalle === 'persona' && (
+          <>
+            <div className="md:hidden space-y-2">
+              {(() => {
+                const maxPers = Math.max(1, ...resumenPersonas.map(r => r.total));
+                return resumenPersonas.map(rp => (
+                  <div key={rp.personaId} className="bg-zinc-900 border border-zinc-800 p-3">
+                    <div className="flex justify-between items-start">
+                      <div><div className="font-bold text-sm">{rp.personaNombre}</div><div className="text-[10px] text-zinc-500 uppercase">{rp.proyectos.length} proyecto{rp.proyectos.length !== 1 ? 's' : ''} · {rp.totalDias} días{rp.totalM2 > 0 ? ` · ${formatNum(rp.totalM2)} m²` : ''}</div></div>
+                      <div className="text-right"><div className="text-lg font-black text-green-400">{formatRD(rp.total)}</div></div>
+                    </div>
+                    <MiniBar value={rp.total} max={maxPers} color="bg-green-500/50" />
+                    <div className="mt-2 space-y-1">{rp.proyectos.map(r => (
+                      <div key={r.id} className="bg-zinc-950 border border-zinc-800 p-2 text-[10px] flex justify-between items-center gap-2">
+                        <div className="flex-1 min-w-0"><div className="font-bold truncate">{r.proyectoNombre}</div><div className="text-zinc-500 uppercase flex items-center gap-1 mt-0.5"><ModoBadge modo={r.modoPago} /> {r.modoPago === 'dia' ? `${r.diasTrabajados}d${r.diasDobles ? ` (${r.diasDobles}×2)` : ''}` : r.modoPago === 'm2' || r.modoPago === 'm2_fijo' || r.modoPago === 'tarea' ? `${formatNum(r.m2Producidos)} m²` : 'Ajuste'}</div></div>
+                        <div className="text-green-400 font-bold">{formatRD(r.montoTotal)}</div>
+                      </div>
+                    ))}</div>
+                  </div>
+                ));
+              })()}
             </div>
-            <div className="mt-2 space-y-1">{rp.proyectos.map(r => (
-              <div key={r.id} className="bg-zinc-950 border border-zinc-800 p-2 text-[10px] flex justify-between items-center">
-                <div className="flex-1 min-w-0"><div className="font-bold truncate">{r.proyectoNombre}</div><div className="text-zinc-500 uppercase">{r.modoPago === 'dia' ? `${r.diasTrabajados} días${r.diasDobles ? ` (${r.diasDobles} dobles)` : ''}` : r.modoPago === 'm2' ? `${formatNum(r.m2Producidos)} m²` : 'Ajuste'}</div></div>
-                <div className="text-green-400 font-bold">{formatRD(r.montoTotal)}</div>
-              </div>
-            ))}</div>
-          </div>
-        ))}
+            <div className="hidden md:block bg-zinc-900 border border-zinc-800">
+              <table className="w-full text-sm">
+                <thead className="bg-zinc-950 border-b border-zinc-800">
+                  <tr className="text-[10px] uppercase tracking-widest text-zinc-500">
+                    <th className="w-6"></th>
+                    <th className="text-left px-3 py-2 font-bold">Persona</th>
+                    <th className="text-right px-3 py-2 font-bold">Proyectos</th>
+                    <th className="text-right px-3 py-2 font-bold">Días</th>
+                    <th className="text-right px-3 py-2 font-bold">m²</th>
+                    <th className="text-right px-3 py-2 font-bold">Otros</th>
+                    <th className="text-right px-3 py-2 font-bold">Adelantos</th>
+                    <th className="text-right px-3 py-2 font-bold">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(() => {
+                    const maxPers = Math.max(1, ...resumenPersonas.map(r => r.total));
+                    return resumenPersonas.map(rp => {
+                      const isOpen = expandedId === 'p_' + rp.personaId;
+                      const otros = rp.proyectos.reduce((s, x) => s + (x.montoOtros || 0), 0);
+                      const adelantos = rp.proyectos.reduce((s, x) => s + (x.montoAdelantos || 0), 0);
+                      return (
+                        <React.Fragment key={rp.personaId}>
+                          <tr className="border-b border-zinc-800 hover:bg-zinc-800/30 cursor-pointer" onClick={() => setExpandedId(isOpen ? null : 'p_' + rp.personaId)}>
+                            <td className="px-2"><ChevronDown className={`w-3 h-3 text-zinc-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} /></td>
+                            <td className="px-3 py-2 font-bold">{rp.personaNombre}</td>
+                            <td className="text-right px-3 py-2 tabular-nums text-zinc-400">{rp.proyectos.length}</td>
+                            <td className="text-right px-3 py-2 tabular-nums text-zinc-400">{rp.totalDias}</td>
+                            <td className="text-right px-3 py-2 tabular-nums text-zinc-400">
+                              {rp.totalM2Efectivo > 0 ? (
+                                <>
+                                  {formatNum(rp.totalM2Efectivo)}
+                                  {Math.abs(rp.totalM2 - rp.totalM2Efectivo) > 1 && (
+                                    <div className="text-[8px] text-zinc-600">Σ {formatNum(rp.totalM2)} reportados</div>
+                                  )}
+                                </>
+                              ) : '—'}
+                            </td>
+                            <td className="text-right px-3 py-2 tabular-nums text-zinc-400">{otros ? formatRD(otros) : '—'}</td>
+                            <td className="text-right px-3 py-2 tabular-nums text-zinc-500">{adelantos ? `-${formatRD(adelantos)}` : '—'}</td>
+                            <td className="text-right px-3 py-2 min-w-[140px]">
+                              <div className="font-black text-green-400 tabular-nums">{formatRD(rp.total)}</div>
+                              <MiniBar value={rp.total} max={maxPers} color="bg-green-500/50" />
+                            </td>
+                          </tr>
+                          {isOpen && (
+                            <tr className="bg-zinc-950/60 border-b border-zinc-800">
+                              <td></td>
+                              <td colSpan={7} className="px-3 py-2">
+                                <table className="w-full text-[11px]">
+                                  <thead><tr className="text-[9px] uppercase tracking-wider text-zinc-600"><th className="text-left">Proyecto</th><th>Modo</th><th className="text-right">Días/m²</th><th className="text-right">Precio acordado</th><th className="text-right">Base</th><th className="text-right">Total</th></tr></thead>
+                                  <tbody>
+                                    {rp.proyectos.map(r => {
+                                      const proy = data.proyectos.find(p => p.id === r.proyectoId);
+                                      const sis = proy ? data.sistemas[proy.sistema] : null;
+                                      return (
+                                        <tr key={r.id} className="text-zinc-400">
+                                          <td className="py-1 truncate max-w-[260px]">
+                                            {proy && onVerProyecto ? (
+                                              <button
+                                                onClick={() => onVerProyecto(proy, 'avance')}
+                                                className="text-left hover:text-white group inline-flex items-baseline gap-1"
+                                                title={`Abrir "${proy.nombre || proy.cliente || r.proyectoNombre}"`}
+                                              >
+                                                <span className="font-bold underline-offset-2 group-hover:underline">{r.proyectoNombre}</span>
+                                                <span className="text-[9px] text-red-400 opacity-30 group-hover:opacity-100">→</span>
+                                              </button>
+                                            ) : (
+                                              <div className="font-bold">{r.proyectoNombre}</div>
+                                            )}
+                                            {sis?.nombre && <div className="text-[9px] text-zinc-500 truncate">Sistema: {sis.nombre}</div>}
+                                          </td>
+                                          <td className="text-center"><ModoBadge modo={r.modoPago} /></td>
+                                          <td className="text-right tabular-nums">
+                                            {r.modoPago === 'dia'
+                                              ? `${r.diasTrabajados}d${r.diasDobles ? ` (${r.diasDobles}×2)` : ''}`
+                                              : (() => {
+                                                  const eff = typeof r.m2Efectivo === 'number' ? r.m2Efectivo : r.m2Producidos;
+                                                  const raw = r.m2Producidos;
+                                                  const diff = Math.abs((raw || 0) - (eff || 0)) > 1;
+                                                  return (
+                                                    <>
+                                                      {formatNum(eff)} m²
+                                                      {diff && <div className="text-[8px] text-zinc-600">Σ {formatNum(raw)} reportados</div>}
+                                                    </>
+                                                  );
+                                                })()}
+                                          </td>
+                                          <td className="text-right tabular-nums text-zinc-300">
+                                            <PrecioEditable proyecto={proy} personaId={r.personaId} fila={r} esOwner={esOwner} onSaved={recargarTodo} />
+                                          </td>
+                                          <td className="text-right tabular-nums">{formatRD(r.montoBase)}</td>
+                                          <td className="text-right tabular-nums font-bold text-green-400">{formatRD(r.montoTotal)}</td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    });
+                  })()}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
 
-        {vistaDetalle === 'proyecto' && resumenProyectos.map(rp => (
-          <div key={rp.proyectoId || 'sin'} className="bg-zinc-900 border border-zinc-800 p-3">
-            <div className="flex justify-between items-start">
-              <div><div className="font-bold text-sm">{rp.proyectoNombre}</div><div className="text-[10px] text-zinc-500 uppercase">{rp.personas.length} persona{rp.personas.length !== 1 ? 's' : ''}</div></div>
-              <div className="text-right"><div className="text-lg font-black text-green-400">{formatRD(rp.total)}</div></div>
+        {/* v8.19.18: Por proyecto — card en móvil, tabla densa en desktop con sistema/pasos al expandir */}
+        {vistaDetalle === 'proyecto' && (
+          <>
+            <div className="md:hidden space-y-2">
+              {(() => {
+                const maxProy = Math.max(1, ...resumenProyectos.map(r => r.total));
+                return resumenProyectos.map(rp => (
+                  <div key={rp.proyectoId || 'sin'} className="bg-zinc-900 border border-zinc-800 p-3">
+                    <div className="flex justify-between items-start">
+                      <div><div className="font-bold text-sm">{rp.proyectoNombre}</div><div className="text-[10px] text-zinc-500 uppercase">{rp.personas.length} persona{rp.personas.length !== 1 ? 's' : ''}</div></div>
+                      <div className="text-right"><div className="text-lg font-black text-green-400">{formatRD(rp.total)}</div></div>
+                    </div>
+                    <MiniBar value={rp.total} max={maxProy} color="bg-green-500/50" />
+                    <div className="mt-2 space-y-1">{rp.personas.map(r => (
+                      <div key={r.id} className="bg-zinc-950 border border-zinc-800 p-2 text-[10px] flex justify-between items-center">
+                        <div className="flex-1 min-w-0"><div className="font-bold truncate">{r.personaNombre}</div><div className="text-zinc-500 uppercase">{r.modoPago === 'dia' ? `${r.diasTrabajados} días` : r.modoPago === 'm2' || r.modoPago === 'm2_fijo' || r.modoPago === 'tarea' ? `${formatNum(r.m2Producidos)} m²` : 'Ajuste'}</div></div>
+                        <div className="text-green-400 font-bold">{formatRD(r.montoTotal)}</div>
+                      </div>
+                    ))}</div>
+                    <SistemaPasosBreakdown rp={rp} data={data} />
+                  </div>
+                ));
+              })()}
             </div>
-            <div className="mt-2 space-y-1">{rp.personas.map(r => (
-              <div key={r.id} className="bg-zinc-950 border border-zinc-800 p-2 text-[10px] flex justify-between items-center">
-                <div className="flex-1 min-w-0"><div className="font-bold truncate">{r.personaNombre}</div><div className="text-zinc-500 uppercase">{r.modoPago === 'dia' ? `${r.diasTrabajados} días` : r.modoPago === 'm2' ? `${formatNum(r.m2Producidos)} m²` : 'Ajuste'}</div></div>
-                <div className="text-green-400 font-bold">{formatRD(r.montoTotal)}</div>
-              </div>
-            ))}</div>
-          </div>
-        ))}
+            <div className="hidden md:block bg-zinc-900 border border-zinc-800">
+              <table className="w-full text-sm">
+                <thead className="bg-zinc-950 border-b border-zinc-800">
+                  <tr className="text-[10px] uppercase tracking-widest text-zinc-500">
+                    <th className="w-6"></th>
+                    <th className="text-left px-3 py-2 font-bold">Proyecto</th>
+                    <th className="text-left px-3 py-2 font-bold">Sistema</th>
+                    <th className="text-left px-3 py-2 font-bold">Modo</th>
+                    <th className="text-right px-3 py-2 font-bold">Personas</th>
+                    <th className="text-right px-3 py-2 font-bold">m²</th>
+                    <th className="text-right px-3 py-2 font-bold">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(() => {
+                    const maxProy = Math.max(1, ...resumenProyectos.map(r => r.total));
+                    return resumenProyectos.map(rp => {
+                      const isOpen = expandedId === 'pr_' + (rp.proyectoId || 'sin');
+                      const proy = data.proyectos.find(p => p.id === rp.proyectoId);
+                      const sis = proy ? data.sistemas[proy.sistema] : null;
+                      const modo = proy?.modoPagoManoObra || 'ajuste';
+                      const m2Total = rp.personas.reduce((s, x) => s + (typeof x.m2Efectivo === 'number' ? x.m2Efectivo : (x.m2Producidos || 0)), 0);
+                      const m2Reportado = rp.personas.reduce((s, x) => s + (x.m2Producidos || 0), 0);
+                      return (
+                        <React.Fragment key={rp.proyectoId || 'sin'}>
+                          <tr className="border-b border-zinc-800 hover:bg-zinc-800/30 cursor-pointer" onClick={() => setExpandedId(isOpen ? null : 'pr_' + (rp.proyectoId || 'sin'))}>
+                            <td className="px-2"><ChevronDown className={`w-3 h-3 text-zinc-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} /></td>
+                            <td className="px-3 py-2 font-bold truncate max-w-[280px]">
+                              {proy && onVerProyecto ? (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); onVerProyecto(proy, 'avance'); }}
+                                  className="text-left hover:text-white group inline-flex items-baseline gap-1"
+                                  title={`Abrir "${proy.nombre || proy.cliente || rp.proyectoNombre}"`}
+                                >
+                                  <span className="underline-offset-2 group-hover:underline">{rp.proyectoNombre}</span>
+                                  <span className="text-[9px] text-red-400 opacity-30 group-hover:opacity-100">→</span>
+                                </button>
+                              ) : rp.proyectoNombre}
+                            </td>
+                            <td className="px-3 py-2 text-zinc-400 text-[11px] truncate max-w-[180px]">{sis?.nombre || '—'}</td>
+                            <td className="px-3 py-2"><ModoBadge modo={modo} /></td>
+                            <td className="text-right px-3 py-2 tabular-nums text-zinc-400">{rp.personas.length}</td>
+                            <td className="text-right px-3 py-2 tabular-nums text-zinc-400">
+                              {m2Total > 0 ? (
+                                <>
+                                  {formatNum(m2Total)}
+                                  {Math.abs(m2Reportado - m2Total) > 1 && (
+                                    <div className="text-[8px] text-zinc-600">Σ {formatNum(m2Reportado)} reportados</div>
+                                  )}
+                                </>
+                              ) : '—'}
+                            </td>
+                            <td className="text-right px-3 py-2 min-w-[140px]">
+                              <div className="font-black text-green-400 tabular-nums">{formatRD(rp.total)}</div>
+                              <MiniBar value={rp.total} max={maxProy} color="bg-green-500/50" />
+                            </td>
+                          </tr>
+                          {isOpen && (
+                            <tr className="bg-zinc-950/60 border-b border-zinc-800">
+                              <td></td>
+                              <td colSpan={6} className="px-3 py-3 space-y-3">
+                                <div>
+                                  <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-1">Personas en este proyecto</div>
+                                  <table className="w-full text-[11px]">
+                                    <thead><tr className="text-[9px] uppercase tracking-wider text-zinc-600"><th className="text-left">Persona</th><th className="text-right">Días/m²</th><th className="text-right">Base</th><th className="text-right">Otros</th><th className="text-right">Adelantos</th><th className="text-right">Total</th></tr></thead>
+                                    <tbody>
+                                      {rp.personas.map(r => (
+                                        <tr key={r.id} className="text-zinc-400">
+                                          <td className="py-1 truncate max-w-[200px]">{r.personaNombre}</td>
+                                          <td className="text-right tabular-nums">
+                                            {r.modoPago === 'dia'
+                                              ? `${r.diasTrabajados}d${r.diasDobles ? ` (${r.diasDobles}×2)` : ''}`
+                                              : (() => {
+                                                  const eff = typeof r.m2Efectivo === 'number' ? r.m2Efectivo : r.m2Producidos;
+                                                  const raw = r.m2Producidos;
+                                                  const diff = Math.abs((raw || 0) - (eff || 0)) > 1;
+                                                  return (
+                                                    <>
+                                                      {formatNum(eff)} m²
+                                                      {diff && <div className="text-[8px] text-zinc-600">Σ {formatNum(raw)} reportados</div>}
+                                                    </>
+                                                  );
+                                                })()}
+                                          </td>
+                                          <td className="text-right tabular-nums">{formatRD(r.montoBase)}</td>
+                                          <td className="text-right tabular-nums">{r.montoOtros ? formatRD(r.montoOtros) : '—'}</td>
+                                          <td className="text-right tabular-nums text-zinc-500">{r.montoAdelantos ? `-${formatRD(r.montoAdelantos)}` : '—'}</td>
+                                          <td className="text-right tabular-nums font-bold text-green-400">{formatRD(r.montoTotal)}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                                <SistemaPasosBreakdown rp={rp} data={data} />
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    });
+                  })()}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
 
         {vistaDetalle === 'supervisor' && resumenSupervisores.map(rs => {
           // Agrupar los recibos del supervisor por proyecto para una vista anidada más clara

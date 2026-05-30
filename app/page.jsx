@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed, Building2, Star, MessageCircle, Send, Search, Filter } from 'lucide-react';
 import * as db from '../lib/db';
@@ -34,6 +34,8 @@ import {
 } from '../lib/helpers/dietaHospedaje';
 // v8.10.2: Dashboard extraído (ya importa los 4 modales internamente)
 import Dashboard from '../components/dashboard/Dashboard';
+// v8.19.19: card "Mi producción" del corte actual (toggle-gated)
+import MiProduccionCard from '../components/dashboard/MiProduccionCard';
 // v8.10.3: Sidebar extraído
 import Sidebar from '../components/sidebar/Sidebar';
 import ToastContainer from '../components/common/ToastContainer';
@@ -536,6 +538,31 @@ export default function App() {
   const [vista, setVista] = useState('dashboard');
   const [proyectoActivo, setProyectoActivo] = useState(null);
   const [tab, setTab] = useState('avance');
+  // v8.19.29: pila de navegación para que "Volver" regrese a la pantalla anterior
+  // en vez de siempre al dashboard. Cada entrada es un snapshot {vista, proyectoActivoId, tab}.
+  const [pilaNav, setPilaNav] = useState([]);
+  const navegarA = React.useCallback((nuevaVista, opts = {}) => {
+    setPilaNav(prev => [...prev, { vista, proyectoActivoId: proyectoActivo?.id || null, tab }]);
+    setVista(nuevaVista);
+    if (Object.prototype.hasOwnProperty.call(opts, 'proyectoActivo')) setProyectoActivo(opts.proyectoActivo);
+    if (opts.tab) setTab(opts.tab);
+  }, [vista, proyectoActivo, tab]);
+  const volverAtras = React.useCallback(() => {
+    setPilaNav(prev => {
+      if (prev.length === 0) { setVista('dashboard'); setProyectoActivo(null); return prev; }
+      const anterior = prev[prev.length - 1];
+      setVista(anterior.vista);
+      setTab(anterior.tab || 'avance');
+      if (anterior.proyectoActivoId) {
+        // resolver el proyecto desde data en el momento de volver
+        const proy = (data?.proyectos || []).find(p => p.id === anterior.proyectoActivoId) || null;
+        setProyectoActivo(proy);
+      } else {
+        setProyectoActivo(null);
+      }
+      return prev.slice(0, -1);
+    });
+  }, [data]);
   const [syncing, setSyncing] = useState(false);
   const [perfilViendo, setPerfilViendo] = useState(null);
   const [tareas, setTareas] = useState([]);
@@ -787,7 +814,7 @@ export default function App() {
           lógica de max-width: en <lg max-w-6xl centrado; en lg+ full-width. */}
       <main className="md:ml-60 px-4 lg:px-6 py-6"><div className="max-w-6xl mx-auto lg:max-w-none lg:mx-0">
         {syncing && <div className="hidden md:block fixed top-2 right-4 z-30"><Loader2 className="w-4 h-4 text-red-500 animate-spin" /></div>}
-        {esAdmin && vista === 'dashboard' && <Dashboard data={data} tareas={tareas} jornadasHoy={jornadasHoy} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} onNuevoProyecto={() => setVista('nuevoProyecto')} onImportarOdoo={() => setModalOdooAbierto(true)} onCompletarTarea={async (id) => withSync(async () => { await db.completarTarea(id, usuario.id); })} onCambiarEstadoRapido={async (proyId, estadoNuevo) => withSync(async () => { await db.cambiarEstadoProyecto(proyId, estadoNuevo, usuario, 'Cambio rápido desde Kanban'); })} />}
+        {esAdmin && vista === 'dashboard' && <Dashboard usuario={usuario} data={data} tareas={tareas} jornadasHoy={jornadasHoy} onVerProyecto={(p) => navegarA('proyecto', { proyectoActivo: p, tab: 'avance' })} onNuevoProyecto={() => navegarA('nuevoProyecto')} onImportarOdoo={() => setModalOdooAbierto(true)} onCompletarTarea={async (id) => withSync(async () => { await db.completarTarea(id, usuario.id); })} onCambiarEstadoRapido={async (proyId, estadoNuevo) => withSync(async () => { await db.cambiarEstadoProyecto(proyId, estadoNuevo, usuario, 'Cambio rápido desde Kanban'); })} />}
         {/* v8.10.23: Modal importar desde Odoo */}
         {esAdmin && modalOdooAbierto && <ModalImportarOdoo usuario={usuario} sistemas={data.sistemas} proyectos={data.proyectos} onCerrar={() => setModalOdooAbierto(false)} onCrear={async (proy) => { await withSync(async () => { await db.crearProyecto({ ...proy, id: 'p_' + Date.now() }); }); setModalOdooAbierto(false); }} />}
         {esAdmin && vista === 'proyectos' && (
@@ -810,7 +837,7 @@ export default function App() {
           </div>
         )}
         {vista === 'tareas' && <VistaTareas usuario={usuario} data={data} onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }} onCompletarTarea={async (id) => withSync(async () => { await db.completarTarea(id, usuario.id); })} onCrearTarea={async (t) => withSync(async () => { await db.crearTarea(t); })} onEliminarTarea={async (id) => withSync(async () => { await db.eliminarTarea(id); })} />}
-        {esAdmin && vista === 'nomina' && <VistaNomina usuario={usuario} data={data} onVolver={() => setVista('dashboard')} />}
+        {esAdmin && vista === 'nomina' && <VistaNomina usuario={usuario} data={data} onVolver={volverAtras} onRecargarGlobal={recargar} onVerProyecto={(p, tabDestino) => navegarA('proyecto', { proyectoActivo: p, tab: tabDestino || 'avance' })} />}
         {esAdmin && vista === 'galeria' && <GaleriaGlobal usuario={usuario} data={data} onVolver={() => setVista('dashboard')} />}
         {esAdmin && vista === 'equipoGlobal' && <VistaEquipoGlobal data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'planificacion' && puede(usuario, data.permisos, 'planificacion', 'ver') && <VistaPlanificacion usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
@@ -972,7 +999,7 @@ export default function App() {
         })} />}
         {vista === 'proyecto' && proyectoActivo && (
           <DetalleProyecto usuario={usuario} proyecto={data.proyectos.find(p => p.id === proyectoActivo.id) || proyectoActivo} data={data} tab={tab} setTab={setTab}
-            onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }}
+            onVolver={() => { if (pilaNav.length > 0) volverAtras(); else { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); } }}
             onActualizarProyecto={(pa) => withSync(() => db.actualizarProyecto(pa))}
             onRegistrarEnvio={(e) => withSync(() => db.crearEnvio({ ...e, id: 'e_' + Date.now() + Math.random() }))}
             onRegistrarEnviosLote={(es) => withSync(() => db.crearEnviosLote(es.map(e => ({ ...e, id: 'e_' + Date.now() + Math.random() }))))}
@@ -5952,7 +5979,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
         {!esSupervisor && proyecto.dieta?.habilitada && <TabBtn active={tab === 'dieta'} onClick={() => setTab('dieta')}><Utensils className="w-3 h-3 inline mr-1" />Dieta</TabBtn>}
       </div>
 
-      {tab === 'avance' && <TabAvance proyecto={proyecto} reportes={data.reportes} sistema={sistema} sistemas={data.sistemas} esSupervisor={esSupervisor} onEliminarReporte={onEliminarReporte} onEditarReporte={onEditarReporte} data={data} usuario={usuario} />}
+      {tab === 'avance' && <TabAvance proyecto={proyecto} reportes={data.reportes} sistema={sistema} sistemas={data.sistemas} esSupervisor={esSupervisor} onEliminarReporte={onEliminarReporte} onEditarReporte={onEditarReporte} data={data} usuario={usuario} onRecargar={onRecargar} />}
       {tab === 'info' && <TabInfo proyecto={proyecto} clientes={data.clientes || []} contactos={data.contactos || []} documentos={data.documentos || []} sistemas={data.sistemas || {}} usuario={usuario} personal={data.personal} esAdmin={esAdmin} esSupervisor={esSupervisor} onRecargar={onRecargar} />}
       {/* v8.19.13: removida rama muerta `tab === 'jornada'` (sin botón, inalcanzable). */}
       {tab === 'asistencia' && <TabAsistencia usuario={usuario} proyecto={proyecto} personal={data.personal} checkins={data.checkins || []} esAdmin={esAdmin} onActualizarProyecto={onActualizarProyecto} onRecargar={onRecargar} onEliminarJornada={onEliminarJornada} TabJornada={TabJornada} />}
@@ -5963,8 +5990,8 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
       {tab === 'materiales' && !tieneRol(usuario, 'maestro') && <TabMateriales proyecto={proyecto} sistema={sistema} materiales={materiales} envios={data.envios.filter(e => e.proyectoId === proyecto.id)} reportes={data.reportes} sistemas={data.sistemas} onRegistrarEnvio={onRegistrarEnvio} onRegistrarEnviosLote={onRegistrarEnviosLote} esSupervisor={esSupervisor} onEliminarEnvio={onEliminarEnvio} onIrASistemas={onIrASistemas} />}
       {tab === 'areas' && esAdmin && <TabAreas proyecto={proyecto} data={data} usuario={usuario} onRecargar={onRecargar} />}
       {tab === 'productos' && !esSupervisor && <TabProductosAdicionales proyecto={proyecto} onActualizarProyecto={onActualizarProyecto} esAdmin={esAdmin} />}
-      {tab === 'costo' && !esSupervisor && <TabCosto proyecto={proyecto} sistema={sistema} reportes={data.reportes} envios={data.envios} config={data.config} />}
-      {tab === 'mdo' && esAdmin && <TabManoDeObra proyecto={proyecto} data={data} usuario={usuario} />}
+      {tab === 'costo' && !esSupervisor && <TabCosto proyecto={proyecto} sistema={sistema} sistemas={data.sistemas} reportes={data.reportes} envios={data.envios} config={data.config} />}
+      {tab === 'mdo' && esAdmin && <TabManoDeObra proyecto={proyecto} data={data} usuario={usuario} onActualizarProyecto={onActualizarProyecto} onRecargar={onRecargar} />}
       {tab === 'dieta' && !esSupervisor && <TabDieta proyecto={proyecto} reportes={data.reportes} personal={data.personal} onActualizarProyecto={onActualizarProyecto} />}
     </div>
   );
@@ -7224,27 +7251,240 @@ function TabProductosAdicionales({ proyecto, onActualizarProyecto, esAdmin }) {
 // ============================================================
 // TAB COSTO
 // ============================================================
-function TabCosto({ proyecto, sistema, reportes, envios, config }) {
+// v8.19.32: clasifica un movimiento de caja chica en una categoría inferida
+// del concepto/datos_ia. Es heurística por keywords — no perfecto pero útil.
+const clasificarCajaChica = (mov) => {
+  const txt = `${mov.concepto || ''} ${mov.subTipo || ''} ${JSON.stringify(mov.datosIa || {})}`.toLowerCase();
+  if (/desayuno|comida|almuerzo|cena|merienda|agua\s|hielo|alimento|bebida/i.test(txt)) return 'dieta';
+  if (/hotel|habitaci[oó]n|hospedaje|airbnb|cuarto|cabaña/i.test(txt)) return 'hospedaje';
+  if (/gasolina|combustible|diesel|peaje|taxi|uber|transporte|pasaje|grua|grúa/i.test(txt)) return 'transporte';
+  if (/ferreter[ií]a|tornillo|cemento|herramient|brocha|clavo|pintura|saco|cable|pvc/i.test(txt)) return 'materiales_extra';
+  return 'otros';
+};
+
+const CATEGORIAS_GASTO = {
+  dieta:            { label: '🍽️ Dieta · comida y agua', color: 'border-orange-700/50' },
+  hospedaje:        { label: '🏨 Hospedaje',              color: 'border-purple-700/50' },
+  transporte:       { label: '🚛 Transporte y combustible', color: 'border-blue-700/50' },
+  materiales_extra: { label: '🛠️ Materiales / herramientas extra', color: 'border-cyan-700/50' },
+  otros:            { label: '📋 Otros gastos',           color: 'border-zinc-700' },
+};
+
+function TabCosto({ proyecto, sistema, sistemas, reportes, envios, config }) {
+  // v8.19.32: rediseño completo — solo cifras reales, agrupadas por fuente,
+  // con expand por sección. Caja chica del proyecto auto-categorizada.
   const a = calcAnalisisCosto(proyecto, reportes, envios, sistema, config);
-  const FilaCosto = ({ label, teorico, real, destacado }) => (<div className={`grid grid-cols-3 gap-2 py-2 border-b border-zinc-800 ${destacado ? 'font-bold' : ''}`}><div className={`text-xs ${destacado ? 'text-white' : 'text-zinc-400'}`}>{label}</div><div className="text-right text-xs">{formatRD(teorico)}</div><div className={`text-right text-xs ${real > teorico ? 'text-yellow-400' : real < teorico ? 'text-green-400' : ''}`}>{formatRD(real)}</div></div>);
+  const [movimientos, setMovimientos] = useState([]);
+  const [loadingMovs, setLoadingMovs] = useState(true);
+  const [expanded, setExpanded] = useState(new Set());
+
+  useEffect(() => {
+    let cancel = false;
+    (async () => {
+      setLoadingMovs(true);
+      try {
+        const movs = await db.listarMovimientosCajaChica({ proyectoId: proyecto.id });
+        // descartar rechazados y rebotes; solo los aprobados/pendientes cuentan
+        const validos = (movs || []).filter(m => m.tipo === 'gasto_factura' && m.status !== 'rechazado');
+        if (!cancel) setMovimientos(validos);
+      } catch (e) { console.warn('caja chica:', e?.message); }
+      if (!cancel) setLoadingMovs(false);
+    })();
+    return () => { cancel = true; };
+  }, [proyecto.id]);
+
+  // Materiales: agrupar envíos por materialId. Lookup nombre en sistema(s).
+  const materialesPorEnvio = React.useMemo(() => {
+    const proy = envios.filter(e => e.proyectoId === proyecto.id);
+    const map = {};
+    proy.forEach(e => {
+      if (!map[e.materialId]) {
+        // buscar nombre y costo del material en cualquier sistema disponible
+        let mat = null;
+        for (const sId of Object.keys(sistemas || {})) {
+          const s = sistemas[sId];
+          mat = (s?.materiales || []).find(m => m.id === e.materialId);
+          if (mat) break;
+        }
+        if (!mat) mat = (sistema?.materiales || []).find(m => m.id === e.materialId);
+        map[e.materialId] = {
+          materialId: e.materialId,
+          nombre: mat?.nombre || '(material desconocido)',
+          unidad: mat?.unidad || '',
+          costoUnitario: Number(mat?.costo_unidad || 0),
+          cantidad: 0,
+        };
+      }
+      map[e.materialId].cantidad += Number(e.cantidad) || 0;
+    });
+    return Object.values(map)
+      .map(x => ({ ...x, subtotal: x.cantidad * x.costoUnitario }))
+      .sort((x, y) => y.subtotal - x.subtotal);
+  }, [envios, proyecto.id, sistemas, sistema]);
+  const totalMateriales = materialesPorEnvio.reduce((s, x) => s + x.subtotal, 0);
+
+  // Gastos de caja chica agrupados por categoría
+  const gastosPorCategoria = React.useMemo(() => {
+    const map = { dieta: [], hospedaje: [], transporte: [], materiales_extra: [], otros: [] };
+    movimientos.forEach(m => { map[clasificarCajaChica(m)].push(m); });
+    return map;
+  }, [movimientos]);
+  const totalPorCategoria = Object.fromEntries(
+    Object.entries(gastosPorCategoria).map(([k, lista]) => [k, lista.reduce((s, m) => s + Number(m.monto || 0), 0)])
+  );
+  const totalCajaChica = Object.values(totalPorCategoria).reduce((s, n) => s + n, 0);
+
+  // Mano de obra: por ahora usa el cálculo teórico hasta sumar real de detalle_nomina
+  const totalMO = a.costoMO;
+
+  const totalReal = totalMateriales + totalMO + totalCajaChica;
+  const margenReal = a.valorContrato - totalReal;
+  const margenPctReal = a.valorContrato > 0 ? (margenReal / a.valorContrato) * 100 : 0;
+
+  const toggleExpand = (key) => {
+    const next = new Set(expanded);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    setExpanded(next);
+  };
+  const isExpanded = (key) => expanded.has(key);
+
+  const SeccionCosto = ({ k, label, total, color, children, contador, badge }) => {
+    const abierto = isExpanded(k);
+    const tienedetalle = !!children;
+    return (
+      <div className={`border ${color || 'border-zinc-800'} bg-zinc-950/50`}>
+        <button
+          onClick={() => tienedetalle && toggleExpand(k)}
+          disabled={!tienedetalle}
+          className={`w-full px-3 py-2.5 flex items-center justify-between gap-2 ${tienedetalle ? 'hover:bg-zinc-900 cursor-pointer' : 'cursor-default'}`}
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            {tienedetalle && <ChevronDown className={`w-3 h-3 text-zinc-500 transition-transform shrink-0 ${abierto ? 'rotate-180' : ''}`} />}
+            <span className="font-bold text-sm text-white truncate">{label}</span>
+            {typeof contador === 'number' && <span className="text-[10px] text-zinc-500">· {contador}</span>}
+            {badge}
+          </div>
+          <div className="font-black text-sm text-white tabular-nums shrink-0">{formatRD(total)}</div>
+        </button>
+        {abierto && children && (
+          <div className="border-t border-zinc-800 px-3 py-2 bg-black/20">{children}</div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-4">
+      {/* Resumen */}
       <div className="bg-gradient-to-br from-zinc-900 to-zinc-950 border border-zinc-800 p-4">
         <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-3">Resumen</div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div><div className="text-[10px] text-zinc-500 uppercase">Contrato</div><div className="text-xl font-black">{formatRD(a.valorContrato)}</div></div>
-          <div><div className="text-[10px] text-zinc-500 uppercase">Costo</div><div className="text-xl font-black">{formatRD(a.costoTotalTeorico)}</div></div>
-          <div><div className="text-[10px] text-green-400 uppercase">Margen</div><div className="text-xl font-black text-green-400">{formatRD(a.margenTeorico)}</div><div className="text-[10px] text-zinc-600">{a.margenPctTeorico.toFixed(1)}%</div></div>
-          <div><div className="text-[10px] text-zinc-500 uppercase">Objetivo</div><div className={`text-xl font-black ${a.margenPctTeorico >= config.margen_objetivo_pct ? 'text-green-400' : 'text-yellow-400'}`}>{config.margen_objetivo_pct}%</div></div>
+          <div><div className="text-[10px] text-zinc-500 uppercase">Costo real</div><div className="text-xl font-black">{formatRD(totalReal)}</div></div>
+          <div>
+            <div className={`text-[10px] uppercase ${margenReal >= 0 ? 'text-green-400' : 'text-red-400'}`}>Margen real</div>
+            <div className={`text-xl font-black ${margenReal >= 0 ? 'text-green-400' : 'text-red-400'}`}>{formatRD(margenReal)}</div>
+            <div className="text-[10px] text-zinc-600">{margenPctReal.toFixed(1)}%</div>
+          </div>
+          <div>
+            <div className="text-[10px] text-zinc-500 uppercase">Objetivo</div>
+            <div className={`text-xl font-black ${margenPctReal >= config.margen_objetivo_pct ? 'text-green-400' : 'text-yellow-400'}`}>{config.margen_objetivo_pct}%</div>
+          </div>
         </div>
       </div>
-      <div className="bg-zinc-900 border border-zinc-800 p-4">
-        <div className="grid grid-cols-3 gap-2 pb-2 border-b-2 border-zinc-700 mb-2"><div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">Concepto</div><div className="text-right text-[10px] tracking-widest uppercase text-zinc-400 font-bold">Est.</div><div className="text-right text-[10px] tracking-widest uppercase text-zinc-400 font-bold">Real</div></div>
-        <FilaCosto label="Materiales" teorico={a.costoMaterialesTeorico} real={a.costoMaterialesReal} />
-        <FilaCosto label="Mano de obra" teorico={a.costoMO} real={a.costoMO} />
-        {proyecto.dieta?.habilitada && <FilaCosto label="Dieta" teorico={a.costoDietaPresupuestado} real={a.costoDietaReal} />}
-        <FilaCosto label={`Indirectos (${config.costos_indirectos_pct}%)`} teorico={a.costoIndirectoTeorico} real={a.costoIndirectoReal} />
-        <FilaCosto label="TOTAL" teorico={a.costoTotalTeorico} real={a.costoTotalReal} destacado />
+
+      {/* Secciones colapsables */}
+      <div className="space-y-2">
+        {/* Materiales */}
+        <SeccionCosto
+          k="materiales"
+          label="📦 Materiales (envíos)"
+          total={totalMateriales}
+          contador={materialesPorEnvio.length || null}
+          color="border-zinc-800"
+        >
+          {materialesPorEnvio.length === 0 ? (
+            <div className="text-[11px] text-zinc-500 italic py-2">Aún no hay envíos registrados para este proyecto.</div>
+          ) : (
+            <table className="w-full text-[11px]">
+              <thead><tr className="text-[9px] uppercase tracking-wider text-zinc-500">
+                <th className="text-left py-1">Material</th>
+                <th className="text-right py-1">Cantidad</th>
+                <th className="text-right py-1">Costo unit.</th>
+                <th className="text-right py-1">Subtotal</th>
+              </tr></thead>
+              <tbody>
+                {materialesPorEnvio.map(m => (
+                  <tr key={m.materialId} className="border-t border-zinc-900">
+                    <td className="py-1 text-zinc-300 truncate max-w-[260px]">{m.nombre}</td>
+                    <td className="text-right tabular-nums text-zinc-400">{formatNum(m.cantidad)}{m.unidad ? ` ${m.unidad}` : ''}</td>
+                    <td className="text-right tabular-nums text-zinc-500">{formatRD(m.costoUnitario)}</td>
+                    <td className="text-right tabular-nums font-bold text-white">{formatRD(m.subtotal)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </SeccionCosto>
+
+        {/* Mano de obra */}
+        <SeccionCosto
+          k="mo"
+          label="🔨 Mano de obra"
+          total={totalMO}
+          badge={<span className="text-[8px] bg-yellow-900/40 border border-yellow-700 text-yellow-300 px-1.5 py-0.5 uppercase tracking-wider">aprox</span>}
+          color="border-zinc-800"
+        >
+          <div className="text-[11px] text-zinc-400 space-y-1">
+            <div><b className="text-zinc-300">Cálculo actual:</b> {formatNum(a.m2Total)} m² × RD$ {formatNum(sistema?.costo_mo_m2 || 0)}/m² del sistema "{sistema?.nombre || '—'}"</div>
+            <div className="text-[10px] text-zinc-500 italic">Pendiente: usar lo realmente pagado en cortes cerrados + acumulado live del corte abierto.</div>
+          </div>
+        </SeccionCosto>
+
+        {/* Caja chica por categoría */}
+        {loadingMovs ? (
+          <div className="bg-zinc-950/50 border border-zinc-800 px-3 py-3 text-[11px] text-zinc-500 flex items-center gap-2">
+            <Loader2 className="w-3 h-3 animate-spin text-red-500" /> Cargando gastos de caja chica…
+          </div>
+        ) : (
+          ['dieta', 'transporte', 'hospedaje', 'materiales_extra', 'otros'].map(k => {
+            const cfg = CATEGORIAS_GASTO[k];
+            const lista = gastosPorCategoria[k] || [];
+            if (lista.length === 0) return null;
+            return (
+              <SeccionCosto
+                key={k}
+                k={`cc_${k}`}
+                label={cfg.label}
+                total={totalPorCategoria[k]}
+                contador={lista.length}
+                color={cfg.color}
+              >
+                <div className="space-y-1">
+                  {lista.slice(0, 50).map(m => (
+                    <div key={m.id} className="grid grid-cols-[auto_1fr_auto] gap-2 text-[11px] py-1 border-t border-zinc-900">
+                      <div className="text-zinc-500 text-[10px]">{m.fecha}</div>
+                      <div className="text-zinc-300 truncate">{(m.concepto || '').split('\n').join(' · ').slice(0, 80)}</div>
+                      <div className="text-right tabular-nums font-bold text-white">{formatRD(m.monto)}</div>
+                    </div>
+                  ))}
+                  {lista.length > 50 && <div className="text-[10px] text-zinc-500 italic pt-1">… {lista.length - 50} más (ver tab Caja Chica del maestro)</div>}
+                </div>
+              </SeccionCosto>
+            );
+          })
+        )}
+
+        {/* Total */}
+        <div className="bg-zinc-900 border-t-2 border-red-600 px-3 py-3 flex items-center justify-between mt-2">
+          <span className="text-sm font-black uppercase tracking-wider">Total gastos reales</span>
+          <span className="text-xl font-black text-white tabular-nums">{formatRD(totalReal)}</span>
+        </div>
+      </div>
+
+      <div className="text-[10px] text-zinc-500 italic px-1">
+        Caja chica auto-clasificada por palabras clave en el concepto.
+        Una clasificación manual y MO real (de cortes) llegan en una próxima iteración.
       </div>
     </div>
   );
@@ -9229,6 +9469,29 @@ function GaleriaGlobal({ usuario, data, onVolver }) {
     try { setFotoData(await db.obtenerFoto(f.id)); } catch (e) { console.error(e); }
   };
 
+  // v8.19.34: navegación carrete en el lightbox (← → teclado, swipe, contador)
+  const swipeStartXRef = useRef(null);
+  const irAFoto = (delta) => {
+    if (!viendo) return;
+    const lista = fotosFiltradas;
+    if (lista.length <= 1) return;
+    const idx = lista.findIndex(x => x.id === viendo.id);
+    if (idx < 0) return;
+    const nuevoIdx = (idx + delta + lista.length) % lista.length;
+    verFoto(lista[nuevoIdx]);
+  };
+  useEffect(() => {
+    if (!viendo) return;
+    const onKey = (e) => {
+      if (e.key === 'ArrowRight') { e.preventDefault(); irAFoto(+1); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); irAFoto(-1); }
+      else if (e.key === 'Escape') setViendo(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viendo]);
+
   const toggleFav = async (fotoId, nuevoEstado) => {
     try {
       await db.marcarFotoFavorita(fotoId, nuevoEstado);
@@ -9374,14 +9637,52 @@ function GaleriaGlobal({ usuario, data, onVolver }) {
 
       {viendo && (() => {
         const proyViendo = data.proyectos.find(p => p.id === viendo.proyectoId);
+        const idxActual = fotosFiltradas.findIndex(x => x.id === viendo.id);
+        const total = fotosFiltradas.length;
         return (
           <div className="fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-4" onClick={() => setViendo(null)}>
-            <div className="relative max-w-3xl w-full" onClick={e => e.stopPropagation()}>
-              <button onClick={() => setViendo(null)} className="absolute top-2 right-2 z-10 bg-black/60 text-white p-2"><X className="w-5 h-5" /></button>
+            <div
+              className="relative max-w-3xl w-full"
+              onClick={e => e.stopPropagation()}
+              onTouchStart={(e) => { swipeStartXRef.current = e.touches[0]?.clientX ?? null; }}
+              onTouchEnd={(e) => {
+                if (swipeStartXRef.current == null) return;
+                const dx = (e.changedTouches[0]?.clientX ?? 0) - swipeStartXRef.current;
+                if (Math.abs(dx) > 50) irAFoto(dx < 0 ? +1 : -1);
+                swipeStartXRef.current = null;
+              }}
+            >
+              {/* contador + cerrar */}
+              <div className="absolute top-2 right-2 z-10 flex items-center gap-2">
+                {total > 1 && (
+                  <div className="bg-black/70 text-white text-[11px] font-bold tracking-wider px-2 py-1">
+                    {idxActual + 1} / {total}
+                  </div>
+                )}
+                <button onClick={() => setViendo(null)} className="bg-black/60 hover:bg-black/80 text-white p-2" title="Cerrar (Esc)"><X className="w-5 h-5" /></button>
+              </div>
+              {/* flechas */}
+              {total > 1 && (
+                <>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); irAFoto(-1); }}
+                    className="absolute left-2 top-1/2 -translate-y-1/2 z-10 bg-black/60 hover:bg-black/80 text-white p-3 group"
+                    title="Anterior (←)"
+                  >
+                    <ChevronLeft className="w-6 h-6 group-hover:-translate-x-0.5 transition-transform" />
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); irAFoto(+1); }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 z-10 bg-black/60 hover:bg-black/80 text-white p-3 group"
+                    title="Siguiente (→)"
+                  >
+                    <ChevronRight className="w-6 h-6 group-hover:translate-x-0.5 transition-transform" />
+                  </button>
+                </>
+              )}
               {fotoData ? <img src={fotoData} className="w-full h-auto" alt="" /> : <div className="aspect-video bg-zinc-900 flex items-center justify-center"><Loader2 className="w-8 h-8 text-red-500 animate-spin" /></div>}
               <div className="bg-zinc-900 p-3 text-xs flex justify-between items-center gap-2">
                 <div className="flex-1 min-w-0">
-                  {/* v8.10.14: Mostrar # cotización + cliente en vista grande */}
                   <div className="text-white font-bold flex items-center gap-2">
                     <span className="text-red-400 font-mono">{proyViendo?.referenciaOdoo || ''}</span>
                     <span>{proyViendo?.cliente || proyViendo?.nombre || ''}</span>
@@ -9391,6 +9692,11 @@ function GaleriaGlobal({ usuario, data, onVolver }) {
                 <button onClick={() => toggleFav(viendo.id, !viendo.favorita)} className={`${viendo.favorita ? 'text-yellow-400' : 'text-zinc-400'} text-2xl`}>★</button>
                 {(viendo.subidaPorId === usuario.id || esAdmin) && <button onClick={() => eliminar(viendo.id)} className="text-red-400 hover:text-red-300 p-2"><Trash2 className="w-4 h-4" /></button>}
               </div>
+              {total > 1 && (
+                <div className="text-center text-[9px] text-zinc-500 mt-1 hidden sm:block uppercase tracking-widest">
+                  ← → para navegar · Esc para cerrar
+                </div>
+              )}
             </div>
           </div>
         );
@@ -9905,6 +10211,12 @@ function VistaMiProduccion({ usuario, data, onVolver, onVerProyecto }) {
       <button onClick={onVolver} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm">
         <ArrowLeft className="w-4 h-4" /> Volver
       </button>
+
+      {/* v8.19.19: card de "Mi producción" basada en el corte de nómina (sábado-sábado).
+          Complementa la vista quincenal de abajo. Gated por el toggle global. */}
+      {data.config?.mostrarMiProduccionNomina && (
+        <MiProduccionCard usuario={usuario} data={data} />
+      )}
 
       <div>
         <div className="text-xs tracking-widest uppercase text-red-500 font-bold">MI PRODUCCIÓN</div>

@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { Camera, Loader2, Trash2, X } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Camera, ChevronLeft, ChevronRight, Loader2, Trash2, X } from 'lucide-react';
 import * as db from '../../../lib/db';
 import { comprimirImagen } from '../../../lib/imports';
 import { formatFechaLarga } from '../../../lib/helpers/formato';
@@ -56,6 +56,45 @@ export default function TabFotos({ usuario, proyecto }) {
     catch (e) { console.error(e); setFotoData(null); }
   };
 
+  // v8.19.33: navegación tipo carrete dentro del lightbox
+  const fotosOrdenadas = React.useMemo(() => {
+    // mismo orden que las muestra el grid (por fecha desc, luego por id)
+    return [...fotos].sort((a, b) => {
+      if (a.fecha === b.fecha) return String(a.id).localeCompare(String(b.id));
+      return b.fecha.localeCompare(a.fecha);
+    });
+  }, [fotos]);
+  const indiceActual = viendoFoto ? fotosOrdenadas.findIndex(f => f.id === viendoFoto.id) : -1;
+  const irA = (delta) => {
+    if (!fotosOrdenadas.length || indiceActual < 0) return;
+    const total = fotosOrdenadas.length;
+    const nuevo = (indiceActual + delta + total) % total; // wrap-around
+    verFoto(fotosOrdenadas[nuevo]);
+  };
+
+  // Listener de teclado mientras el lightbox está abierto
+  useEffect(() => {
+    if (!viendoFoto) return;
+    const onKey = (e) => {
+      if (e.key === 'ArrowRight') { e.preventDefault(); irA(+1); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); irA(-1); }
+      else if (e.key === 'Escape') setViendoFoto(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viendoFoto, indiceActual, fotosOrdenadas.length]);
+
+  // Soporte de swipe (touch) para móvil
+  const swipeStartX = useRef(null);
+  const onTouchStart = (e) => { swipeStartX.current = e.touches[0]?.clientX ?? null; };
+  const onTouchEnd = (e) => {
+    if (swipeStartX.current == null) return;
+    const dx = (e.changedTouches[0]?.clientX ?? 0) - swipeStartX.current;
+    if (Math.abs(dx) > 50) irA(dx < 0 ? +1 : -1); // swipe izq → siguiente
+    swipeStartX.current = null;
+  };
+
   const eliminar = async (fotoId) => {
     if (!confirm('¿Eliminar foto?')) return;
     try { await db.eliminarFoto(fotoId); await cargar(); setViendoFoto(null); }
@@ -98,13 +137,49 @@ export default function TabFotos({ usuario, proyecto }) {
 
       {viendoFoto && (
         <div className="fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-4" onClick={() => setViendoFoto(null)}>
-          <div className="relative max-w-3xl w-full" onClick={e => e.stopPropagation()}>
-            <button onClick={() => setViendoFoto(null)} className="absolute top-2 right-2 z-10 bg-black/60 text-white p-2"><X className="w-5 h-5" /></button>
+          <div className="relative max-w-3xl w-full" onClick={e => e.stopPropagation()} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+            {/* contador + cerrar */}
+            <div className="absolute top-2 right-2 z-10 flex items-center gap-2">
+              {fotosOrdenadas.length > 1 && (
+                <div className="bg-black/70 text-white text-[11px] font-bold tracking-wider px-2 py-1">
+                  {indiceActual + 1} / {fotosOrdenadas.length}
+                </div>
+              )}
+              <button onClick={() => setViendoFoto(null)} className="bg-black/60 hover:bg-black/80 text-white p-2" title="Cerrar (Esc)"><X className="w-5 h-5" /></button>
+            </div>
+
+            {/* flechas — visibles cuando hay más de 1 foto */}
+            {fotosOrdenadas.length > 1 && (
+              <>
+                <button
+                  onClick={(e) => { e.stopPropagation(); irA(-1); }}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 z-10 bg-black/60 hover:bg-black/80 text-white p-3 group"
+                  title="Anterior (←)"
+                >
+                  <ChevronLeft className="w-6 h-6 group-hover:-translate-x-0.5 transition-transform" />
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); irA(+1); }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 z-10 bg-black/60 hover:bg-black/80 text-white p-3 group"
+                  title="Siguiente (→)"
+                >
+                  <ChevronRight className="w-6 h-6 group-hover:translate-x-0.5 transition-transform" />
+                </button>
+              </>
+            )}
+
             {fotoData ? <img src={fotoData} className="w-full h-auto" alt="" /> : <div className="aspect-video bg-zinc-900 flex items-center justify-center"><Loader2 className="w-8 h-8 text-red-500 animate-spin" /></div>}
             <div className="bg-zinc-900 p-3 text-xs flex justify-between items-center">
               <div><div className="text-white font-bold">{formatFechaLarga(viendoFoto.fecha)}</div><div className="text-zinc-500">Subida por {viendoFoto.subidaPor}</div></div>
               {(viendoFoto.subidaPorId === usuario.id || tieneRol(usuario, 'admin')) && <button onClick={() => eliminar(viendoFoto.id)} className="text-red-400 hover:text-red-300 p-2"><Trash2 className="w-4 h-4" /></button>}
             </div>
+
+            {/* hint de teclado/swipe — solo desktop */}
+            {fotosOrdenadas.length > 1 && (
+              <div className="text-center text-[9px] text-zinc-500 mt-1 hidden sm:block uppercase tracking-widest">
+                ← → para navegar · Esc para cerrar
+              </div>
+            )}
           </div>
         </div>
       )}

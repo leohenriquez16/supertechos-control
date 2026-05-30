@@ -8,7 +8,215 @@ import { calcEstadoPagoProyecto } from '../../../lib/helpers/calculos';
 
 const tieneRol = (p, r) => p?.roles?.includes(r);
 
-export default function TabManoDeObra({ proyecto, data, usuario }) {
+// v8.19.29: costos por día del personal asignado al proyecto (solo modo=dia).
+function CostosDiaPorPersona({ proyecto, data, esAdmin, onCambio }) {
+  const [costos, setCostos] = React.useState({}); // { personaId: costoDia }
+  const [loading, setLoading] = React.useState(true);
+  const [guardandoId, setGuardandoId] = React.useState(null);
+  const [editId, setEditId] = React.useState(null);
+  const [valor, setValor] = React.useState('');
+
+  const cargar = React.useCallback(async () => {
+    setLoading(true);
+    try {
+      const lista = await db.listarCostosDia(proyecto.id);
+      const map = {};
+      (lista || []).forEach(c => { map[c.personaId] = Number(c.costoDia) || 0; });
+      setCostos(map);
+    } catch (e) { console.warn('listarCostosDia:', e?.message); }
+    setLoading(false);
+  }, [proyecto.id]);
+
+  React.useEffect(() => { cargar(); }, [cargar]);
+
+  const personas = React.useMemo(() => {
+    const ids = new Set();
+    if (proyecto.supervisorId) ids.add(proyecto.supervisorId);
+    if (proyecto.maestroId) ids.add(proyecto.maestroId);
+    (proyecto.ayudantesIds || []).forEach(id => ids.add(id));
+    // v8.19.29: también incluye maestros de área (maestroAreaId) si los hay
+    (proyecto.areas || []).forEach(a => { if (a.maestroAreaId) ids.add(a.maestroAreaId); });
+    return [...ids].map(id => (data.personal || []).find(p => p.id === id)).filter(Boolean);
+  }, [proyecto, data.personal]);
+
+  const rolDe = (persona) => {
+    if (proyecto.supervisorId === persona.id) return { label: 'Supervisor', color: 'bg-blue-900/40 border-blue-700 text-blue-300' };
+    if (proyecto.maestroId === persona.id) return { label: 'Maestro', color: 'bg-red-900/40 border-red-700 text-red-300' };
+    if ((proyecto.areas || []).some(a => a.maestroAreaId === persona.id)) return { label: 'Maestro área', color: 'bg-red-900/30 border-red-700/60 text-red-300' };
+    return { label: 'Ayudante', color: 'bg-zinc-800 border-zinc-700 text-zinc-300' };
+  };
+
+  const guardar = async (personaId, nuevo) => {
+    const n = Number(nuevo);
+    if (!Number.isFinite(n) || n < 0) { alert('Costo inválido'); return; }
+    setGuardandoId(personaId);
+    try {
+      await db.guardarCostoDia(proyecto.id, personaId, n);
+      setCostos(prev => ({ ...prev, [personaId]: n }));
+      setEditId(null);
+      if (onCambio) await onCambio();
+    } catch (e) { alert('Error guardando: ' + (e.message || e)); }
+    setGuardandoId(null);
+  };
+
+  if (loading) return (
+    <div className="bg-zinc-900 border border-zinc-800 p-3 flex items-center justify-center">
+      <Loader2 className="w-4 h-4 animate-spin text-red-500" />
+    </div>
+  );
+
+  return (
+    <div className="bg-zinc-900 border border-zinc-800 p-3 space-y-2">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold flex items-center gap-1">
+          <Hammer className="w-3 h-3 text-red-500" /> Costo por día del personal asignado
+        </div>
+        <div className="text-[10px] text-zinc-500">{personas.filter(p => costos[p.id]).length} de {personas.length} configurados</div>
+      </div>
+      {personas.length === 0 ? (
+        <div className="text-[11px] text-zinc-500 italic py-2">Aún no hay personal asignado a este proyecto.</div>
+      ) : (
+        <div className="space-y-1">
+          {personas.map(p => {
+            const costo = costos[p.id] || 0;
+            const editing = editId === p.id;
+            const rol = rolDe(p);
+            const sinConfigurar = !costo;
+            return (
+              <div key={p.id} className={`bg-zinc-950 border ${sinConfigurar ? 'border-yellow-700/50' : 'border-zinc-800'} px-2 py-1.5 flex items-center gap-2`}>
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-xs truncate">{p.nombre}</div>
+                  <div className="text-[9px] flex items-center gap-1 mt-0.5">
+                    <span className={`px-1 py-0.5 border ${rol.color} uppercase tracking-wider text-[8px]`}>{rol.label}</span>
+                    {sinConfigurar && <span className="text-yellow-400">⚠ sin costo</span>}
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  {editing ? (
+                    <span className="inline-flex items-center gap-1">
+                      <input
+                        type="number" step="0.01" value={valor}
+                        onChange={e => setValor(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') guardar(p.id, valor);
+                          else if (e.key === 'Escape') setEditId(null);
+                        }}
+                        autoFocus
+                        className="bg-zinc-950 border-2 border-red-600 text-right w-20 text-xs tabular-nums px-1.5 py-0.5 text-white outline-none"
+                        disabled={guardandoId === p.id}
+                      />
+                      <span className="text-[9px] text-zinc-500">/día</span>
+                      {guardandoId === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : (
+                        <>
+                          <button onClick={() => guardar(p.id, valor)} className="text-green-400 hover:text-green-300 text-[10px]" title="Guardar">✓</button>
+                          <button onClick={() => setEditId(null)} className="text-zinc-500 hover:text-red-400 text-[10px]" title="Cancelar">✗</button>
+                        </>
+                      )}
+                    </span>
+                  ) : (
+                    esAdmin ? (
+                      <button
+                        onClick={() => { setValor(String(costo)); setEditId(p.id); }}
+                        className="text-right hover:bg-zinc-800 px-1.5 py-0.5 group inline-flex items-center gap-1"
+                        title="Editar costo (solo admin)"
+                      >
+                        <span className={`font-bold tabular-nums ${sinConfigurar ? 'text-yellow-400' : 'text-green-400'}`}>
+                          {formatRD(costo)}
+                        </span>
+                        <span className="text-[8px] text-zinc-500">/día</span>
+                        <span className="text-[9px] text-red-400 opacity-30 group-hover:opacity-100">✎</span>
+                      </button>
+                    ) : (
+                      <span className={`text-xs font-bold tabular-nums ${sinConfigurar ? 'text-yellow-400' : 'text-green-400'}`}>
+                        {formatRD(costo)} <span className="text-[8px] text-zinc-500">/día</span>
+                      </span>
+                    )
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// v8.19.28: edición inline del modo de pago de mano de obra del proyecto.
+const MODOS_PAGO = [
+  { id: 'dia',     label: 'Por día' },
+  { id: 'm2_fijo', label: 'm² fijo del sistema' },
+  { id: 'm2',      label: 'm² por tarea' },
+  { id: 'tarea',   label: 'Tarea (venta + maestro)' },
+];
+function ModoPagoEditor({ proyecto, onSaved }) {
+  const [editing, setEditing] = React.useState(false);
+  const [valor, setValor] = React.useState(proyecto.modoPagoManoObra || 'dia');
+  const [guardando, setGuardando] = React.useState(false);
+  const actual = proyecto.modoPagoManoObra || 'dia';
+  const actualLabel = MODOS_PAGO.find(m => m.id === actual)?.label || actual;
+
+  const guardar = async (nuevo) => {
+    if (nuevo === actual) { setEditing(false); return; }
+    if (!confirm(`Cambiar el modo de pago a "${MODOS_PAGO.find(m => m.id === nuevo)?.label || nuevo}"?\n\nEsto afecta cómo se calcula la nómina y RD$ devengado de este proyecto.`)) {
+      setValor(actual);
+      setEditing(false);
+      return;
+    }
+    setGuardando(true);
+    try {
+      const proyActualizado = { ...proyecto, modoPagoManoObra: nuevo };
+      if (onSaved) await onSaved(proyActualizado);
+      setEditing(false);
+    } catch (e) {
+      alert('Error guardando modo de pago: ' + (e.message || e));
+      setValor(actual);
+    }
+    setGuardando(false);
+  };
+
+  if (!editing) {
+    return (
+      <button
+        onClick={() => { setValor(actual); setEditing(true); }}
+        className="text-white font-bold inline-flex items-center gap-1 hover:bg-zinc-800 px-1 py-0.5 group"
+        title="Editar modo de pago"
+      >
+        <span className="bg-blue-600/20 border border-blue-500/40 px-1.5 py-0.5 text-blue-200 text-[10px] uppercase tracking-wider">
+          {actualLabel.split(' ')[0]}
+        </span>
+        <span className="hidden sm:inline">{actualLabel.split(' ').slice(1).join(' ')}</span>
+        <span className="text-[9px] text-red-400 opacity-30 group-hover:opacity-100">✎</span>
+      </button>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <select
+        value={valor}
+        onChange={e => setValor(e.target.value)}
+        disabled={guardando}
+        autoFocus
+        className="bg-zinc-950 border-2 border-red-600 text-white text-[11px] px-2 py-0.5 outline-none"
+      >
+        {MODOS_PAGO.map(m => (
+          <option key={m.id} value={m.id}>{m.label}</option>
+        ))}
+      </select>
+      {guardando ? (
+        <Loader2 className="w-3 h-3 animate-spin text-zinc-400" />
+      ) : (
+        <>
+          <button onClick={() => guardar(valor)} className="text-green-400 hover:text-green-300 text-[10px]" title="Guardar">✓</button>
+          <button onClick={() => setEditing(false)} className="text-zinc-500 hover:text-red-400 text-[10px]" title="Cancelar">✗</button>
+        </>
+      )}
+    </span>
+  );
+}
+
+export default function TabManoDeObra({ proyecto, data, usuario, onActualizarProyecto, onRecargar }) {
   const sistema = data.sistemas[proyecto.sistema];
   const [loading, setLoading] = useState(true);
   const [detalles, setDetalles] = useState([]);
@@ -91,25 +299,59 @@ export default function TabManoDeObra({ proyecto, data, usuario }) {
 
   return (
     <div className="space-y-4">
-      {/* Banner del modo de pago */}
-      <div className="bg-zinc-900 border border-zinc-800 p-2 flex items-center justify-between">
+      {/* Banner del modo de pago — v8.19.28: editable inline por admin */}
+      <div className="bg-zinc-900 border border-zinc-800 p-2 flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2 text-[11px]">
           <Hammer className="w-3 h-3 text-red-500" />
           <span className="text-zinc-500 uppercase tracking-wider">Modo de pago:</span>
-          <span className="text-white font-bold">{modoLabel}</span>
+          {esAdmin ? (
+            <ModoPagoEditor
+              proyecto={proyecto}
+              onSaved={async (nuevoProy) => {
+                if (onActualizarProyecto) await onActualizarProyecto(nuevoProy);
+                if (onRecargar) await onRecargar();
+                await cargar();
+              }}
+            />
+          ) : (
+            <span className="text-white font-bold">{modoLabel}</span>
+          )}
         </div>
         <div className="text-[10px] text-zinc-500">{formatNum(estado.m2TotalProyecto)} m² contratados</div>
       </div>
 
+      {/* v8.19.29: si el modo es "Por día", listar el personal y su costo/día */}
+      {proyecto.modoPagoManoObra === 'dia' && (
+        <CostosDiaPorPersona proyecto={proyecto} data={data} esAdmin={esAdmin} onCambio={cargar} />
+      )}
+
       {/* KPIs principales — lo importante: devengado, pagado, por pagar */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KPICard
-          icono={<TrendingUp className="w-3 h-3" />}
-          label="m² Ejecutados"
-          valor={formatNum(estado.m2Producidos)}
-          sub={estado.m2TotalProyecto > 0 ? `${estado.pctEjecutado.toFixed(1)}% del proyecto` : null}
-          color="blue"
-        />
+        {(() => {
+          // v8.19.24: el m² "ejecutado" útil para CUALQUIER modo de pago es el
+          // EFECTIVO ponderado por peso de tarea (capeado por m² del área):
+          // refleja el progreso físico real, no la suma cruda que multiplica
+          // por cantidad de pasos reportados.
+          // Fallback: si el proyecto no tiene áreas con m² definidos
+          // (m2EfectivoPonderado = 0 estructuralmente), caemos al m2Producidos.
+          const tieneAreas = estado.m2TotalProyecto > 0;
+          const valor = tieneAreas ? estado.m2EfectivoPonderado : estado.m2Producidos;
+          const pct = estado.pctAvanceSistema;
+          const showRaw = Math.abs((estado.m2Producidos || 0) - (valor || 0)) > 1;
+          return (
+            <KPICard
+              icono={<TrendingUp className="w-3 h-3" />}
+              label={tieneAreas ? 'm² Ejecutados (efectivos)' : 'm² Ejecutados'}
+              valor={formatNum(valor)}
+              sub={
+                tieneAreas
+                  ? `${pct.toFixed(1)}% del proyecto${showRaw ? ` · Σ ${formatNum(estado.m2Producidos)} reportados` : ''}`
+                  : (showRaw ? `Σ ${formatNum(estado.m2Producidos)} reportados` : null)
+              }
+              color="blue"
+            />
+          );
+        })()}
         <KPICard
           icono={<Target className="w-3 h-3" />}
           label="RD$ Devengado"
@@ -146,7 +388,19 @@ export default function TabManoDeObra({ proyecto, data, usuario }) {
             <>
               <div className="flex items-center justify-between text-[10px] text-zinc-500">
                 <span>{formatNum(estado.m2Pagados)} m² cobrados</span>
-                <span>{formatNum(estado.m2Producidos)} m² ejecutados</span>
+                <span>
+                  {(() => {
+                    const tieneAreas = estado.m2TotalProyecto > 0;
+                    const valor = tieneAreas ? estado.m2EfectivoPonderado : estado.m2Producidos;
+                    const showRaw = Math.abs((estado.m2Producidos || 0) - (valor || 0)) > 1;
+                    return (
+                      <>
+                        {formatNum(valor)} m² ejecutados
+                        {showRaw && <span className="text-zinc-600"> · Σ {formatNum(estado.m2Producidos)} reportados</span>}
+                      </>
+                    );
+                  })()}
+                </span>
               </div>
               <div className="h-3 bg-zinc-950 border border-zinc-800 relative overflow-hidden">
                 <div

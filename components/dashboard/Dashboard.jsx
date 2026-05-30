@@ -10,8 +10,9 @@ import ModalDetallePersonalAhora from './ModalDetallePersonalAhora';
 import ModalDetalleProduccion from './ModalDetalleProduccion';
 import ModalDetalleAprobados from './ModalDetalleAprobados';
 import AutoFitText from '../common/AutoFitText'; // v8.17.30: ajustar números a celda
+import MiProduccionCard from './MiProduccionCard'; // v8.19.19: widget personal del corte
 
-export default function Dashboard({ data, onVerProyecto, onNuevoProyecto, onImportarOdoo, tareas, onCompletarTarea, jornadasHoy, onCambiarEstadoRapido }) {
+export default function Dashboard({ usuario, data, onVerProyecto, onNuevoProyecto, onImportarOdoo, tareas, onCompletarTarea, jornadasHoy, onCambiarEstadoRapido }) {
   const hoy = new Date().toISOString().split('T')[0];
   const [periodo, setPeriodo] = useState('dia');
   const [fechaRef, setFechaRef] = useState(hoy);
@@ -194,6 +195,11 @@ export default function Dashboard({ data, onVerProyecto, onNuevoProyecto, onImpo
 
   return (
     <div className="space-y-6">
+      {/* v8.19.19: Mi Producción del corte actual — gated por toggle global */}
+      {data.config?.mostrarMiProduccionNomina && usuario && (
+        <MiProduccionCard usuario={usuario} data={data} />
+      )}
+
       {/* v8.9.14: Alerta de proyectos aprobados atascados */}
       {proyectosAprobadosAtrasados.length > 0 && (
         <div className="bg-yellow-900/20 border-2 border-yellow-700 p-4 space-y-2">

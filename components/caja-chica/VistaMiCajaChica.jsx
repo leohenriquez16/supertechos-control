@@ -283,19 +283,19 @@ export default function VistaMiCajaChica({ usuario, data, onVolver }) {
 
       {/* Resumen del histórico */}
       <div className="grid grid-cols-2 gap-2 text-xs">
-        <div className="bg-zinc-900 border border-zinc-800 p-3">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
           <div className="text-[10px] uppercase tracking-widest text-zinc-500">Entregado a tu caja</div>
           <div className="text-base font-black text-green-400 mt-1">RD$ {formatNum(stats.entregas, 0)}</div>
         </div>
-        <div className="bg-zinc-900 border border-zinc-800 p-3">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
           <div className="text-[10px] uppercase tracking-widest text-zinc-500">Gastos aprobados</div>
           <div className="text-base font-black text-white mt-1">RD$ {formatNum(stats.gastosAprob, 0)}</div>
         </div>
-        <div className="bg-zinc-900 border border-zinc-800 p-3">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
           <div className="text-[10px] uppercase tracking-widest text-zinc-500">Gastos pendientes</div>
           <div className="text-base font-black text-orange-400 mt-1">RD$ {formatNum(stats.gastosPend, 0)}</div>
         </div>
-        <div className="bg-zinc-900 border border-zinc-800 p-3">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
           <div className="text-[10px] uppercase tracking-widest text-zinc-500">Dietas pagadas</div>
           <div className="text-base font-black text-white mt-1">RD$ {formatNum(stats.dietas, 0)}</div>
         </div>
@@ -472,14 +472,14 @@ function MovimientoRow({ m, data, onVerFoto, onAbrirDetalle }) {
           <div className="text-xs font-bold uppercase tracking-wider">{meta.label}</div>
           <div className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 ${statusMeta.cls}`}>{statusMeta.label}</div>
           {fotoPorWs && (
-            <div className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-yellow-900/40 text-yellow-300 border border-yellow-700">📱 WS pendiente</div>
+            <div className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-yellow-900/40 text-yellow-300 border border-yellow-700 rounded-full">📱 WS pendiente</div>
           )}
           {sinFactura && (
-            <div className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-red-900/40 text-red-300 border border-red-800">✍ Sin factura</div>
+            <div className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-red-900/40 text-red-300 border border-red-800 rounded-full">✍ Sin factura</div>
           )}
           {/* v8.17.29: badge si el movimiento cuenta a partida (no es reembolsable) */}
           {m.aplicaA === 'dieta' && (
-            <div className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-orange-900/40 text-orange-300 border border-orange-700" title="Esta factura descuenta del presupuesto de dieta, no se reembolsa">🍽 Dieta</div>
+            <div className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-orange-900/40 text-orange-300 border border-orange-700 rounded-full" title="Esta factura descuenta del presupuesto de dieta, no se reembolsa">🍽 Dieta</div>
           )}
           {m.aplicaA === 'hospedaje' && (
             <div className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-purple-900/40 text-purple-300 border border-purple-700" title="Esta factura descuenta del presupuesto de hospedaje, no se reembolsa">🛏 Hospedaje</div>
@@ -524,5 +524,5 @@ const TIPOS = {
 const STATUS = {
   pendiente_revision: { label: '⏳ Pendiente', cls: 'bg-orange-900/40 text-orange-300 border border-orange-800' },
   aprobado:           { label: '✓ Aprobado',   cls: 'bg-green-900/40 text-green-300 border border-green-800' },
-  rechazado:          { label: '✕ Rechazado',  cls: 'bg-red-900/40 text-red-300 border border-red-800' },
+  rechazado:          { label: '✕ Rechazado',  cls: 'bg-red-900/40 text-red-300 border border-red-800 rounded-full' },
 };

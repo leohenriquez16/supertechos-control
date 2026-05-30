@@ -262,7 +262,7 @@ export default function ModalGastosProyecto({ proyecto, movimientos, usuario, da
                         <button
                           key={m.id}
                           onClick={() => setSeleccionado(m)}
-                          className="w-full bg-zinc-950 border border-zinc-800 hover:border-red-600 p-3 text-left"
+                          className="w-full bg-zinc-950 border border-zinc-800 rounded-card hover:border-red-600 p-3 text-left"
                         >
                           <div className="flex justify-between items-start gap-2">
                             <div className="min-w-0 flex-1">

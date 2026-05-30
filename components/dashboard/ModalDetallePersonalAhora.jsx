@@ -15,7 +15,7 @@ export default function ModalDetallePersonalAhora({ personalPorProyecto, totalPe
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
-      <div className="bg-zinc-900 border-2 border-blue-600 max-w-xl w-full p-5 space-y-4 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+      <div className="bg-zinc-900 border-2 border-blue-600 rounded-card max-w-xl w-full p-5 space-y-4 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center sticky top-0 bg-zinc-900 pb-2 border-b border-zinc-800">
           <div>
             <div className="text-[10px] tracking-widest uppercase text-blue-500 font-bold">👷 Personal en Obra Ahora</div>
@@ -26,13 +26,13 @@ export default function ModalDetallePersonalAhora({ personalPorProyecto, totalPe
         </div>
 
         {personalPorProyecto.length === 0 ? (
-          <div className="bg-zinc-950 border border-zinc-800 p-6 text-center text-sm text-zinc-500">
+          <div className="bg-zinc-950 border border-zinc-800 rounded-card p-6 text-center text-sm text-zinc-500">
             No hay jornadas abiertas en este momento
           </div>
         ) : (
           <div className="space-y-3">
             {personalPorProyecto.map(({ proyecto, personas, jornada }) => (
-              <div key={proyecto.id} className="bg-zinc-950 border border-zinc-800 overflow-hidden">
+              <div key={proyecto.id} className="bg-zinc-950 border border-zinc-800 rounded-card overflow-hidden">
                 <button
                   onClick={() => onVerProyecto(proyecto)}
                   className="w-full p-3 text-left hover:bg-zinc-900 flex items-start gap-2"

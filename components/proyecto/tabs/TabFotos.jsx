@@ -195,7 +195,7 @@ function FotoThumb({ foto, onVer }) {
     return () => { cancelado = true; };
   }, [foto.id]);
   return (
-    <button onClick={onVer} className="aspect-square bg-zinc-900 border border-zinc-800 hover:border-red-600 overflow-hidden relative">
+    <button onClick={onVer} className="aspect-square bg-zinc-900 border border-zinc-800 rounded-card hover:border-red-600 overflow-hidden relative">
       {src ? <img src={src} className="w-full h-full object-cover" alt="" /> : <div className="w-full h-full flex items-center justify-center"><Loader2 className="w-4 h-4 text-zinc-600 animate-spin" /></div>}
     </button>
   );

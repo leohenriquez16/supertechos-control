@@ -166,7 +166,7 @@ function IconoTresPuntos({ className = 'w-4 h-4 inline-block' }) {
 
 function PasosIOSSafari() {
   return (
-    <div className="bg-zinc-950 border border-zinc-800 p-4 space-y-3">
+    <div className="bg-zinc-950 border border-zinc-800 rounded-card p-4 space-y-3">
       <Paso numero="1">
         Toca el botón <span className="inline-flex items-center gap-1 bg-zinc-900 px-2 py-0.5 border border-zinc-700">
           <IconoCompartirIOS /> Compartir
@@ -203,7 +203,7 @@ function AvisoIOSChrome() {
 
 function PasosAndroidChrome() {
   return (
-    <div className="bg-zinc-950 border border-zinc-800 p-4 space-y-3">
+    <div className="bg-zinc-950 border border-zinc-800 rounded-card p-4 space-y-3">
       <Paso numero="1">
         Toca los <span className="inline-flex items-center gap-1 bg-zinc-900 px-2 py-0.5 border border-zinc-700">
           <IconoTresPuntos /> tres puntos
@@ -221,7 +221,7 @@ function PasosAndroidChrome() {
 
 function PasosAndroidSamsung() {
   return (
-    <div className="bg-zinc-950 border border-zinc-800 p-4 space-y-3">
+    <div className="bg-zinc-950 border border-zinc-800 rounded-card p-4 space-y-3">
       <Paso numero="1">
         Toca el menú <span className="inline-flex items-center gap-1 bg-zinc-900 px-2 py-0.5 border border-zinc-700 font-mono">≡</span> abajo a la derecha (Samsung Internet).
       </Paso>
@@ -237,7 +237,7 @@ function PasosAndroidSamsung() {
 
 function PasosAndroidGenerico() {
   return (
-    <div className="bg-zinc-950 border border-zinc-800 p-4 space-y-3">
+    <div className="bg-zinc-950 border border-zinc-800 rounded-card p-4 space-y-3">
       <Paso numero="1">
         Busca el menú de tu navegador (<span className="inline-flex items-center gap-1 bg-zinc-900 px-2 py-0.5 border border-zinc-700"><IconoTresPuntos /></span> o <span className="font-mono">≡</span>).
       </Paso>
@@ -251,7 +251,7 @@ function PasosAndroidGenerico() {
 
 function PasosDesktop() {
   return (
-    <div className="bg-zinc-950 border border-zinc-800 p-4 space-y-3">
+    <div className="bg-zinc-950 border border-zinc-800 rounded-card p-4 space-y-3">
       <Paso numero="1">
         En la barra de direcciones de Chrome o Edge, busca el ícono <span className="inline-flex items-center gap-1 bg-zinc-900 px-2 py-0.5 border border-zinc-700">
           <IconoMasCuadrado /> Instalar

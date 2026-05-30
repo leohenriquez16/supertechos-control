@@ -402,7 +402,7 @@ function Paso3({ sites, onActualizar, onEliminar, onAgregar, pasteText, setPaste
       </div>
 
       {mostrarPaste && (
-        <div className="bg-zinc-900 border border-zinc-800 p-3 space-y-2">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 space-y-2">
           <div className="text-[10px] text-zinc-500">
             Pega desde Excel/CSV. Primera fila opcional como header. Columnas reconocidas:
             <code className="block bg-zinc-950 p-1 mt-1 text-[10px] text-zinc-400">
@@ -414,7 +414,7 @@ function Paso3({ sites, onActualizar, onEliminar, onAgregar, pasteText, setPaste
             onChange={e => setPasteText(e.target.value)}
             placeholder="codigo	nombre	direccion	ciudad	lat	lng&#10;010	Sucursal Centro	Av. Mella 200	Santo Domingo	18.47	-69.91"
             rows={5}
-            className="w-full bg-zinc-950 border border-zinc-800 focus:border-red-600 outline-none px-2 py-1 text-xs text-zinc-200 font-mono resize-y"
+            className="w-full bg-zinc-950 border border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-1 text-xs text-zinc-200 font-mono resize-y"
           />
           <button
             onClick={onImportarPaste}
@@ -428,12 +428,12 @@ function Paso3({ sites, onActualizar, onEliminar, onAgregar, pasteText, setPaste
 
       <div className="space-y-2">
         {sites.length === 0 && (
-          <div className="bg-zinc-900 border border-zinc-800 p-6 text-center text-xs text-zinc-500">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-card p-6 text-center text-xs text-zinc-500">
             Sin sitios todavía. Agrega al menos uno (o pasa al final y los agregas después).
           </div>
         )}
         {sites.map((s, idx) => (
-          <div key={s._localId || idx} className="bg-zinc-900 border border-zinc-800 p-3 space-y-2">
+          <div key={s._localId || idx} className="bg-zinc-900 border border-zinc-800 rounded-card p-3 space-y-2">
             <div className="flex items-center gap-2">
               <span className="text-[10px] font-mono bg-zinc-800 text-zinc-400 px-1.5 py-0.5">
                 #{idx + 1}
@@ -453,20 +453,20 @@ function Paso3({ sites, onActualizar, onEliminar, onAgregar, pasteText, setPaste
                 value={s.external_code || ''}
                 onChange={e => onActualizar(idx, 'external_code', e.target.value)}
                 placeholder="Código (opcional)"
-                className="bg-zinc-950 border border-zinc-800 focus:border-red-600 outline-none px-2 py-1 text-xs text-zinc-200"
+                className="bg-zinc-950 border border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-1 text-xs text-zinc-200"
               />
               <input
                 value={s.city || ''}
                 onChange={e => onActualizar(idx, 'city', e.target.value)}
                 placeholder="Ciudad"
-                className="bg-zinc-950 border border-zinc-800 focus:border-red-600 outline-none px-2 py-1 text-xs text-zinc-200"
+                className="bg-zinc-950 border border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-1 text-xs text-zinc-200"
               />
             </div>
             <input
               value={s.address || ''}
               onChange={e => onActualizar(idx, 'address', e.target.value)}
               placeholder="Dirección"
-              className="w-full bg-zinc-950 border border-zinc-800 focus:border-red-600 outline-none px-2 py-1 text-xs text-zinc-200"
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-1 text-xs text-zinc-200"
             />
             <div className="grid grid-cols-2 gap-2">
               <input
@@ -474,14 +474,14 @@ function Paso3({ sites, onActualizar, onEliminar, onAgregar, pasteText, setPaste
                 onChange={e => onActualizar(idx, 'latitude', e.target.value)}
                 placeholder="Lat (opcional, ej. 18.4861)"
                 inputMode="decimal"
-                className="bg-zinc-950 border border-zinc-800 focus:border-red-600 outline-none px-2 py-1 text-xs text-zinc-200"
+                className="bg-zinc-950 border border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-1 text-xs text-zinc-200"
               />
               <input
                 value={s.longitude || ''}
                 onChange={e => onActualizar(idx, 'longitude', e.target.value)}
                 placeholder="Lng (opcional, ej. -69.9312)"
                 inputMode="decimal"
-                className="bg-zinc-950 border border-zinc-800 focus:border-red-600 outline-none px-2 py-1 text-xs text-zinc-200"
+                className="bg-zinc-950 border border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-1 text-xs text-zinc-200"
               />
             </div>
             <div className="grid grid-cols-2 gap-2">
@@ -489,13 +489,13 @@ function Paso3({ sites, onActualizar, onEliminar, onAgregar, pasteText, setPaste
                 value={s.contact_name || ''}
                 onChange={e => onActualizar(idx, 'contact_name', e.target.value)}
                 placeholder="Contacto"
-                className="bg-zinc-950 border border-zinc-800 focus:border-red-600 outline-none px-2 py-1 text-xs text-zinc-200"
+                className="bg-zinc-950 border border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-1 text-xs text-zinc-200"
               />
               <input
                 value={s.mobile_phone || ''}
                 onChange={e => onActualizar(idx, 'mobile_phone', e.target.value)}
                 placeholder="WhatsApp / móvil"
-                className="bg-zinc-950 border border-zinc-800 focus:border-red-600 outline-none px-2 py-1 text-xs text-zinc-200"
+                className="bg-zinc-950 border border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-1 text-xs text-zinc-200"
               />
             </div>
           </div>

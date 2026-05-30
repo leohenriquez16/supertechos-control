@@ -39,7 +39,7 @@ export default function ModalDetalleAprobados(props) {
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto">
-      <div className="bg-zinc-900 border-2 border-green-600 max-w-3xl w-full p-5 space-y-4 max-h-[90vh] overflow-auto my-8">
+      <div className="bg-zinc-900 border-2 border-green-600 rounded-card max-w-3xl w-full p-5 space-y-4 max-h-[90vh] overflow-auto my-8">
         <div className="flex justify-between items-start sticky top-0 bg-zinc-900 pb-2 border-b border-zinc-800">
           <div>
             <div className="text-xs tracking-widest uppercase text-green-500 font-bold">Detalle aprobados</div>
@@ -56,7 +56,7 @@ export default function ModalDetalleAprobados(props) {
               const monto = calcularMonto(p);
               const fechaAprob = p.fechaAprobacion || p.fecha_inicio || null;
               return (
-                <div key={p.id} className="bg-zinc-950 border border-zinc-800 p-3 hover:border-green-700 transition-colors">
+                <div key={p.id} className="bg-zinc-950 border border-zinc-800 rounded-card p-3 hover:border-green-700 transition-colors">
                   <div className="flex justify-between items-start gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-bold text-white truncate">{labelProyecto(p)}</div>

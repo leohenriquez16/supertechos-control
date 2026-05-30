@@ -28,7 +28,7 @@ export default function SurveySiteDetail({ site, proyecto, usuario, onVolver }) 
       </button>
 
       {/* Header */}
-      <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-3">
         <div className="flex items-start gap-3">
           <Building className="w-6 h-6 text-zinc-500 flex-shrink-0 mt-1" />
           <div className="flex-1 min-w-0">
@@ -96,7 +96,7 @@ export default function SurveySiteDetail({ site, proyecto, usuario, onVolver }) 
       </div>
 
       {/* Contacto */}
-      <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-2">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-2">
         <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">Contacto</div>
         <Field label="Nombre" value={site.contact_name} />
         <Field label="Cargo" value={site.contact_role} />
@@ -105,7 +105,7 @@ export default function SurveySiteDetail({ site, proyecto, usuario, onVolver }) 
       </div>
 
       {/* Horarios */}
-      <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-2">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-2">
         <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold flex items-center gap-1">
           <Clock className="w-3 h-3" /> Horarios
         </div>
@@ -115,7 +115,7 @@ export default function SurveySiteDetail({ site, proyecto, usuario, onVolver }) 
 
       {/* Scheduled / asignación */}
       {(site.scheduled_at || site.assigned_to) && (
-        <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-2">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-2">
           <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold flex items-center gap-1">
             <Calendar className="w-3 h-3" /> Coordinación
           </div>
@@ -131,7 +131,7 @@ export default function SurveySiteDetail({ site, proyecto, usuario, onVolver }) 
 
       {/* Notas */}
       {site.notes && (
-        <div className="bg-zinc-900 border border-zinc-800 p-4">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4">
           <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold mb-2 flex items-center gap-1">
             <FileText className="w-3 h-3" /> Notas
           </div>
@@ -235,7 +235,7 @@ function LevantamientosRealizados({ site }) {
 
   if (loading) {
     return (
-      <div className="bg-zinc-900 border border-zinc-800 p-4 text-center">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 text-center">
         <Loader2 className="w-4 h-4 animate-spin text-red-500 mx-auto" />
       </div>
     );
@@ -256,7 +256,7 @@ function LevantamientosRealizados({ site }) {
         const nVerif = areas.filter(a => a.data?.por_verificar).length;
         const fecha = v.checkin_at || v.created_at;
         return (
-          <div key={v.id} className="bg-zinc-900 border border-zinc-800">
+          <div key={v.id} className="bg-zinc-900 border border-zinc-800 rounded-card">
             <button
               onClick={() => setExpandida(abierta ? null : v.id)}
               className="w-full p-3 flex items-center justify-between text-left hover:bg-zinc-800/40"
@@ -284,7 +284,7 @@ function LevantamientosRealizados({ site }) {
                     </div>
                     <div className="space-y-1">
                       {items.map(a => (
-                        <div key={a.id} className="bg-zinc-950 border border-zinc-800 px-2 py-1.5 text-xs flex items-start justify-between gap-2">
+                        <div key={a.id} className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1.5 text-xs flex items-start justify-between gap-2">
                           <div className="min-w-0">
                             <div className="font-bold truncate">
                               {a.name}

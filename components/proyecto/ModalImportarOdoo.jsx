@@ -235,7 +235,7 @@ export default function ModalImportarOdoo({ usuario, sistemas, proyectos = [], o
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
-      <div className="bg-zinc-900 border-2 border-purple-600 max-w-2xl w-full p-5 space-y-4 max-h-[90vh] overflow-auto my-8" onClick={e => e.stopPropagation()}>
+      <div className="bg-zinc-900 border-2 border-purple-600 rounded-card max-w-2xl w-full p-5 space-y-4 max-h-[90vh] overflow-auto my-8" onClick={e => e.stopPropagation()}>
         
         {/* Header */}
         <div className="flex justify-between items-start">
@@ -351,7 +351,7 @@ export default function ModalImportarOdoo({ usuario, sistemas, proyectos = [], o
         {paso === 'detalle' && seleccionada && (
           <div className="space-y-4">
             {/* Info general */}
-            <div className="bg-zinc-950 border border-zinc-800 p-3 space-y-1">
+            <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3 space-y-1">
               <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">Datos del proyecto</div>
               <div className="grid grid-cols-2 gap-2 text-sm">
                 <div><span className="text-zinc-500">Cliente:</span> <span className="font-bold">{seleccionada.cliente}</span></div>
@@ -381,7 +381,7 @@ export default function ModalImportarOdoo({ usuario, sistemas, proyectos = [], o
               <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-2">Áreas detectadas</div>
               <div className="space-y-2">
                 {seleccionada.areas.map((area, i) => (
-                  <div key={i} className="bg-zinc-950 border border-zinc-800 p-3">
+                  <div key={i} className="bg-zinc-950 border border-zinc-800 rounded-card p-3">
                     <div className="flex justify-between items-center">
                       <div className="font-bold text-sm">{area.nombre}</div>
                       <div className="text-xs text-green-400 font-bold">{area.m2} m²</div>

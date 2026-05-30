@@ -187,7 +187,7 @@ Cualquier duda me avisas.`
                     : `Se reinvitó a ${resultado.nombre} (ya existía).`)}
               </div>
 
-              <div className="bg-zinc-950 border border-zinc-800 p-3">
+              <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3">
                 <div className="text-[10px] uppercase tracking-widest text-zinc-500 mb-2">
                   Mensaje listo para enviar
                 </div>

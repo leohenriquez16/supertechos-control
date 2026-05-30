@@ -290,17 +290,17 @@ function CalendarioMensual({ mesAnio, setMesAnio, estadias, propiedades, filtroP
   return (
     <div className="space-y-3">
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 bg-zinc-900 border border-zinc-800 p-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 bg-zinc-900 border border-zinc-800 rounded-card p-2">
         <div className="flex items-center gap-2">
-          <button onClick={() => moverMes(-1)} className="bg-zinc-950 border border-zinc-800 p-1.5 text-zinc-400 hover:text-white"><ChevronLeft className="w-4 h-4" /></button>
+          <button onClick={() => moverMes(-1)} className="bg-zinc-950 border border-zinc-800 rounded-card p-1.5 text-zinc-400 hover:text-white"><ChevronLeft className="w-4 h-4" /></button>
           <div className="text-sm font-bold min-w-[140px] text-center">{meses[mes]} {anio}</div>
-          <button onClick={() => moverMes(1)} className="bg-zinc-950 border border-zinc-800 p-1.5 text-zinc-400 hover:text-white"><ChevronRight className="w-4 h-4" /></button>
-          <button onClick={() => { const d = new Date(); setMesAnio({ mes: d.getMonth(), anio: d.getFullYear() }); }} className="bg-zinc-950 border border-zinc-800 px-2 py-1 text-[10px] uppercase font-bold text-zinc-400 hover:text-white">Hoy</button>
+          <button onClick={() => moverMes(1)} className="bg-zinc-950 border border-zinc-800 rounded-card p-1.5 text-zinc-400 hover:text-white"><ChevronRight className="w-4 h-4" /></button>
+          <button onClick={() => { const d = new Date(); setMesAnio({ mes: d.getMonth(), anio: d.getFullYear() }); }} className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1 text-[10px] uppercase font-bold text-zinc-400 hover:text-white">Hoy</button>
         </div>
         <select
           value={filtroPropiedad}
           onChange={e => setFiltroPropiedad(e.target.value)}
-          className="bg-zinc-950 border border-zinc-800 px-2 py-1 text-xs text-white"
+          className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1 text-xs text-white"
         >
           <option value="">Todas las propiedades</option>
           {propiedades.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
@@ -308,7 +308,7 @@ function CalendarioMensual({ mesAnio, setMesAnio, estadias, propiedades, filtroP
       </div>
 
       {/* Grid días */}
-      <div className="bg-zinc-900 border border-zinc-800 p-2">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-2">
         <div className="grid grid-cols-7 gap-1 text-[10px] uppercase tracking-wider text-zinc-500 font-bold mb-1">
           {['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'].map(d => <div key={d} className="text-center">{d}</div>)}
         </div>
@@ -348,12 +348,12 @@ function CalendarioMensual({ mesAnio, setMesAnio, estadias, propiedades, filtroP
 function ListaEstadias({ estadias, propiedades, filtroPropiedad, setFiltroPropiedad, filtroPersona, setFiltroPersona, personasById, propiedadesById, proyectosById, onEliminar, onAbrirReserva }) {
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2 bg-zinc-900 border border-zinc-800 p-2 text-xs">
-        <select value={filtroPropiedad} onChange={e => setFiltroPropiedad(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-1 text-white">
+      <div className="flex flex-wrap items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-card p-2 text-xs">
+        <select value={filtroPropiedad} onChange={e => setFiltroPropiedad(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1 text-white">
           <option value="">Todas las propiedades</option>
           {propiedades.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
         </select>
-        <select value={filtroPersona} onChange={e => setFiltroPersona(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-1 text-white">
+        <select value={filtroPersona} onChange={e => setFiltroPersona(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1 text-white">
           <option value="">Todas las personas</option>
           {Object.values(personasById).map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
         </select>
@@ -366,7 +366,7 @@ function ListaEstadias({ estadias, propiedades, filtroPropiedad, setFiltroPropie
       {estadias.length === 0 ? (
         <div className="text-center py-10 text-zinc-500 text-sm">Sin estadías con estos filtros.</div>
       ) : (
-        <div className="bg-zinc-900 border border-zinc-800 overflow-x-auto">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-zinc-950 border-b border-zinc-800">
               <tr className="text-[10px] uppercase tracking-wider text-zinc-500">
@@ -544,7 +544,7 @@ function ModalReservaRango({ usuario, data, propiedades, onCerrar, onGuardado })
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-zinc-900 border-2 border-red-600 max-w-lg w-full p-5 space-y-3 my-8 max-h-[90vh] overflow-y-auto">
+      <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-lg w-full p-5 space-y-3 my-8 max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center">
           <div className="text-xs tracking-widest uppercase text-red-500 font-bold">Reservar propiedad</div>
           <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
@@ -563,7 +563,7 @@ function ModalReservaRango({ usuario, data, propiedades, onCerrar, onGuardado })
         </div>
 
         <Campo label={`Personas (${personasSel.length})`}>
-          <div className="max-h-48 overflow-y-auto bg-zinc-950 border border-zinc-800 p-2 space-y-1">
+          <div className="max-h-48 overflow-y-auto bg-zinc-950 border border-zinc-800 rounded-card p-2 space-y-1">
             {personasOrden.map(p => (
               <label key={p.id} className="flex items-center gap-2 cursor-pointer hover:bg-zinc-900 px-1 py-0.5">
                 <input type="checkbox" checked={personasSel.includes(p.id)} onChange={() => togglePersona(p.id)} className="w-3.5 h-3.5 accent-red-600" />
@@ -586,7 +586,7 @@ function ModalReservaRango({ usuario, data, propiedades, onCerrar, onGuardado })
         </Campo>
 
         {personasSel.length > 0 && fechaDesde && fechaHasta && (
-          <div className="text-[10px] bg-zinc-950 border border-zinc-800 p-2 text-zinc-400">
+          <div className="text-[10px] bg-zinc-950 border border-zinc-800 rounded-card p-2 text-zinc-400">
             Se crearán <b className="text-red-400">
               {((new Date(fechaHasta + 'T12:00:00') - new Date(fechaDesde + 'T12:00:00')) / 86400000 + 1) * personasSel.length}
             </b> estadías ({((new Date(fechaHasta + 'T12:00:00') - new Date(fechaDesde + 'T12:00:00')) / 86400000 + 1)} noche{((new Date(fechaHasta + 'T12:00:00') - new Date(fechaDesde + 'T12:00:00')) / 86400000 + 1) !== 1 ? 's' : ''} × {personasSel.length} persona{personasSel.length !== 1 ? 's' : ''})

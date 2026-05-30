@@ -54,7 +54,7 @@ export default function TabEquipoProyecto({ proyecto, data, sistema }) {
 
   return (
     <div className="space-y-4">
-      <div className="bg-zinc-900 border border-zinc-800 p-3">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
         <div className="grid grid-cols-3 gap-2 text-center">
           <div><div className="text-[10px] text-zinc-500 uppercase">Miembros</div><div className="text-xl font-black">{miembros.length}</div></div>
           <div><div className="text-[10px] text-zinc-500 uppercase">Jornadas</div><div className="text-xl font-black">{jornadas.length}</div></div>
@@ -65,7 +65,7 @@ export default function TabEquipoProyecto({ proyecto, data, sistema }) {
         {miembros.map(({ persona, rol }) => {
           const m = calcMetricasPersona(persona.id);
           return (
-            <div key={persona.id} className="bg-zinc-900 border border-zinc-800 p-3 flex items-center gap-3">
+            <div key={persona.id} className="bg-zinc-900 border border-zinc-800 rounded-card p-3 flex items-center gap-3">
               {persona.foto2x2 ? <img src={persona.foto2x2} className="w-10 h-10 object-cover border border-zinc-700" alt="" /> : <UserCircle className="w-10 h-10 text-zinc-500" />}
               <div className="flex-1 min-w-0">
                 <div className="font-bold text-sm">{persona.nombre}</div>

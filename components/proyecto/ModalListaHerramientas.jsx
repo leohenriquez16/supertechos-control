@@ -208,7 +208,7 @@ export default function ModalListaHerramientas({ proyecto, sistemas, onCerrar })
                 {items.map((it, i) => (
                   <tr key={it.id} className="border-b border-zinc-900">
                     <td className="py-1.5 pr-2">
-                      <input value={it.nombre} onChange={e => editar(items, setItems, i, 'nombre', e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 focus:border-red-600 outline-none px-2 py-1 text-white text-xs" />
+                      <input value={it.nombre} onChange={e => editar(items, setItems, i, 'nombre', e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-1 text-white text-xs" />
                       {(it.sistemas?.length > 1 || it.areas?.length > 1) && (
                         <div className="text-[9px] text-zinc-600 mt-0.5">
                           {it.sistemas?.length > 1 && `sist: ${it.sistemas.join(' + ')}`}
@@ -220,14 +220,14 @@ export default function ModalListaHerramientas({ proyecto, sistemas, onCerrar })
                       )}
                     </td>
                     <td className="py-1.5 pr-2">
-                      <input type="number" value={it.cantidad} onChange={e => editar(items, setItems, i, 'cantidad', e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 focus:border-red-600 outline-none px-2 py-1 text-white text-xs text-right tabular-nums" />
+                      <input type="number" value={it.cantidad} onChange={e => editar(items, setItems, i, 'cantidad', e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-1 text-white text-xs text-right tabular-nums" />
                     </td>
                     <td className="py-1.5 pr-2">
-                      <input value={it.unidad} onChange={e => editar(items, setItems, i, 'unidad', e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 focus:border-red-600 outline-none px-2 py-1 text-white text-xs" />
+                      <input value={it.unidad} onChange={e => editar(items, setItems, i, 'unidad', e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-1 text-white text-xs" />
                     </td>
                     <td className="py-1.5 pr-2">
                       {tab === 'herramientas' ? (
-                        <input value={it.notas || ''} onChange={e => editar(items, setItems, i, 'notas', e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 focus:border-red-600 outline-none px-2 py-1 text-white text-xs" />
+                        <input value={it.notas || ''} onChange={e => editar(items, setItems, i, 'notas', e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-1 text-white text-xs" />
                       ) : (
                         <span className={`text-[10px] uppercase font-bold ${it.modoConsumo === 'reportado' ? 'text-yellow-400' : 'text-zinc-500'}`}>{it.modoConsumo || '—'}</span>
                       )}

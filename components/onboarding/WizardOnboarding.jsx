@@ -296,7 +296,7 @@ function PasoBienvenida({ usuario }) {
       <p className="text-sm text-zinc-300 mb-4 leading-relaxed">
         Bienvenido al app de Super Techos. Antes de empezar, necesitamos completar tu perfil.
       </p>
-      <div className="bg-zinc-950 border border-zinc-800 p-3 text-left text-xs text-zinc-400 space-y-1.5">
+      <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3 text-left text-xs text-zinc-400 space-y-1.5">
         <div>📋 Datos personales y de contacto</div>
         <div>📸 Tu foto y la de tu cédula</div>
         <div>🏦 Cuenta bancaria para pagos</div>
@@ -516,7 +516,7 @@ function PasoBancarios({ datos, set }) {
       </label>
 
       {datos.titularEsOtro && (
-        <div className="space-y-3 bg-zinc-950 border border-zinc-800 p-3">
+        <div className="space-y-3 bg-zinc-950 border border-zinc-800 rounded-card p-3">
           <Field label="Nombre del titular">
             <input
               type="text"

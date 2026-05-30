@@ -48,7 +48,7 @@ function GrupoArea({ grupo, nivel, ctx }) {
 
   return (
     <div className={sangria}>
-      <div className="bg-zinc-900 border border-zinc-800">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card">
         <button
           onClick={() => toggleColapsar(claveColapso)}
           className="w-full p-3 sm:p-4 text-left flex items-center gap-3 sm:gap-4 hover:bg-zinc-800/30"
@@ -202,7 +202,7 @@ function ModalNuevaArea({ proyecto, sistemas, areaBase, padreArea, onCerrar, onG
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-      <div className="bg-zinc-900 border-2 border-red-600 max-w-md w-full p-5 space-y-3">
+      <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-md w-full p-5 space-y-3">
         <div className="flex items-center justify-between">
           <div className="text-lg font-black uppercase tracking-wide">{titulo}</div>
           <button onClick={onCerrar} disabled={guardando} className="text-zinc-500 hover:text-white"><X className="w-4 h-4" /></button>
@@ -225,7 +225,7 @@ function ModalNuevaArea({ proyecto, sistemas, areaBase, padreArea, onCerrar, onG
             onChange={e => setNombre(e.target.value)}
             disabled={esAgregarSistema}
             placeholder={esSubArea ? 'Ej. Bloque A, Edificio 1' : 'Ej. Techo Superior'}
-            className="w-full bg-zinc-950 border border-zinc-800 px-2 py-1.5 text-sm text-white disabled:opacity-60"
+            className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1.5 text-sm text-white disabled:opacity-60"
           />
         </label>
         <label className="block">
@@ -235,7 +235,7 @@ function ModalNuevaArea({ proyecto, sistemas, areaBase, padreArea, onCerrar, onG
             value={m2}
             onChange={e => setM2(e.target.value)}
             disabled={esAgregarSistema}
-            className="w-full bg-zinc-950 border border-zinc-800 px-2 py-1.5 text-sm text-white disabled:opacity-60 text-right tabular-nums"
+            className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1.5 text-sm text-white disabled:opacity-60 text-right tabular-nums"
           />
         </label>
         <label className="block">
@@ -245,7 +245,7 @@ function ModalNuevaArea({ proyecto, sistemas, areaBase, padreArea, onCerrar, onG
           <select
             value={sistemaId}
             onChange={e => setSistemaId(e.target.value)}
-            className="w-full bg-zinc-950 border border-zinc-800 px-2 py-1.5 text-sm text-white"
+            className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1.5 text-sm text-white"
           >
             <option value="">{esAgregarSistema ? '— elige uno —' : esSubArea ? '— heredar del padre —' : '— sistema del proyecto —'}</option>
             {opciones.sort((a,b) => (a.nombre||'').localeCompare(b.nombre||'')).map(s => (
@@ -404,7 +404,7 @@ export default function TabAvance({ proyecto, reportes, sistema, sistemas, esSup
           const tarea = sistemaR.tareas.find(t => t.id === r.tareaId);
           const m2 = getM2Reporte(r, sistemaR);
           return (
-            <div key={r.id} className="bg-zinc-900 border border-zinc-800 p-3 flex items-start gap-2">
+            <div key={r.id} className="bg-zinc-900 border border-zinc-800 rounded-card p-3 flex items-start gap-2">
               <div className="flex-1 min-w-0">
                 <div className="text-[10px] text-zinc-500">{formatFecha(r.fecha)}</div>
                 <div className="text-sm font-bold">{area?.nombre || '—'} · {tarea?.nombre || '—'}</div>

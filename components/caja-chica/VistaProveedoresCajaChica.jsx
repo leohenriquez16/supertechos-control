@@ -91,22 +91,22 @@ export default function VistaProveedoresCajaChica({ usuario, data, onVolver }) {
         <ToggleDensidad valor={densidad} onChange={setDensidad} />
       </div>
 
-      <div className="bg-zinc-950 border border-zinc-800 p-2 text-[10px] text-zinc-500 flex items-start gap-2">
+      <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2 text-[10px] text-zinc-500 flex items-start gap-2">
         <Sparkles className="w-3 h-3 shrink-0 mt-0.5 text-yellow-400" />
         <div>Cada vez que apruebas un gasto con RNC, este proveedor se guarda aquí. La próxima vez que la AI vea el mismo RNC, autocompleta con el nombre y categoría que tú definas. Edita el nombre canónico para fusionar variantes (ej: "FERRETERIA AMERICANA SRL" vs "Ferreteria Americana"). Toca un proveedor para ver sus facturas.</div>
       </div>
 
       {/* Búsqueda + orden */}
-      <div className="bg-zinc-900 border border-zinc-800 p-2 flex flex-wrap gap-2 items-center">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-2 flex flex-wrap gap-2 items-center">
         <Search className="w-3 h-3 text-zinc-500 ml-1" />
         <input
           type="text"
           value={busqueda}
           onChange={e => setBusqueda(e.target.value)}
           placeholder="Buscar por nombre, RNC o categoría..."
-          className="flex-1 min-w-[200px] bg-zinc-950 border border-zinc-800 px-2 py-1 text-xs text-white"
+          className="flex-1 min-w-[200px] bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1 text-xs text-white"
         />
-        <select value={orden} onChange={e => setOrden(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-1 text-xs text-white">
+        <select value={orden} onChange={e => setOrden(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1 text-xs text-white">
           <option value="ultimaFactura">Última factura</option>
           <option value="totalMonto">Mayor monto</option>
           <option value="nombre">A-Z</option>
@@ -123,7 +123,7 @@ export default function VistaProveedoresCajaChica({ usuario, data, onVolver }) {
       ) : (
         <>
           {/* DESKTOP: tabla */}
-          <div className="hidden md:block bg-zinc-900 border border-zinc-800 overflow-hidden">
+          <div className="hidden md:block bg-zinc-900 border border-zinc-800 rounded-card overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-zinc-950 border-b border-zinc-800">
                 <tr className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold">
@@ -156,7 +156,7 @@ export default function VistaProveedoresCajaChica({ usuario, data, onVolver }) {
                     <td className="px-3 py-2 text-zinc-400 font-mono text-[11px] whitespace-nowrap">{formatRNC(p.rnc)}</td>
                     <td className="px-3 py-2">
                       {p.categoria ? (
-                        <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 bg-zinc-950 border border-zinc-700 text-zinc-300">{p.categoria}</span>
+                        <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 bg-zinc-950 border border-zinc-700 rounded-card text-zinc-300">{p.categoria}</span>
                       ) : <span className="text-zinc-600 text-[10px]">—</span>}
                     </td>
                     <td className="px-3 py-2 text-right text-zinc-300 font-bold">{p.totalFacturas}</td>
@@ -190,7 +190,7 @@ export default function VistaProveedoresCajaChica({ usuario, data, onVolver }) {
           {/* MOBILE: cards (densidad-aware, click abre facturas) */}
           <div className={`md:hidden ${dx.listGap}`}>
             {filtrados.map(p => (
-              <div key={p.id} className={`bg-zinc-900 border border-zinc-800 ${dx.cardPad}`}>
+              <div key={p.id} className={`bg-zinc-900 border border-zinc-800 rounded-card ${dx.cardPad}`}>
                 {editando?.id === p.id ? (
                   <FormEdicion editando={editando} setEditando={setEditando} onGuardar={guardarEdicion} onCancelar={() => setEditando(null)} />
                 ) : (
@@ -203,7 +203,7 @@ export default function VistaProveedoresCajaChica({ usuario, data, onVolver }) {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-[11px] font-bold truncate">{p.nombre}</span>
-                            {p.categoria && <span className="text-[9px] uppercase tracking-wider px-1 bg-zinc-950 border border-zinc-700 text-zinc-300">{p.categoria}</span>}
+                            {p.categoria && <span className="text-[9px] uppercase tracking-wider px-1 bg-zinc-950 border border-zinc-700 rounded-card text-zinc-300">{p.categoria}</span>}
                           </div>
                           <div className="text-[9px] text-zinc-500 truncate">
                             <span className="font-mono">{formatRNC(p.rnc)}</span> · {p.totalFacturas} fact · {formatRD(p.totalMonto)}
@@ -221,7 +221,7 @@ export default function VistaProveedoresCajaChica({ usuario, data, onVolver }) {
                           <div className="text-[10px] text-zinc-500 font-mono mt-0.5">RNC {formatRNC(p.rnc)}</div>
                           <div className="flex flex-wrap gap-2 mt-1">
                             {p.categoria && (
-                              <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 bg-zinc-950 border border-zinc-700 text-zinc-300">{p.categoria}</span>
+                              <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 bg-zinc-950 border border-zinc-700 rounded-card text-zinc-300">{p.categoria}</span>
                             )}
                             <span className="text-[10px] text-zinc-500">
                               {p.totalFacturas} factura{p.totalFacturas !== 1 ? 's' : ''} · {formatRD(p.totalMonto)}

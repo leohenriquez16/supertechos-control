@@ -219,7 +219,7 @@ export default function Dashboard({ usuario, data, onVerProyecto, onNuevoProyect
               <button
                 key={p.id}
                 onClick={() => onVerProyecto(p)}
-                className="w-full bg-zinc-950 border border-zinc-800 hover:border-yellow-600 p-2 flex items-center justify-between text-left"
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-card hover:border-yellow-600 p-2 flex items-center justify-between text-left"
               >
                 <div className="flex-1 min-w-0">
                   <div className="text-xs font-bold truncate">
@@ -242,17 +242,17 @@ export default function Dashboard({ usuario, data, onVerProyecto, onNuevoProyect
         </div>
       )}
       {/* SELECTOR DE PERIODO */}
-      <div className="bg-zinc-900 border border-zinc-800 p-3 space-y-2">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 space-y-2">
         <div className="flex flex-wrap gap-1">
           {[['dia','Día'],['semana','Semana'],['quincena','Quincena'],['mes','Mes'],['trimestre','Trim'],['anio','Año']].map(([v,t]) => (
             <button key={v} onClick={() => { setPeriodo(v); setFechaRef(hoy); }} className={`px-3 py-1.5 text-[10px] font-bold uppercase ${periodo === v ? 'bg-red-600 text-white' : 'bg-zinc-950 text-zinc-400 border border-zinc-800'}`}>{t}</button>
           ))}
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => moverPeriodo(-1)} className="bg-zinc-950 border border-zinc-800 p-2 text-zinc-400 hover:text-white"><ChevronLeft className="w-4 h-4" /></button>
+          <button onClick={() => moverPeriodo(-1)} className="bg-zinc-950 border border-zinc-800 rounded-card p-2 text-zinc-400 hover:text-white"><ChevronLeft className="w-4 h-4" /></button>
           <div className="flex-1 text-center text-sm font-bold">{labelRango()}</div>
-          <button onClick={() => moverPeriodo(1)} className="bg-zinc-950 border border-zinc-800 p-2 text-zinc-400 hover:text-white"><ChevronRight className="w-4 h-4" /></button>
-          <button onClick={() => setFechaRef(hoy)} className="bg-zinc-950 border border-zinc-800 px-3 py-2 text-[10px] font-bold uppercase text-zinc-400 hover:text-white">Hoy</button>
+          <button onClick={() => moverPeriodo(1)} className="bg-zinc-950 border border-zinc-800 rounded-card p-2 text-zinc-400 hover:text-white"><ChevronRight className="w-4 h-4" /></button>
+          <button onClick={() => setFechaRef(hoy)} className="bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 text-[10px] font-bold uppercase text-zinc-400 hover:text-white">Hoy</button>
         </div>
       </div>
 
@@ -260,7 +260,7 @@ export default function Dashboard({ usuario, data, onVerProyecto, onNuevoProyect
           v8.17.30: AutoFitText para que números no se salgan del cuadro en móvil,
           labels con leading-tight y subtext truncado. */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-        <button onClick={() => setModalDetalle('enEjecucion')} className="bg-gradient-to-br from-red-600 to-red-800 p-3 sm:p-4 text-left hover:brightness-110 transition-all cursor-pointer overflow-hidden">
+        <button onClick={() => setModalDetalle('enEjecucion')} className="bg-gradient-to-br from-red-600 to-red-800 rounded-card shadow-card p-3 sm:p-4 text-left hover:brightness-110 transition-all cursor-pointer overflow-hidden">
           <div className="flex items-start justify-between gap-1">
             <div className="text-[10px] tracking-widest uppercase text-red-200 leading-tight">En Ejecución</div>
             <ChevronRight className="w-3 h-3 text-red-200 flex-shrink-0 mt-0.5" />
@@ -270,7 +270,7 @@ export default function Dashboard({ usuario, data, onVerProyecto, onNuevoProyect
           </div>
           <div className="text-[10px] text-red-200 truncate">proyecto{proyectosEjecutando.length !== 1 ? 's' : ''} activo{proyectosEjecutando.length !== 1 ? 's' : ''}</div>
         </button>
-        <button onClick={() => setModalDetalle('personalAhora')} className="bg-gradient-to-br from-blue-600 to-blue-800 p-3 sm:p-4 text-left hover:brightness-110 transition-all cursor-pointer overflow-hidden">
+        <button onClick={() => setModalDetalle('personalAhora')} className="bg-gradient-to-br from-blue-600 to-blue-800 rounded-card shadow-card p-3 sm:p-4 text-left hover:brightness-110 transition-all cursor-pointer overflow-hidden">
           <div className="flex items-start justify-between gap-1">
             <div className="text-[10px] tracking-widest uppercase text-blue-200 leading-tight">Personal en obra ahora</div>
             <ChevronRight className="w-3 h-3 text-blue-200 flex-shrink-0 mt-0.5" />
@@ -280,7 +280,7 @@ export default function Dashboard({ usuario, data, onVerProyecto, onNuevoProyect
           </div>
           <div className="text-[10px] text-blue-200 truncate">{personalEnObraAhora.size} persona{personalEnObraAhora.size !== 1 ? 's' : ''} · {personalPorProyecto.length} obra{personalPorProyecto.length !== 1 ? 's' : ''}</div>
         </button>
-        <button onClick={() => setModalDetalle('produccion')} className="bg-zinc-900 border border-zinc-800 hover:border-green-600 p-3 sm:p-4 text-left cursor-pointer transition-all overflow-hidden">
+        <button onClick={() => setModalDetalle('produccion')} className="bg-zinc-900 border border-zinc-800 rounded-card shadow-card hover:border-green-600 p-3 sm:p-4 text-left cursor-pointer transition-all overflow-hidden">
           <div className="flex items-start justify-between gap-1">
             <div className="text-[10px] tracking-widest uppercase text-zinc-500 leading-tight">Producción</div>
             <ChevronRight className="w-3 h-3 text-zinc-600 flex-shrink-0 mt-0.5" />
@@ -291,7 +291,7 @@ export default function Dashboard({ usuario, data, onVerProyecto, onNuevoProyect
           {deltaProd !== null && <div className={`text-[10px] truncate ${deltaProd >= 0 ? 'text-green-500' : 'text-red-400'}`}>{deltaProd >= 0 ? '↑' : '↓'} {Math.abs(deltaProd).toFixed(0)}% vs anterior</div>}
           {deltaProd === null && <div className="text-[10px] text-zinc-600 truncate">{formatRD(prodAnt)} anterior</div>}
         </button>
-        <button onClick={() => setModalDetalle('aprobados')} className="bg-zinc-900 border border-zinc-800 hover:border-cyan-600 p-3 sm:p-4 text-left cursor-pointer transition-all overflow-hidden">
+        <button onClick={() => setModalDetalle('aprobados')} className="bg-zinc-900 border border-zinc-800 rounded-card shadow-card hover:border-cyan-600 p-3 sm:p-4 text-left cursor-pointer transition-all overflow-hidden">
           <div className="flex items-start justify-between gap-1">
             <div className="text-[10px] tracking-widest uppercase text-zinc-500 leading-tight">Aprobados</div>
             <ChevronRight className="w-3 h-3 text-zinc-600 flex-shrink-0 mt-0.5" />

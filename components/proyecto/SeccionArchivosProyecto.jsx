@@ -90,7 +90,7 @@ export default function SeccionArchivosProyecto({ proyecto, usuario, esAdmin }) 
   const ordenTipos = [...TIPOS.map(t => t.id), ...Object.keys(porTipo).filter(t => !TIPO_LABEL[t])];
 
   return (
-    <div className="bg-zinc-900 border border-zinc-800 p-4 space-y-3">
+    <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-3">
       <div className="flex items-center justify-between">
         <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold flex items-center gap-1">
           <FolderOpen className="w-3 h-3" /> Archivos del proyecto
@@ -135,7 +135,7 @@ export default function SeccionArchivosProyecto({ proyecto, usuario, esAdmin }) 
             </div>
             <div className="space-y-1">
               {items.map(a => (
-                <div key={a.id} className="bg-zinc-950 border border-zinc-800 px-2 py-1.5 flex items-center gap-2 hover:border-zinc-700">
+                <div key={a.id} className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1.5 flex items-center gap-2 hover:border-zinc-700">
                   <FileText className="w-3 h-3 text-zinc-500 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
                     <div className="text-xs text-zinc-200 truncate">{a.nombre}</div>

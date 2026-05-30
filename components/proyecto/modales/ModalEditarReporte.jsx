@@ -78,7 +78,7 @@ export default function ModalEditarReporte({ reporte, proyecto, data, sistema, s
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-      <div className="bg-zinc-900 border-2 border-red-600 max-w-xl w-full max-h-[90vh] overflow-auto">
+      <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-xl w-full max-h-[90vh] overflow-auto">
         <div className="sticky top-0 bg-zinc-900 border-b border-zinc-800 p-4 flex justify-between items-center">
           <div>
             <div className="text-xs tracking-widest uppercase text-red-500 font-bold">Editar reporte</div>

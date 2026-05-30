@@ -58,7 +58,7 @@ export default function ModalDetalleProduccion({ data, rango, prodPeriodo, onCer
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
-      <div className="bg-zinc-900 border-2 border-green-600 max-w-xl w-full p-5 space-y-4 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+      <div className="bg-zinc-900 border-2 border-green-600 rounded-card max-w-xl w-full p-5 space-y-4 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center sticky top-0 bg-zinc-900 pb-2 border-b border-zinc-800">
           <div>
             <div className="text-[10px] tracking-widest uppercase text-green-500 font-bold">💰 Producción</div>
@@ -77,7 +77,7 @@ export default function ModalDetalleProduccion({ data, rango, prodPeriodo, onCer
                 <button
                   key={p.proyecto.id}
                   onClick={() => onVerProyecto(p.proyecto)}
-                  className="w-full bg-zinc-950 border border-zinc-800 hover:border-green-600 p-2 flex items-center justify-between text-left"
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-card hover:border-green-600 p-2 flex items-center justify-between text-left"
                 >
                   <div className="flex-1 min-w-0">
                     <div className="text-[10px] text-zinc-500 font-mono">{p.proyecto.referenciaOdoo}</div>
@@ -101,7 +101,7 @@ export default function ModalDetalleProduccion({ data, rango, prodPeriodo, onCer
             <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2">🔨 Por maestro</div>
             <div className="space-y-1">
               {maestrosOrdenados.slice(0, 10).map((m, idx) => (
-                <div key={m.persona.id} className="bg-zinc-950 border border-zinc-800 p-2 flex items-center justify-between">
+                <div key={m.persona.id} className="bg-zinc-950 border border-zinc-800 rounded-card p-2 flex items-center justify-between">
                   <div className="flex items-center gap-2 flex-1 min-w-0">
                     {idx === 0 ? <span className="text-lg">🥇</span> : idx === 1 ? <span className="text-lg">🥈</span> : idx === 2 ? <span className="text-lg">🥉</span> : <span className="w-6 text-center text-zinc-500 text-xs">{idx + 1}</span>}
                     <div className="flex-1 min-w-0">
@@ -119,7 +119,7 @@ export default function ModalDetalleProduccion({ data, rango, prodPeriodo, onCer
         )}
 
         {proyectosOrdenados.length === 0 && (
-          <div className="bg-zinc-950 border border-zinc-800 p-6 text-center text-sm text-zinc-500">
+          <div className="bg-zinc-950 border border-zinc-800 rounded-card p-6 text-center text-sm text-zinc-500">
             Sin producción en este período
           </div>
         )}

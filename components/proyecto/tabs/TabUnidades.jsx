@@ -143,15 +143,15 @@ export default function TabUnidades({ proyecto, usuario, onActualizarProyecto, e
 
       {/* Resumen */}
       <div className="grid grid-cols-3 gap-2">
-        <div className="bg-zinc-900 border border-zinc-800 p-3">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
           <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Avance</div>
           <div className="text-xl font-black">{pct.toFixed(1)}%</div>
         </div>
-        <div className="bg-zinc-900 border border-zinc-800 p-3">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
           <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Completadas</div>
           <div className="text-xl font-black text-green-400">{completadas}</div>
         </div>
-        <div className="bg-zinc-900 border border-zinc-800 p-3">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
           <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Total unidades</div>
           <div className="text-xl font-black">{totalUnidades}</div>
         </div>
@@ -172,7 +172,7 @@ export default function TabUnidades({ proyecto, usuario, onActualizarProyecto, e
           const comTorre = nivelesTorre.reduce((s, n) => s + (n.espacios || []).reduce((se, e) => se + e.completadas, 0), 0);
           const pctTorre = unTorre > 0 ? (comTorre / unTorre) * 100 : 0;
           return (
-            <div key={torre.id} className="bg-zinc-900 border border-zinc-800">
+            <div key={torre.id} className="bg-zinc-900 border border-zinc-800 rounded-card">
               <div className="p-3 flex items-center gap-2 border-b border-zinc-800 bg-zinc-950">
                 <button onClick={() => setExpandidos({ ...expandidos, [torre.id]: !isExp })} className="text-zinc-400">
                   {isExp ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -200,7 +200,7 @@ export default function TabUnidades({ proyecto, usuario, onActualizarProyecto, e
                     const comNivel = espacios.reduce((s, e) => s + e.completadas, 0);
                     const pctNivel = unNivel > 0 ? (comNivel / unNivel) * 100 : 0;
                     return (
-                      <div key={nivel.id} className="bg-zinc-950 border border-zinc-800 p-3">
+                      <div key={nivel.id} className="bg-zinc-950 border border-zinc-800 rounded-card p-3">
                         <div className="flex items-center gap-2 mb-2">
                           <div className="flex-1">
                             <div className="font-bold text-xs">{nivel.nombre}</div>
@@ -218,7 +218,7 @@ export default function TabUnidades({ proyecto, usuario, onActualizarProyecto, e
                         )}
                         <div className="space-y-1">
                           {espacios.map(esp => (
-                            <div key={esp.id} className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 p-2">
+                            <div key={esp.id} className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-card p-2">
                               <div className="flex-1 text-[11px]">
                                 <span className="font-bold capitalize">{esp.tipo}</span>
                                 {esp.m2PorUnidad > 0 && <span className="text-zinc-500 ml-2">({esp.m2PorUnidad} m²/u)</span>}

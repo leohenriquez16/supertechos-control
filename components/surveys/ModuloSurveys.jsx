@@ -120,7 +120,7 @@ function SurveysList({ usuario, onAbrirProyecto }) {
       )}
 
       {!loading && !errorMsg && proyectos.length === 0 && (
-        <div className="bg-zinc-950 border border-zinc-800 p-8 text-center text-zinc-500">
+        <div className="bg-zinc-950 border border-zinc-800 rounded-card p-8 text-center text-zinc-500">
           <MapPin className="w-12 h-12 mx-auto mb-3 opacity-30" />
           <div className="font-bold mb-1">Aún no hay proyectos de levantamiento</div>
           <div className="text-xs">Crea el primero desde "Nuevo levantamiento"</div>
@@ -144,7 +144,7 @@ function ProyectoCard({ proyecto, onClick }) {
   return (
     <button
       onClick={onClick}
-      className="w-full text-left bg-zinc-900 border border-zinc-800 hover:border-red-600 p-4 flex items-center justify-between gap-3 transition-colors"
+      className="w-full text-left bg-zinc-900 border border-zinc-800 rounded-card hover:border-red-600 p-4 flex items-center justify-between gap-3 transition-colors"
     >
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1">
@@ -283,7 +283,7 @@ function SurveyProjectDetail({ proyecto, onAbrirSite, onVolver }) {
 
 function StatBox({ label, value, color }) {
   return (
-    <div className="bg-zinc-900 border border-zinc-800 p-3">
+    <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
       <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">{label}</div>
       <div className="text-2xl font-black mt-1" style={{ color }}>{value}</div>
     </div>
@@ -296,7 +296,7 @@ function SiteRow({ site, onClick }) {
   return (
     <button
       onClick={onClick}
-      className="w-full text-left bg-zinc-900 border border-zinc-800 hover:border-red-600 p-3 flex items-center gap-3 transition-colors"
+      className="w-full text-left bg-zinc-900 border border-zinc-800 rounded-card hover:border-red-600 p-3 flex items-center gap-3 transition-colors"
     >
       <Building className="w-5 h-5 text-zinc-500 flex-shrink-0" />
       <div className="flex-1 min-w-0">

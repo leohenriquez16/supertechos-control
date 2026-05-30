@@ -18,7 +18,7 @@ export default function ModalDetalleEnEjecucion({ proyectos, data, jornadasHoy, 
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
-      <div className="bg-zinc-900 border-2 border-red-600 max-w-xl w-full p-5 space-y-4 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+      <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-xl w-full p-5 space-y-4 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center sticky top-0 bg-zinc-900 pb-2 border-b border-zinc-800">
           <div>
             <div className="text-[10px] tracking-widest uppercase text-red-500 font-bold">🏗️ Proyectos en Ejecución</div>
@@ -28,7 +28,7 @@ export default function ModalDetalleEnEjecucion({ proyectos, data, jornadasHoy, 
         </div>
 
         {proyectos.length === 0 ? (
-          <div className="bg-zinc-950 border border-zinc-800 p-6 text-center text-sm text-zinc-500">
+          <div className="bg-zinc-950 border border-zinc-800 rounded-card p-6 text-center text-sm text-zinc-500">
             No hay proyectos en ejecución actualmente
           </div>
         ) : (
@@ -37,7 +37,7 @@ export default function ModalDetalleEnEjecucion({ proyectos, data, jornadasHoy, 
               <button
                 key={p.id}
                 onClick={() => onVerProyecto(p)}
-                className="w-full bg-zinc-950 border border-zinc-800 hover:border-red-600 p-3 text-left flex items-start gap-2 transition-all"
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-card hover:border-red-600 p-3 text-left flex items-start gap-2 transition-all"
               >
                 <Briefcase className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
                 <div className="flex-1 min-w-0">

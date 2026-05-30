@@ -556,7 +556,7 @@ export default function VistaNomina({ usuario, data, onVolver, onRecargarGlobal,
         <div className="flex items-center gap-2 flex-wrap">
           {/* v8.19.19: toggle global "Mostrar Mi Producción" en dashboard */}
           {tieneRol(usuario, 'admin') && (
-            <label className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 px-3 py-2 cursor-pointer hover:border-red-600">
+            <label className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-card px-3 py-2 cursor-pointer hover:border-red-600">
               <input
                 type="checkbox"
                 checked={!!data.config?.mostrarMiProduccionNomina}
@@ -680,7 +680,7 @@ export default function VistaNomina({ usuario, data, onVolver, onRecargarGlobal,
                     <button
                       key={m.id}
                       onClick={() => abrirCorteConPersona(corte, m.id)}
-                      className="w-full text-left bg-zinc-950 border border-zinc-800 hover:border-orange-500/60 hover:bg-zinc-900 px-2 py-1.5 group"
+                      className="w-full text-left bg-zinc-950 border border-zinc-800 rounded-card hover:border-orange-500/60 hover:bg-zinc-900 px-2 py-1.5 group"
                       title="Ver detalle del corte por este maestro"
                     >
                       <div className="flex items-center justify-between text-[11px]">
@@ -703,7 +703,7 @@ export default function VistaNomina({ usuario, data, onVolver, onRecargarGlobal,
                         key={p.id}
                         onClick={() => { if (proy && onVerProyecto) onVerProyecto(proy, 'mdo'); }}
                         disabled={!proy || !onVerProyecto}
-                        className="w-full text-left bg-zinc-950 border border-zinc-800 hover:border-orange-500/60 hover:bg-zinc-900 disabled:hover:border-zinc-800 disabled:hover:bg-zinc-950 px-2 py-1.5 group"
+                        className="w-full text-left bg-zinc-950 border border-zinc-800 rounded-card hover:border-orange-500/60 hover:bg-zinc-900 disabled:hover:border-zinc-800 disabled:hover:bg-zinc-950 px-2 py-1.5 group"
                         title={proy ? 'Abrir proyecto en tab Mano de Obra' : 'Proyecto no encontrado'}
                       >
                         <div className="flex items-center justify-between text-[11px] gap-2">
@@ -737,12 +737,12 @@ export default function VistaNomina({ usuario, data, onVolver, onRecargarGlobal,
           {historicoAbierto && (
             <div className="p-3 border-t border-zinc-800 space-y-3">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="bg-zinc-900 border border-zinc-800 p-3">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
             <div className="text-[10px] text-zinc-500 uppercase tracking-widest">Total histórico</div>
             <div className="text-lg sm:text-xl font-black text-green-400 mt-1">{formatRD(totalHistorico)}</div>
             <div className="text-[10px] text-zinc-500 mt-0.5">{cortes.length} corte{cortes.length !== 1 ? 's' : ''} · {aniosDisponibles.length} año{aniosDisponibles.length !== 1 ? 's' : ''}</div>
           </div>
-          <div className="bg-zinc-900 border border-zinc-800 p-3">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
             <div className="text-[10px] text-zinc-500 uppercase tracking-widest">Últimos 30 días</div>
             <div className="text-lg sm:text-xl font-black text-white mt-1">{formatRD(totalUlt30)}</div>
             <div className="text-[10px] text-zinc-500 mt-0.5">{cortesUlt30.length} corte{cortesUlt30.length !== 1 ? 's' : ''}</div>
@@ -760,14 +760,14 @@ export default function VistaNomina({ usuario, data, onVolver, onRecargarGlobal,
         </div>
               {(topMaestros.length > 0 || topProyectos.length > 0 || topSistemas.length > 0) && (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div className="bg-zinc-900 border border-zinc-800 p-3 space-y-2">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 space-y-2">
             <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">🥇 Top maestros (histórico)</div>
             {topMaestros.length === 0 ? (
               <div className="text-xs text-zinc-500 py-2">Sin datos aún. Cierra cortes con `proyecto_id` para ver el ranking.</div>
             ) : (
               <div className="space-y-1">
                 {topMaestros.map((m, i) => (
-                  <div key={m.personaId} className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 p-2">
+                  <div key={m.personaId} className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 rounded-card p-2">
                     <div className="text-[10px] w-5 font-black text-zinc-500">#{i + 1}</div>
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-bold truncate">{m.nombre}</div>
@@ -779,14 +779,14 @@ export default function VistaNomina({ usuario, data, onVolver, onRecargarGlobal,
               </div>
             )}
           </div>
-          <div className="bg-zinc-900 border border-zinc-800 p-3 space-y-2">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 space-y-2">
             <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">🏗️ Top proyectos (histórico)</div>
             {topProyectos.length === 0 ? (
               <div className="text-xs text-zinc-500 py-2">Sin datos aún. Los recibos viejos no tienen `proyecto_id`.</div>
             ) : (
               <div className="space-y-1">
                 {topProyectos.map((p, i) => (
-                  <div key={p.proyectoId} className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 p-2">
+                  <div key={p.proyectoId} className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 rounded-card p-2">
                     <div className="text-[10px] w-5 font-black text-zinc-500">#{i + 1}</div>
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-bold truncate">{p.nombre}</div>
@@ -797,14 +797,14 @@ export default function VistaNomina({ usuario, data, onVolver, onRecargarGlobal,
               </div>
             )}
           </div>
-          <div className="bg-zinc-900 border border-zinc-800 p-3 space-y-2">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 space-y-2">
             <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">⚙️ Top sistemas (histórico)</div>
             {topSistemas.length === 0 ? (
               <div className="text-xs text-zinc-500 py-2">Sin datos aún.</div>
             ) : (
               <div className="space-y-1">
                 {topSistemas.map((s, i) => (
-                  <div key={s.sistemaId} className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 p-2">
+                  <div key={s.sistemaId} className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 rounded-card p-2">
                     <div className="text-[10px] w-5 font-black text-zinc-500">#{i + 1}</div>
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-bold truncate">{s.nombre}</div>
@@ -825,7 +825,7 @@ export default function VistaNomina({ usuario, data, onVolver, onRecargarGlobal,
 
       {/* v8.19.18: Filtros — pills rápidos + búsqueda + select año */}
       {cortes.length > 0 && (
-        <div className="bg-zinc-900 border border-zinc-800 p-3 flex gap-2 items-center flex-wrap">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 flex gap-2 items-center flex-wrap">
           <div className="flex gap-1 flex-wrap">
             {[
               { id: 'todo', label: 'Todo' },
@@ -843,11 +843,11 @@ export default function VistaNomina({ usuario, data, onVolver, onRecargarGlobal,
             ))}
           </div>
           <div className="w-px h-5 bg-zinc-800 mx-1" />
-          <select value={filtroAnio} onChange={e => setFiltroAnio(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-1 text-xs text-white">
+          <select value={filtroAnio} onChange={e => setFiltroAnio(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1 text-xs text-white">
             <option value="">Todos los años</option>
             {aniosDisponibles.map(a => <option key={a} value={a}>{a}</option>)}
           </select>
-          <input type="text" placeholder="Buscar fecha o nota..." value={filtroBusqueda} onChange={e => setFiltroBusqueda(e.target.value)} className="bg-zinc-950 border border-zinc-800 px-2 py-1 text-xs text-white flex-1 min-w-[150px]" />
+          <input type="text" placeholder="Buscar fecha o nota..." value={filtroBusqueda} onChange={e => setFiltroBusqueda(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1 text-xs text-white flex-1 min-w-[150px]" />
           {(filtroAnio || filtroBusqueda || filtroRapido !== 'todo') && <button onClick={() => { setFiltroAnio(''); setFiltroBusqueda(''); setFiltroRapido('todo'); }} className="text-xs text-red-500">Limpiar</button>}
           {cortesFiltrados.length !== cortes.length && <div className="text-[10px] text-zinc-500 ml-auto">{cortesFiltrados.length} de {cortes.length} · {formatRD(totalFiltrado)}</div>}
         </div>
@@ -863,7 +863,7 @@ export default function VistaNomina({ usuario, data, onVolver, onRecargarGlobal,
         const monto = isOpen ? (liveTotals[c.id] || 0) : (c.totalMonto || 0);
         const maxMonto = Math.max(1, ...cortesFiltrados.map(x => x.estado === 'abierto' ? (liveTotals[x.id] || 0) : (x.totalMonto || 0)));
         return (
-          <div key={c.id} className="bg-zinc-900 border border-zinc-800 hover:border-red-600 flex">
+          <div key={c.id} className="bg-zinc-900 border border-zinc-800 rounded-card hover:border-red-600 flex">
             <button onClick={() => setCorteVisto(c)} className="flex-1 p-4 text-left">
               <div className="flex justify-between items-start">
                 <div>
@@ -887,7 +887,7 @@ export default function VistaNomina({ usuario, data, onVolver, onRecargarGlobal,
       })}</div>
 
       {/* v8.19.18: Tabla en desktop (md+) */}
-      <div className="hidden md:block bg-zinc-900 border border-zinc-800">
+      <div className="hidden md:block bg-zinc-900 border border-zinc-800 rounded-card">
         <table className="w-full text-sm">
           <thead className="bg-zinc-950 border-b border-zinc-800">
             <tr className="text-[10px] uppercase tracking-widest text-zinc-500">
@@ -968,7 +968,7 @@ function ModalCrearCorte({ onCerrar, onCrear, ultimoCorte }) {
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-      <div className="bg-zinc-900 border-2 border-red-600 max-w-md w-full p-5 space-y-3">
+      <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-md w-full p-5 space-y-3">
         <div className="flex justify-between items-start"><div className="text-xs tracking-widest uppercase text-red-500 font-bold">Nuevo corte de nómina</div><button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button></div>
         <div className="text-[10px] text-zinc-500">
           {ultimoCorte ? `Último corte cerró el ${formatFechaCorta(ultimoCorte.fechaFin)}` : 'Primer corte registrado'}
@@ -977,7 +977,7 @@ function ModalCrearCorte({ onCerrar, onCrear, ultimoCorte }) {
           <Campo label="Inicio"><Input type="date" value={fi} onChange={setFi} /></Campo>
           <Campo label="Fin"><Input type="date" value={ff} onChange={setFf} /></Campo>
         </div>
-        <div className="text-[11px] text-zinc-400 bg-zinc-950 border border-zinc-800 p-2">
+        <div className="text-[11px] text-zinc-400 bg-zinc-950 border border-zinc-800 rounded-card p-2">
           📅 {dias} días · {dias === 14 ? 'Quincena completa' : dias === 7 ? 'Semana' : 'Rango personalizado'}
         </div>
         <Campo label="Notas (opcional)"><Input value={notas} onChange={setNotas} /></Campo>
@@ -1023,7 +1023,7 @@ function SistemaPasosBreakdown({ rp, data }) {
           ) : tareas.map((t, i) => {
             const precio = precioMaestroParaTarea(t.id);
             return (
-              <div key={t.id} className="bg-zinc-950 border border-zinc-800 px-2 py-1.5 text-[10px] flex items-center gap-2">
+              <div key={t.id} className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1.5 text-[10px] flex items-center gap-2">
                 <div className="w-5 text-zinc-500 font-black">#{i + 1}</div>
                 <div className="flex-1 min-w-0">
                   <div className="font-bold truncate">{t.nombre || '—'}</div>
@@ -1370,7 +1370,7 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
         </div>
         <button
           onClick={() => imprimirCorteCompleto({ corte, vistaDetalle, resumenPersonas, resumenProyectos, resumenSupervisores, detalleFiltrado, totalCorte, soloMaestros, data })}
-          className="hidden sm:flex items-center gap-1 bg-zinc-900 border border-zinc-800 hover:border-red-600 px-3 py-1.5 text-[10px] font-black uppercase text-zinc-300 hover:text-red-400"
+          className="hidden sm:flex items-center gap-1 bg-zinc-900 border border-zinc-800 rounded-card hover:border-red-600 px-3 py-1.5 text-[10px] font-black uppercase text-zinc-300 hover:text-red-400"
         >
           <FileText className="w-3 h-3" /> Imprimir
         </button>
@@ -1388,14 +1388,14 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
             corte, vistaDetalle, resumenPersonas, resumenProyectos, resumenSupervisores,
             detalleFiltrado, totalCorte, soloMaestros, data,
           })}
-          className="flex items-center gap-1 bg-zinc-900 border border-zinc-800 hover:border-red-600 px-3 py-2 text-[10px] font-black uppercase text-zinc-300 hover:text-red-400"
+          className="flex items-center gap-1 bg-zinc-900 border border-zinc-800 rounded-card hover:border-red-600 px-3 py-2 text-[10px] font-black uppercase text-zinc-300 hover:text-red-400"
           title={`Imprimir corte completo (vista actual: ${vistaDetalle})`}
         >
           <FileText className="w-3 h-3" /> Imprimir corte
         </button>
       </div>
 
-      <div className="flex gap-1 bg-zinc-900 border border-zinc-800 p-1">
+      <div className="flex gap-1 bg-zinc-900 border border-zinc-800 rounded-card p-1">
         <button onClick={() => setVistaDetalle('persona')} className={`flex-1 px-3 py-1.5 text-[10px] font-bold uppercase ${vistaDetalle === 'persona' ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>Por Persona</button>
         <button onClick={() => setVistaDetalle('proyecto')} className={`flex-1 px-3 py-1.5 text-[10px] font-bold uppercase ${vistaDetalle === 'proyecto' ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>Por Proyecto</button>
         <button onClick={() => setVistaDetalle('supervisor')} className={`flex-1 px-3 py-1.5 text-[10px] font-bold uppercase ${vistaDetalle === 'supervisor' ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>Por Supervisor</button>
@@ -1403,7 +1403,7 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
       </div>
 
       {/* v8.6: Toggle solo maestros */}
-      <div className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 p-2">
+      <div className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 rounded-card p-2">
         <label className="flex items-center gap-2 cursor-pointer flex-1">
           <input
             type="checkbox"
@@ -1434,14 +1434,14 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
               {(() => {
                 const maxPers = Math.max(1, ...resumenPersonas.map(r => r.total));
                 return resumenPersonas.map(rp => (
-                  <div key={rp.personaId} className="bg-zinc-900 border border-zinc-800 p-3">
+                  <div key={rp.personaId} className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
                     <div className="flex justify-between items-start">
                       <div><div className="font-bold text-sm">{rp.personaNombre}</div><div className="text-[10px] text-zinc-500 uppercase">{rp.proyectos.length} proyecto{rp.proyectos.length !== 1 ? 's' : ''} · {rp.totalDias} días{rp.totalM2 > 0 ? ` · ${formatNum(rp.totalM2)} m²` : ''}</div></div>
                       <div className="text-right"><div className="text-lg font-black text-green-400">{formatRD(rp.total)}</div></div>
                     </div>
                     <MiniBar value={rp.total} max={maxPers} color="bg-green-500/50" />
                     <div className="mt-2 space-y-1">{rp.proyectos.map(r => (
-                      <div key={r.id} className="bg-zinc-950 border border-zinc-800 p-2 text-[10px] flex justify-between items-center gap-2">
+                      <div key={r.id} className="bg-zinc-950 border border-zinc-800 rounded-card p-2 text-[10px] flex justify-between items-center gap-2">
                         <div className="flex-1 min-w-0"><div className="font-bold truncate">{r.proyectoNombre}</div><div className="text-zinc-500 uppercase flex items-center gap-1 mt-0.5"><ModoBadge modo={r.modoPago} /> {r.modoPago === 'dia' ? `${r.diasTrabajados}d${r.diasDobles ? ` (${r.diasDobles}×2)` : ''}` : r.modoPago === 'm2' || r.modoPago === 'm2_fijo' || r.modoPago === 'tarea' ? `${formatNum(r.m2Producidos)} m²` : 'Ajuste'}</div></div>
                         <div className="text-green-400 font-bold">{formatRD(r.montoTotal)}</div>
                       </div>
@@ -1450,7 +1450,7 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
                 ));
               })()}
             </div>
-            <div className="hidden md:block bg-zinc-900 border border-zinc-800">
+            <div className="hidden md:block bg-zinc-900 border border-zinc-800 rounded-card">
               <table className="w-full text-sm">
                 <thead className="bg-zinc-950 border-b border-zinc-800">
                   <tr className="text-[10px] uppercase tracking-widest text-zinc-500">
@@ -1556,6 +1556,28 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
                     });
                   })()}
                 </tbody>
+                {/* v8.19.39: footer de totales por columna (solo lectura) */}
+                {resumenPersonas.length > 0 && (() => {
+                  const sumDias = resumenPersonas.reduce((s, r) => s + (r.totalDias || 0), 0);
+                  const sumM2 = resumenPersonas.reduce((s, r) => s + (r.totalM2Efectivo || 0), 0);
+                  const sumOtros = resumenPersonas.reduce((s, r) => s + r.proyectos.reduce((a, x) => a + (x.montoOtros || 0), 0), 0);
+                  const sumAdel = resumenPersonas.reduce((s, r) => s + r.proyectos.reduce((a, x) => a + (x.montoAdelantos || 0), 0), 0);
+                  const sumTotal = resumenPersonas.reduce((s, r) => s + (r.total || 0), 0);
+                  return (
+                    <tfoot className="bg-zinc-950 border-t-2 border-zinc-700">
+                      <tr className="tabular-nums">
+                        <td></td>
+                        <td className="px-3 py-2 text-[10px] uppercase tracking-wider text-zinc-500 font-bold whitespace-nowrap">Total · {resumenPersonas.length} persona{resumenPersonas.length !== 1 ? 's' : ''}</td>
+                        <td></td>
+                        <td className="text-right px-3 py-2 text-zinc-400">{sumDias || '—'}</td>
+                        <td className="text-right px-3 py-2 text-zinc-400">{sumM2 > 0 ? formatNum(sumM2) : '—'}</td>
+                        <td className="text-right px-3 py-2 text-zinc-400">{sumOtros ? formatRD(sumOtros) : '—'}</td>
+                        <td className="text-right px-3 py-2 text-zinc-500">{sumAdel ? `-${formatRD(sumAdel)}` : '—'}</td>
+                        <td className="text-right px-3 py-2 font-black text-green-400">{formatRD(sumTotal)}</td>
+                      </tr>
+                    </tfoot>
+                  );
+                })()}
               </table>
             </div>
           </>
@@ -1568,14 +1590,14 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
               {(() => {
                 const maxProy = Math.max(1, ...resumenProyectos.map(r => r.total));
                 return resumenProyectos.map(rp => (
-                  <div key={rp.proyectoId || 'sin'} className="bg-zinc-900 border border-zinc-800 p-3">
+                  <div key={rp.proyectoId || 'sin'} className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
                     <div className="flex justify-between items-start">
                       <div><div className="font-bold text-sm">{rp.proyectoNombre}</div><div className="text-[10px] text-zinc-500 uppercase">{rp.personas.length} persona{rp.personas.length !== 1 ? 's' : ''}</div></div>
                       <div className="text-right"><div className="text-lg font-black text-green-400">{formatRD(rp.total)}</div></div>
                     </div>
                     <MiniBar value={rp.total} max={maxProy} color="bg-green-500/50" />
                     <div className="mt-2 space-y-1">{rp.personas.map(r => (
-                      <div key={r.id} className="bg-zinc-950 border border-zinc-800 p-2 text-[10px] flex justify-between items-center">
+                      <div key={r.id} className="bg-zinc-950 border border-zinc-800 rounded-card p-2 text-[10px] flex justify-between items-center">
                         <div className="flex-1 min-w-0"><div className="font-bold truncate">{r.personaNombre}</div><div className="text-zinc-500 uppercase">{r.modoPago === 'dia' ? `${r.diasTrabajados} días` : r.modoPago === 'm2' || r.modoPago === 'm2_fijo' || r.modoPago === 'tarea' ? `${formatNum(r.m2Producidos)} m²` : 'Ajuste'}</div></div>
                         <div className="text-green-400 font-bold">{formatRD(r.montoTotal)}</div>
                       </div>
@@ -1585,7 +1607,7 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
                 ));
               })()}
             </div>
-            <div className="hidden md:block bg-zinc-900 border border-zinc-800">
+            <div className="hidden md:block bg-zinc-900 border border-zinc-800 rounded-card">
               <table className="w-full text-sm">
                 <thead className="bg-zinc-950 border-b border-zinc-800">
                   <tr className="text-[10px] uppercase tracking-widest text-zinc-500">
@@ -1687,6 +1709,25 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
                     });
                   })()}
                 </tbody>
+                {/* v8.19.39: footer de totales por columna (solo lectura) */}
+                {resumenProyectos.length > 0 && (() => {
+                  const sumPersonas = resumenProyectos.reduce((s, r) => s + r.personas.length, 0);
+                  const sumM2 = resumenProyectos.reduce((s, r) => s + r.personas.reduce((a, x) => a + (typeof x.m2Efectivo === 'number' ? x.m2Efectivo : (x.m2Producidos || 0)), 0), 0);
+                  const sumTotal = resumenProyectos.reduce((s, r) => s + (r.total || 0), 0);
+                  return (
+                    <tfoot className="bg-zinc-950 border-t-2 border-zinc-700">
+                      <tr className="tabular-nums">
+                        <td></td>
+                        <td className="px-3 py-2 text-[10px] uppercase tracking-wider text-zinc-500 font-bold whitespace-nowrap">Total · {resumenProyectos.length} proyecto{resumenProyectos.length !== 1 ? 's' : ''}</td>
+                        <td></td>
+                        <td></td>
+                        <td className="text-right px-3 py-2 text-zinc-400">{sumPersonas}</td>
+                        <td className="text-right px-3 py-2 text-zinc-400">{sumM2 > 0 ? formatNum(sumM2) : '—'}</td>
+                        <td className="text-right px-3 py-2 font-black text-green-400">{formatRD(sumTotal)}</td>
+                      </tr>
+                    </tfoot>
+                  );
+                })()}
               </table>
             </div>
           </>
@@ -1703,7 +1744,7 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
           });
           const proyectosArr = Object.values(porProyecto).sort((a, b) => b.total - a.total);
           return (
-            <div key={rs.supervisorId || '__none__'} className="bg-zinc-900 border border-zinc-800 p-3">
+            <div key={rs.supervisorId || '__none__'} className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
               <div className="flex justify-between items-start">
                 <div>
                   <div className="font-bold text-sm flex items-center gap-1">👔 {rs.supervisorNombre}</div>
@@ -1713,7 +1754,7 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
               </div>
               <div className="mt-2 space-y-2">
                 {proyectosArr.map(pg => (
-                  <div key={pg.proyectoId || 'sin'} className="bg-zinc-950 border border-zinc-800 p-2">
+                  <div key={pg.proyectoId || 'sin'} className="bg-zinc-950 border border-zinc-800 rounded-card p-2">
                     <div className="flex justify-between items-center mb-1">
                       <div className="text-[10px] font-bold text-red-400 uppercase truncate">{pg.proyectoNombre}</div>
                       <div className="text-[10px] font-bold text-green-400 shrink-0">{formatRD(pg.total)}</div>
@@ -1737,7 +1778,7 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
         })}
 
         {vistaDetalle === 'recibos' && detalleFiltrado.map(d => (
-          <div key={d.id} className="bg-zinc-900 border border-zinc-800 p-3">
+          <div key={d.id} className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
             <div className="flex justify-between items-start">
               <div>
                 <div className="font-bold text-sm">{d.personaNombre}</div>
@@ -1814,7 +1855,7 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
                           setDetalle(prev => prev.map(x => x.id === d.id ? { ...x, notaApoyo: nueva } : x));
                         }}
                         placeholder="Motivo del apoyo (ej: lluvia, apoyo ayudantes)"
-                        className="w-full bg-zinc-950 border border-zinc-800 px-2 py-1 text-zinc-300 text-[10px]"
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1 text-zinc-300 text-[10px]"
                       />
                     </div>
                   ) : (
@@ -1831,7 +1872,7 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
       </div>
 
       {ajustes.length > 0 && (
-        <div className="bg-zinc-900 border border-zinc-800 p-3">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
           <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2">Ajustes del periodo</div>
           <div className="space-y-1">{ajustes.map(a => { const p = data.personal.find(x => x.id === a.personaId); return (<div key={a.id} className="text-xs flex justify-between"><span>{p?.nombre} · <span className="text-zinc-500">{a.tipo}</span> · {a.concepto}</span><span className={a.tipo === 'adelanto' || a.tipo === 'descuento' ? 'text-red-400' : 'text-green-400'}>{(a.tipo === 'adelanto' || a.tipo === 'descuento') ? '-' : '+'}{formatRD(a.monto)}</span></div>); })}</div>
         </div>
@@ -1873,7 +1914,7 @@ function ModalAjuste({ personal, onCerrar, onCrear, fechaMin, fechaMax }) {
   const elegibles = personal.filter(p => tieneRol(p, 'maestro') || tieneRol(p, 'ayudante') || tieneRol(p, 'supervisor'));
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-      <div className="bg-zinc-900 border-2 border-red-600 max-w-md w-full p-5 space-y-3">
+      <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-md w-full p-5 space-y-3">
         <div className="flex justify-between items-start"><div className="text-xs tracking-widest uppercase text-red-500 font-bold">Nuevo ajuste</div><button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button></div>
         <Campo label="Persona"><select value={personaId} onChange={e => setPersonaId(e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="">Seleccionar...</option>{elegibles.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}</select></Campo>
         <Campo label="Tipo"><select value={tipo} onChange={e => setTipo(e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="adelanto">Adelanto</option><option value="bono">Bono</option><option value="descuento">Descuento</option><option value="dieta_extra">Dieta extra</option></select></Campo>

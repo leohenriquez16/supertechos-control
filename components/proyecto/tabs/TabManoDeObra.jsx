@@ -60,13 +60,13 @@ function CostosDiaPorPersona({ proyecto, data, esAdmin, onCambio }) {
   };
 
   if (loading) return (
-    <div className="bg-zinc-900 border border-zinc-800 p-3 flex items-center justify-center">
+    <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 flex items-center justify-center">
       <Loader2 className="w-4 h-4 animate-spin text-red-500" />
     </div>
   );
 
   return (
-    <div className="bg-zinc-900 border border-zinc-800 p-3 space-y-2">
+    <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 space-y-2">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold flex items-center gap-1">
           <Hammer className="w-3 h-3 text-red-500" /> Costo por día del personal asignado
@@ -300,7 +300,7 @@ export default function TabManoDeObra({ proyecto, data, usuario, onActualizarPro
   return (
     <div className="space-y-4">
       {/* Banner del modo de pago — v8.19.28: editable inline por admin */}
-      <div className="bg-zinc-900 border border-zinc-800 p-2 flex items-center justify-between flex-wrap gap-2">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-2 flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2 text-[11px]">
           <Hammer className="w-3 h-3 text-red-500" />
           <span className="text-zinc-500 uppercase tracking-wider">Modo de pago:</span>
@@ -380,7 +380,7 @@ export default function TabManoDeObra({ proyecto, data, usuario, onActualizarPro
       {/* Avance del proyecto y proyección al completar */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {/* Avance: m² pagados vs producidos */}
-        <div className="bg-zinc-900 border border-zinc-800 p-3 space-y-2">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 space-y-2">
           <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">Pagado vs ejecutado</div>
           {estado.m2Producidos === 0 ? (
             <div className="text-xs text-zinc-500 py-2">Sin reportes aún en este proyecto.</div>
@@ -402,7 +402,7 @@ export default function TabManoDeObra({ proyecto, data, usuario, onActualizarPro
                   })()}
                 </span>
               </div>
-              <div className="h-3 bg-zinc-950 border border-zinc-800 relative overflow-hidden">
+              <div className="h-3 bg-zinc-950 border border-zinc-800 rounded-card relative overflow-hidden">
                 <div
                   className="absolute inset-y-0 left-0 bg-green-600/70"
                   style={{ width: `${Math.min(100, estado.pctPagado)}%` }}
@@ -418,7 +418,7 @@ export default function TabManoDeObra({ proyecto, data, usuario, onActualizarPro
         </div>
 
         {/* Proyección al completar el proyecto */}
-        <div className="bg-zinc-900 border border-zinc-800 p-3 space-y-2">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 space-y-2">
           <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">Proyección al 100%</div>
           {tieneTotal ? (
             <>
@@ -446,14 +446,14 @@ export default function TabManoDeObra({ proyecto, data, usuario, onActualizarPro
       </div>
 
       {/* Pagos a maestros/equipo por persona */}
-      <div className="bg-zinc-900 border border-zinc-800 p-3 space-y-2">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 space-y-2">
         <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Pagos por persona</div>
         {pagosPorPersona.length === 0 ? (
           <div className="text-xs text-zinc-500 text-center py-4">Aún no hay recibos cerrados para este proyecto.</div>
         ) : (
           <div className="space-y-1.5">
             {pagosPorPersona.map(p => (
-              <div key={p.personaId} className="bg-zinc-950 border border-zinc-800 p-2 flex items-center gap-2">
+              <div key={p.personaId} className="bg-zinc-950 border border-zinc-800 rounded-card p-2 flex items-center gap-2">
                 <div className="flex-1 min-w-0">
                   <div className="text-xs font-bold truncate">{p.personaNombre}</div>
                   <div className="text-[10px] text-zinc-500">{formatNum(p.m2Total)} m² · {p.recibos.length} recibo{p.recibos.length !== 1 ? 's' : ''}</div>
@@ -466,7 +466,7 @@ export default function TabManoDeObra({ proyecto, data, usuario, onActualizarPro
       </div>
 
       {/* Movimientos del proyecto: avances + bonos + dietas + descuentos */}
-      <div className="bg-zinc-900 border border-zinc-800 p-3 space-y-2">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 space-y-2">
         <div className="flex items-center justify-between gap-2">
           <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Movimientos del proyecto</div>
           {esAdmin && (
@@ -507,7 +507,7 @@ export default function TabManoDeObra({ proyecto, data, usuario, onActualizarPro
               const corteAplicado = a.aplicadoACorteId ? cortesPorId[a.aplicadoACorteId] : null;
               const tipoMeta = TIPOS_AJUSTE[a.tipo] || TIPOS_AJUSTE.bono;
               return (
-                <div key={a.id} className="bg-zinc-950 border border-zinc-800 p-2 flex items-start gap-2">
+                <div key={a.id} className="bg-zinc-950 border border-zinc-800 rounded-card p-2 flex items-start gap-2">
                   <div className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 shrink-0 ${tipoMeta.badgeCls}`}>
                     {tipoMeta.label}
                   </div>
@@ -555,7 +555,7 @@ const TIPOS_AJUSTE = {
   adelanto: { label: 'Avance', signo: '−', montoCls: 'text-orange-400', badgeCls: 'bg-orange-900/40 text-orange-300 border border-orange-800' },
   bono: { label: 'Bono', signo: '+', montoCls: 'text-green-400', badgeCls: 'bg-green-900/40 text-green-300 border border-green-800' },
   dieta_extra: { label: 'Dieta', signo: '+', montoCls: 'text-green-400', badgeCls: 'bg-green-900/40 text-green-300 border border-green-800' },
-  descuento: { label: 'Descuento', signo: '−', montoCls: 'text-red-400', badgeCls: 'bg-red-900/40 text-red-300 border border-red-800' },
+  descuento: { label: 'Descuento', signo: '−', montoCls: 'text-red-400', badgeCls: 'bg-red-900/40 text-red-300 border border-red-800 rounded-full' },
 };
 
 function KPICard({ icono, label, valor, sub, color, highlight }) {
@@ -569,11 +569,11 @@ function KPICard({ icono, label, valor, sub, color, highlight }) {
   };
   const cls = colors[color] || colors.zinc;
   return (
-    <div className={`p-3 border ${highlight ? 'bg-zinc-950 border-red-600/40' : 'bg-zinc-900 border-zinc-800'}`}>
+    <div className={`p-3 border rounded-card transition-colors ${highlight ? 'bg-zinc-950 border-red-600/40 shadow-card' : 'bg-zinc-900 border-zinc-800 hover:border-zinc-700'}`}>
       <div className="flex items-center gap-1 text-[10px] tracking-widest uppercase text-zinc-500 font-bold">
         {icono}{label}
       </div>
-      <div className={`text-lg font-black mt-1 ${cls}`}>{valor}</div>
+      <div className={`text-xl font-black mt-1 ${cls}`}>{valor}</div>
       {sub && <div className="text-[10px] text-zinc-500 mt-0.5">{sub}</div>}
     </div>
   );
@@ -696,7 +696,7 @@ function ModalAjusteProyecto({ tipoInicial = 'bono', proyecto, data, usuario, on
           />
         </div>
 
-        <div className="bg-zinc-950 border border-zinc-800 p-2 text-[10px] text-zinc-500">
+        <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2 text-[10px] text-zinc-500">
           💡 {cfg.explicacion}
         </div>
 

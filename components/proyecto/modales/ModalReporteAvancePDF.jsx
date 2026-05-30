@@ -333,7 +333,7 @@ export default function ModalReporteAvancePDF({ proyecto, sistema, data, usuario
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-0 md:p-4 print:bg-white print:static print:p-0">
-      <div className="bg-zinc-900 border-2 border-red-600 max-w-5xl w-full h-full md:h-auto md:max-h-[95vh] overflow-auto print:bg-white print:border-0 print:max-h-none print:overflow-visible">
+      <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-5xl w-full h-full md:h-auto md:max-h-[95vh] overflow-auto print:bg-white print:border-0 print:max-h-none print:overflow-visible">
         {/* Header del modal (oculto en impresión) */}
         <div className="sticky top-0 bg-zinc-900 border-b border-zinc-800 p-4 flex items-center justify-between print:hidden">
           <div>
@@ -382,7 +382,7 @@ export default function ModalReporteAvancePDF({ proyecto, sistema, data, usuario
                 onChange={e => setProximosPasos(e.target.value)}
                 placeholder="Qué se hará la próxima semana, qué necesita del cliente, etc."
                 rows={4}
-                className="w-full bg-zinc-950 border border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-xs"
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-xs"
               />
             </div>
 
@@ -404,7 +404,7 @@ export default function ModalReporteAvancePDF({ proyecto, sistema, data, usuario
               </div>
             </div>
 
-            <div className="bg-zinc-950 border border-zinc-800 p-3 text-[11px] text-zinc-500">
+            <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3 text-[11px] text-zinc-500">
               <div className="font-bold text-zinc-400 mb-1">📋 Vista previa del reporte:</div>
               <div>• {diasTrabajados} {diasTrabajados === 1 ? 'día' : 'días'} trabajados · {totalM2Periodo.toFixed(2)} m² ejecutados</div>
               <div>• {areasConAvance.length} áreas del proyecto</div>

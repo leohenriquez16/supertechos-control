@@ -132,7 +132,7 @@ export default function PhotoCapture({ visitId, areaId = null, field, value, onC
       {items.length > 0 && (
         <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-2">
           {items.map(p => (
-            <div key={p.id} className="relative group bg-zinc-900 border border-zinc-800 aspect-square overflow-hidden">
+            <div key={p.id} className="relative group bg-zinc-900 border border-zinc-800 rounded-card aspect-square overflow-hidden">
               {p.signedUrl ? (
                 <img src={p.signedUrl} alt={p.caption || ''} className="w-full h-full object-cover" />
               ) : (

@@ -124,7 +124,7 @@ export default function ModalExportarOdoo({ data, onCerrar }) {
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto">
-      <div className="bg-zinc-900 border-2 border-red-600 max-w-md w-full p-5 space-y-4 my-8">
+      <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-md w-full p-5 space-y-4 my-8">
         <div className="flex justify-between items-start">
           <div>
             <div className="text-xs tracking-widest uppercase text-red-500 font-bold">Exportar a Odoo</div>
@@ -190,7 +190,7 @@ export default function ModalExportarOdoo({ data, onCerrar }) {
           </div>
         </div>
 
-        <div className="bg-zinc-950 border border-zinc-800 p-2 text-[10px] text-zinc-500 space-y-1">
+        <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2 text-[10px] text-zinc-500 space-y-1">
           {tipo === 'pagos' ? (
             <>
               <div>📋 <b>Columnas:</b> fecha, diario, referencia, tipo, direccion, monto, partner_nombre, partner_rnc, ncf, concepto, proyecto_referencia_odoo, categoria, fecha_aprobacion.</div>

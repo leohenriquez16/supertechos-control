@@ -17,7 +17,7 @@ export default function Input({ value, onChange, placeholder, type = 'text', ste
       step={step}
       onChange={e => onChange(e.target.value)}
       placeholder={placeholder}
-      className="w-full bg-zinc-900 border-2 border-zinc-800 focus:border-red-600 outline-none px-4 py-3 text-white placeholder-zinc-600"
+      className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-4 py-3 text-white placeholder-zinc-600 transition-colors"
     />
   );
 }

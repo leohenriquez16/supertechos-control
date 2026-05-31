@@ -7,6 +7,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { ArrowLeft, Loader2, ShieldCheck, MapPin, Search, Calendar, Check, MessageCircle, Wrench, ChevronDown, Building2, Users } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatNum } from '../../lib/helpers/formato';
+import { getTipoGarantia, serviciosDeTipo } from '../../lib/garantiasCatalogo';
 import MapaLeaflet from '../common/MapaLeaflet';
 
 const fmtFecha = (s) => { if (!s) return '—'; try { return new Date(s + 'T12:00:00').toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return s; } };
@@ -14,10 +15,11 @@ const diasHasta = (s) => { if (!s) return null; const h = new Date(); h.setHours
 const ESTADO_GAR = {
   vigente:    { label: 'Vigente',    cls: 'bg-green-900/40 text-green-300 border-green-700/60', color: 'green' },
   por_vencer: { label: 'Por vencer', cls: 'bg-amber-900/40 text-amber-300 border-amber-700/60', color: 'orange' },
+  suspendida: { label: 'Suspendida', cls: 'bg-orange-900/40 text-orange-300 border-orange-700/60', color: 'orange' },
   vencida:    { label: 'Vencida',    cls: 'bg-red-900/40 text-red-300 border-red-800/60', color: 'red' },
   anulada:    { label: 'Anulada',    cls: 'bg-zinc-800 text-zinc-400 border-zinc-700', color: 'zinc' },
 };
-const RANK = { vencida: 3, por_vencer: 2, vigente: 1, anulada: 0 };
+const RANK = { vencida: 4, suspendida: 3, por_vencer: 2, vigente: 1, anulada: 0 };
 
 function BadgeEstado({ estado }) {
   const e = ESTADO_GAR[estado] || ESTADO_GAR.vigente;
@@ -36,6 +38,7 @@ export default function VistaGarantias({ data, usuario, onVolver, onVerProyecto 
   const [ubicSel, setUbicSel] = useState(null); // detalle de ubicación
   const [reload, setReload] = useState(0);
   const [vistaMant, setVistaMant] = useState('lista'); // lista|calendario
+  const [expGar, setExpGar] = useState(null); // garantía expandida (ficha de cobertura/servicios)
   const [mesCal, setMesCal] = useState(() => new Date());
   const [mesCalAuto, setMesCalAuto] = useState(false);
   const [diaSel, setDiaSel] = useState(null); // 'YYYY-MM-DD' seleccionado en el calendario
@@ -133,26 +136,66 @@ export default function VistaGarantias({ data, usuario, onVolver, onVerProyecto 
     const msg = `Hola${nombre && nombre !== '—' ? ' ' + nombre : ''}, le saluda Super Techos. Su sistema${g?.referenciaCotizacion ? ` (cot. ${g.referenciaCotizacion})` : ''}${u?.nombre ? ` en ${u.nombre}` : ''} tiene un mantenimiento de inspección programado para el ${fmtFecha(m.fechaProgramada)}. ¿Coordinamos la visita?`;
     window.open(`https://wa.me/${tel}?text=${encodeURIComponent(msg)}`, '_blank');
   };
+  const ofrecerServicioWA = (g, servicio) => {
+    const u = ubic(g?.ubicacionId); const nombre = clienteNombre(g);
+    const tel = (u?.contactoTelefono || clienteDe(g?.clienteId)?.telefonoPrincipal || proyById(g?.proyectoId)?.contactoClienteTelefono || '').replace(/\D/g, '').replace(/^(?!1)(8[024]9)/, '1$1');
+    const msg = `Hola${nombre && nombre !== '—' ? ' ' + nombre : ''}, le saluda Super Techos. Para conservar su sistema${u?.nombre ? ` en ${u.nombre}` : ''} en óptimas condiciones le recomendamos el servicio de "${servicio.nombre}". ¿Le preparamos una cotización?`;
+    window.open(`https://wa.me/${tel}?text=${encodeURIComponent(msg)}`, '_blank');
+  };
   const marcarRealizado = async (m) => { try { await db.actualizarMantenimiento(m.id, { estado: 'realizado' }); setReload(r => r + 1); } catch (e) { alert('Error: ' + (e.message || e)); } };
   const cambiarEstadoRec = async (id, estado) => { try { await db.actualizarReclamacion(id, { estado }); setReload(r => r + 1); } catch (e) { alert('Error: ' + (e.message || e)); } };
   const recCliente = (r) => clienteDe(r.clienteId)?.nombre || proyById(r.proyectoId)?.cliente || '—';
 
-  // --- Render de una garantía (fila compacta) ---
+  // --- Render de una garantía (fila + ficha expandible con cobertura/servicios) ---
   const FilaGarantia = (g) => {
     const d = diasHasta(g.fechaVencimiento);
     const u = ubic(g.ubicacionId);
+    const tipo = getTipoGarantia(g.tipo);
+    const servicios = serviciosDeTipo(g.tipo);
+    const abierto = expGar === g.id;
     return (
-      <div key={g.id} className="bg-zinc-900 border border-zinc-800 rounded-card p-3 flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-bold">{clienteNombre(g)}</span>
-            {g.referenciaCotizacion && <span className="text-[10px] font-mono text-zinc-500">{g.referenciaCotizacion}</span>}
-            <BadgeEstado estado={g.estado} />
-          </div>
-          <div className="text-xs text-zinc-400 mt-0.5">{g.sistemaNombre || 'Sistema —'}{u?.nombre ? ` · ${u.nombre}` : ''}{g.m2 ? ` · ${formatNum(g.m2)} m²` : ''}</div>
-          <div className="text-[10px] text-zinc-500 mt-0.5">Inicio {fmtFecha(g.fechaInicio)} · Vence {fmtFecha(g.fechaVencimiento)}{d != null && d >= 0 && <span className={d <= 60 ? 'text-amber-400' : ''}> · faltan {d} días</span>}{d != null && d < 0 && <span className="text-red-400"> · venció hace {Math.abs(d)} días</span>}</div>
+      <div key={g.id} className="bg-zinc-900 border border-zinc-800 rounded-card">
+        <div className="p-3 flex items-start justify-between gap-3">
+          <button onClick={() => setExpGar(abierto ? null : g.id)} className="min-w-0 flex-1 text-left">
+            <div className="flex items-center gap-2 flex-wrap">
+              <ChevronDown className={`w-3.5 h-3.5 text-zinc-500 transition-transform ${abierto ? 'rotate-180' : ''}`} />
+              <span className="font-bold">{clienteNombre(g)}</span>
+              {g.referenciaCotizacion && <span className="text-[10px] font-mono text-zinc-500">{g.referenciaCotizacion}</span>}
+              <BadgeEstado estado={g.estado} />
+              {tipo && <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-zinc-800 text-zinc-300 border border-zinc-700">{tipo.nombre}</span>}
+            </div>
+            <div className="text-xs text-zinc-400 mt-0.5 ml-5">{g.sistemaNombre || 'Sistema —'}{u?.nombre ? ` · ${u.nombre}` : ''}{g.m2 ? ` · ${formatNum(g.m2)} m²` : ''}</div>
+            <div className="text-[10px] text-zinc-500 mt-0.5 ml-5">Inicio {fmtFecha(g.fechaInicio)} · Vence {fmtFecha(g.fechaVencimiento)}{d != null && d >= 0 && <span className={d <= 60 ? 'text-amber-400' : ''}> · faltan {d} días</span>}{d != null && d < 0 && <span className="text-red-400"> · venció hace {Math.abs(d)} días</span>}</div>
+          </button>
+          {g.proyectoId && onVerProyecto && <button onClick={() => { const p = proyById(g.proyectoId); if (p) onVerProyecto(p); }} className="text-[10px] text-red-400 hover:underline shrink-0">Ver proyecto →</button>}
         </div>
-        {g.proyectoId && onVerProyecto && <button onClick={() => { const p = proyById(g.proyectoId); if (p) onVerProyecto(p); }} className="text-[10px] text-red-400 hover:underline shrink-0">Ver proyecto →</button>}
+        {abierto && (
+          <div className="border-t border-zinc-800 p-3 space-y-3">
+            {g.suspendida && <div className="text-[11px] text-orange-300 bg-orange-900/15 border border-orange-800/40 rounded-card px-2 py-1.5">⏸ Garantía <b>suspendida</b>: hay una inspección obligatoria vencida. Se reactiva al marcarla como realizada en la pestaña Mantenimientos.</div>}
+            {(g.cobertura || tipo?.cobertura) && (
+              <div><div className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-0.5">Cobertura</div><div className="text-xs text-zinc-300">{g.cobertura || tipo?.cobertura}</div></div>
+            )}
+            {(g.condicion || tipo?.condicion) && (
+              <div><div className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-0.5">Condición</div><div className="text-xs text-amber-300/90">{g.condicion || tipo?.condicion}</div></div>
+            )}
+            {servicios.length > 0 && (
+              <div>
+                <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-1 flex items-center gap-1"><Wrench className="w-3 h-3" /> Servicios vendibles recomendados</div>
+                <div className="space-y-1">
+                  {servicios.map(s => (
+                    <div key={s.key} className="flex items-center justify-between gap-2 bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1.5">
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-zinc-200 truncate">{s.nombre}{s.cadenciaMeses ? <span className="text-[10px] text-zinc-500 font-normal"> · cada {s.cadenciaMeses}m</span> : s.cadenciaMeses === 0 ? <span className="text-[10px] text-zinc-500 font-normal"> · a demanda</span> : ''}</div>
+                        <div className="text-[10px] text-zinc-500 truncate">{s.descripcion}</div>
+                      </div>
+                      <button onClick={() => ofrecerServicioWA(g, s)} className="bg-green-700 hover:bg-green-600 text-white text-[9px] font-bold uppercase px-2 py-1 rounded-card flex items-center gap-1 shrink-0"><MessageCircle className="w-3 h-3" /> Ofrecer</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   };

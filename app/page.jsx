@@ -9,6 +9,7 @@ import { obtenerUbicacion, distanciaMetros, formatDistancia, abrirEnMapa } from 
 import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps } from '../lib/geoutils';
 // v8.10.0: helpers extraídos a módulos separados
 import { APP_VERSION, EMPRESAS_RECEPTORAS } from '../lib/constants';
+import { TIPOS_GARANTIA, getTipoGarantia, serviciosDeTipo, tipoSugeridoParaSistema } from '../lib/garantiasCatalogo';
 import { toast } from '../lib/toast';
 import { formatRD, formatNum, formatFecha, formatFechaCorta, formatFechaLarga } from '../lib/helpers/formato';
 import {
@@ -6225,7 +6226,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
         <SelectorUbicacionProyecto proyecto={proyecto} esAdmin={esAdmin} onRecargar={onRecargar} />
       </div>
 
-      {modalEstado && <ModalCambiarEstado proyecto={proyecto} usuario={usuario} personal={data.personal} onCerrar={() => setModalEstado(false)} onConfirmar={async (estadoNuevo, nota, datosExtra) => { await onCambiarEstado(proyecto.id, estadoNuevo, nota, datosExtra); setModalEstado(false); }} />}
+      {modalEstado && <ModalCambiarEstado proyecto={proyecto} usuario={usuario} personal={data.personal} sistema={sistema} onCerrar={() => setModalEstado(false)} onConfirmar={async (estadoNuevo, nota, datosExtra) => { await onCambiarEstado(proyecto.id, estadoNuevo, nota, datosExtra); setModalEstado(false); }} />}
       {modalEditar && <ModalEditarProyecto proyecto={proyecto} data={data} usuario={usuario} onCerrar={() => setModalEditar(false)} onGuardar={onActualizarProyecto} onArchivar={onArchivarProyecto} onEliminar={onEliminarProyecto} />}
       {modalReporte && <ModalReporteAvancePDF proyecto={proyecto} sistema={sistema} data={data} usuario={usuario} onCerrar={() => setModalReporte(false)} />}
       {modalPausa && <ModalPausarProyecto proyecto={proyecto} onCerrar={() => setModalPausa(false)} onConfirmar={async (fechaInicio, motivo) => {
@@ -12396,16 +12397,30 @@ function ModalProgramarJornada({ proyecto, personal, personasElegibles, onCerrar
 // ============================================================
 // MODAL CAMBIAR ESTADO DE PROYECTO (v8)
 // ============================================================
-function ModalCambiarEstado({ proyecto, usuario, personal, onCerrar, onConfirmar }) {
+function ModalCambiarEstado({ proyecto, usuario, personal, sistema, onCerrar, onConfirmar }) {
   const [estadoNuevo, setEstadoNuevo] = useState(proyecto.estado);
   const [nota, setNota] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [numeroFactura, setNumeroFactura] = useState(proyecto.numeroFactura || '');
   const [montoFinal, setMontoFinal] = useState(proyecto.montoFinalCubicado || '');
-  // v8.19.57: al entregar, elegir tipo de garantía + periodicidad de mantenimiento.
-  const [garantiaAnos, setGarantiaAnos] = useState(5);
-  const [mantMeses, setMantMeses] = useState(12);
-  const [garantiaCobertura, setGarantiaCobertura] = useState('Garantía total del sistema');
+  // v8.19.70: al entregar, elegir TIPO DE GARANTÍA del catálogo (pre-seleccionado
+  // según el sistema del proyecto). El tipo autocompleta duración, periodicidad
+  // obligatoria, cobertura y condición; todo editable.
+  const tipoInicial = tipoSugeridoParaSistema(sistema);
+  const [tipoGarantia, setTipoGarantia] = useState(tipoInicial);
+  const defTipo = getTipoGarantia(tipoInicial);
+  const [garantiaAnos, setGarantiaAnos] = useState((defTipo?.duracionMeses || 60) / 12);
+  const [mantMeses, setMantMeses] = useState(defTipo?.mantObligatorioCadaMeses ?? 24);
+  const [garantiaCobertura, setGarantiaCobertura] = useState(defTipo?.cobertura || 'Garantía total del sistema');
+
+  // Al cambiar el tipo, recalcular los defaults (el usuario puede sobreescribir luego).
+  const elegirTipo = (key) => {
+    setTipoGarantia(key);
+    const t = getTipoGarantia(key);
+    if (t) { setGarantiaAnos((t.duracionMeses || 0) / 12); setMantMeses(t.mantObligatorioCadaMeses ?? 0); setGarantiaCobertura(t.cobertura || ''); }
+  };
+  const tipoSel = getTipoGarantia(tipoGarantia);
+  const serviciosTipo = serviciosDeTipo(tipoGarantia);
 
   const confirmar = async () => {
     setGuardando(true);
@@ -12414,6 +12429,8 @@ function ModalCambiarEstado({ proyecto, usuario, personal, onCerrar, onConfirmar
       if (montoFinal) extra.monto_final_cubicado = parseFloat(montoFinal);
       // _garantia se procesa en db.cambiarEstadoProyecto (no se escribe en proyectos).
       extra._garantia = {
+        tipo: tipoGarantia || null,
+        condicion: tipoSel?.condicion || null,
         duracionMeses: Math.round((parseFloat(garantiaAnos) || 0) * 12),
         cadaMeses: parseInt(mantMeses) || null,
         cobertura: garantiaCobertura || null,
@@ -12442,6 +12459,12 @@ function ModalCambiarEstado({ proyecto, usuario, personal, onCerrar, onConfirmar
             <div className="bg-zinc-950 border border-green-800/60 rounded-card p-3 space-y-2">
               <div className="text-[10px] tracking-widest uppercase text-green-400 font-bold flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> Garantía que arranca al entregar</div>
               <div>
+                <div className="text-[10px] uppercase text-zinc-500 mb-1">Tipo de garantía</div>
+                <select value={tipoGarantia} onChange={e => elegirTipo(e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-2 py-2 text-xs text-white outline-none focus:border-green-600">
+                  {TIPOS_GARANTIA.map(t => <option key={t.key} value={t.key}>{t.nombre}</option>)}
+                </select>
+              </div>
+              <div>
                 <div className="text-[10px] uppercase text-zinc-500 mb-1">Duración</div>
                 <div className="flex gap-1 flex-wrap">
                   {[1, 3, 5, 10].map(a => (
@@ -12452,14 +12475,32 @@ function ModalCambiarEstado({ proyecto, usuario, personal, onCerrar, onConfirmar
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <div className="text-[10px] uppercase text-zinc-500 mb-1">Mantenimiento cada (meses)</div>
-                  <input type="number" value={mantMeses} onChange={e => setMantMeses(e.target.value)} placeholder="12 (0 = sin mantenimiento)" className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1.5 text-xs text-white" />
+                  <div className="text-[10px] uppercase text-zinc-500 mb-1">Inspección obligatoria cada (meses)</div>
+                  <input type="number" value={mantMeses} onChange={e => setMantMeses(e.target.value)} placeholder="24 (0 = sin obligatorio)" className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1.5 text-xs text-white" />
                 </div>
                 <div>
                   <div className="text-[10px] uppercase text-zinc-500 mb-1">Cobertura</div>
                   <input value={garantiaCobertura} onChange={e => setGarantiaCobertura(e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1.5 text-xs text-white" />
                 </div>
               </div>
+              {tipoSel?.condicion && (
+                <div className="text-[10px] text-amber-300/90 bg-amber-900/10 border border-amber-800/40 rounded-card px-2 py-1.5">
+                  ⚠ {tipoSel.condicion} {parseInt(mantMeses) > 0 && <span className="text-amber-200">Si no se realiza la inspección, la garantía queda <b>suspendida</b> hasta cumplirla.</span>}
+                </div>
+              )}
+              {serviciosTipo.length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase text-zinc-500 mb-1">Servicios recomendados (vendibles) para este sistema</div>
+                  <div className="flex flex-wrap gap-1">
+                    {serviciosTipo.map(s => (
+                      <span key={s.key} className="text-[9px] bg-zinc-900 border border-zinc-800 rounded-full px-2 py-0.5 text-zinc-300" title={s.descripcion}>
+                        {s.nombre}{s.cadenciaMeses ? ` · ${s.cadenciaMeses}m` : ''}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="text-[9px] text-zinc-600 mt-1">Quedan descritos en la garantía para ofrecerlos como mantenimiento/cotización.</div>
+                </div>
+              )}
             </div>
           </>
         )}

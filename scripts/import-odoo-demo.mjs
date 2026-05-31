@@ -127,6 +127,9 @@ for (const p of demoPartners) {
   for (const so of sos) {
     const inicio = (so.date_order || '').split(' ')[0] || hoyISO;
     const dur = 60;
+    const cadaMant = 24; // inspección obligatoria cada 2 años (tipo imper_liquida)
+    const TIPO = 'imper_liquida';
+    const CONDICION = 'Vigente siempre que se realicen las inspecciones obligatorias cada 24 meses y no haya intervención de terceros sobre la superficie.';
     const venc = sumarMeses(inicio, dur);
     const estado = venc < hoyISO ? 'vencida' : 'vigente';
     const gid = `gar-odoo-${so.name.replace(/[^A-Za-z0-9]/g, '')}`;
@@ -134,17 +137,22 @@ for (const p of demoPartners) {
     const { error } = await sb.from('garantias').insert({
       id: gid, codigo: so.name, cliente_id: cid, ubicacion_id: ubId,
       referencia_cotizacion: so.name, sistema_nombre: 'Impermeabilización',
+      tipo: TIPO, condicion: CONDICION,
       fecha_inicio: inicio, duracion_meses: dur, fecha_vencimiento: venc, estado,
       monto: so.amount_total ?? null, origen: 'odoo', notas: `Importada de cotización ${so.name}`,
     });
     if (error) { console.warn('  garantia:', error.message); continue; }
     nGar++;
-    // mantenimientos cada 12 meses
+    // inspecciones obligatorias cada 24 meses
     const mans = [];
-    for (let m = 12; m < dur; m += 12) {
+    for (let m = cadaMant; m < dur; m += cadaMant) {
       const f = sumarMeses(inicio, m);
-      mans.push({ id: `man-odoo-${so.name.replace(/[^A-Za-z0-9]/g, '')}-${m}`, garantia_id: gid, cliente_id: cid, ubicacion_id: ubId, tipo: 'inspeccion', fecha_programada: f, estado: f < hoyISO ? 'realizado' : 'pendiente' });
+      mans.push({ id: `man-odoo-${so.name.replace(/[^A-Za-z0-9]/g, '')}-${m}`, garantia_id: gid, cliente_id: cid, ubicacion_id: ubId, tipo: 'inspeccion', obligatorio: true, fecha_programada: f, estado: f < hoyISO ? 'realizado' : 'pendiente' });
     }
+    // La inspección vencida más reciente queda PENDIENTE (el cliente debe la del
+    // ciclo actual) → la garantía aparece SUSPENDIDA hasta que se realice.
+    const pasados = mans.filter(x => x.fecha_programada < hoyISO);
+    if (pasados.length) pasados[pasados.length - 1].estado = 'pendiente';
     if (mans.length) { await sb.from('mantenimientos').insert(mans); nMan += mans.length; }
   }
 }

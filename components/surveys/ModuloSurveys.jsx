@@ -7,8 +7,8 @@
 // PR 3B.1 entrega: lista de proyectos. PRs siguientes agregan detalle
 // proyecto + sites + DynamicSurveyForm + photos.
 
-import React, { useState, useEffect } from 'react';
-import { Loader2, Plus, MapPin, Building, ChevronRight, ArrowLeft, List, Map as MapIcon } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Loader2, Plus, MapPin, Building, ChevronRight, ArrowLeft, List, Map as MapIcon, LayoutGrid, Search, User as UserIcon } from 'lucide-react';
 import { listarProyectosSurveys, listarSitesProyectoSurvey, listarTodosLosSitesSurvey, COMPANIES, PROJECT_STATUS, SITE_STATUS, SERVICE_LINES } from '../../lib/surveys';
 import MapaLeaflet from '../common/MapaLeaflet';
 import ServiceLineBadge from './ServiceLineBadge';
@@ -79,8 +79,10 @@ function SurveysList({ usuario, onAbrirProyecto, onAbrirSiteDirecto }) {
   const [reloadKey, setReloadKey] = useState(0);
   const [modalNuevoAbierto, setModalNuevoAbierto] = useState(false);     // multi-sitio (excepción)
   const [modalSimpleAbierto, setModalSimpleAbierto] = useState(false);   // levantamiento simple (principal)
-  const [vista, setVista] = useState('lista');                           // lista | kanban | mapa
+  const [vista, setVista] = useState('kanban');                          // kanban (principal) | lista | mapa
   const [sites, setSites] = useState([]);
+  const [busqueda, setBusqueda] = useState('');
+  const [agrupar, setAgrupar] = useState(true);                          // lista: agrupar por estado
 
   useEffect(() => {
     let cancelado = false;
@@ -117,6 +119,24 @@ function SurveysList({ usuario, onAbrirProyecto, onAbrirSiteDirecto }) {
     for (const s of sites) { if (s.latitude != null && s.longitude != null && !m[s.project_id]) m[s.project_id] = { lat: Number(s.latitude), lng: Number(s.longitude) }; }
     return m;
   }, [sites]);
+  // Conteo de sitios por proyecto (para la columna "Sitios" de la tabla).
+  const sitesPorProy = React.useMemo(() => {
+    const m = {};
+    for (const s of sites) m[s.project_id] = (m[s.project_id] || 0) + 1;
+    return m;
+  }, [sites]);
+  // Filtro de búsqueda (cliente, levantamiento, descripción, estado).
+  const proyFiltrados = React.useMemo(() => {
+    const q = busqueda.toLowerCase().trim();
+    if (!q) return proyectos;
+    return proyectos.filter(p =>
+      (p.client_name || '').toLowerCase().includes(q) ||
+      (p.name || '').toLowerCase().includes(q) ||
+      (p.description || '').toLowerCase().includes(q) ||
+      (p.asignado_a_nombre || '').toLowerCase().includes(q) ||
+      estadoDe(p).toLowerCase().includes(q)
+    );
+  }, [proyectos, busqueda]);
 
   return (
     <div className="space-y-4">
@@ -192,18 +212,36 @@ function SurveysList({ usuario, onAbrirProyecto, onAbrirSiteDirecto }) {
 
       {!loading && !errorMsg && proyectos.length > 0 && (
         <>
-          <div className="flex gap-1 bg-zinc-900 border border-zinc-800 rounded-card p-1 w-fit">
-            {[['lista', 'Lista', List], ['kanban', 'Kanban', null], ['mapa', 'Mapa', MapIcon]].map(([k, l, Icon]) => (
-              <button key={k} onClick={() => setVista(k)} className={`px-4 py-1.5 text-[11px] font-bold uppercase rounded-card flex items-center gap-1 ${vista === k ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>
-                {Icon && <Icon className="w-3 h-3" />}{l}
-              </button>
-            ))}
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex gap-1 bg-zinc-900 border border-zinc-800 rounded-card p-1 w-fit">
+              {[['kanban', 'Kanban', LayoutGrid], ['lista', 'Lista', List], ['mapa', 'Mapa', MapIcon]].map(([k, l, Icon]) => (
+                <button key={k} onClick={() => setVista(k)} className={`px-4 py-1.5 text-[11px] font-bold uppercase rounded-card flex items-center gap-1 ${vista === k ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>
+                  {Icon && <Icon className="w-3 h-3" />}{l}
+                </button>
+              ))}
+            </div>
+            {vista === 'lista' && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-zinc-600 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                  <input value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar…" className="bg-zinc-950 border border-zinc-800 rounded-card pl-8 pr-3 py-1.5 text-xs text-white outline-none focus:border-red-600 w-44 sm:w-56" />
+                </div>
+                <button onClick={() => setAgrupar(a => !a)} className={`px-3 py-1.5 text-[10px] font-bold uppercase rounded-card border ${agrupar ? 'bg-red-600 border-red-600 text-white' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>
+                  Agrupar por estado
+                </button>
+              </div>
+            )}
           </div>
 
           {vista === 'lista' ? (
-            <div className="space-y-2">
-              {proyectos.map(p => <ProyectoCard key={p.id} proyecto={p} onClick={() => onAbrirProyecto(p)} />)}
-            </div>
+            <SurveysTabla
+              proyectos={proyFiltrados}
+              sitesPorProy={sitesPorProy}
+              estadoDe={estadoDe}
+              orden={columnasKanban}
+              agrupar={agrupar}
+              onAbrir={onAbrirProyecto}
+            />
           ) : vista === 'kanban' ? (
             <div className="flex gap-3 overflow-x-auto pb-2">
               {columnasKanban.map(e => {
@@ -238,6 +276,98 @@ function SurveysList({ usuario, onAbrirProyecto, onAbrirSiteDirecto }) {
         </>
       )}
     </div>
+  );
+}
+
+// ============================================================
+// TABLA DENSA (desktop) + cards (mobile) — vista Lista
+// ============================================================
+const fmtFechaSurvey = (s) => { if (!s) return '—'; try { return new Date(s).toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: '2-digit' }); } catch { return '—'; } };
+
+function FilaSurvey({ p, nSites, estado, onAbrir }) {
+  const color = SERVICE_LINES[p.service_line]?.color || '#666';
+  const company = COMPANIES[p.company] || p.company || '—';
+  return (
+    <tr onClick={() => onAbrir(p)} className="border-b border-zinc-800 hover:bg-zinc-800/40 cursor-pointer">
+      <td className="w-1 p-0" style={{ backgroundColor: color }} />
+      <td className="px-3 py-2 max-w-[220px]">
+        <div className="font-bold truncate">{p.client_name || '—'}</div>
+        {p.description && <div className="text-[10px] text-zinc-500 truncate" title={p.description}>{p.description}</div>}
+      </td>
+      <td className="px-3 py-2 text-zinc-400 text-xs max-w-[200px] truncate">{p.name || '—'}</td>
+      <td className="px-3 py-2"><ServiceLineBadge serviceLine={p.service_line} /></td>
+      <td className="px-3 py-2 text-[10px] uppercase tracking-wider text-zinc-500">{company}</td>
+      <td className="px-3 py-2"><span className="text-[10px] uppercase tracking-wider font-bold text-zinc-300">{estado}</span></td>
+      <td className="px-3 py-2 text-xs text-zinc-400">
+        {p.asignado_a_nombre
+          ? <span className="inline-flex items-center gap-1"><UserIcon className="w-3 h-3 text-zinc-500" />{p.asignado_a_nombre}</span>
+          : <span className="text-zinc-600">— sin asignar</span>}
+      </td>
+      <td className="px-3 py-2 text-right tabular-nums text-zinc-400">{nSites || 0}</td>
+      <td className="px-3 py-2 text-right text-[10px] text-zinc-500 whitespace-nowrap">{fmtFechaSurvey(p.created_at)}</td>
+    </tr>
+  );
+}
+
+function SurveysTabla({ proyectos, sitesPorProy, estadoDe, orden, agrupar, onAbrir }) {
+  if (proyectos.length === 0) {
+    return <div className="bg-zinc-950 border border-zinc-800 rounded-card p-6 text-center text-zinc-500 text-sm">Sin resultados.</div>;
+  }
+  const grupos = agrupar
+    ? orden.map(e => ({ estado: e, items: proyectos.filter(p => estadoDe(p) === e) })).filter(g => g.items.length > 0)
+    : [{ estado: null, items: proyectos }];
+
+  const Encabezado = () => (
+    <thead className="bg-zinc-950 border-b border-zinc-800 sticky top-0 z-10">
+      <tr className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold text-left">
+        <th className="w-1 p-0" />
+        <th className="px-3 py-2">Cliente</th>
+        <th className="px-3 py-2">Levantamiento</th>
+        <th className="px-3 py-2">Servicio</th>
+        <th className="px-3 py-2">Empresa</th>
+        <th className="px-3 py-2">Estado</th>
+        <th className="px-3 py-2">Levantador</th>
+        <th className="px-3 py-2 text-right">Sitios</th>
+        <th className="px-3 py-2 text-right">Creado</th>
+      </tr>
+    </thead>
+  );
+
+  return (
+    <>
+      {/* DESKTOP: tabla densa */}
+      <div className="hidden md:block bg-zinc-900 border border-zinc-800 rounded-card overflow-x-auto">
+        <table className="w-full text-sm">
+          <Encabezado />
+          <tbody>
+            {grupos.map(g => (
+              <React.Fragment key={g.estado || 'all'}>
+                {agrupar && (
+                  <tr className="bg-zinc-950/80 border-b border-zinc-800">
+                    <td colSpan={9} className="px-3 py-1.5 text-[10px] uppercase tracking-widest font-black text-zinc-400">
+                      {g.estado} <span className="text-zinc-600">· {g.items.length}</span>
+                    </td>
+                  </tr>
+                )}
+                {g.items.map(p => (
+                  <FilaSurvey key={p.id} p={p} nSites={sitesPorProy[p.id]} estado={estadoDe(p)} onAbrir={onAbrir} />
+                ))}
+              </React.Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* MOBILE: cards (agrupadas si aplica) */}
+      <div className="md:hidden space-y-3">
+        {grupos.map(g => (
+          <div key={g.estado || 'all'} className="space-y-2">
+            {agrupar && <div className="text-[10px] uppercase tracking-widest font-black text-zinc-500 px-1">{g.estado} · {g.items.length}</div>}
+            {g.items.map(p => <ProyectoCard key={p.id} proyecto={p} onClick={() => onAbrir(p)} />)}
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
 

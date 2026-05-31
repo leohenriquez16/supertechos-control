@@ -29,6 +29,7 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
   const [sel, setSel] = useState(null);          // ficha de detalle
   const [modalNueva, setModalNueva] = useState(false);
   const [busqueda, setBusqueda] = useState('');
+  const [agrupar, setAgrupar] = useState(true);   // lista: agrupar por estado
   const [dragId, setDragId] = useState(null);
   const [dropCol, setDropCol] = useState(null);
 
@@ -176,23 +177,24 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
         </div>
       ) : vista === 'lista' ? (
         <>
-          <div className="relative">
-            <Search className="w-4 h-4 text-zinc-600 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar por cliente, # cotización o descripción…" className="w-full bg-zinc-950 border border-zinc-800 rounded-card pl-9 pr-3 py-2 text-sm text-white outline-none focus:border-red-600" />
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="w-4 h-4 text-zinc-600 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar por cliente, # cotización o descripción…" className="w-full bg-zinc-950 border border-zinc-800 rounded-card pl-9 pr-3 py-2 text-sm text-white outline-none focus:border-red-600" />
+            </div>
+            <button onClick={() => setAgrupar(a => !a)} className={`px-3 py-2 text-[10px] font-bold uppercase rounded-card border whitespace-nowrap ${agrupar ? 'bg-red-600 border-red-600 text-white' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>
+              Agrupar por estado
+            </button>
           </div>
-          <div className="space-y-2">{filtradas.map(r => {
-            const col = COLS.find(c => c.e === r.estado);
-            return (
-              <button key={r.id} onClick={() => setSel(r)} className="w-full text-left bg-zinc-900 border border-zinc-800 rounded-card p-3 hover:border-red-600 flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2"><span className="font-bold">{clienteNombre(r)}</span><span className={`text-[9px] uppercase font-black px-1.5 py-0.5 rounded-full ${col?.text} border border-zinc-700`}>{col?.label}</span></div>
-                  <div className="text-[10px] text-zinc-500">{ubicNombre(r)}{r.referenciaCotizacion ? ` · ${r.referenciaCotizacion}` : ''} · {CANAL_ICON[r.canal] || r.canal}</div>
-                  <div className="text-xs text-zinc-400 mt-0.5 truncate">{r.descripcion}</div>
-                </div>
-                <span className="text-[10px] text-zinc-600 shrink-0">{fmtFecha(r.fechaApertura)}</span>
-              </button>
-            );
-          })}</div>
+          <ReclamacionesTabla
+            recs={filtradas}
+            estadoOdoo={estadoOdoo}
+            orden={columnasRecl}
+            agrupar={agrupar}
+            clienteNombre={clienteNombre}
+            ubicNombre={ubicNombre}
+            onAbrir={setSel}
+          />
         </>
       ) : (
         // Mapa
@@ -206,6 +208,96 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
 
       {modalNueva && <ModalNuevaReclamacion data={data} ubicaciones={ubicaciones} garantias={garantias} onCerrar={() => setModalNueva(false)} onCreada={() => { setModalNueva(false); setReload(r => r + 1); }} />}
     </div>
+  );
+}
+
+// ---------- TABLA DENSA (desktop) + cards (mobile) ----------
+const SEV_BAND = { alta: '#ef4444', media: '#f59e0b', baja: '#71717a' };
+
+function FilaReclamacion({ r, estado, clienteNombre, ubicNombre, onAbrir }) {
+  const band = SEV_BAND[r.severidad] || '#3f3f46';
+  return (
+    <tr onClick={() => onAbrir(r)} className="border-b border-zinc-800 hover:bg-zinc-800/40 cursor-pointer">
+      <td className="w-1 p-0" style={{ backgroundColor: band }} />
+      <td className="px-3 py-2 font-mono text-[11px] text-zinc-500 whitespace-nowrap">{r.codigo || '—'}</td>
+      <td className="px-3 py-2 max-w-[200px]">
+        <div className="font-bold truncate">{clienteNombre(r)}</div>
+        {ubicNombre(r) && <div className="text-[10px] text-zinc-500 truncate">{ubicNombre(r)}</div>}
+      </td>
+      <td className="px-3 py-2 text-[11px] text-zinc-400 whitespace-nowrap">{r.referenciaCotizacion || '—'}</td>
+      <td className="px-3 py-2 text-[10px] text-zinc-400 whitespace-nowrap">{CANAL_ICON[r.canal] || r.canal || '—'}</td>
+      <td className={`px-3 py-2 text-[10px] uppercase font-black ${SEV[r.severidad] || 'text-zinc-400'} whitespace-nowrap`}>● {r.severidad}</td>
+      <td className="px-3 py-2 text-[10px] uppercase tracking-wider font-bold text-zinc-300 whitespace-nowrap">{estado}</td>
+      <td className="px-3 py-2 text-zinc-400 text-xs max-w-[280px] truncate">{r.descripcion || '—'}</td>
+      <td className="px-3 py-2 text-right text-[10px] text-zinc-500 whitespace-nowrap">{fmtFecha(r.fechaApertura)}</td>
+    </tr>
+  );
+}
+
+function ReclamacionesTabla({ recs, estadoOdoo, orden, agrupar, clienteNombre, ubicNombre, onAbrir }) {
+  if (recs.length === 0) {
+    return <div className="bg-zinc-950 border border-zinc-800 rounded-card p-6 text-center text-zinc-500 text-sm">Sin resultados.</div>;
+  }
+  const grupos = agrupar
+    ? orden.map(e => ({ estado: e, items: recs.filter(r => estadoOdoo(r) === e) })).filter(g => g.items.length > 0)
+    : [{ estado: null, items: recs }];
+
+  return (
+    <>
+      {/* DESKTOP: tabla densa */}
+      <div className="hidden md:block bg-zinc-900 border border-zinc-800 rounded-card overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-zinc-950 border-b border-zinc-800 sticky top-0 z-10">
+            <tr className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold text-left">
+              <th className="w-1 p-0" />
+              <th className="px-3 py-2">Código</th>
+              <th className="px-3 py-2">Cliente</th>
+              <th className="px-3 py-2">Ref. cot.</th>
+              <th className="px-3 py-2">Canal</th>
+              <th className="px-3 py-2">Severidad</th>
+              <th className="px-3 py-2">Estado</th>
+              <th className="px-3 py-2">Descripción</th>
+              <th className="px-3 py-2 text-right">Abierta</th>
+            </tr>
+          </thead>
+          <tbody>
+            {grupos.map(g => (
+              <React.Fragment key={g.estado || 'all'}>
+                {agrupar && (
+                  <tr className="bg-zinc-950/80 border-b border-zinc-800">
+                    <td colSpan={9} className="px-3 py-1.5 text-[10px] uppercase tracking-widest font-black text-zinc-400">
+                      {g.estado} <span className="text-zinc-600">· {g.items.length}</span>
+                    </td>
+                  </tr>
+                )}
+                {g.items.map(r => (
+                  <FilaReclamacion key={r.id} r={r} estado={estadoOdoo(r)} clienteNombre={clienteNombre} ubicNombre={ubicNombre} onAbrir={onAbrir} />
+                ))}
+              </React.Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* MOBILE: cards (agrupadas si aplica) */}
+      <div className="md:hidden space-y-3">
+        {grupos.map(g => (
+          <div key={g.estado || 'all'} className="space-y-2">
+            {agrupar && <div className="text-[10px] uppercase tracking-widest font-black text-zinc-500 px-1">{g.estado} · {g.items.length}</div>}
+            {g.items.map(r => (
+              <button key={r.id} onClick={() => onAbrir(r)} className="w-full text-left bg-zinc-900 border border-zinc-800 rounded-card p-3 hover:border-red-600 flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2"><span className="font-bold">{clienteNombre(r)}</span><span className="text-[9px] uppercase font-black px-1.5 py-0.5 rounded-full text-zinc-300 border border-zinc-700">{estadoOdoo(r)}</span></div>
+                  <div className="text-[10px] text-zinc-500">{ubicNombre(r)}{r.referenciaCotizacion ? ` · ${r.referenciaCotizacion}` : ''} · {CANAL_ICON[r.canal] || r.canal}</div>
+                  <div className="text-xs text-zinc-400 mt-0.5 truncate">{r.descripcion}</div>
+                </div>
+                <span className="text-[10px] text-zinc-600 shrink-0">{fmtFecha(r.fechaApertura)}</span>
+              </button>
+            ))}
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
 

@@ -9,7 +9,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { Loader2, Plus, MapPin, Building, ChevronRight, ArrowLeft, List, Map as MapIcon } from 'lucide-react';
-import { listarProyectosSurveys, listarSitesProyectoSurvey, COMPANIES, PROJECT_STATUS, SITE_STATUS } from '../../lib/surveys';
+import { listarProyectosSurveys, listarSitesProyectoSurvey, listarTodosLosSitesSurvey, COMPANIES, PROJECT_STATUS, SITE_STATUS } from '../../lib/surveys';
+import MapaLeaflet from '../common/MapaLeaflet';
 import ServiceLineBadge from './ServiceLineBadge';
 import SurveySiteDetail from './SurveySiteDetail';
 import SurveySitesMap from './SurveySitesMap';
@@ -60,15 +61,18 @@ function SurveysList({ usuario, onAbrirProyecto, onAbrirSiteDirecto }) {
   const [reloadKey, setReloadKey] = useState(0);
   const [modalNuevoAbierto, setModalNuevoAbierto] = useState(false);     // multi-sitio (excepción)
   const [modalSimpleAbierto, setModalSimpleAbierto] = useState(false);   // levantamiento simple (principal)
+  const [vista, setVista] = useState('lista');                           // lista | kanban | mapa
+  const [sites, setSites] = useState([]);
 
   useEffect(() => {
     let cancelado = false;
     (async () => {
       setLoading(true);
       try {
-        const data = await listarProyectosSurveys();
+        const [data, ss] = await Promise.all([listarProyectosSurveys(), listarTodosLosSitesSurvey()]);
         if (!cancelado) {
           setProyectos(data);
+          setSites(ss);
           setErrorMsg(null);
         }
       } catch (e) {
@@ -79,6 +83,15 @@ function SurveysList({ usuario, onAbrirProyecto, onAbrirSiteDirecto }) {
     })();
     return () => { cancelado = true; };
   }, [reloadKey]);
+
+  // Estados (columnas Kanban) en orden de pipeline.
+  const ESTADOS = ['planning', 'survey_in_progress', 'survey_completed', 'quoted', 'awarded', 'in_execution', 'completed', 'cancelled'];
+  // Coords por proyecto (del primer site con GPS).
+  const coordsProy = React.useMemo(() => {
+    const m = {};
+    for (const s of sites) { if (s.latitude != null && s.longitude != null && !m[s.project_id]) m[s.project_id] = { lat: Number(s.latitude), lng: Number(s.longitude) }; }
+    return m;
+  }, [sites]);
 
   return (
     <div className="space-y-4">
@@ -153,11 +166,52 @@ function SurveysList({ usuario, onAbrirProyecto, onAbrirSiteDirecto }) {
       )}
 
       {!loading && !errorMsg && proyectos.length > 0 && (
-        <div className="space-y-2">
-          {proyectos.map(p => (
-            <ProyectoCard key={p.id} proyecto={p} onClick={() => onAbrirProyecto(p)} />
-          ))}
-        </div>
+        <>
+          <div className="flex gap-1 bg-zinc-900 border border-zinc-800 rounded-card p-1 w-fit">
+            {[['lista', 'Lista', List], ['kanban', 'Kanban', null], ['mapa', 'Mapa', MapIcon]].map(([k, l, Icon]) => (
+              <button key={k} onClick={() => setVista(k)} className={`px-4 py-1.5 text-[11px] font-bold uppercase rounded-card flex items-center gap-1 ${vista === k ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>
+                {Icon && <Icon className="w-3 h-3" />}{l}
+              </button>
+            ))}
+          </div>
+
+          {vista === 'lista' ? (
+            <div className="space-y-2">
+              {proyectos.map(p => <ProyectoCard key={p.id} proyecto={p} onClick={() => onAbrirProyecto(p)} />)}
+            </div>
+          ) : vista === 'kanban' ? (
+            <div className="flex gap-3 overflow-x-auto pb-2">
+              {ESTADOS.map(e => {
+                const items = proyectos.filter(p => (p.status || 'planning') === e);
+                if (items.length === 0) return null;
+                return (
+                  <div key={e} className="w-64 flex-shrink-0 bg-zinc-950 border border-zinc-800 rounded-card">
+                    <div className="px-3 py-2 flex items-center justify-between border-b border-zinc-800">
+                      <span className="text-[10px] uppercase tracking-widest font-bold text-zinc-300">{PROJECT_STATUS[e] || e}</span>
+                      <span className="text-[9px] text-zinc-600">{items.length}</span>
+                    </div>
+                    <div className="p-2 space-y-2 min-h-[50px]">
+                      {items.map(p => (
+                        <button key={p.id} onClick={() => onAbrirProyecto(p)} className="w-full text-left bg-zinc-900 border border-zinc-800 rounded-card p-2.5 hover:border-red-600">
+                          <div className="flex items-center gap-1 mb-1"><ServiceLineBadge serviceLine={p.service_line} /></div>
+                          <div className="font-bold text-xs truncate">{p.client_name}</div>
+                          <div className="text-[10px] text-zinc-500 truncate">{p.name}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            (() => {
+              const conC = proyectos.map(p => ({ p, c: coordsProy[p.id] })).filter(x => x.c);
+              if (conC.length === 0) return <div className="bg-zinc-950 border border-zinc-800 rounded-card p-8 text-center text-zinc-500 text-sm">Ningún levantamiento tiene ubicación con GPS aún. (Los importados de Odoo no traen coordenadas; los nuevos creados con link de Maps sí.)</div>;
+              const markers = conC.map(({ p, c }) => ({ lat: c.lat, lng: c.lng, color: 'red', label: p.client_name, popup: `<b>${p.client_name}</b><br/>${p.name}`, onClick: () => onAbrirProyecto(p) }));
+              return <MapaLeaflet center={[markers[0].lat, markers[0].lng]} zoom={11} height={460} markers={markers} scrollWheelZoom className="rounded-card overflow-hidden" />;
+            })()
+          )}
+        </>
       )}
     </div>
   );

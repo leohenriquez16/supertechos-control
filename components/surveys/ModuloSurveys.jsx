@@ -101,8 +101,13 @@ function SurveysList({ usuario, onAbrirProyecto, onAbrirSiteDirecto }) {
     return () => { cancelado = true; };
   }, [reloadKey]);
 
-  // Estados (columnas Kanban) en orden de pipeline.
-  const ESTADOS = ['planning', 'survey_in_progress', 'survey_completed', 'quoted', 'awarded', 'in_execution', 'completed', 'cancelled'];
+  // Estado del levantamiento: usa la etapa real de Odoo si existe, si no el status del ERP.
+  const ORDEN_ODOO = ['New', 'Contactado', 'Asignado', 'On Hold', 'Agendado', 'Visita Programada', 'Realizado', 'Cotizacion en Revision', 'Cotizacion Realizada', 'No se pudo coordinar', 'In Progress', 'No podemos cotizar', 'Cliente no esta interesado', 'Solucion Cotizada espera Aprobación', 'Solved', 'Cancelled'];
+  const estadoDe = (p) => p.odoo_stage || PROJECT_STATUS[p.status] || p.status || 'Sin estado';
+  const columnasKanban = React.useMemo(() => {
+    const presentes = [...new Set(proyectos.map(estadoDe))];
+    return presentes.sort((a, b) => (ORDEN_ODOO.indexOf(a) === -1 ? 99 : ORDEN_ODOO.indexOf(a)) - (ORDEN_ODOO.indexOf(b) === -1 ? 99 : ORDEN_ODOO.indexOf(b)));
+  }, [proyectos]);
   // Coords por proyecto (del primer site con GPS).
   const coordsProy = React.useMemo(() => {
     const m = {};
@@ -198,13 +203,13 @@ function SurveysList({ usuario, onAbrirProyecto, onAbrirSiteDirecto }) {
             </div>
           ) : vista === 'kanban' ? (
             <div className="flex gap-3 overflow-x-auto pb-2">
-              {ESTADOS.map(e => {
-                const items = proyectos.filter(p => (p.status || 'planning') === e);
+              {columnasKanban.map(e => {
+                const items = proyectos.filter(p => estadoDe(p) === e);
                 if (items.length === 0) return null;
                 return (
                   <div key={e} className="w-64 flex-shrink-0 bg-zinc-950 border border-zinc-800 rounded-card">
                     <div className="px-3 py-2 flex items-center justify-between border-b border-zinc-800">
-                      <span className="text-[10px] uppercase tracking-widest font-bold text-zinc-300">{PROJECT_STATUS[e] || e}</span>
+                      <span className="text-[10px] uppercase tracking-widest font-bold text-zinc-300">{e}</span>
                       <span className="text-[9px] text-zinc-600">{items.length}</span>
                     </div>
                     <div className="p-2 space-y-2 min-h-[50px]">
@@ -235,7 +240,7 @@ function SurveysList({ usuario, onAbrirProyecto, onAbrirSiteDirecto }) {
 }
 
 function ProyectoCard({ proyecto, onClick }) {
-  const estadoLabel = PROJECT_STATUS[proyecto.status] || proyecto.status;
+  const estadoLabel = proyecto.odoo_stage || PROJECT_STATUS[proyecto.status] || proyecto.status;
   const company = COMPANIES[proyecto.company] || proyecto.company;
   const color = SERVICE_LINES[proyecto.service_line]?.color || '#666';
   return (

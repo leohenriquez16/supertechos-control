@@ -29,7 +29,10 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
   const [sel, setSel] = useState(null);          // ficha de detalle
   const [modalNueva, setModalNueva] = useState(false);
   const [busqueda, setBusqueda] = useState('');
-  const [agrupar, setAgrupar] = useState(true);   // lista: agrupar por estado
+  const [agruparPor, setAgruparPor] = useState('estado'); // estado | severidad | canal | cliente | none
+  const [fEstado, setFEstado] = useState('');
+  const [fSeveridad, setFSeveridad] = useState('');
+  const [fCanal, setFCanal] = useState('');
   const [dragId, setDragId] = useState(null);
   const [dropCol, setDropCol] = useState(null);
 
@@ -66,9 +69,36 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
 
   const filtradas = useMemo(() => {
     const q = busqueda.toLowerCase().trim();
-    if (!q) return recs;
-    return recs.filter(r => clienteNombre(r).toLowerCase().includes(q) || (r.referenciaCotizacion || '').toLowerCase().includes(q) || (r.descripcion || '').toLowerCase().includes(q));
-  }, [recs, busqueda, data.clientes, ubicaciones]);
+    return recs.filter(r => {
+      if (q && !(clienteNombre(r).toLowerCase().includes(q) || (r.referenciaCotizacion || '').toLowerCase().includes(q) || (r.descripcion || '').toLowerCase().includes(q))) return false;
+      if (fEstado && estadoOdoo(r) !== fEstado) return false;
+      if (fSeveridad && r.severidad !== fSeveridad) return false;
+      if (fCanal && (r.canal || '') !== fCanal) return false;
+      return true;
+    });
+  }, [recs, busqueda, fEstado, fSeveridad, fCanal, data.clientes, ubicaciones]);
+
+  // Opciones presentes para los filtros.
+  const opcCanales = useMemo(() => [...new Set(recs.map(r => r.canal).filter(Boolean))], [recs]);
+  const opcSeveridades = ['alta', 'media', 'baja'];
+
+  // Agrupación según la dimensión elegida.
+  const grupos = useMemo(() => {
+    const cap = s => (s ? s.charAt(0).toUpperCase() + s.slice(1) : '—');
+    const defs = {
+      estado:    { keyOf: estadoOdoo, orden: columnasRecl, labelOf: k => k },
+      severidad: { keyOf: r => r.severidad || '—', orden: ['alta', 'media', 'baja'], labelOf: cap },
+      canal:     { keyOf: r => r.canal || '—', orden: ['whatsapp', 'email', 'web', 'interno'], labelOf: k => CANAL_ICON[k] || k },
+      cliente:   { keyOf: clienteNombre, orden: null, labelOf: k => k },
+      none:      { keyOf: () => 'Todas', orden: ['Todas'], labelOf: k => k },
+    };
+    const { keyOf, orden, labelOf } = defs[agruparPor] || defs.estado;
+    const map = new Map();
+    for (const r of filtradas) { const k = keyOf(r); if (!map.has(k)) map.set(k, []); map.get(k).push(r); }
+    const keys = [...map.keys()];
+    const ordered = orden ? [...orden.filter(k => map.has(k)), ...keys.filter(k => !orden.includes(k)).sort()] : keys.sort();
+    return ordered.map(k => ({ key: k, label: labelOf(k), items: map.get(k) }));
+  }, [filtradas, agruparPor, columnasRecl]);
 
   const cambiarEstado = async (id, estado) => {
     setRecs(prev => prev.map(r => r.id === id ? { ...r, estado } : r)); // optimista
@@ -148,8 +178,39 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
         <button onClick={() => setModalNueva(true)} className="bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-wider px-4 py-2 text-xs flex items-center gap-1 rounded-card"><Plus className="w-3 h-3" /> Nueva</button>
       </div>
 
-      <div className="flex gap-1 bg-zinc-900 border border-zinc-800 rounded-card p-1 w-fit">
-        {[['kanban', 'Kanban'], ['lista', 'Lista'], ['mapa', 'Mapa']].map(([k, l]) => <button key={k} onClick={() => setVista(k)} className={`px-4 py-1.5 text-[11px] font-bold uppercase rounded-card ${vista === k ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>{l}</button>)}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex gap-1 bg-zinc-900 border border-zinc-800 rounded-card p-1 w-fit">
+            {[['kanban', 'Kanban'], ['lista', 'Lista'], ['mapa', 'Mapa']].map(([k, l]) => <button key={k} onClick={() => setVista(k)} className={`px-4 py-1.5 text-[11px] font-bold uppercase rounded-card ${vista === k ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>{l}</button>)}
+          </div>
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 text-zinc-600 absolute left-2.5 top-1/2 -translate-y-1/2" />
+            <input value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar cliente, # cot o descripción…" className="bg-zinc-950 border border-zinc-800 rounded-card pl-8 pr-3 py-1.5 text-xs text-white outline-none focus:border-red-600 w-52 sm:w-72" />
+          </div>
+        </div>
+        {recs.length > 0 && (
+          <div className="flex items-center gap-1.5 flex-wrap text-xs">
+            <FiltroSelectRec value={fEstado} onChange={setFEstado} placeholder="Estado" options={columnasRecl.map(e => [e, e])} />
+            <FiltroSelectRec value={fSeveridad} onChange={setFSeveridad} placeholder="Severidad" options={opcSeveridades.map(s => [s, s.charAt(0).toUpperCase() + s.slice(1)])} />
+            <FiltroSelectRec value={fCanal} onChange={setFCanal} placeholder="Canal" options={opcCanales.map(c => [c, CANAL_ICON[c] || c])} />
+            {(fEstado || fSeveridad || fCanal || busqueda) && (
+              <button onClick={() => { setFEstado(''); setFSeveridad(''); setFCanal(''); setBusqueda(''); }} className="text-[10px] text-zinc-400 hover:text-red-500 underline px-1">Limpiar</button>
+            )}
+            <span className="text-[10px] text-zinc-600 ml-auto">{filtradas.length} de {recs.length}</span>
+            {vista === 'lista' && (
+              <label className="flex items-center gap-1 ml-1">
+                <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold">Agrupar:</span>
+                <select value={agruparPor} onChange={e => setAgruparPor(e.target.value)} className="bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1 text-xs text-white outline-none focus:border-red-600">
+                  <option value="estado">Estado</option>
+                  <option value="severidad">Severidad</option>
+                  <option value="canal">Canal</option>
+                  <option value="cliente">Cliente</option>
+                  <option value="none">Sin agrupar</option>
+                </select>
+              </label>
+            )}
+          </div>
+        )}
       </div>
 
       {loading ? (
@@ -163,7 +224,7 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
       ) : vista === 'kanban' ? (
         <div className="flex gap-3 overflow-x-auto pb-2">
           {columnasRecl.map(col => {
-            const items = recs.filter(r => estadoOdoo(r) === col);
+            const items = filtradas.filter(r => estadoOdoo(r) === col);
             return (
               <div key={col} className="w-60 flex-shrink-0 bg-zinc-950 border border-zinc-800 rounded-card">
                 <div className="px-3 py-2 flex items-center justify-between border-b border-zinc-800">
@@ -176,31 +237,12 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
           })}
         </div>
       ) : vista === 'lista' ? (
-        <>
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="relative flex-1 min-w-[200px]">
-              <Search className="w-4 h-4 text-zinc-600 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar por cliente, # cotización o descripción…" className="w-full bg-zinc-950 border border-zinc-800 rounded-card pl-9 pr-3 py-2 text-sm text-white outline-none focus:border-red-600" />
-            </div>
-            <button onClick={() => setAgrupar(a => !a)} className={`px-3 py-2 text-[10px] font-bold uppercase rounded-card border whitespace-nowrap ${agrupar ? 'bg-red-600 border-red-600 text-white' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>
-              Agrupar por estado
-            </button>
-          </div>
-          <ReclamacionesTabla
-            recs={filtradas}
-            estadoOdoo={estadoOdoo}
-            orden={columnasRecl}
-            agrupar={agrupar}
-            clienteNombre={clienteNombre}
-            ubicNombre={ubicNombre}
-            onAbrir={setSel}
-          />
-        </>
+        <ReclamacionesTabla grupos={grupos} agrupado={agruparPor !== 'none'} clienteNombre={clienteNombre} ubicNombre={ubicNombre} estadoOdoo={estadoOdoo} onAbrir={setSel} />
       ) : (
         // Mapa
         (() => {
-          const conC = recs.map(r => ({ r, c: coordsDe(r) })).filter(x => x.c);
-          if (conC.length === 0) return <div className="bg-zinc-950 border border-zinc-800 rounded-card p-8 text-center text-zinc-500 text-sm">Ninguna reclamación tiene ubicación con GPS aún.</div>;
+          const conC = filtradas.map(r => ({ r, c: coordsDe(r) })).filter(x => x.c);
+          if (conC.length === 0) return <div className="bg-zinc-950 border border-zinc-800 rounded-card p-8 text-center text-zinc-500 text-sm">Ninguna reclamación (de las filtradas) tiene ubicación con GPS aún.</div>;
           const markers = conC.map(({ r, c }) => ({ lat: c.lat, lng: c.lng, color: COLS.find(x => x.e === r.estado)?.color?.includes('red') ? 'red' : r.estado === 'resuelta' ? 'green' : r.estado === 'en_proceso' ? 'blue' : 'orange', label: clienteNombre(r), popup: `<b>${clienteNombre(r)}</b><br/>${(r.descripcion || '').slice(0, 80)}`, onClick: () => setSel(r) }));
           return <MapaLeaflet center={[markers[0].lat, markers[0].lng]} zoom={11} height={460} markers={markers} scrollWheelZoom className="rounded-card overflow-hidden" />;
         })()
@@ -234,13 +276,21 @@ function FilaReclamacion({ r, estado, clienteNombre, ubicNombre, onAbrir }) {
   );
 }
 
-function ReclamacionesTabla({ recs, estadoOdoo, orden, agrupar, clienteNombre, ubicNombre, onAbrir }) {
-  if (recs.length === 0) {
+// Select de filtro compacto reutilizable.
+function FiltroSelectRec({ value, onChange, placeholder, options }) {
+  return (
+    <select value={value} onChange={e => onChange(e.target.value)} className={`bg-zinc-900 border rounded-card px-2 py-1 text-xs outline-none focus:border-red-600 ${value ? 'border-red-600 text-white' : 'border-zinc-800 text-zinc-400'}`}>
+      <option value="">{placeholder}: todos</option>
+      {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+    </select>
+  );
+}
+
+function ReclamacionesTabla({ grupos, agrupado, clienteNombre, ubicNombre, estadoOdoo, onAbrir }) {
+  const total = grupos.reduce((a, g) => a + g.items.length, 0);
+  if (total === 0) {
     return <div className="bg-zinc-950 border border-zinc-800 rounded-card p-6 text-center text-zinc-500 text-sm">Sin resultados.</div>;
   }
-  const grupos = agrupar
-    ? orden.map(e => ({ estado: e, items: recs.filter(r => estadoOdoo(r) === e) })).filter(g => g.items.length > 0)
-    : [{ estado: null, items: recs }];
 
   return (
     <>
@@ -262,11 +312,11 @@ function ReclamacionesTabla({ recs, estadoOdoo, orden, agrupar, clienteNombre, u
           </thead>
           <tbody>
             {grupos.map(g => (
-              <React.Fragment key={g.estado || 'all'}>
-                {agrupar && (
+              <React.Fragment key={g.key}>
+                {agrupado && (
                   <tr className="bg-zinc-950/80 border-b border-zinc-800">
                     <td colSpan={9} className="px-3 py-1.5 text-[10px] uppercase tracking-widest font-black text-zinc-400">
-                      {g.estado} <span className="text-zinc-600">· {g.items.length}</span>
+                      {g.label} <span className="text-zinc-600">· {g.items.length}</span>
                     </td>
                   </tr>
                 )}
@@ -282,8 +332,8 @@ function ReclamacionesTabla({ recs, estadoOdoo, orden, agrupar, clienteNombre, u
       {/* MOBILE: cards (agrupadas si aplica) */}
       <div className="md:hidden space-y-3">
         {grupos.map(g => (
-          <div key={g.estado || 'all'} className="space-y-2">
-            {agrupar && <div className="text-[10px] uppercase tracking-widest font-black text-zinc-500 px-1">{g.estado} · {g.items.length}</div>}
+          <div key={g.key} className="space-y-2">
+            {agrupado && <div className="text-[10px] uppercase tracking-widest font-black text-zinc-500 px-1">{g.label} · {g.items.length}</div>}
             {g.items.map(r => (
               <button key={r.id} onClick={() => onAbrir(r)} className="w-full text-left bg-zinc-900 border border-zinc-800 rounded-card p-3 hover:border-red-600 flex items-start justify-between gap-3">
                 <div className="min-w-0">

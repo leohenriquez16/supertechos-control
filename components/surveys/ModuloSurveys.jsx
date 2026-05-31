@@ -82,7 +82,12 @@ function SurveysList({ usuario, onAbrirProyecto, onAbrirSiteDirecto }) {
   const [vista, setVista] = useState('kanban');                          // kanban (principal) | lista | mapa
   const [sites, setSites] = useState([]);
   const [busqueda, setBusqueda] = useState('');
-  const [agrupar, setAgrupar] = useState(true);                          // lista: agrupar por estado
+  const [agruparPor, setAgruparPor] = useState('estado');                // estado | servicio | empresa | levantador | none
+  // Filtros (aplican a TODAS las vistas).
+  const [fServicio, setFServicio] = useState('');
+  const [fEmpresa, setFEmpresa] = useState('');
+  const [fEstado, setFEstado] = useState('');
+  const [fLevantador, setFLevantador] = useState('');
 
   useEffect(() => {
     let cancelado = false;
@@ -125,18 +130,47 @@ function SurveysList({ usuario, onAbrirProyecto, onAbrirSiteDirecto }) {
     for (const s of sites) m[s.project_id] = (m[s.project_id] || 0) + 1;
     return m;
   }, [sites]);
-  // Filtro de búsqueda (cliente, levantamiento, descripción, estado).
+  const levantadorDe = (p) => p.asignado_a_nombre || '(Sin asignar)';
+  // Filtro de búsqueda + filtros (cliente, levantamiento, servicio, empresa, estado, levantador).
   const proyFiltrados = React.useMemo(() => {
     const q = busqueda.toLowerCase().trim();
-    if (!q) return proyectos;
-    return proyectos.filter(p =>
-      (p.client_name || '').toLowerCase().includes(q) ||
-      (p.name || '').toLowerCase().includes(q) ||
-      (p.description || '').toLowerCase().includes(q) ||
-      (p.asignado_a_nombre || '').toLowerCase().includes(q) ||
-      estadoDe(p).toLowerCase().includes(q)
-    );
-  }, [proyectos, busqueda]);
+    return proyectos.filter(p => {
+      if (q && !(
+        (p.client_name || '').toLowerCase().includes(q) ||
+        (p.name || '').toLowerCase().includes(q) ||
+        (p.description || '').toLowerCase().includes(q) ||
+        (p.asignado_a_nombre || '').toLowerCase().includes(q) ||
+        estadoDe(p).toLowerCase().includes(q)
+      )) return false;
+      if (fServicio && p.service_line !== fServicio) return false;
+      if (fEmpresa && p.company !== fEmpresa) return false;
+      if (fEstado && estadoDe(p) !== fEstado) return false;
+      if (fLevantador && levantadorDe(p) !== fLevantador) return false;
+      return true;
+    });
+  }, [proyectos, busqueda, fServicio, fEmpresa, fEstado, fLevantador]);
+
+  // Opciones presentes (para los selects de filtro).
+  const opcServicios = React.useMemo(() => [...new Set(proyectos.map(p => p.service_line).filter(Boolean))], [proyectos]);
+  const opcEmpresas = React.useMemo(() => [...new Set(proyectos.map(p => p.company).filter(Boolean))], [proyectos]);
+  const opcLevantadores = React.useMemo(() => [...new Set(proyectos.map(levantadorDe))].sort(), [proyectos]);
+
+  // Agrupación según la dimensión elegida.
+  const grupos = React.useMemo(() => {
+    const defs = {
+      estado:     { keyOf: estadoDe, orden: columnasKanban, labelOf: k => k },
+      servicio:   { keyOf: p => p.service_line || 'other', orden: Object.keys(SERVICE_LINES), labelOf: k => SERVICE_LINES[k]?.label || k },
+      empresa:    { keyOf: p => p.company || '—', orden: Object.keys(COMPANIES), labelOf: k => COMPANIES[k] || k },
+      levantador: { keyOf: levantadorDe, orden: opcLevantadores, labelOf: k => k },
+      none:       { keyOf: () => 'Todos', orden: ['Todos'], labelOf: k => k },
+    };
+    const { keyOf, orden, labelOf } = defs[agruparPor] || defs.estado;
+    const map = new Map();
+    for (const p of proyFiltrados) { const k = keyOf(p); if (!map.has(k)) map.set(k, []); map.get(k).push(p); }
+    const keys = [...map.keys()];
+    const ordered = [...orden.filter(k => map.has(k)), ...keys.filter(k => !orden.includes(k)).sort()];
+    return ordered.map(k => ({ key: k, label: labelOf(k), items: map.get(k) }));
+  }, [proyFiltrados, agruparPor, columnasKanban, opcLevantadores]);
 
   return (
     <div className="space-y-4">
@@ -212,40 +246,51 @@ function SurveysList({ usuario, onAbrirProyecto, onAbrirSiteDirecto }) {
 
       {!loading && !errorMsg && proyectos.length > 0 && (
         <>
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="flex gap-1 bg-zinc-900 border border-zinc-800 rounded-card p-1 w-fit">
-              {[['kanban', 'Kanban', LayoutGrid], ['lista', 'Lista', List], ['mapa', 'Mapa', MapIcon]].map(([k, l, Icon]) => (
-                <button key={k} onClick={() => setVista(k)} className={`px-4 py-1.5 text-[11px] font-bold uppercase rounded-card flex items-center gap-1 ${vista === k ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>
-                  {Icon && <Icon className="w-3 h-3" />}{l}
-                </button>
-              ))}
-            </div>
-            {vista === 'lista' && (
-              <div className="flex items-center gap-2 flex-wrap">
-                <div className="relative">
-                  <Search className="w-3.5 h-3.5 text-zinc-600 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                  <input value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar…" className="bg-zinc-950 border border-zinc-800 rounded-card pl-8 pr-3 py-1.5 text-xs text-white outline-none focus:border-red-600 w-44 sm:w-56" />
-                </div>
-                <button onClick={() => setAgrupar(a => !a)} className={`px-3 py-1.5 text-[10px] font-bold uppercase rounded-card border ${agrupar ? 'bg-red-600 border-red-600 text-white' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>
-                  Agrupar por estado
-                </button>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex gap-1 bg-zinc-900 border border-zinc-800 rounded-card p-1 w-fit">
+                {[['kanban', 'Kanban', LayoutGrid], ['lista', 'Lista', List], ['mapa', 'Mapa', MapIcon]].map(([k, l, Icon]) => (
+                  <button key={k} onClick={() => setVista(k)} className={`px-4 py-1.5 text-[11px] font-bold uppercase rounded-card flex items-center gap-1 ${vista === k ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>
+                    {Icon && <Icon className="w-3 h-3" />}{l}
+                  </button>
+                ))}
               </div>
-            )}
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-zinc-600 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar…" className="bg-zinc-950 border border-zinc-800 rounded-card pl-8 pr-3 py-1.5 text-xs text-white outline-none focus:border-red-600 w-44 sm:w-56" />
+              </div>
+            </div>
+            {/* Filtros (aplican a todas las vistas) + agrupar (lista) */}
+            <div className="flex items-center gap-1.5 flex-wrap text-xs">
+              <FiltroSelect value={fServicio} onChange={setFServicio} placeholder="Servicio" options={opcServicios.map(s => [s, SERVICE_LINES[s]?.label || s])} />
+              <FiltroSelect value={fEmpresa} onChange={setFEmpresa} placeholder="Empresa" options={opcEmpresas.map(c => [c, COMPANIES[c] || c])} />
+              <FiltroSelect value={fEstado} onChange={setFEstado} placeholder="Estado" options={columnasKanban.map(e => [e, e])} />
+              <FiltroSelect value={fLevantador} onChange={setFLevantador} placeholder="Levantador" options={opcLevantadores.map(l => [l, l])} />
+              {(fServicio || fEmpresa || fEstado || fLevantador || busqueda) && (
+                <button onClick={() => { setFServicio(''); setFEmpresa(''); setFEstado(''); setFLevantador(''); setBusqueda(''); }} className="text-[10px] text-zinc-400 hover:text-red-500 underline px-1">Limpiar</button>
+              )}
+              <span className="text-[10px] text-zinc-600 ml-auto">{proyFiltrados.length} de {proyectos.length}</span>
+              {vista === 'lista' && (
+                <label className="flex items-center gap-1 ml-1">
+                  <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold">Agrupar:</span>
+                  <select value={agruparPor} onChange={e => setAgruparPor(e.target.value)} className="bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1 text-xs text-white outline-none focus:border-red-600">
+                    <option value="estado">Estado</option>
+                    <option value="servicio">Servicio</option>
+                    <option value="empresa">Empresa</option>
+                    <option value="levantador">Levantador</option>
+                    <option value="none">Sin agrupar</option>
+                  </select>
+                </label>
+              )}
+            </div>
           </div>
 
           {vista === 'lista' ? (
-            <SurveysTabla
-              proyectos={proyFiltrados}
-              sitesPorProy={sitesPorProy}
-              estadoDe={estadoDe}
-              orden={columnasKanban}
-              agrupar={agrupar}
-              onAbrir={onAbrirProyecto}
-            />
+            <SurveysTabla grupos={grupos} sitesPorProy={sitesPorProy} estadoDe={estadoDe} agrupado={agruparPor !== 'none'} onAbrir={onAbrirProyecto} />
           ) : vista === 'kanban' ? (
             <div className="flex gap-3 overflow-x-auto pb-2">
               {columnasKanban.map(e => {
-                const items = proyectos.filter(p => estadoDe(p) === e);
+                const items = proyFiltrados.filter(p => estadoDe(p) === e);
                 return (
                   <div key={e} className="w-60 flex-shrink-0 bg-zinc-950 border border-zinc-800 rounded-card">
                     <div className="px-3 py-2 flex items-center justify-between border-b border-zinc-800">
@@ -267,8 +312,8 @@ function SurveysList({ usuario, onAbrirProyecto, onAbrirSiteDirecto }) {
             </div>
           ) : (
             (() => {
-              const conC = proyectos.map(p => ({ p, c: coordsProy[p.id] })).filter(x => x.c);
-              if (conC.length === 0) return <div className="bg-zinc-950 border border-zinc-800 rounded-card p-8 text-center text-zinc-500 text-sm">Ningún levantamiento tiene ubicación con GPS aún. (Los importados de Odoo no traen coordenadas; los nuevos creados con link de Maps sí.)</div>;
+              const conC = proyFiltrados.map(p => ({ p, c: coordsProy[p.id] })).filter(x => x.c);
+              if (conC.length === 0) return <div className="bg-zinc-950 border border-zinc-800 rounded-card p-8 text-center text-zinc-500 text-sm">Ningún levantamiento (de los filtrados) tiene ubicación con GPS aún.</div>;
               const markers = conC.map(({ p, c }) => ({ lat: c.lat, lng: c.lng, color: 'red', label: p.client_name, popup: `<b>${p.client_name}</b><br/>${p.name}`, onClick: () => onAbrirProyecto(p) }));
               return <MapaLeaflet center={[markers[0].lat, markers[0].lng]} zoom={11} height={460} markers={markers} scrollWheelZoom className="rounded-card overflow-hidden" />;
             })()
@@ -309,13 +354,21 @@ function FilaSurvey({ p, nSites, estado, onAbrir }) {
   );
 }
 
-function SurveysTabla({ proyectos, sitesPorProy, estadoDe, orden, agrupar, onAbrir }) {
-  if (proyectos.length === 0) {
+// Select de filtro compacto reutilizable: opciones = [value, label][].
+function FiltroSelect({ value, onChange, placeholder, options }) {
+  return (
+    <select value={value} onChange={e => onChange(e.target.value)} className={`bg-zinc-900 border rounded-card px-2 py-1 text-xs outline-none focus:border-red-600 ${value ? 'border-red-600 text-white' : 'border-zinc-800 text-zinc-400'}`}>
+      <option value="">{placeholder}: todos</option>
+      {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+    </select>
+  );
+}
+
+function SurveysTabla({ grupos, sitesPorProy, estadoDe, agrupado, onAbrir }) {
+  const total = grupos.reduce((a, g) => a + g.items.length, 0);
+  if (total === 0) {
     return <div className="bg-zinc-950 border border-zinc-800 rounded-card p-6 text-center text-zinc-500 text-sm">Sin resultados.</div>;
   }
-  const grupos = agrupar
-    ? orden.map(e => ({ estado: e, items: proyectos.filter(p => estadoDe(p) === e) })).filter(g => g.items.length > 0)
-    : [{ estado: null, items: proyectos }];
 
   const Encabezado = () => (
     <thead className="bg-zinc-950 border-b border-zinc-800 sticky top-0 z-10">
@@ -341,11 +394,11 @@ function SurveysTabla({ proyectos, sitesPorProy, estadoDe, orden, agrupar, onAbr
           <Encabezado />
           <tbody>
             {grupos.map(g => (
-              <React.Fragment key={g.estado || 'all'}>
-                {agrupar && (
+              <React.Fragment key={g.key}>
+                {agrupado && (
                   <tr className="bg-zinc-950/80 border-b border-zinc-800">
                     <td colSpan={9} className="px-3 py-1.5 text-[10px] uppercase tracking-widest font-black text-zinc-400">
-                      {g.estado} <span className="text-zinc-600">· {g.items.length}</span>
+                      {g.label} <span className="text-zinc-600">· {g.items.length}</span>
                     </td>
                   </tr>
                 )}
@@ -361,8 +414,8 @@ function SurveysTabla({ proyectos, sitesPorProy, estadoDe, orden, agrupar, onAbr
       {/* MOBILE: cards (agrupadas si aplica) */}
       <div className="md:hidden space-y-3">
         {grupos.map(g => (
-          <div key={g.estado || 'all'} className="space-y-2">
-            {agrupar && <div className="text-[10px] uppercase tracking-widest font-black text-zinc-500 px-1">{g.estado} · {g.items.length}</div>}
+          <div key={g.key} className="space-y-2">
+            {agrupado && <div className="text-[10px] uppercase tracking-widest font-black text-zinc-500 px-1">{g.label} · {g.items.length}</div>}
             {g.items.map(p => <ProyectoCard key={p.id} proyecto={p} onClick={() => onAbrir(p)} />)}
           </div>
         ))}

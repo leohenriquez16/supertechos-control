@@ -48,7 +48,14 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
   const clienteDe = (id) => (data.clientes || []).find(c => c.id === id);
   const proyById = (id) => (data.proyectos || []).find(p => p.id === id);
   const ubic = (id) => ubicaciones.find(u => u.id === id);
-  const clienteNombre = (r) => clienteDe(r.clienteId)?.nombre || proyById(r.proyectoId)?.cliente || '—';
+  const clienteNombre = (r) => clienteDe(r.clienteId)?.nombre || proyById(r.proyectoId)?.cliente || r.clienteNombre || '—';
+  // Pipeline de reclamaciones de Odoo (equipo Customer Care), en orden.
+  const ORDEN_RECL = ['New', 'On Hold', 'Agendado', 'Visita Programada', 'In Progress', 'Solucion Cotizada espera Aprobación', 'Solved', 'Cancelled'];
+  const estadoOdoo = (r) => r.odooStage || (COLS.find(c => c.e === r.estado)?.label) || r.estado;
+  const columnasRecl = useMemo(() => {
+    const extras = [...new Set(recs.map(estadoOdoo))].filter(e => !ORDEN_RECL.includes(e));
+    return [...ORDEN_RECL, ...extras];
+  }, [recs]);
   const ubicNombre = (r) => ubic(r.ubicacionId)?.nombre || proyById(r.proyectoId)?.referenciaProyecto || '';
   const coordsDe = (r) => {
     const u = ubic(r.ubicacionId); if (u && u.latitud != null) return { lat: u.latitud, lng: u.longitud };
@@ -154,20 +161,15 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
         </div>
       ) : vista === 'kanban' ? (
         <div className="flex gap-3 overflow-x-auto pb-2">
-          {COLS.map(c => {
-            const items = recs.filter(r => r.estado === c.e);
+          {columnasRecl.map(col => {
+            const items = recs.filter(r => estadoOdoo(r) === col);
             return (
-              <div key={c.e}
-                onDragOver={(e) => { e.preventDefault(); setDropCol(c.e); }}
-                onDragLeave={() => setDropCol(null)}
-                onDrop={() => { if (dragId) cambiarEstado(dragId, c.e); setDragId(null); setDropCol(null); }}
-                className={`w-64 flex-shrink-0 bg-zinc-950 border rounded-card ${dropCol === c.e ? 'border-red-600' : 'border-zinc-800'}`}>
-                <div className={`h-1 rounded-t-card ${c.color}`} />
+              <div key={col} className="w-60 flex-shrink-0 bg-zinc-950 border border-zinc-800 rounded-card">
                 <div className="px-3 py-2 flex items-center justify-between border-b border-zinc-800">
-                  <span className={`text-[10px] uppercase tracking-widest font-bold ${c.text}`}>{c.label}</span>
+                  <span className="text-[10px] uppercase tracking-widest font-bold text-zinc-300 truncate">{col}</span>
                   <span className="text-[9px] text-zinc-600">{items.length}</span>
                 </div>
-                <div className="p-2 space-y-2 min-h-[60px]">{items.map(Card)}{items.length === 0 && <div className="text-center text-[10px] text-zinc-700 py-3 italic">—</div>}</div>
+                <div className="p-2 space-y-2 min-h-[50px]">{items.map(Card)}</div>
               </div>
             );
           })}

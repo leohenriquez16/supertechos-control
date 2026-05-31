@@ -103,7 +103,8 @@ function SurveysList({ usuario, onAbrirProyecto, onAbrirSiteDirecto }) {
   }, [reloadKey]);
 
   // Estado del levantamiento: usa la etapa real de Odoo si existe, si no el status del ERP.
-  const ORDEN_ODOO = ['New', 'Contactado', 'Asignado', 'On Hold', 'Agendado', 'Visita Programada', 'Realizado', 'Cotizacion en Revision', 'Cotizacion Realizada', 'No se pudo coordinar', 'In Progress', 'No podemos cotizar', 'Cliente no esta interesado', 'Solucion Cotizada espera Aprobación', 'Solved', 'Cancelled'];
+  // Solo las etapas del pipeline de Levantamientos (equipo "Levantamientos" en Odoo).
+  const ORDEN_ODOO = ['New', 'Contactado', 'Asignado', 'Agendado', 'Realizado', 'Cotizacion en Revision', 'Cotizacion Realizada', 'No se pudo coordinar', 'No podemos cotizar', 'Cliente no esta interesado'];
   const estadoDe = (p) => p.odoo_stage || PROJECT_STATUS[p.status] || p.status || 'Sin estado';
   const columnasKanban = React.useMemo(() => {
     // Pipeline completo de Odoo en orden + cualquier estado extra (ERP) al final.

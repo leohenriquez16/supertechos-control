@@ -9,7 +9,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Loader2, Plus, MapPin, Building, ChevronRight, ArrowLeft, List, Map as MapIcon } from 'lucide-react';
-import { listarProyectosSurveys, listarSitesProyectoSurvey, listarTodosLosSitesSurvey, COMPANIES, PROJECT_STATUS, SITE_STATUS } from '../../lib/surveys';
+import { listarProyectosSurveys, listarSitesProyectoSurvey, listarTodosLosSitesSurvey, COMPANIES, PROJECT_STATUS, SITE_STATUS, SERVICE_LINES } from '../../lib/surveys';
 import MapaLeaflet from '../common/MapaLeaflet';
 import ServiceLineBadge from './ServiceLineBadge';
 import SurveySiteDetail from './SurveySiteDetail';
@@ -22,20 +22,34 @@ export default function ModuloSurveys({ usuario }) {
   const [subvista, setSubvista] = useState('lista');
   const [proyectoActivo, setProyectoActivo] = useState(null);
   const [siteActivo, setSiteActivo] = useState(null);
+  // v8.19.64: si entramos directo a la ficha del sitio (levantamiento de 1 sitio),
+  // "Volver" regresa a la lista, no a la pantalla de "sitios".
+  const [siteDirecto, setSiteDirecto] = useState(false);
+
+  // Abrir levantamiento: si tiene UN solo sitio, va directo a la ficha del cliente.
+  const abrirProyecto = async (p) => {
+    setProyectoActivo(p);
+    try {
+      const ss = await listarSitesProyectoSurvey(p.id);
+      if (ss.length === 1) { setSiteActivo(ss[0]); setSiteDirecto(true); setSubvista('site'); return; }
+    } catch (e) { console.warn('abrirProyecto:', e?.message); }
+    setSiteDirecto(false);
+    setSubvista('proyecto');
+  };
 
   return (
     <div className="space-y-4">
       {subvista === 'lista' && (
         <SurveysList
           usuario={usuario}
-          onAbrirProyecto={(p) => { setProyectoActivo(p); setSubvista('proyecto'); }}
-          onAbrirSiteDirecto={(p, s) => { setProyectoActivo(p); setSiteActivo(s); setSubvista('site'); }}
+          onAbrirProyecto={abrirProyecto}
+          onAbrirSiteDirecto={(p, s) => { setProyectoActivo(p); setSiteActivo(s); setSiteDirecto(true); setSubvista('site'); }}
         />
       )}
       {subvista === 'proyecto' && proyectoActivo && (
         <SurveyProjectDetail
           proyecto={proyectoActivo}
-          onAbrirSite={(s) => { setSiteActivo(s); setSubvista('site'); }}
+          onAbrirSite={(s) => { setSiteActivo(s); setSiteDirecto(false); setSubvista('site'); }}
           onVolver={() => { setSubvista('lista'); setProyectoActivo(null); }}
         />
       )}
@@ -44,7 +58,10 @@ export default function ModuloSurveys({ usuario }) {
           site={siteActivo}
           proyecto={proyectoActivo}
           usuario={usuario}
-          onVolver={() => { setSubvista('proyecto'); setSiteActivo(null); }}
+          onVolver={() => {
+            if (siteDirecto) { setSubvista('lista'); setSiteActivo(null); setProyectoActivo(null); }
+            else { setSubvista('proyecto'); setSiteActivo(null); }
+          }}
         />
       )}
     </div>
@@ -192,7 +209,7 @@ function SurveysList({ usuario, onAbrirProyecto, onAbrirSiteDirecto }) {
                     </div>
                     <div className="p-2 space-y-2 min-h-[50px]">
                       {items.map(p => (
-                        <button key={p.id} onClick={() => onAbrirProyecto(p)} className="w-full text-left bg-zinc-900 border border-zinc-800 rounded-card p-2.5 hover:border-red-600">
+                        <button key={p.id} onClick={() => onAbrirProyecto(p)} style={{ borderLeftColor: SERVICE_LINES[p.service_line]?.color || '#666', borderLeftWidth: '4px' }} className="w-full text-left bg-zinc-900 border border-zinc-800 rounded-card p-2.5 hover:border-red-600">
                           <div className="flex items-center gap-1 mb-1"><ServiceLineBadge serviceLine={p.service_line} /></div>
                           <div className="font-bold text-xs truncate">{p.client_name}</div>
                           <div className="text-[10px] text-zinc-500 truncate">{p.name}</div>
@@ -220,9 +237,11 @@ function SurveysList({ usuario, onAbrirProyecto, onAbrirSiteDirecto }) {
 function ProyectoCard({ proyecto, onClick }) {
   const estadoLabel = PROJECT_STATUS[proyecto.status] || proyecto.status;
   const company = COMPANIES[proyecto.company] || proyecto.company;
+  const color = SERVICE_LINES[proyecto.service_line]?.color || '#666';
   return (
     <button
       onClick={onClick}
+      style={{ borderLeftColor: color, borderLeftWidth: '4px' }}
       className="w-full text-left bg-zinc-900 border border-zinc-800 rounded-card hover:border-red-600 p-4 flex items-center justify-between gap-3 transition-colors"
     >
       <div className="flex-1 min-w-0">

@@ -6041,6 +6041,123 @@ function VistaLista({ proyectos, data, densidad = 'detallado', dx, onVerProyecto
 // ============================================================
 // DETALLE DE PROYECTO
 // ============================================================
+// v8.19.69: selector de localidad (cliente_ubicaciones) ligada al proyecto.
+// Lista las ubicaciones del cliente del proyecto y permite asignar/crear una nueva.
+function SelectorUbicacionProyecto({ proyecto, esAdmin, onRecargar }) {
+  const [ubics, setUbics] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [guardando, setGuardando] = useState(false);
+  const [creando, setCreando] = useState(false);
+
+  const recargarUbics = async () => {
+    if (!proyecto.clienteId) { setUbics([]); setLoading(false); return; }
+    setLoading(true);
+    try { setUbics(await db.listarUbicacionesCliente(proyecto.clienteId)); }
+    catch (e) { console.warn('ubicaciones proyecto:', e?.message); }
+    setLoading(false);
+  };
+  useEffect(() => { recargarUbics(); /* eslint-disable-next-line */ }, [proyecto.clienteId]);
+
+  const actual = ubics.find(u => u.id === proyecto.ubicacionId);
+  const cambiar = async (id) => {
+    setGuardando(true);
+    try { await db.asignarUbicacionProyecto(proyecto.id, id || null); if (onRecargar) await onRecargar(); }
+    catch (e) { alert('Error: ' + (e.message || e)); }
+    setGuardando(false);
+  };
+
+  if (!proyecto.clienteId) {
+    return <div className="mt-3 text-[11px] text-amber-400">⚠ Proyecto sin cliente vinculado — no se puede asignar ubicación.</div>;
+  }
+  return (
+    <div className="mt-3 flex items-center gap-2 flex-wrap text-xs">
+      <span className="text-zinc-500 inline-flex items-center gap-1"><MapPin className="w-3.5 h-3.5" /> Ubicación:</span>
+      {esAdmin ? (
+        <>
+          <select
+            value={proyecto.ubicacionId || ''}
+            disabled={guardando || loading}
+            onChange={e => cambiar(e.target.value)}
+            className="bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1 text-white text-xs outline-none focus:border-red-600 max-w-[280px] disabled:opacity-50"
+          >
+            <option value="">— Sin asignar —</option>
+            {ubics.map(u => <option key={u.id} value={u.id}>{u.nombre}{u.ciudad ? ` · ${u.ciudad}` : ''}</option>)}
+          </select>
+          <button onClick={() => setCreando(true)} className="text-zinc-400 hover:text-red-500 text-[11px] underline">＋ nueva</button>
+          {guardando && <Loader2 className="w-3 h-3 animate-spin text-zinc-500" />}
+        </>
+      ) : (
+        <span className="text-zinc-200 font-bold">{actual ? actual.nombre : 'Sin asignar'}</span>
+      )}
+      {creando && (
+        <ModalNuevaUbicacionRapida
+          clienteId={proyecto.clienteId}
+          onCerrar={() => setCreando(false)}
+          onCreada={async (u) => { setCreando(false); await recargarUbics(); await cambiar(u.id); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ModalNuevaUbicacionRapida({ clienteId, onCerrar, onCreada }) {
+  const [nombre, setNombre] = useState('');
+  const [direccion, setDireccion] = useState('');
+  const [ciudad, setCiudad] = useState('');
+  const [contactoNombre, setContactoNombre] = useState('');
+  const [contactoTelefono, setContactoTelefono] = useState('');
+  const [guardando, setGuardando] = useState(false);
+
+  const guardar = async () => {
+    if (!nombre.trim()) { alert('Ponle un nombre a la ubicación (ej. "Sucursal Naco").'); return; }
+    setGuardando(true);
+    try {
+      const u = await db.crearUbicacionCliente({ clienteId, nombre: nombre.trim(), direccion: direccion.trim(), ciudad: ciudad.trim(), contactoNombre: contactoNombre.trim(), contactoTelefono: contactoTelefono.trim() });
+      onCreada(u);
+    } catch (e) { alert('Error: ' + (e.message || e)); setGuardando(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-[60] flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto" onClick={onCerrar}>
+      <div className="bg-zinc-950 border-2 border-red-600 rounded-card w-full max-w-md my-4" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b border-zinc-800">
+          <div className="text-sm font-bold">Nueva ubicación del cliente</div>
+          <button onClick={onCerrar} className="text-zinc-500 hover:text-white"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="p-4 space-y-3">
+          <div>
+            <div className="text-[10px] uppercase text-zinc-500 mb-1">Nombre *</div>
+            <input value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Sucursal Naco, Torre principal…" className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm" autoFocus />
+          </div>
+          <div>
+            <div className="text-[10px] uppercase text-zinc-500 mb-1">Dirección</div>
+            <input value={direccion} onChange={e => setDireccion(e.target.value)} className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm" />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <div className="text-[10px] uppercase text-zinc-500 mb-1">Ciudad</div>
+              <input value={ciudad} onChange={e => setCiudad(e.target.value)} className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm" />
+            </div>
+            <div>
+              <div className="text-[10px] uppercase text-zinc-500 mb-1">Tel. contacto</div>
+              <input value={contactoTelefono} onChange={e => setContactoTelefono(e.target.value)} className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm" />
+            </div>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase text-zinc-500 mb-1">Contacto en sitio</div>
+            <input value={contactoNombre} onChange={e => setContactoNombre(e.target.value)} className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm" />
+          </div>
+          <div className="text-[10px] text-zinc-600">La georreferencia (GPS) se puede agregar luego desde el módulo Clientes → Ubicaciones.</div>
+        </div>
+        <div className="flex gap-2 p-4 border-t border-zinc-800">
+          <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2.5 rounded-card">Cancelar</button>
+          <button onClick={guardar} disabled={guardando} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-2.5 rounded-card">{guardando ? 'Creando…' : 'Crear y asignar'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onActualizarProyecto, onRegistrarEnvio, onRegistrarEnviosLote, esSupervisor, onIrAReportar, onIrASistemas, onCambiarEstado, onArchivarProyecto, onEliminarProyecto, onEliminarReporte, onEditarReporte, onEliminarEnvio, onEliminarJornada, onRecargar }) {
   const sistema = data.sistemas[proyecto.sistema];
   if (!sistema) return <div className="text-zinc-500">Sistema no encontrado.</div>;
@@ -6105,6 +6222,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
         <h1 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight">{proyecto.cliente}</h1>
         <div className="text-sm text-zinc-400 mt-0.5">{proyecto.referenciaProyecto || proyecto.nombre}</div>
         <div className="flex flex-wrap gap-3 mt-3 text-xs text-zinc-400">{supervisor && <span>👔 <span className="text-zinc-200 font-bold">{supervisor.nombre}</span></span>}{maestro && <span>🔨 <span className="text-zinc-200 font-bold">{maestro.nombre}</span></span>}</div>
+        <SelectorUbicacionProyecto proyecto={proyecto} esAdmin={esAdmin} onRecargar={onRecargar} />
       </div>
 
       {modalEstado && <ModalCambiarEstado proyecto={proyecto} usuario={usuario} personal={data.personal} onCerrar={() => setModalEstado(false)} onConfirmar={async (estadoNuevo, nota, datosExtra) => { await onCambiarEstado(proyecto.id, estadoNuevo, nota, datosExtra); setModalEstado(false); }} />}

@@ -17,7 +17,7 @@ import SurveySitesMap from './SurveySitesMap';
 import ModalNuevoProyecto from './ModalNuevoProyecto';
 import ModalLevantamientoSimple from './ModalLevantamientoSimple';
 
-export default function ModuloSurveys({ usuario }) {
+export default function ModuloSurveys({ usuario, data }) {
   // Subvistas: 'lista' (default) | 'proyecto' | 'site'
   const [subvista, setSubvista] = useState('lista');
   const [proyectoActivo, setProyectoActivo] = useState(null);
@@ -58,6 +58,7 @@ export default function ModuloSurveys({ usuario }) {
           site={siteActivo}
           proyecto={proyectoActivo}
           usuario={usuario}
+          data={data}
           onVolver={() => {
             if (siteDirecto) { setSubvista('lista'); setSiteActivo(null); setProyectoActivo(null); }
             else { setSubvista('proyecto'); setSiteActivo(null); }
@@ -105,8 +106,9 @@ function SurveysList({ usuario, onAbrirProyecto, onAbrirSiteDirecto }) {
   const ORDEN_ODOO = ['New', 'Contactado', 'Asignado', 'On Hold', 'Agendado', 'Visita Programada', 'Realizado', 'Cotizacion en Revision', 'Cotizacion Realizada', 'No se pudo coordinar', 'In Progress', 'No podemos cotizar', 'Cliente no esta interesado', 'Solucion Cotizada espera Aprobación', 'Solved', 'Cancelled'];
   const estadoDe = (p) => p.odoo_stage || PROJECT_STATUS[p.status] || p.status || 'Sin estado';
   const columnasKanban = React.useMemo(() => {
-    const presentes = [...new Set(proyectos.map(estadoDe))];
-    return presentes.sort((a, b) => (ORDEN_ODOO.indexOf(a) === -1 ? 99 : ORDEN_ODOO.indexOf(a)) - (ORDEN_ODOO.indexOf(b) === -1 ? 99 : ORDEN_ODOO.indexOf(b)));
+    // Pipeline completo de Odoo en orden + cualquier estado extra (ERP) al final.
+    const extras = [...new Set(proyectos.map(estadoDe))].filter(e => !ORDEN_ODOO.includes(e));
+    return [...ORDEN_ODOO, ...extras];
   }, [proyectos]);
   // Coords por proyecto (del primer site con GPS).
   const coordsProy = React.useMemo(() => {
@@ -205,11 +207,10 @@ function SurveysList({ usuario, onAbrirProyecto, onAbrirSiteDirecto }) {
             <div className="flex gap-3 overflow-x-auto pb-2">
               {columnasKanban.map(e => {
                 const items = proyectos.filter(p => estadoDe(p) === e);
-                if (items.length === 0) return null;
                 return (
-                  <div key={e} className="w-64 flex-shrink-0 bg-zinc-950 border border-zinc-800 rounded-card">
+                  <div key={e} className="w-60 flex-shrink-0 bg-zinc-950 border border-zinc-800 rounded-card">
                     <div className="px-3 py-2 flex items-center justify-between border-b border-zinc-800">
-                      <span className="text-[10px] uppercase tracking-widest font-bold text-zinc-300">{e}</span>
+                      <span className="text-[10px] uppercase tracking-widest font-bold text-zinc-300 truncate">{e}</span>
                       <span className="text-[9px] text-zinc-600">{items.length}</span>
                     </div>
                     <div className="p-2 space-y-2 min-h-[50px]">

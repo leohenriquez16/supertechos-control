@@ -13,11 +13,24 @@ import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Building, MapPin, Calendar, Clock, FileText, AlertTriangle, Play, ClipboardList, Layers, ChevronDown, Loader2 } from 'lucide-react';
 import QuickActions from './QuickActions';
 import DynamicSurveyForm from './DynamicSurveyForm';
-import { SITE_STATUS, listarVisitasDeSite, listarAreasDeVisita, obtenerTemplateSurvey } from '../../lib/surveys';
+import { SITE_STATUS, listarVisitasDeSite, listarAreasDeVisita, obtenerTemplateSurvey, asignarPersonaSurvey } from '../../lib/surveys';
 import { imprimirLevantamiento } from './imprimirLevantamiento';
 
-export default function SurveySiteDetail({ site, proyecto, usuario, onVolver }) {
+export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolver }) {
   const [formAbierto, setFormAbierto] = useState(false);
+  // v8.19.65: asignación de personal habilitado al levantamiento.
+  const habilitados = (data?.personal || []).filter(p => p.levantamientoHabilitado && !p.archivado);
+  const [asignadoId, setAsignadoId] = useState(proyecto?.asignado_a_id || '');
+  const [guardandoAsig, setGuardandoAsig] = useState(false);
+  const asignar = async (pid) => {
+    setAsignadoId(pid);
+    setGuardandoAsig(true);
+    try {
+      const persona = habilitados.find(p => p.id === pid);
+      await asignarPersonaSurvey(proyecto.id, pid || null, persona?.nombre || null);
+    } catch (e) { alert('Error: ' + (e.message || e)); }
+    setGuardandoAsig(false);
+  };
   const status = SITE_STATUS[site.survey_status] || SITE_STATUS.pending;
   const hasGeo = site.latitude != null && site.longitude != null;
   const tieneInfoFaltante = site.survey_status === 'missing_info';
@@ -141,6 +154,22 @@ export default function SurveySiteDetail({ site, proyecto, usuario, onVolver }) 
       )}
 
       {/* Levantamiento(s) ya capturado(s) — solo lectura */}
+      {/* v8.19.65: Asignar levantador (personal habilitado) */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
+        <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1.5 flex items-center gap-1">
+          <ClipboardList className="w-3.5 h-3.5 text-red-500" /> Levantador asignado
+          {guardandoAsig && <Loader2 className="w-3 h-3 animate-spin text-zinc-500" />}
+        </div>
+        {habilitados.length === 0 ? (
+          <div className="text-[11px] text-zinc-500">No hay personal habilitado para levantamientos. Actívalo en el perfil de la persona (Personal → toggle "Levantamientos habilitado").</div>
+        ) : (
+          <select value={asignadoId} onChange={e => asignar(e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm">
+            <option value="">— Sin asignar —</option>
+            {habilitados.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+          </select>
+        )}
+      </div>
+
       <LevantamientosRealizados site={site} proyecto={proyecto} />
 
       {/* CTA: iniciar levantamiento */}

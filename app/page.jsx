@@ -848,7 +848,7 @@ export default function App() {
         {vista === 'planificacion' && puede(usuario, data.permisos, 'planificacion', 'ver') && <VistaPlanificacion usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'miProduccion' && tieneRol(usuario, 'maestro') && <VistaMiProduccion usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'miCajaChica' && (tieneRol(usuario, 'maestro') || tieneRol(usuario, 'supervisor')) && usuario.cajaChicaHabilitada && <VistaMiCajaChica usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} />}
-        {vista === 'surveys' && esAdmin && <ModuloSurveys usuario={usuario} />}
+        {vista === 'surveys' && esAdmin && <ModuloSurveys usuario={usuario} data={data} />}
         {vista === 'cajaChica' && esAdmin && <VistaCajaChicaAdmin usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onIrAProveedores={() => setVista('proveedoresCajaChica')} onIrACategorias={() => setVista('categoriasCajaChica')} />}
         {vista === 'proveedoresCajaChica' && esAdmin && <VistaProveedoresCajaChica usuario={usuario} data={data} onVolver={() => setVista('cajaChica')} />}
         {vista === 'categoriasCajaChica' && esAdmin && <VistaCategoriasCajaChica usuario={usuario} onVolver={() => setVista('cajaChica')} onCambio={() => recargar()} />}
@@ -4413,6 +4413,17 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
               </div>
             </label>
           )}
+          {/* v8.19.65: Toggle Levantamientos habilitado — admin habilita por persona */}
+          <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={!!form.levantamientoHabilitado} onChange={e => setForm({ ...form, levantamientoHabilitado: e.target.checked })} className="w-4 h-4 accent-red-600" />
+              <div className="flex-1">
+                <div className="text-xs font-bold flex items-center gap-1">📋 Levantamientos habilitado</div>
+                <div className="text-[10px] text-zinc-500">Podrá realizar levantamientos en sitio y ser asignado a ellos</div>
+              </div>
+            </label>
+          </div>
+
           {/* v8.12: Toggle Caja Chica + límite — admin habilita por persona */}
           {(form.roles.includes('maestro') || form.roles.includes('supervisor')) && (
             <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3 space-y-2">

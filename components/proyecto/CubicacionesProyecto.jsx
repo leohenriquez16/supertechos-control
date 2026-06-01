@@ -169,6 +169,18 @@ export default function CubicacionesProyecto({ proyecto, usuario, esAdmin, data,
                   <Kpi label="Facturado (subtotal)" value={formatRD(facturadoAcum)} />
                   <Kpi label="Retención acumulada" value={formatRD(retencionAcum)} />
                 </div>
+                {/* Control de cortes: lo ya cubicado no se vuelve a cobrar */}
+                {(() => {
+                  const ejec = areas.reduce((a, ar) => a + m2EjecutadoObra(ar), 0);
+                  const cubic = Object.values(m2AcumPorArea).reduce((a, v) => a + (Number(v) || 0), 0);
+                  const pend = Math.max(0, Math.round((ejec - cubic) * 100) / 100);
+                  return (
+                    <div className="bg-zinc-900 border border-zinc-800 rounded-card p-2.5 text-[11px] flex items-center justify-between gap-2 flex-wrap">
+                      <span className="text-zinc-400">Ejecutado en obra <b className="text-green-400">{formatNum(ejec)} m²</b> · Ya cubicado (cortes) <b className="text-zinc-200">{formatNum(cubic)} m²</b></span>
+                      <span className="text-amber-300 font-bold">Pendiente por cubicar: {formatNum(pend)} m²</span>
+                    </div>
+                  );
+                })()}
 
                 {/* Nueva cubicación */}
                 {!nueva ? (

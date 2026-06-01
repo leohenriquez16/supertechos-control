@@ -8,6 +8,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { ArrowLeft, Loader2, Briefcase, MapPin, AlertTriangle, ChevronDown, MessageCircle } from 'lucide-react';
 import * as db from '../../lib/db';
+import { obtenerUbicacion, distanciaMetros, formatDistancia } from '../../lib/geo';
 import { listarProyectosSurveys, listarTodosLosSitesSurvey, SERVICE_LINES, ESCALERA } from '../../lib/surveys';
 import { EscaleraBadge } from '../surveys/ModuloSurveys';
 import MapaLeaflet from '../common/MapaLeaflet';
@@ -38,6 +39,15 @@ export default function VistaMisAsignaciones({ usuario, data, onVolver, onVerPro
   const [ubicaciones, setUbicaciones] = useState([]);
   const [show, setShow] = useState({ proyectos: true, levantamientos: true, reclamaciones: true });
   const [exp, setExp] = useState(null); // item expandido (lev/rec)
+  const [miUbic, setMiUbic] = useState(null); // v8.19.96: ubicación del supervisor
+  const [buscandoUbic, setBuscandoUbic] = useState(false);
+  const verMiUbicacion = async () => {
+    setBuscandoUbic(true);
+    const u = await obtenerUbicacion();
+    setBuscandoUbic(false);
+    if (u) setMiUbic(u); else alert('No se pudo obtener tu ubicación. Activa el GPS y dale permiso al navegador.');
+  };
+  const distTxt = (coords) => (miUbic && coords && coords.lat != null) ? formatDistancia(distanciaMetros(miUbic.lat, miUbic.lng, coords.lat, coords.lng)) : null;
 
   useEffect(() => {
     let cancel = false;
@@ -84,15 +94,22 @@ export default function VistaMisAsignaciones({ usuario, data, onVolver, onVerPro
     if (show.proyectos) for (const p of proyectos) { if (p.ubicacionLat != null && p.ubicacionLng != null) out.push({ lat: Number(p.ubicacionLat), lng: Number(p.ubicacionLng), color: 'red', label: p.cliente, popup: `<b>🔧 ${p.cliente}</b><br/>${p.referenciaProyecto || p.nombre || ''}`, onClick: () => onVerProyecto?.(p) }); }
     if (show.levantamientos) for (const l of levs) { if (l._coords) { const esc = ESCALERA[l.requiere_escalera]; out.push({ lat: l._coords.lat, lng: l._coords.lng, color: 'blue', label: l.client_name, popup: `<b>📍 ${l.client_name}</b><br/>${SERVICE_LINES[l.service_line]?.label || ''}${esc ? `<br/>🪜 ${esc.label}` : ''}`, onClick: () => setExp('lev-' + l.id) }); } }
     if (show.reclamaciones) for (const r of recs) { const c = recCoords(r); if (c) out.push({ lat: c.lat, lng: c.lng, color: 'orange', label: recCliente(r), popup: `<b>⚠ ${recCliente(r)}</b><br/>${(r.descripcion || '').slice(0, 70)}`, onClick: () => setExp('rec-' + r.id) }); }
+    // v8.19.96: tu ubicación actual (para ver qué te queda cerca).
+    if (miUbic) out.push({ lat: miUbic.lat, lng: miUbic.lng, color: 'green', label: 'Tú', popup: `<b>📍 Tu ubicación</b>${miUbic.precision ? `<br/>±${miUbic.precision} m` : ''}` });
     return out;
-  }, [show, proyectos, levs, recs, ubicaciones]);
+  }, [show, proyectos, levs, recs, ubicaciones, miUbic]);
 
   return (
     <div className="space-y-4">
       {onVolver && <button onClick={onVolver} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button>}
-      <div>
-        <h1 className="text-3xl font-black tracking-tight">Mis asignaciones</h1>
-        <div className="text-xs text-zinc-500 mt-1">Tus proyectos, levantamientos y reclamaciones. Elige qué ver en el mapa.</div>
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <h1 className="text-3xl font-black tracking-tight">Mis asignaciones</h1>
+          <div className="text-xs text-zinc-500 mt-1">Tus proyectos, levantamientos y reclamaciones. Elige qué ver en el mapa.</div>
+        </div>
+        <button onClick={verMiUbicacion} disabled={buscandoUbic} className={`flex-shrink-0 px-3 py-2 rounded-card text-xs font-bold uppercase flex items-center gap-1.5 border ${miUbic ? 'bg-green-600/20 border-green-600 text-green-300' : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-red-600'}`}>
+          {buscandoUbic ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MapPin className="w-3.5 h-3.5" />} {miUbic ? 'Ubicación activa' : 'Mi ubicación'}
+        </button>
       </div>
 
       {/* Capas */}
@@ -148,7 +165,10 @@ export default function VistaMisAsignaciones({ usuario, data, onVolver, onVerPro
                     <div className="font-bold truncate">{p.cliente}</div>
                     <div className="text-[11px] text-zinc-500 truncate">{p.referenciaProyecto || p.nombre}{p.referenciaOdoo ? ` · ${p.referenciaOdoo}` : ''}</div>
                   </div>
-                  <span className="text-[10px] text-red-400 shrink-0">Ver →</span>
+                  <span className="shrink-0 text-right">
+                    {distTxt({ lat: p.ubicacionLat, lng: p.ubicacionLng }) && <span className="block text-[10px] font-bold text-green-400">📍 {distTxt({ lat: p.ubicacionLat, lng: p.ubicacionLng })}</span>}
+                    <span className="text-[10px] text-red-400">Ver →</span>
+                  </span>
                 </button>
               ))}
             </Seccion>
@@ -168,7 +188,10 @@ export default function VistaMisAsignaciones({ usuario, data, onVolver, onVerPro
                         </div>
                         <div className="text-[11px] text-zinc-500 truncate">{SERVICE_LINES[l.service_line]?.label || ''}{l.odoo_stage ? ` · ${l.odoo_stage}` : ''}</div>
                       </div>
-                      <ChevronDown className={`w-4 h-4 text-zinc-500 shrink-0 transition-transform ${abierto ? 'rotate-180' : ''}`} />
+                      <span className="flex items-center gap-2 shrink-0">
+                        {distTxt(l._coords) && <span className="text-[10px] font-bold text-green-400">📍 {distTxt(l._coords)}</span>}
+                        <ChevronDown className={`w-4 h-4 text-zinc-500 transition-transform ${abierto ? 'rotate-180' : ''}`} />
+                      </span>
                     </button>
                     {abierto && (
                       <div className="border-t border-zinc-800 p-3 space-y-2 text-xs">
@@ -201,7 +224,10 @@ export default function VistaMisAsignaciones({ usuario, data, onVolver, onVerPro
                         </div>
                         <div className="text-[11px] text-zinc-500 truncate">{r.odooStage || r.estado} · abierta {fmt(r.fechaApertura)}</div>
                       </div>
-                      <ChevronDown className={`w-4 h-4 text-zinc-500 shrink-0 transition-transform ${abierto ? 'rotate-180' : ''}`} />
+                      <span className="flex items-center gap-2 shrink-0">
+                        {distTxt(recCoords(r)) && <span className="text-[10px] font-bold text-green-400">📍 {distTxt(recCoords(r))}</span>}
+                        <ChevronDown className={`w-4 h-4 text-zinc-500 transition-transform ${abierto ? 'rotate-180' : ''}`} />
+                      </span>
                     </button>
                     {abierto && (
                       <div className="border-t border-zinc-800 p-3 space-y-2 text-xs">

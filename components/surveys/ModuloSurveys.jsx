@@ -10,6 +10,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Loader2, Plus, MapPin, Building, ChevronRight, ArrowLeft, List, Map as MapIcon, LayoutGrid, Search, User as UserIcon, Calendar } from 'lucide-react';
 import { listarProyectosSurveys, listarSitesProyectoSurvey, listarTodosLosSitesSurvey, COMPANIES, PROJECT_STATUS, SITE_STATUS, SERVICE_LINES, ESCALERA } from '../../lib/surveys';
+import * as db from '../../lib/db';
 import MapaLeaflet from '../common/MapaLeaflet';
 import ServiceLineBadge from './ServiceLineBadge';
 import SurveySiteDetail from './SurveySiteDetail';
@@ -89,16 +90,18 @@ function SurveysList({ usuario, onAbrirProyecto, onAbrirSiteDirecto }) {
   const [fEmpresa, setFEmpresa] = useState('');
   const [fEstado, setFEstado] = useState('');
   const [fLevantador, setFLevantador] = useState('');
+  const [recs, setRecs] = useState([]); // v8.19.85: reclamaciones para el calendario
 
   useEffect(() => {
     let cancelado = false;
     (async () => {
       setLoading(true);
       try {
-        const [data, ss] = await Promise.all([listarProyectosSurveys(), listarTodosLosSitesSurvey()]);
+        const [data, ss, rs] = await Promise.all([listarProyectosSurveys(), listarTodosLosSitesSurvey(), db.listarReclamaciones().catch(() => [])]);
         if (!cancelado) {
           setProyectos(data);
           setSites(ss);
+          setRecs(rs || []);
           setErrorMsg(null);
         }
       } catch (e) {
@@ -312,7 +315,7 @@ function SurveysList({ usuario, onAbrirProyecto, onAbrirSiteDirecto }) {
               })}
             </div>
           ) : vista === 'calendario' ? (
-            <CalendarioLevantamientos proyectos={proyFiltrados} onReload={() => setReloadKey(k => k + 1)} onAbrir={onAbrirProyecto} />
+            <CalendarioLevantamientos proyectos={proyFiltrados} reclamaciones={recs} onReload={() => setReloadKey(k => k + 1)} onAbrir={onAbrirProyecto} />
           ) : (
             (() => {
               const conC = proyFiltrados.map(p => ({ p, c: coordsProy[p.id] })).filter(x => x.c);

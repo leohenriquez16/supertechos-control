@@ -52,8 +52,10 @@ export default function VistaMisAsignaciones({ usuario, data, onVolver, onVerPro
     return () => { cancel = true; };
   }, [usuario.id]);
 
-  // Proyectos del maestro (de data global).
-  const proyectos = useMemo(() => (data.proyectos || []).filter(p => !p.archivado && (p.maestroId === usuario.id || (p.ayudantesIds || []).includes(usuario.id))), [data.proyectos, usuario.id]);
+  // Proyectos del usuario (supervisor / maestro / ayudante) — de data global.
+  const proyectos = useMemo(() => (data.proyectos || []).filter(p => !p.archivado && (
+    p.supervisorId === usuario.id || p.maestroId === usuario.id || (p.ayudantesIds || []).includes(usuario.id)
+  )), [data.proyectos, usuario.id]);
   const ubic = (id) => ubicaciones.find(u => u.id === id);
   const proyById = (id) => (data.proyectos || []).find(p => p.id === id);
   const clienteDe = (id) => (data.clientes || []).find(c => c.id === id);

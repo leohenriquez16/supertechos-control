@@ -18,7 +18,7 @@
 
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { Loader2, X, Save, Check, Plus, Copy, Trash2, ChevronDown, ChevronUp, Zap } from 'lucide-react';
-import { obtenerTemplateSurvey, crearVisita, actualizarVisita, cerrarVisita, listarAreasDeVisita, crearArea, actualizarArea, eliminarArea } from '../../lib/surveys';
+import { obtenerTemplateSurvey, crearVisita, actualizarVisita, cerrarVisita, listarAreasDeVisita, crearArea, actualizarArea, eliminarArea, calcularCompletitud, setCompletitudProyecto } from '../../lib/surveys';
 import { obtenerUbicacion, distanciaMetros } from '../../lib/geo';
 import SurveyFieldRenderer from './SurveyFieldRenderer';
 
@@ -107,6 +107,9 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
   const fachadaLista = Array.isArray(generalData.foto_frontal) && generalData.foto_frontal.length > 0;
   const bloquesRepetibles = secciones.filter(s => s.type === 'repeating_block');
 
+  // v8.19.81: [Fase 2] completitud en vivo (campos obligatorios + mínimos de fotos).
+  const completitud = useMemo(() => template ? calcularCompletitud(template, generalData, areas) : { pct: 0, req: 0, ok: 0, faltantes: [] }, [template, generalData, areas]);
+
   // Guardado de general_data (al cambiar)
   const guardarGeneralData = useCallback(async (nuevo) => {
     if (!visit) return;
@@ -187,12 +190,20 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
     }
   };
 
-  const cerrarVisitaCompleta = async () => {
+  const cerrarVisitaCompleta = async (forzar = false) => {
     if (!visit) return;
-    if (!confirm('¿Cerrar la visita? Después no podrás editarla desde aquí.')) return;
+    // v8.19.81: [Fase 2] regla maestra — no cerrar si falta lo obligatorio.
+    if (!forzar && completitud.faltantes.length > 0) {
+      const lista = completitud.faltantes.slice(0, 12).map(f => `• ${f.label}`).join('\n');
+      const extra = completitud.faltantes.length > 12 ? `\n…y ${completitud.faltantes.length - 12} más` : '';
+      alert(`Faltan ${completitud.faltantes.length} requisito(s) (${completitud.pct}% completo). No se puede cerrar:\n\n${lista}${extra}`);
+      return;
+    }
+    if (!confirm(forzar ? `El levantamiento está al ${completitud.pct}%. ¿Cerrar de todas formas (justificado)?` : '¿Cerrar la visita? Después no podrás editarla desde aquí.')) return;
     setCerrando(true);
     try {
       await cerrarVisita(visit.id);
+      try { await setCompletitudProyecto(proyecto?.id, completitud.pct); } catch {}
       onCompletado?.();
     } catch (e) {
       setErrorMsg(e?.message || String(e));
@@ -244,6 +255,12 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
                   <Loader2 className="w-3 h-3 animate-spin" /> guardando
                 </span>
               )}
+              <div className="hidden sm:flex items-center gap-2" title={`${completitud.ok}/${completitud.req} obligatorios`}>
+                <div className="w-24 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                  <div className="h-full rounded-full transition-all" style={{ width: `${completitud.pct}%`, backgroundColor: completitud.pct >= 100 ? '#22c55e' : completitud.pct >= 50 ? '#f59e0b' : '#ef4444' }} />
+                </div>
+                <span className="text-[11px] font-bold tabular-nums" style={{ color: completitud.pct >= 100 ? '#22c55e' : '#a1a1aa' }}>{completitud.pct}%</span>
+              </div>
               <button
                 onClick={onCerrar}
                 className="text-zinc-400 hover:text-white p-1"
@@ -326,25 +343,32 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
           ))}
 
           {/* Footer con cerrar visita */}
-          <div className="border-t-2 border-zinc-800 p-4 flex items-center justify-between gap-2 sticky bottom-0 bg-zinc-950">
-            <div className="text-[11px] text-zinc-500">
-              {areas.length} área{areas.length === 1 ? '' : 's'} · check-in {visit?.checkin_at ? new Date(visit.checkin_at).toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' }) : '—'}
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={onCerrar}
-                className="bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 text-xs font-bold uppercase"
-              >
-                Pausar (guardar y salir)
-              </button>
-              <button
-                onClick={cerrarVisitaCompleta}
-                disabled={cerrando}
-                className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 text-xs font-bold uppercase flex items-center gap-1 disabled:opacity-50"
-              >
-                {cerrando ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
-                Cerrar levantamiento
-              </button>
+          <div className="border-t-2 border-zinc-800 p-4 sticky bottom-0 bg-zinc-950 space-y-2">
+            {completitud.faltantes.length > 0 && (
+              <div className="text-[11px] text-amber-300 bg-amber-900/15 border border-amber-800/40 rounded-card px-2 py-1.5">
+                Faltan <b>{completitud.faltantes.length}</b> requisito(s) obligatorio(s) para poder cerrar. Toca "Cerrar" para ver la lista.
+              </div>
+            )}
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-[11px] text-zinc-500">
+                {areas.length} área{areas.length === 1 ? '' : 's'} · {completitud.pct}% completo · check-in {visit?.checkin_at ? new Date(visit.checkin_at).toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' }) : '—'}
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={onCerrar} className="bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 text-xs font-bold uppercase">
+                  Pausar (guardar y salir)
+                </button>
+                {completitud.faltantes.length > 0 && (
+                  <button onClick={() => cerrarVisitaCompleta(true)} disabled={cerrando} className="text-[10px] text-zinc-500 hover:text-amber-400 underline disabled:opacity-50">Cerrar igual</button>
+                )}
+                <button
+                  onClick={() => cerrarVisitaCompleta(false)}
+                  disabled={cerrando}
+                  className={`px-4 py-2 text-xs font-bold uppercase flex items-center gap-1 disabled:opacity-50 text-white ${completitud.faltantes.length > 0 ? 'bg-zinc-700 hover:bg-zinc-600' : 'bg-green-600 hover:bg-green-700'}`}
+                >
+                  {cerrando ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                  {completitud.faltantes.length > 0 ? `Faltan ${completitud.faltantes.length}` : 'Cerrar levantamiento'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

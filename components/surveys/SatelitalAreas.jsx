@@ -6,7 +6,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { X, Pencil, Check, Undo2, Trash2, Loader2, MapPin } from 'lucide-react';
-import { areaPoligonoM2, setPoligonosProyecto } from '../../lib/surveys';
+import { areaPoligonoM2, setPoligonosProyecto, obtenerProyectoSurvey } from '../../lib/surveys';
 import { formatNum } from '../../lib/helpers/formato';
 
 const COLORES = ['#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#14b8a6', '#ec4899'];
@@ -36,17 +36,28 @@ export default function SatelitalAreas({ site, proyecto, onCerrar }) {
   const [puntos, setPuntos] = useState([]);
   const [guardando, setGuardando] = useState(false);
   const [capa, setCapa] = useState('esri'); // esri (gratis) | mapbox (HD)
+  const [editIdx, setEditIdx] = useState(null); // índice del área en edición de vértices
 
   const contRef = useRef(null);
   const mapRef = useRef(null);
   const LRef = useRef(null);
   const tempRef = useRef(null);
   const savedRef = useRef(null);
+  const editLayerRef = useRef(null);
   const baseRef = useRef(null);
   const dibujandoRef = useRef(false);
   const puntosRef = useRef([]);
   useEffect(() => { dibujandoRef.current = dibujando; }, [dibujando]);
   useEffect(() => { puntosRef.current = puntos; }, [puntos]);
+
+  // Recargar los polígonos guardados desde la BD al abrir (evita ver datos viejos).
+  useEffect(() => {
+    let cancel = false;
+    (async () => {
+      try { const fresh = await obtenerProyectoSurvey(proyecto.id); if (!cancel && fresh?.metadata?.poligonos) setPoligonos(fresh.metadata.poligonos); } catch {}
+    })();
+    return () => { cancel = true; };
+  }, [proyecto.id]);
 
   // Cambiar de capa base sin recrear el mapa.
   useEffect(() => {
@@ -77,6 +88,7 @@ export default function SatelitalAreas({ site, proyecto, onCerrar }) {
       mapRef.current = map;
       baseRef.current = crearCapaBase(L, 'esri').addTo(map);
       savedRef.current = L.layerGroup().addTo(map);
+      editLayerRef.current = L.layerGroup().addTo(map);
       tempRef.current = L.layerGroup().addTo(map);
       map.on('click', (e) => {
         if (!dibujandoRef.current) return;
@@ -111,6 +123,31 @@ export default function SatelitalAreas({ site, proyecto, onCerrar }) {
   };
   useEffect(redibujarGuardados, [poligonos]);
 
+  // Vértices arrastrables del área en edición.
+  useEffect(() => {
+    const L = LRef.current, layer = editLayerRef.current; if (!L || !layer) return;
+    layer.clearLayers();
+    if (editIdx == null || !poligonos[editIdx]) return;
+    const icon = L.divIcon({ className: '', html: '<div style="width:14px;height:14px;border-radius:50%;background:#fff;border:3px solid #ef4444;box-shadow:0 0 0 1px #000"></div>', iconSize: [14, 14], iconAnchor: [7, 7] });
+    poligonos[editIdx].latlngs.forEach((pt, i) => {
+      const mk = L.marker(pt, { draggable: true, icon }).addTo(layer);
+      mk.on('dragend', () => {
+        const ll = mk.getLatLng();
+        setPoligonos(prev => prev.map((pg, idx) => {
+          if (idx !== editIdx) return pg;
+          const latlngs = pg.latlngs.map((p, j) => j === i ? [ll.lat, ll.lng] : p);
+          return { ...pg, latlngs, area: Math.round(areaPoligonoM2(latlngs)) };
+        }));
+      });
+    });
+    // eslint-disable-next-line
+  }, [editIdx]);
+
+  const terminarEdicion = async () => {
+    const idx = editIdx; setEditIdx(null);
+    if (idx != null) await persistir(poligonos);
+  };
+
   const persistir = async (nuevos) => {
     setGuardando(true);
     try { await setPoligonosProyecto(proyecto.id, nuevos); }
@@ -127,7 +164,14 @@ export default function SatelitalAreas({ site, proyecto, onCerrar }) {
     await persistir(nuevos);
   };
   const borrar = async (i) => {
+    if (editIdx === i) setEditIdx(null);
     const nuevos = poligonos.filter((_, idx) => idx !== i);
+    setPoligonos(nuevos); await persistir(nuevos);
+  };
+  const renombrar = async (i) => {
+    const nombre = prompt('Nombre del área:', poligonos[i].nombre);
+    if (nombre == null) return;
+    const nuevos = poligonos.map((pg, idx) => idx === i ? { ...pg, nombre: nombre.trim() || pg.nombre } : pg);
     setPoligonos(nuevos); await persistir(nuevos);
   };
 
@@ -162,6 +206,13 @@ export default function SatelitalAreas({ site, proyecto, onCerrar }) {
               </div>
             </div>
 
+            {editIdx != null && poligonos[editIdx] && (
+              <div className="text-[11px] text-amber-300 bg-amber-900/15 border border-amber-800/40 rounded-card px-2 py-1.5 flex items-center justify-between gap-2">
+                <span>Editando <b>{poligonos[editIdx].nombre}</b>: arrastra los puntos blancos para mover los vértices. El m² se recalcula solo.</span>
+                <button onClick={terminarEdicion} className="bg-green-600 hover:bg-green-700 text-white text-[10px] font-bold uppercase px-2 py-1 rounded-card flex items-center gap-1 shrink-0"><Check className="w-3 h-3" /> Listo</button>
+              </div>
+            )}
+
             <div ref={contRef} style={{ height: 420 }} className="rounded-card overflow-hidden border border-zinc-800" />
 
             {/* Lista de áreas */}
@@ -172,9 +223,13 @@ export default function SatelitalAreas({ site, proyecto, onCerrar }) {
               </div>
               {poligonos.length === 0 ? <div className="text-xs text-zinc-600">Aún no hay áreas. Usa "Dibujar área" para trazar sobre el techo.</div> :
                 <div className="space-y-1">{poligonos.map((p, i) => (
-                  <div key={i} className="flex items-center justify-between text-xs">
-                    <span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: COLORES[i % COLORES.length] }} />{p.nombre}</span>
-                    <span className="flex items-center gap-3"><span className="font-bold tabular-nums">{formatNum(p.area)} m²</span><button onClick={() => borrar(i)} className="text-zinc-500 hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button></span>
+                  <div key={i} className={`flex items-center justify-between text-xs rounded px-1 -mx-1 ${editIdx === i ? 'bg-amber-900/20' : ''}`}>
+                    <button onClick={() => renombrar(i)} className="flex items-center gap-2 hover:text-white" title="Renombrar"><span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: COLORES[i % COLORES.length] }} />{p.nombre}</button>
+                    <span className="flex items-center gap-3">
+                      <span className="font-bold tabular-nums">{formatNum(p.area)} m²</span>
+                      <button onClick={() => (editIdx === i ? terminarEdicion() : setEditIdx(i))} title={editIdx === i ? 'Terminar edición' : 'Editar puntos'} className={editIdx === i ? 'text-green-400' : 'text-zinc-500 hover:text-amber-400'}>{editIdx === i ? <Check className="w-3.5 h-3.5" /> : <Pencil className="w-3.5 h-3.5" />}</button>
+                      <button onClick={() => borrar(i)} className="text-zinc-500 hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>
+                    </span>
                   </div>
                 ))}</div>}
               <div className="text-[10px] text-zinc-600 mt-2">El área se calcula del polígono satelital (referencia). Valídala con cinta en la captura.</div>

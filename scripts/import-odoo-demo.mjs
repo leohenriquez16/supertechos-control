@@ -98,8 +98,10 @@ async function materializarCliente(partner, { fullContacts, fullDeliveries }) {
     provincia: m2name(partner.state_id) || null, odoo_address_id: pid,
   });
   for (const d of deliveries.slice(0, fullDeliveries ? CAP_DELIVERY : 4)) {
+    // Odoo nombra las direcciones de entrega con el nombre de la empresa; usamos la
+    // calle/ciudad como nombre para que sea distintivo.
     ubRows.push({
-      id: `ub-odoo-${d.id}`, cliente_id: id, nombre: d.name || d.street || 'Entrega',
+      id: `ub-odoo-${d.id}`, cliente_id: id, nombre: (clean(d.street) || clean(d.city) || 'Entrega'),
       direccion: [d.street, d.street2].filter(Boolean).join(', ') || null, ciudad: clean(d.city),
       provincia: m2name(d.state_id) || null, contacto_telefono: clean(d.phone) || clean(d.mobile),
       odoo_address_id: d.id,

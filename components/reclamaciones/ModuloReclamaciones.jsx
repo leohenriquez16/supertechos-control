@@ -487,7 +487,7 @@ function ModalNuevaReclamacion({ data, ubicaciones, garantias, onCerrar, onCread
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <div className="text-[10px] uppercase text-zinc-500 mb-1">Ubicación</div>
-                <select value={ubicacionId} onChange={e => setUbicacionId(e.target.value)} className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-2 text-white text-xs"><option value="">—</option>{ubicsCli.map(u => <option key={u.id} value={u.id}>{u.nombre}</option>)}</select>
+                <select value={ubicacionId} onChange={e => setUbicacionId(e.target.value)} className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-2 text-white text-xs"><option value="">—</option>{ubicsCli.map(u => <option key={u.id} value={u.id}>{u.nombre}{u.ciudad ? ` · ${u.ciudad}` : ''}</option>)}</select>
               </div>
               <div>
                 <div className="text-[10px] uppercase text-zinc-500 mb-1">Proyecto</div>

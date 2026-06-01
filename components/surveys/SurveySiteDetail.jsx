@@ -10,13 +10,13 @@
 //  - Botón "Iniciar levantamiento" (placeholder — se conecta en PR 3B.4)
 
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Building, MapPin, Calendar, Clock, FileText, AlertTriangle, Play, ClipboardList, Layers, ChevronDown, Loader2 } from 'lucide-react';
+import { ArrowLeft, Building, MapPin, Calendar, Clock, FileText, AlertTriangle, Play, ClipboardList, Layers, ChevronDown, Loader2, Trash2 } from 'lucide-react';
 import QuickActions from './QuickActions';
 import DynamicSurveyForm from './DynamicSurveyForm';
 import PuntosSingulares from './PuntosSingulares';
 import EstimacionLevantamiento from './EstimacionLevantamiento';
 import SatelitalAreas from './SatelitalAreas';
-import { SITE_STATUS, listarVisitasDeSite, listarAreasDeVisita, obtenerTemplateSurvey, asignarPersonaSurvey, ESCALERA, setRequiereEscaleraSurvey } from '../../lib/surveys';
+import { SITE_STATUS, listarVisitasDeSite, listarAreasDeVisita, obtenerTemplateSurvey, asignarPersonaSurvey, ESCALERA, setRequiereEscaleraSurvey, eliminarProyectoSurvey, solicitarEliminacionSurvey, cancelarSolicitudEliminacionSurvey } from '../../lib/surveys';
 import { imprimirLevantamiento } from './imprimirLevantamiento';
 
 export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolver }) {
@@ -24,6 +24,32 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
   const [puntosAbierto, setPuntosAbierto] = useState(false); // v8.19.82
   const [estimacionAbierta, setEstimacionAbierta] = useState(false); // v8.19.83
   const [satelitalAbierta, setSatelitalAbierta] = useState(false); // v8.19.86
+
+  // v8.19.90: eliminación con autorización del owner (levantador asignado).
+  const esAdmin = (usuario?.roles || []).includes('admin');
+  const esOwner = !!proyecto?.asignado_a_id && usuario?.id === proyecto.asignado_a_id;
+  const ownerNombre = proyecto?.asignado_a_nombre || '';
+  const sinOwner = !proyecto?.asignado_a_id;
+  const [solicitud, setSolicitud] = useState(proyecto?.eliminacion_solicitada_por ? { porId: proyecto.eliminacion_solicitada_por, porNombre: proyecto.eliminacion_solicitada_por_nombre } : null);
+  const [procesandoDel, setProcesandoDel] = useState(false);
+  const eliminarLev = async () => {
+    if (!confirm('¿Eliminar este levantamiento? Se borran sus visitas, áreas y fotos. No se puede deshacer.')) return;
+    setProcesandoDel(true);
+    try { await eliminarProyectoSurvey(proyecto.id); onVolver?.(); }
+    catch (e) { alert('Error: ' + (e.message || e)); setProcesandoDel(false); }
+  };
+  const solicitarDel = async () => {
+    setProcesandoDel(true);
+    try { await solicitarEliminacionSurvey(proyecto.id, usuario); setSolicitud({ porId: usuario.id, porNombre: usuario.nombre }); }
+    catch (e) { alert('Error: ' + (e.message || e)); }
+    setProcesandoDel(false);
+  };
+  const cancelarDel = async () => {
+    setProcesandoDel(true);
+    try { await cancelarSolicitudEliminacionSurvey(proyecto.id); setSolicitud(null); }
+    catch (e) { alert('Error: ' + (e.message || e)); }
+    setProcesandoDel(false);
+  };
   // v8.19.65: asignación de personal habilitado al levantamiento.
   const habilitados = (data?.personal || []).filter(p => p.levantamientoHabilitado && !p.archivado);
   const [asignadoId, setAsignadoId] = useState(proyecto?.asignado_a_id || '');
@@ -223,6 +249,43 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
         <span className="text-[10px] text-zinc-500">Dibujar sobre el techo →</span>
       </button>
       {satelitalAbierta && <SatelitalAreas site={site} proyecto={proyecto} onCerrar={() => setSatelitalAbierta(false)} />}
+
+      {/* v8.19.90: eliminación con autorización del owner */}
+      {(esOwner || esAdmin) && (
+        <div className="bg-zinc-950 border border-red-900/50 rounded-card p-3 space-y-2">
+          <div className="text-[10px] uppercase tracking-widest text-red-400 font-bold flex items-center gap-1"><Trash2 className="w-3 h-3" /> Eliminar levantamiento</div>
+          {esOwner ? (
+            solicitud ? (
+              <>
+                <div className="text-[11px] text-amber-300">El admin <b>{solicitud.porNombre || '—'}</b> solicitó eliminar este levantamiento. Como dueño, tú decides.</div>
+                <div className="flex gap-2">
+                  <button onClick={cancelarDel} disabled={procesandoDel} className="px-3 bg-zinc-800 text-zinc-300 text-[10px] font-bold uppercase py-2 rounded-card">Rechazar</button>
+                  <button onClick={eliminarLev} disabled={procesandoDel} className="flex-1 bg-red-600 hover:bg-red-700 text-white text-[10px] font-black uppercase py-2 rounded-card">Autorizar y eliminar</button>
+                </div>
+              </>
+            ) : (
+              <button onClick={eliminarLev} disabled={procesandoDel} className="w-full bg-red-600 hover:bg-red-700 text-white text-[11px] font-bold uppercase py-2 rounded-card flex items-center justify-center gap-1"><Trash2 className="w-3 h-3" /> Eliminar levantamiento</button>
+            )
+          ) : sinOwner ? (
+            <>
+              <div className="text-[11px] text-zinc-500">Sin levantador asignado (sin dueño): puedes eliminar directamente.</div>
+              <button onClick={eliminarLev} disabled={procesandoDel} className="w-full bg-red-600 hover:bg-red-700 text-white text-[11px] font-bold uppercase py-2 rounded-card">Eliminar levantamiento</button>
+            </>
+          ) : solicitud && solicitud.porId === usuario.id ? (
+            <>
+              <div className="text-[11px] text-amber-300">Solicitud enviada a <b>{ownerNombre}</b>. Esperando su autorización para eliminar.</div>
+              <button onClick={cancelarDel} disabled={procesandoDel} className="px-3 bg-zinc-800 text-zinc-300 text-[10px] font-bold uppercase py-2 rounded-card">Cancelar solicitud</button>
+            </>
+          ) : solicitud ? (
+            <div className="text-[11px] text-zinc-500">Ya hay una solicitud de eliminación pendiente de autorización del dueño (<b>{ownerNombre}</b>).</div>
+          ) : (
+            <>
+              <div className="text-[11px] text-zinc-500">Solo el dueño (<b>{ownerNombre}</b>) puede eliminar. Puedes solicitar su autorización.</div>
+              <button onClick={solicitarDel} disabled={procesandoDel} className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-[11px] font-bold uppercase py-2 rounded-card">Solicitar eliminación al dueño</button>
+            </>
+          )}
+        </div>
+      )}
 
       <LevantamientosRealizados site={site} proyecto={proyecto} />
 

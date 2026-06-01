@@ -81,6 +81,7 @@ import ModuloSurveys from '../components/surveys/ModuloSurveys';
 import VistaGarantias from '../components/garantias/VistaGarantias';
 import ModuloReclamaciones from '../components/reclamaciones/ModuloReclamaciones';
 import VistaMisAsignaciones from '../components/maestro/VistaMisAsignaciones';
+import VistaUbicaciones from '../components/ubicaciones/VistaUbicaciones';
 // v8.12: Caja Chica + Dieta
 import VistaMiCajaChica from '../components/caja-chica/VistaMiCajaChica';
 import VistaCajaChicaAdmin from '../components/caja-chica/VistaCajaChicaAdmin';
@@ -731,6 +732,7 @@ export default function App() {
       { id: 'sistemas', label: 'Sistemas', icon: Settings, vista: 'sistemas' },
       { id: 'categorias', label: 'Categorías', icon: Settings, vista: 'categorias' },
       { id: 'clientes', label: 'Clientes', icon: Building2, vista: 'clientes' },
+      { id: 'ubicaciones', label: 'Ubicaciones', icon: MapPin, vista: 'ubicaciones' },
       { id: 'garantias', label: 'Garantías', icon: CheckCircle2, vista: 'garantias' },
       { id: 'personal', label: 'Personal', icon: UserIcon, vista: 'personal' },
       { id: 'estadisticasPersonal', label: 'Estadísticas', icon: TrendingUp, vista: 'estadisticasPersonal' },
@@ -872,6 +874,7 @@ export default function App() {
         {vista === 'perfilPersona' && perfilViendo && <MiPerfil usuario={usuario} persona={perfilViendo} soloLectura={false} onVolver={() => setVista('personal')} onGuardar={(campos) => withSync(async () => { await db.guardarPerfil(perfilViendo.id, campos); const d = await db.loadAllData(); const actualizada = d.personal.find(p => p.id === perfilViendo.id); if (actualizada) setPerfilViendo(actualizada); })} />}
         {esAdmin && vista === 'sistemas' && <GestionSistemas sistemas={data.sistemas} config={data.config} dataGlobal={data} onVolver={() => setVista('dashboard')} onActualizarSistemas={(s) => withSync(() => db.guardarSistemas(s))} onActualizarConfig={(c) => withSync(() => db.guardarConfig(c))} />}
         {esAdmin && vista === 'clientes' && <GestionClientes clientes={data.clientes || []} contactos={data.contactos || []} proyectos={data.proyectos || []} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
+        {esAdmin && vista === 'ubicaciones' && <VistaUbicaciones data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {esAdmin && vista === 'garantias' && <VistaGarantias data={data} usuario={usuario} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {esAdmin && vista === 'reclamaciones' && <ModuloReclamaciones data={data} usuario={usuario} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {esAdmin && vista === 'nuevoProyecto' && <NuevoProyecto personal={data.personal} sistemas={data.sistemas} clientes={data.clientes || []} contactos={data.contactos || []} proyectos={data.proyectos || []} onCancelar={() => setVista('dashboard')} onCrear={(proy) => withSync(async () => {

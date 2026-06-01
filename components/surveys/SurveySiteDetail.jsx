@@ -13,11 +13,13 @@ import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Building, MapPin, Calendar, Clock, FileText, AlertTriangle, Play, ClipboardList, Layers, ChevronDown, Loader2 } from 'lucide-react';
 import QuickActions from './QuickActions';
 import DynamicSurveyForm from './DynamicSurveyForm';
+import PuntosSingulares from './PuntosSingulares';
 import { SITE_STATUS, listarVisitasDeSite, listarAreasDeVisita, obtenerTemplateSurvey, asignarPersonaSurvey, ESCALERA, setRequiereEscaleraSurvey } from '../../lib/surveys';
 import { imprimirLevantamiento } from './imprimirLevantamiento';
 
 export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolver }) {
   const [formAbierto, setFormAbierto] = useState(false);
+  const [puntosAbierto, setPuntosAbierto] = useState(false); // v8.19.82
   // v8.19.65: asignación de personal habilitado al levantamiento.
   const habilitados = (data?.personal || []).filter(p => p.levantamientoHabilitado && !p.archivado);
   const [asignadoId, setAsignadoId] = useState(proyecto?.asignado_a_id || '');
@@ -196,6 +198,13 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
         </div>
         {!escalera && <div className="text-[10px] text-zinc-600 mt-1">Sin especificar. Indícalo para que el maestro lleve el equipo correcto.</div>}
       </div>
+
+      {/* v8.19.82: puntos singulares sobre la foto */}
+      <button onClick={() => setPuntosAbierto(true)} className="w-full bg-zinc-900 border border-zinc-800 rounded-card p-3 flex items-center justify-between hover:border-red-600 text-left">
+        <div className="flex items-center gap-2 text-sm font-bold"><MapPin className="w-4 h-4 text-red-500" /> Puntos singulares</div>
+        <span className="text-[10px] text-zinc-500">Marcar sobre la foto →</span>
+      </button>
+      {puntosAbierto && <PuntosSingulares site={site} onCerrar={() => setPuntosAbierto(false)} />}
 
       <LevantamientosRealizados site={site} proyecto={proyecto} />
 

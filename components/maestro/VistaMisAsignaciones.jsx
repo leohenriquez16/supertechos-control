@@ -15,6 +15,16 @@ import MapaLeaflet from '../common/MapaLeaflet';
 const fmt = (s) => { if (!s) return '—'; try { return new Date((s.length <= 10 ? s + 'T12:00:00' : s)).toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return s; } };
 const SEV = { baja: 'text-zinc-400', media: 'text-amber-400', alta: 'text-red-400' };
 
+const ESTADOS_PROY = [
+  ['planificado', 'Planificado'],
+  ['aprobado', 'Aprobado'],
+  ['en_ejecucion', 'En ejecución'],
+  ['parado', 'Parado'],
+  ['finalizado_no_entregado', 'Fin. no entregado'],
+  ['finalizado_recibido_conforme', 'Entregado'],
+  ['facturado', 'Facturado'],
+];
+
 const CAPAS = [
   { key: 'proyectos', label: 'Proyectos', icon: Briefcase, color: '#ef4444', leaflet: 'red' },
   { key: 'levantamientos', label: 'Levantamientos', icon: MapPin, color: '#3b82f6', leaflet: 'blue' },
@@ -52,10 +62,14 @@ export default function VistaMisAsignaciones({ usuario, data, onVolver, onVerPro
     return () => { cancel = true; };
   }, [usuario.id]);
 
-  // Proyectos del usuario (supervisor / maestro / ayudante) — de data global.
-  const proyectos = useMemo(() => (data.proyectos || []).filter(p => !p.archivado && (
+  // Proyectos asignados al usuario (supervisor / maestro / ayudante).
+  const proyectosAsignados = useMemo(() => (data.proyectos || []).filter(p => !p.archivado && (
     p.supervisorId === usuario.id || p.maestroId === usuario.id || (p.ayudantesIds || []).includes(usuario.id)
   )), [data.proyectos, usuario.id]);
+  // v8.19.95: por defecto solo activos (planificado/aprobado/en ejecución); el
+  // supervisor puede encender parados/entregados/facturados con los chips.
+  const [estadosSel, setEstadosSel] = useState(() => new Set(['planificado', 'aprobado', 'en_ejecucion']));
+  const proyectos = useMemo(() => proyectosAsignados.filter(p => estadosSel.has(p.estado || 'en_ejecucion')), [proyectosAsignados, estadosSel]);
   const ubic = (id) => ubicaciones.find(u => u.id === id);
   const proyById = (id) => (data.proyectos || []).find(p => p.id === id);
   const clienteDe = (id) => (data.clientes || []).find(c => c.id === id);
@@ -95,6 +109,24 @@ export default function VistaMisAsignaciones({ usuario, data, onVolver, onVerPro
           );
         })}
       </div>
+
+      {/* v8.19.95: estados de proyecto a mostrar (por defecto solo activos) */}
+      {show.proyectos && (
+        <div className="flex items-center gap-1.5 flex-wrap text-xs">
+          <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold">Proyectos:</span>
+          {ESTADOS_PROY.map(([k, label]) => {
+            const n = proyectosAsignados.filter(p => (p.estado || 'en_ejecucion') === k).length;
+            if (n === 0) return null;
+            const on = estadosSel.has(k);
+            return (
+              <button key={k} onClick={() => setEstadosSel(s => { const ns = new Set(s); ns.has(k) ? ns.delete(k) : ns.add(k); return ns; })}
+                className={`px-2.5 py-1 rounded-card border text-[10px] font-bold uppercase ${on ? 'bg-red-600 border-red-600 text-white' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>
+                {label} <span className="opacity-70">{n}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center gap-2 text-zinc-500 py-10 justify-center"><Loader2 className="w-4 h-4 animate-spin" /> Cargando…</div>

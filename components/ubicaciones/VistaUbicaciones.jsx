@@ -61,7 +61,14 @@ export default function VistaUbicaciones({ data, onVolver, onVerProyecto }) {
       // levantamientos: no hay link directo, se asocian por cliente (best-effort).
       const cn = norm(cliNombre); const primera = cn.split(' ')[0] || '';
       const levs = primera.length >= 3 ? surveys.filter(s => norm(s.client_name).includes(primera)) : [];
-      return { u, cliNombre, proys, gars, recs, mants, levs, reportesPorProy, coords: (u.latitud != null && u.longitud != null) ? { lat: u.latitud, lng: u.longitud } : null };
+      // Coordenadas: propias de la ubicación; si no tiene, toma automáticamente las
+      // del primer proyecto de esa ubicación que tenga GPS.
+      const proyGps = proys.find(p => p.ubicacionLat != null && p.ubicacionLng != null);
+      const coords = (u.latitud != null && u.longitud != null)
+        ? { lat: Number(u.latitud), lng: Number(u.longitud), fuente: 'ubicacion' }
+        : proyGps ? { lat: Number(proyGps.ubicacionLat), lng: Number(proyGps.ubicacionLng), fuente: 'proyecto' }
+          : null;
+      return { u, cliNombre, proys, gars, recs, mants, levs, reportesPorProy, coords };
     });
   }, [ubicaciones, garantias, mantenimientos, reclamaciones, surveys, proyectos, data.clientes, data.reportes]);
 
@@ -91,6 +98,7 @@ export default function VistaUbicaciones({ data, onVolver, onVerProyecto }) {
           <div className="text-xs text-zinc-500 mt-0.5">{[u.direccion, u.sector, u.ciudad, u.provincia].filter(Boolean).join(', ') || 'Sin dirección'}</div>
         </div>
         {it.coords && <MapaLeaflet center={[it.coords.lat, it.coords.lng]} zoom={16} height={180} markers={[{ lat: it.coords.lat, lng: it.coords.lng, color: 'red' }]} className="rounded-card overflow-hidden" />}
+        {it.coords?.fuente === 'proyecto' && <div className="text-[10px] text-zinc-500">📍 Ubicación tomada automáticamente del proyecto (la localidad no tiene GPS propio).</div>}
 
         <Seccion icon={ClipboardList} color="#3b82f6" titulo="Levantamientos (del cliente)" n={levs.length}>
           {levs.map(s => (

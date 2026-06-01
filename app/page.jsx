@@ -4309,6 +4309,7 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
   const [busqueda, setBusqueda] = useState(''); // v8.17.2: buscador por nombre/PIN/teléfono
   const [modalInvitar, setModalInvitar] = useState(false); // v8.14: invitar maestro al app
   const [activando, setActivando] = useState(null); // v8.14.1: persona existente a activar para app
+  const [detalleDe, setDetalleDe] = useState(null); // v8.19.74: ficha de la persona con todas las acciones adentro
 
   const guardar = async () => {
     if (!form.nombre) return;
@@ -4529,12 +4530,12 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
                 const maestro = p.maestroId ? getPersona(personal, p.maestroId) : null;
                 const ayudantes = tieneRol(p, 'maestro') ? getAyudantesDeMaestro(personal, p.id) : [];
                 return (
-                  <div key={p.id} className="bg-zinc-900 border border-zinc-800 rounded-card p-3 flex items-center gap-3">
+                  <div key={p.id} onClick={() => setDetalleDe(p)} className="bg-zinc-900 border border-zinc-800 rounded-card p-3 flex items-center gap-3 cursor-pointer hover:border-red-600 transition-colors">
                     {p.foto2x2 ? <img src={p.foto2x2} alt="" className="w-10 h-10 object-cover rounded-sm flex-shrink-0 border border-zinc-700" /> : <UserCircle className="w-10 h-10 text-zinc-500 flex-shrink-0" />}
                     <div className="flex-1 min-w-0">
                       <div className="font-bold text-sm flex items-center gap-2">
                         <span className="truncate">{p.nombre}</span>
-                        {/* v8.14.1: indicador de pendiente de activación al app */}
+                        {/* Anuncios (quedan afuera): pendiente de activación al app */}
                         {p.tienePin && !p.cedulaNumero && !tieneRol(p, 'admin') && !p.pinTemporal && (
                           <span className="text-[9px] bg-yellow-900/50 border border-yellow-700 text-yellow-300 px-1.5 py-0.5 tracking-wider uppercase font-bold flex-shrink-0" title="Aún no ha completado el onboarding del app">⚠ Sin app</span>
                         )}
@@ -4544,18 +4545,13 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
                       </div>
                       <div className="text-[10px] text-zinc-500">{rolLabel(p)}{p.tienePin && ' · 🔐 Con login'}{maestro && ` · Con ${maestro.nombre}`}{ayudantes.length > 0 && ` · ${ayudantes.length} ayudante${ayudantes.length > 1 ? 's' : ''}`}{p.telefono && ` · ${p.telefono}`}</div>
                     </div>
-                    {/* v8.14.1: botón "Activar para app" — solo para personas con PIN, sin cédula y que no son admin */}
+                    {/* Anuncio (queda afuera): activar/reinvitar al app */}
                     {p.tienePin && !p.cedulaNumero && !tieneRol(p, 'admin') && (
-                      <button onClick={() => setActivando(p)} className="bg-green-700 hover:bg-green-600 text-white px-2 py-1.5 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider" title="Activar para el app y generar credenciales para WhatsApp">
+                      <button onClick={(e) => { e.stopPropagation(); setActivando(p); }} className="bg-green-700 hover:bg-green-600 text-white px-2 py-1.5 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider rounded-card flex-shrink-0" title="Activar para el app y generar credenciales para WhatsApp">
                         <Send className="w-3 h-3" /> {p.pinTemporal ? 'Reinvitar' : 'Activar'}
                       </button>
                     )}
-                    <button onClick={() => { setEditando(p.id); setForm({ ...p, roles: [...(p.roles || [])] }); }} className="text-zinc-500 hover:text-white p-1" title="Editar básico"><Edit2 className="w-3 h-3" /></button>
-                    <button onClick={() => onAbrirPerfil(p)} className="text-zinc-500 hover:text-red-500 p-1" title="Ver perfil"><UserIcon className="w-3 h-3" /></button>
-                    {data && <button onClick={() => setExperienciaDe(p)} className="text-zinc-500 hover:text-green-400 p-1" title="Ver experiencia"><TrendingUp className="w-3 h-3" /></button>}
-                    {data && <button onClick={() => setCapacidadesDe(p)} className="text-zinc-500 hover:text-blue-400 p-1" title="Capacidades técnicas">🧰</button>}
-                    {data && <button onClick={() => setAccesosDe(p)} className="text-zinc-500 hover:text-amber-400 p-1" title="Accesos y credenciales">🔐</button>}
-                    <button onClick={() => { if (confirm('¿Eliminar?')) onActualizar(personal.filter(x => x.id !== p.id)); }} className="text-zinc-500 hover:text-red-400 p-1"><Trash2 className="w-3 h-3" /></button>
+                    <ChevronRight className="w-4 h-4 text-zinc-600 flex-shrink-0" />
                   </div>
                 );
               })}
@@ -4563,6 +4559,57 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
           </div>
         );
       })}
+
+      {/* v8.19.74: Ficha de la persona — todas las acciones adentro */}
+      {detalleDe && (() => {
+        const p = detalleDe;
+        const maestro = p.maestroId ? getPersona(personal, p.maestroId) : null;
+        const cerrar = () => setDetalleDe(null);
+        const acciones = [
+          { label: 'Editar datos básicos', desc: 'Nombre, roles, PIN, toggles', icon: Edit2, onClick: () => { cerrar(); setEditando(p.id); setForm({ ...p, roles: [...(p.roles || [])] }); } },
+          { label: 'Ver perfil completo', desc: 'Foto, documentos, datos', icon: UserIcon, onClick: () => { cerrar(); onAbrirPerfil(p); } },
+          ...(data ? [
+            { label: 'Experiencia', desc: 'Proyectos y producción', icon: TrendingUp, onClick: () => { cerrar(); setExperienciaDe(p); } },
+            { label: 'Capacidades técnicas', desc: 'Sistemas que domina', emoji: '🧰', onClick: () => { cerrar(); setCapacidadesDe(p); } },
+            { label: 'Accesos y credenciales', desc: 'Clientes y documentos', emoji: '🔐', onClick: () => { cerrar(); setAccesosDe(p); } },
+          ] : []),
+        ];
+        return (
+          <div className="fixed inset-0 bg-black/80 z-50 flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto" onClick={cerrar}>
+            <div className="bg-zinc-950 border-2 border-red-600 rounded-card w-full max-w-md my-4" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between p-4 border-b border-zinc-800 gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  {p.foto2x2 ? <img src={p.foto2x2} alt="" className="w-12 h-12 object-cover rounded-sm border border-zinc-700" /> : <UserCircle className="w-12 h-12 text-zinc-500" />}
+                  <div className="min-w-0">
+                    <div className="font-black text-lg truncate">{p.nombre}</div>
+                    <div className="text-[11px] text-zinc-500">{rolLabel(p)}{p.tienePin && ' · 🔐 Con login'}{maestro && ` · Con ${maestro.nombre}`}{p.telefono && ` · ${p.telefono}`}</div>
+                  </div>
+                </div>
+                <button onClick={cerrar} className="text-zinc-500 hover:text-white flex-shrink-0"><X className="w-4 h-4" /></button>
+              </div>
+              <div className="p-4 space-y-2">
+                {acciones.map((a, i) => (
+                  <button key={i} onClick={a.onClick} className="w-full flex items-center gap-3 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-red-600 rounded-card px-3 py-2.5 text-left transition-colors">
+                    <span className="w-9 h-9 rounded-card bg-zinc-950 border border-zinc-800 flex items-center justify-center text-zinc-300 flex-shrink-0">{a.icon ? <a.icon className="w-4 h-4" /> : <span className="text-base">{a.emoji}</span>}</span>
+                    <span className="min-w-0"><span className="block text-sm font-bold truncate">{a.label}</span><span className="block text-[10px] text-zinc-500 truncate">{a.desc}</span></span>
+                    <ChevronRight className="w-4 h-4 text-zinc-600 ml-auto flex-shrink-0" />
+                  </button>
+                ))}
+                {p.tienePin && !p.cedulaNumero && !tieneRol(p, 'admin') && (
+                  <button onClick={() => { cerrar(); setActivando(p); }} className="w-full flex items-center gap-3 bg-green-900/25 hover:bg-green-800/40 border border-green-700 rounded-card px-3 py-2.5 text-left transition-colors">
+                    <span className="w-9 h-9 rounded-card bg-green-950 border border-green-800 flex items-center justify-center text-green-300 flex-shrink-0"><Send className="w-4 h-4" /></span>
+                    <span className="text-sm font-bold text-green-200">{p.pinTemporal ? 'Reinvitar al app' : 'Activar para el app'}</span>
+                  </button>
+                )}
+                <button onClick={() => { if (confirm('¿Eliminar a ' + p.nombre + '?')) { onActualizar(personal.filter(x => x.id !== p.id)); cerrar(); } }} className="w-full flex items-center gap-3 bg-zinc-900 hover:bg-red-950/40 border border-zinc-800 hover:border-red-700 rounded-card px-3 py-2.5 text-left transition-colors">
+                  <span className="w-9 h-9 rounded-card bg-zinc-950 border border-zinc-800 flex items-center justify-center text-red-400 flex-shrink-0"><Trash2 className="w-4 h-4" /></span>
+                  <span className="text-sm font-bold text-red-300">Eliminar</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* v8.9.19: Modal de experiencia de persona */}
       {experienciaDe && data && (

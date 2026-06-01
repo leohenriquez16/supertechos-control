@@ -9,6 +9,7 @@ import { ArrowLeft, Loader2, MapPin, Search, Briefcase, ShieldCheck, AlertTriang
 import * as db from '../../lib/db';
 import { listarProyectosSurveys, SERVICE_LINES } from '../../lib/surveys';
 import { formatNum } from '../../lib/helpers/formato';
+import FotosLevantamiento from '../surveys/FotosLevantamiento';
 import MapaLeaflet from '../common/MapaLeaflet';
 
 const fmt = (s) => { if (!s) return '—'; try { return new Date((s.length <= 10 ? s + 'T12:00:00' : s)).toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return s; } };
@@ -27,6 +28,7 @@ export default function VistaUbicaciones({ data, onVolver, onVerProyecto }) {
   const [busqueda, setBusqueda] = useState('');
   const [fActividad, setFActividad] = useState(''); // '' | proyecto | garantia | reclamacion | levantamiento
   const [sel, setSel] = useState(null);
+  const [fotosLev, setFotosLev] = useState(null); // v8.19.94: visor de fotos del levantamiento
 
   useEffect(() => {
     let cancel = false;
@@ -104,6 +106,7 @@ export default function VistaUbicaciones({ data, onVolver, onVerProyecto }) {
           {levs.map(s => (
             <div key={s.id} className="bg-zinc-900 border border-zinc-800 rounded-card p-2.5 flex items-center justify-between gap-2" style={{ borderLeftColor: SERVICE_LINES[s.service_line]?.color || '#3b82f6', borderLeftWidth: 4 }}>
               <div className="min-w-0"><div className="text-sm font-bold truncate">{s.client_name}</div><div className="text-[10px] text-zinc-500 truncate">{SERVICE_LINES[s.service_line]?.label || ''}{s.odoo_stage ? ` · ${s.odoo_stage}` : ''}</div></div>
+              <button onClick={() => setFotosLev({ id: s.id, titulo: s.client_name })} className="text-[10px] text-blue-400 hover:underline shrink-0 flex items-center gap-1">📷 Fotos</button>
             </div>
           ))}
         </Seccion>
@@ -150,6 +153,8 @@ export default function VistaUbicaciones({ data, onVolver, onVerProyecto }) {
             </div>
           ))}
         </Seccion>
+
+        {fotosLev && <FotosLevantamiento projectId={fotosLev.id} titulo={fotosLev.titulo} onCerrar={() => setFotosLev(null)} />}
       </div>
     );
   }

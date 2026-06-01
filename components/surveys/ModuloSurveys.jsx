@@ -8,7 +8,7 @@
 // proyecto + sites + DynamicSurveyForm + photos.
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Loader2, Plus, MapPin, Building, ChevronRight, ArrowLeft, List, Map as MapIcon, LayoutGrid, Search, User as UserIcon } from 'lucide-react';
+import { Loader2, Plus, MapPin, Building, ChevronRight, ArrowLeft, List, Map as MapIcon, LayoutGrid, Search, User as UserIcon, Calendar } from 'lucide-react';
 import { listarProyectosSurveys, listarSitesProyectoSurvey, listarTodosLosSitesSurvey, COMPANIES, PROJECT_STATUS, SITE_STATUS, SERVICE_LINES, ESCALERA } from '../../lib/surveys';
 import MapaLeaflet from '../common/MapaLeaflet';
 import ServiceLineBadge from './ServiceLineBadge';
@@ -16,6 +16,7 @@ import SurveySiteDetail from './SurveySiteDetail';
 import SurveySitesMap from './SurveySitesMap';
 import ModalNuevoProyecto from './ModalNuevoProyecto';
 import ModalLevantamientoSimple from './ModalLevantamientoSimple';
+import CalendarioLevantamientos from './CalendarioLevantamientos';
 
 export default function ModuloSurveys({ usuario, data }) {
   // Subvistas: 'lista' (default) | 'proyecto' | 'site'
@@ -249,7 +250,7 @@ function SurveysList({ usuario, onAbrirProyecto, onAbrirSiteDirecto }) {
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div className="flex gap-1 bg-zinc-900 border border-zinc-800 rounded-card p-1 w-fit">
-                {[['kanban', 'Kanban', LayoutGrid], ['lista', 'Lista', List], ['mapa', 'Mapa', MapIcon]].map(([k, l, Icon]) => (
+                {[['kanban', 'Kanban', LayoutGrid], ['lista', 'Lista', List], ['calendario', 'Calendario', Calendar], ['mapa', 'Mapa', MapIcon]].map(([k, l, Icon]) => (
                   <button key={k} onClick={() => setVista(k)} className={`px-4 py-1.5 text-[11px] font-bold uppercase rounded-card flex items-center gap-1 ${vista === k ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>
                     {Icon && <Icon className="w-3 h-3" />}{l}
                   </button>
@@ -310,6 +311,8 @@ function SurveysList({ usuario, onAbrirProyecto, onAbrirSiteDirecto }) {
                 );
               })}
             </div>
+          ) : vista === 'calendario' ? (
+            <CalendarioLevantamientos proyectos={proyFiltrados} onReload={() => setReloadKey(k => k + 1)} onAbrir={onAbrirProyecto} />
           ) : (
             (() => {
               const conC = proyFiltrados.map(p => ({ p, c: coordsProy[p.id] })).filter(x => x.c);

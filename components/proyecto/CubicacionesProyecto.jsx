@@ -57,21 +57,32 @@ export default function CubicacionesProyecto({ proyecto, usuario, esAdmin, onCer
   };
   const setFila = (i, campo, val) => setFilas(prev => prev.map((f, idx) => idx === i ? { ...f, [campo]: val } : f));
 
-  // Cálculo en vivo.
+  // Cálculo en vivo. Modelo Super Techos: subtotal → +ITBIS 18% → total con ITBIS;
+  // retención y amortización del anticipo se calculan SOBRE EL TOTAL CON ITBIS.
+  const ITBIS_PCT = 18;
   const calc = useMemo(() => {
     const rows = filas.map(f => {
       const m2 = Number(f.m2EstePeriodo) || 0;
       const precio = Number(f.precioM2) || 0;
+      const totalArea = Number(f.m2TotalArea) || 0;
+      const ant = Number(f.m2AcumuladoAnterior) || 0;
+      const acum = ant + m2;
       const subtotal = Math.round(m2 * precio * 100) / 100;
-      return { ...f, m2EstePeriodo: m2, precioM2: precio, m2Acumulado: (Number(f.m2AcumuladoAnterior) || 0) + m2, subtotal };
+      return {
+        ...f, m2EstePeriodo: m2, precioM2: precio, m2Acumulado: acum, subtotal,
+        pctActual: totalArea > 0 ? (m2 / totalArea) * 100 : 0,
+        pctAcum: totalArea > 0 ? (acum / totalArea) * 100 : 0,
+      };
     });
     const subtotalGeneral = rows.reduce((a, r) => a + r.subtotal, 0);
-    const retencionMonto = Math.round(subtotalGeneral * (Number(cfg.retencionPct) || 0)) / 100;
+    const itbisMonto = Math.round(subtotalGeneral * ITBIS_PCT) / 100;
+    const totalConItbis = Math.round((subtotalGeneral + itbisMonto) * 100) / 100;
+    const retencionMonto = Math.round(totalConItbis * (Number(cfg.retencionPct) || 0)) / 100;
     const anticipo = Number(cfg.anticipoMonto) || 0;
     const amortDisponible = Math.max(0, anticipo - amortizadoAcum);
-    const amortizacionMonto = Math.min(Math.round(subtotalGeneral * (Number(cfg.amortizacionPct) || 0)) / 100, amortDisponible);
-    const total = Math.round((subtotalGeneral - retencionMonto - amortizacionMonto) * 100) / 100;
-    return { rows, subtotalGeneral, retencionMonto, amortizacionMonto, amortDisponible, total };
+    const amortizacionMonto = Math.min(Math.round(totalConItbis * (Number(cfg.amortizacionPct) || 0)) / 100, amortDisponible);
+    const total = Math.round((totalConItbis - retencionMonto - amortizacionMonto) * 100) / 100;
+    return { rows, subtotalGeneral, itbisMonto, totalConItbis, retencionMonto, amortizacionMonto, amortDisponible, total };
   }, [filas, cfg, amortizadoAcum]);
 
   const guardarConfig = async () => {
@@ -88,7 +99,7 @@ export default function CubicacionesProyecto({ proyecto, usuario, esAdmin, onCer
         proyectoId: proyecto.id, fechaCubicacion: fecha,
         areasCubicadas: calc.rows.map(r => ({ areaId: r.areaId, areaNombre: r.areaNombre, m2TotalArea: r.m2TotalArea, m2AcumuladoAnterior: r.m2AcumuladoAnterior, m2EstePeriodo: r.m2EstePeriodo, m2Acumulado: r.m2Acumulado, precioM2: r.precioM2, subtotal: r.subtotal })),
         subtotalGeneral: calc.subtotalGeneral, retencionPct: Number(cfg.retencionPct) || 0, retencionMonto: calc.retencionMonto,
-        amortizacionMonto: calc.amortizacionMonto, total: calc.total,
+        amortizacionMonto: calc.amortizacionMonto, itbisPct: ITBIS_PCT, itbisMonto: calc.itbisMonto, total: calc.total,
         creadoPorId: usuario?.id, creadoPorNombre: usuario?.nombre,
       });
       setNueva(false); await recargar();
@@ -154,7 +165,7 @@ export default function CubicacionesProyecto({ proyecto, usuario, esAdmin, onCer
                     <div className="overflow-x-auto">
                       <table className="w-full text-[11px]">
                         <thead><tr className="text-zinc-500 uppercase text-[9px] tracking-wider text-left">
-                          <th className="py-1 pr-2">Área</th><th className="py-1 px-1 text-right">m² total</th><th className="py-1 px-1 text-right">ya cubic.</th><th className="py-1 px-1 text-right">m² período</th><th className="py-1 px-1 text-right">RD$/m²</th><th className="py-1 pl-1 text-right">Subtotal</th>
+                          <th className="py-1 pr-2">Área</th><th className="py-1 px-1 text-right">m² total</th><th className="py-1 px-1 text-right">ya cubic.</th><th className="py-1 px-1 text-right">m² período</th><th className="py-1 px-1 text-right">RD$/m²</th><th className="py-1 px-1 text-right">% avance</th><th className="py-1 pl-1 text-right">Subtotal</th>
                         </tr></thead>
                         <tbody>
                           {calc.rows.map((r, i) => {
@@ -166,6 +177,7 @@ export default function CubicacionesProyecto({ proyecto, usuario, esAdmin, onCer
                                 <td className="py-1 px-1 text-right tabular-nums text-zinc-500">{formatNum(r.m2AcumuladoAnterior)}</td>
                                 <td className="py-1 px-1 text-right"><input type="number" value={filas[i]?.m2EstePeriodo} onChange={e => setFila(i, 'm2EstePeriodo', e.target.value)} placeholder={`máx ${formatNum(rest)}`} className="w-20 bg-zinc-950 border border-zinc-800 rounded px-1 py-0.5 text-right text-white" /></td>
                                 <td className="py-1 px-1 text-right"><input type="number" value={filas[i]?.precioM2} onChange={e => setFila(i, 'precioM2', e.target.value)} className="w-20 bg-zinc-950 border border-zinc-800 rounded px-1 py-0.5 text-right text-white" /></td>
+                                <td className="py-1 px-1 text-right tabular-nums text-blue-300">{r.pctAcum.toFixed(1)}%</td>
                                 <td className="py-1 pl-1 text-right tabular-nums font-bold">{formatRD(r.subtotal)}</td>
                               </tr>
                             );
@@ -176,6 +188,8 @@ export default function CubicacionesProyecto({ proyecto, usuario, esAdmin, onCer
                     {/* Totales */}
                     <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2 text-xs space-y-0.5">
                       <Row k="Subtotal del período" v={formatRD(calc.subtotalGeneral)} />
+                      <Row k="ITBIS (18%)" v={'+ ' + formatRD(calc.itbisMonto)} />
+                      <div className="border-t border-zinc-800/60 my-0.5" /><Row k="Total con ITBIS" v={formatRD(calc.totalConItbis)} cls="font-bold" />
                       <Row k={`Retención (${cfg.retencionPct || 0}%)`} v={'– ' + formatRD(calc.retencionMonto)} cls="text-amber-300" />
                       <Row k={`Amortización anticipo (${cfg.amortizacionPct || 0}%)`} v={'– ' + formatRD(calc.amortizacionMonto)} cls="text-blue-300" />
                       <div className="border-t border-zinc-800 mt-1 pt-1"><Row k="NETO A PAGAR" v={formatRD(calc.total)} cls="text-green-300 font-black" /></div>
@@ -198,7 +212,7 @@ export default function CubicacionesProyecto({ proyecto, usuario, esAdmin, onCer
                             <div className="font-bold">#{c.numero} · {c.fechaCubicacion}{c.facturaOdooNumero ? <span className="text-[10px] text-zinc-500 ml-2">Fact. {c.facturaOdooNumero}</span> : ''}</div>
                             <div className="flex items-center gap-2"><span className="font-black text-green-300">{formatRD(c.total)}</span>{esAdmin && <button onClick={() => borrar(c.id)} className="text-zinc-500 hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>}</div>
                           </div>
-                          <div className="text-[10px] text-zinc-500 mt-0.5">Subtotal {formatRD(c.subtotalGeneral)} · retención {formatRD(c.retencionMonto)} · amortización {formatRD(c.amortizacionMonto)} · {(c.areasCubicadas || []).reduce((a, x) => a + (Number(x.m2EstePeriodo) || 0), 0).toFixed(2)} m²</div>
+                          <div className="text-[10px] text-zinc-500 mt-0.5">Subtotal {formatRD(c.subtotalGeneral)} · ITBIS {formatRD(c.itbisMonto)} · retención {formatRD(c.retencionMonto)} · amortización {formatRD(c.amortizacionMonto)} · {(c.areasCubicadas || []).reduce((a, x) => a + (Number(x.m2EstePeriodo) || 0), 0).toFixed(2)} m²</div>
                         </div>
                       ))}</div>}
                 </div>

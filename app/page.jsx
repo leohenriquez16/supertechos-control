@@ -4711,6 +4711,7 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
           persona={accesosDe}
           data={data}
           onCerrar={() => setAccesosDe(null)}
+          onVolver={() => { const p = accesosDe; setAccesosDe(null); setDetalleDe(p); }}
           onRecargar={onRecargar}
         />
       )}
@@ -4785,11 +4786,14 @@ function ModalCapacidadesPersona({ persona, data, onCerrar }) {
 }
 
 // v8.17.0: Modal de accesos / credenciales / autorizaciones por persona
-function ModalAccesosPersona({ persona, data, onCerrar, onRecargar }) {
+function ModalAccesosPersona({ persona, data, onCerrar, onVolver, onRecargar }) {
   const [tab, setTab] = useState('accesos');
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
       <div className="bg-zinc-900 border-2 border-amber-600 rounded-card max-w-2xl w-full p-5 space-y-3 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+        {onVolver && (
+          <button onClick={onVolver} className="flex items-center gap-1 text-zinc-400 hover:text-white text-xs font-bold"><ArrowLeft className="w-4 h-4" /> Volver</button>
+        )}
         <div className="flex justify-between items-start">
           <div>
             <div className="text-[10px] tracking-widest uppercase text-amber-500 font-bold">🔐 Accesos y credenciales</div>

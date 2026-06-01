@@ -82,6 +82,7 @@ import VistaGarantias from '../components/garantias/VistaGarantias';
 import ModuloReclamaciones from '../components/reclamaciones/ModuloReclamaciones';
 import VistaMisAsignaciones from '../components/maestro/VistaMisAsignaciones';
 import VistaUbicaciones from '../components/ubicaciones/VistaUbicaciones';
+import CubicacionesProyecto from '../components/proyecto/CubicacionesProyecto';
 // v8.12: Caja Chica + Dieta
 import VistaMiCajaChica from '../components/caja-chica/VistaMiCajaChica';
 import VistaCajaChicaAdmin from '../components/caja-chica/VistaCajaChicaAdmin';
@@ -6306,6 +6307,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
   const [modalEditar, setModalEditar] = useState(false);
   const [modalReporte, setModalReporte] = useState(false);
   const [modalPausa, setModalPausa] = useState(false); // v8.9.13
+  const [modalCubicaciones, setModalCubicaciones] = useState(false); // v8.19.98
   const pausaActiv = pausaActiva(proyecto);
 
   const reanudar = async () => {
@@ -6347,7 +6349,8 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
         <div className="flex items-center gap-2 mb-2">
           <button onClick={() => puedeCambiarEstado && setModalEstado(true)} disabled={!puedeCambiarEstado} className={`px-2 py-1 text-[10px] tracking-widest uppercase font-black text-white ${estadoColor(proyecto.estado)} ${puedeCambiarEstado ? 'cursor-pointer hover:opacity-80' : 'cursor-default'}`}>{estadoLabel(proyecto.estado)}</button>
           {puedeCambiarEstado && <button onClick={() => setModalEstado(true)} className="text-[10px] text-zinc-400 hover:text-red-500 underline">cambiar</button>}
-          {esAdmin && <button onClick={() => setModalReporte(true)} className="ml-auto text-xs text-zinc-400 hover:text-red-500 flex items-center gap-1"><FileText className="w-3 h-3" /> Reporte PDF</button>}
+          {esAdmin && <button onClick={() => setModalCubicaciones(true)} className="ml-auto text-xs text-zinc-400 hover:text-red-500 flex items-center gap-1"><DollarSign className="w-3 h-3" /> Cubicaciones</button>}
+          {esAdmin && <button onClick={() => setModalReporte(true)} className="text-xs text-zinc-400 hover:text-red-500 flex items-center gap-1"><FileText className="w-3 h-3" /> Reporte PDF</button>}
           {esAdmin && !pausaActiv && <button onClick={() => setModalPausa(true)} className="text-xs text-zinc-400 hover:text-yellow-500 flex items-center gap-1">⏸️ Pausar</button>}
           {esAdmin && <button onClick={() => setModalEditar(true)} className="text-xs text-zinc-400 hover:text-red-500 flex items-center gap-1"><Edit2 className="w-3 h-3" /> Editar</button>}
         </div>
@@ -6362,6 +6365,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
       {modalEstado && <ModalCambiarEstado proyecto={proyecto} usuario={usuario} personal={data.personal} sistema={sistema} onCerrar={() => setModalEstado(false)} onConfirmar={async (estadoNuevo, nota, datosExtra) => { await onCambiarEstado(proyecto.id, estadoNuevo, nota, datosExtra); setModalEstado(false); }} />}
       {modalEditar && <ModalEditarProyecto proyecto={proyecto} data={data} usuario={usuario} onCerrar={() => setModalEditar(false)} onGuardar={onActualizarProyecto} onArchivar={onArchivarProyecto} onEliminar={onEliminarProyecto} />}
       {modalReporte && <ModalReporteAvancePDF proyecto={proyecto} sistema={sistema} data={data} usuario={usuario} onCerrar={() => setModalReporte(false)} />}
+      {modalCubicaciones && <CubicacionesProyecto proyecto={proyecto} usuario={usuario} esAdmin={esAdmin} onCerrar={() => setModalCubicaciones(false)} onRecargar={onRecargar} />}
       {modalPausa && <ModalPausarProyecto proyecto={proyecto} onCerrar={() => setModalPausa(false)} onConfirmar={async (fechaInicio, motivo) => {
         const nuevasPausas = [...(proyecto.pausas || []), {
           id: 'pau_' + Date.now(),

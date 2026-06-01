@@ -10,8 +10,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { X, Loader2, Plus, Trash2, Save, Calculator, FileText } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatRD, formatNum } from '../../lib/helpers/formato';
+import { calcAvanceArea } from '../../lib/helpers/calculos';
 
-export default function CubicacionesProyecto({ proyecto, usuario, esAdmin, onCerrar, onRecargar }) {
+export default function CubicacionesProyecto({ proyecto, usuario, esAdmin, data, onCerrar, onRecargar }) {
   const [loading, setLoading] = useState(true);
   const [cubs, setCubs] = useState([]);
   const [guardando, setGuardando] = useState(false);
@@ -48,11 +49,27 @@ export default function CubicacionesProyecto({ proyecto, usuario, esAdmin, onCer
   const retencionAcum = useMemo(() => cubs.reduce((a, c) => a + (Number(c.retencionMonto) || 0), 0), [cubs]);
   const facturadoAcum = useMemo(() => cubs.reduce((a, c) => a + (Number(c.subtotalGeneral) || 0), 0), [cubs]);
 
-  // Form de nueva cubicación: filas por área.
+  // m² EJECUTADO acumulado por área, tomado del avance real de la obra
+  // (% de avance del área × m² del área). Misma data y mismas áreas del proyecto.
+  const m2EjecutadoObra = (ar) => {
+    const sistemas = data?.sistemas || {};
+    const sistemaArea = sistemas[ar.sistemaId || proyecto.sistema];
+    if (!sistemaArea || !data?.reportes) return 0;
+    try { const { porcentaje } = calcAvanceArea(proyecto, ar.id, data.reportes, sistemaArea); return Math.round((porcentaje / 100) * (Number(ar.m2) || 0) * 100) / 100; }
+    catch { return 0; }
+  };
+
+  // Form de nueva cubicación: filas por área. m² del período se precarga del avance:
+  // (m² ejecutado en obra) − (m² ya cubicado en períodos anteriores).
   const [filas, setFilas] = useState([]);
   const [fecha, setFecha] = useState(() => new Date().toISOString().split('T')[0]);
   const iniciarNueva = () => {
-    setFilas(areas.map(ar => ({ areaId: ar.id, areaNombre: ar.nombre || 'Área', m2TotalArea: Number(ar.m2) || 0, m2AcumuladoAnterior: m2AcumPorArea[ar.id] || 0, m2EstePeriodo: '', precioM2: precioBase })));
+    setFilas(areas.map(ar => {
+      const yaCubic = m2AcumPorArea[ar.id] || 0;
+      const ejecutado = m2EjecutadoObra(ar);
+      const sugerido = Math.max(0, Math.round((ejecutado - yaCubic) * 100) / 100);
+      return { areaId: ar.id, areaNombre: ar.nombre || 'Área', m2TotalArea: Number(ar.m2) || 0, m2AcumuladoAnterior: yaCubic, m2EjecutadoObra: ejecutado, m2EstePeriodo: sugerido || '', precioM2: precioBase };
+    }));
     setNueva(true);
   };
   const setFila = (i, campo, val) => setFilas(prev => prev.map((f, idx) => idx === i ? { ...f, [campo]: val } : f));
@@ -165,7 +182,7 @@ export default function CubicacionesProyecto({ proyecto, usuario, esAdmin, onCer
                     <div className="overflow-x-auto">
                       <table className="w-full text-[11px]">
                         <thead><tr className="text-zinc-500 uppercase text-[9px] tracking-wider text-left">
-                          <th className="py-1 pr-2">Área</th><th className="py-1 px-1 text-right">m² total</th><th className="py-1 px-1 text-right">ya cubic.</th><th className="py-1 px-1 text-right">m² período</th><th className="py-1 px-1 text-right">RD$/m²</th><th className="py-1 px-1 text-right">% avance</th><th className="py-1 pl-1 text-right">Subtotal</th>
+                          <th className="py-1 pr-2">Área</th><th className="py-1 px-1 text-right">m² total</th><th className="py-1 px-1 text-right">ya cubic.</th><th className="py-1 px-1 text-right">ejec. obra</th><th className="py-1 px-1 text-right">m² período</th><th className="py-1 px-1 text-right">RD$/m²</th><th className="py-1 px-1 text-right">% avance</th><th className="py-1 pl-1 text-right">Subtotal</th>
                         </tr></thead>
                         <tbody>
                           {calc.rows.map((r, i) => {
@@ -175,6 +192,7 @@ export default function CubicacionesProyecto({ proyecto, usuario, esAdmin, onCer
                                 <td className="py-1 pr-2 font-bold truncate max-w-[120px]">{r.areaNombre}</td>
                                 <td className="py-1 px-1 text-right tabular-nums text-zinc-400">{formatNum(r.m2TotalArea)}</td>
                                 <td className="py-1 px-1 text-right tabular-nums text-zinc-500">{formatNum(r.m2AcumuladoAnterior)}</td>
+                                <td className="py-1 px-1 text-right tabular-nums text-green-400" title="m² ejecutado según el avance de la obra">{formatNum(r.m2EjecutadoObra || 0)}</td>
                                 <td className="py-1 px-1 text-right"><input type="number" value={filas[i]?.m2EstePeriodo} onChange={e => setFila(i, 'm2EstePeriodo', e.target.value)} placeholder={`máx ${formatNum(rest)}`} className="w-20 bg-zinc-950 border border-zinc-800 rounded px-1 py-0.5 text-right text-white" /></td>
                                 <td className="py-1 px-1 text-right"><input type="number" value={filas[i]?.precioM2} onChange={e => setFila(i, 'precioM2', e.target.value)} className="w-20 bg-zinc-950 border border-zinc-800 rounded px-1 py-0.5 text-right text-white" /></td>
                                 <td className="py-1 px-1 text-right tabular-nums text-blue-300">{r.pctAcum.toFixed(1)}%</td>

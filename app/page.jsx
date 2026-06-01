@@ -6365,7 +6365,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
       {modalEstado && <ModalCambiarEstado proyecto={proyecto} usuario={usuario} personal={data.personal} sistema={sistema} onCerrar={() => setModalEstado(false)} onConfirmar={async (estadoNuevo, nota, datosExtra) => { await onCambiarEstado(proyecto.id, estadoNuevo, nota, datosExtra); setModalEstado(false); }} />}
       {modalEditar && <ModalEditarProyecto proyecto={proyecto} data={data} usuario={usuario} onCerrar={() => setModalEditar(false)} onGuardar={onActualizarProyecto} onArchivar={onArchivarProyecto} onEliminar={onEliminarProyecto} />}
       {modalReporte && <ModalReporteAvancePDF proyecto={proyecto} sistema={sistema} data={data} usuario={usuario} onCerrar={() => setModalReporte(false)} />}
-      {modalCubicaciones && <CubicacionesProyecto proyecto={proyecto} usuario={usuario} esAdmin={esAdmin} onCerrar={() => setModalCubicaciones(false)} onRecargar={onRecargar} />}
+      {modalCubicaciones && <CubicacionesProyecto proyecto={proyecto} usuario={usuario} esAdmin={esAdmin} data={data} onCerrar={() => setModalCubicaciones(false)} onRecargar={onRecargar} />}
       {modalPausa && <ModalPausarProyecto proyecto={proyecto} onCerrar={() => setModalPausa(false)} onConfirmar={async (fechaInicio, motivo) => {
         const nuevasPausas = [...(proyecto.pausas || []), {
           id: 'pau_' + Date.now(),

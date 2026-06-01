@@ -13,7 +13,7 @@ import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Building, MapPin, Calendar, Clock, FileText, AlertTriangle, Play, ClipboardList, Layers, ChevronDown, Loader2 } from 'lucide-react';
 import QuickActions from './QuickActions';
 import DynamicSurveyForm from './DynamicSurveyForm';
-import { SITE_STATUS, listarVisitasDeSite, listarAreasDeVisita, obtenerTemplateSurvey, asignarPersonaSurvey } from '../../lib/surveys';
+import { SITE_STATUS, listarVisitasDeSite, listarAreasDeVisita, obtenerTemplateSurvey, asignarPersonaSurvey, ESCALERA, setRequiereEscaleraSurvey } from '../../lib/surveys';
 import { imprimirLevantamiento } from './imprimirLevantamiento';
 
 export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolver }) {
@@ -30,6 +30,15 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
       await asignarPersonaSurvey(proyecto.id, pid || null, persona?.nombre || null);
     } catch (e) { alert('Error: ' + (e.message || e)); }
     setGuardandoAsig(false);
+  };
+  // v8.19.72: requerimiento de escalera (clave para el maestro).
+  const [escalera, setEscalera] = useState(proyecto?.requiere_escalera || '');
+  const [guardandoEsc, setGuardandoEsc] = useState(false);
+  const cambiarEscalera = async (v) => {
+    setEscalera(v); setGuardandoEsc(true);
+    try { await setRequiereEscaleraSurvey(proyecto.id, v || null); }
+    catch (e) { alert('Error: ' + (e.message || e)); }
+    setGuardandoEsc(false);
   };
   const status = SITE_STATUS[site.survey_status] || SITE_STATUS.pending;
   const hasGeo = site.latitude != null && site.longitude != null;
@@ -168,6 +177,24 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
             {habilitados.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
           </select>
         )}
+      </div>
+
+      {/* v8.19.72: ¿Requiere escalera? — para que el maestro sepa qué llevar */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
+        <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1.5 flex items-center gap-1">
+          🪜 ¿Requiere escalera?
+          {guardandoEsc && <Loader2 className="w-3 h-3 animate-spin text-zinc-500" />}
+        </div>
+        <div className="flex gap-1 flex-wrap">
+          {Object.entries(ESCALERA).map(([k, e]) => (
+            <button key={k} onClick={() => cambiarEscalera(escalera === k ? '' : k)}
+              className="px-3 py-1.5 text-xs font-bold rounded-card border"
+              style={escalera === k ? { backgroundColor: e.color, borderColor: e.color, color: '#fff' } : { borderColor: '#3f3f46', color: '#a1a1aa' }}>
+              {e.icon} {e.label}
+            </button>
+          ))}
+        </div>
+        {!escalera && <div className="text-[10px] text-zinc-600 mt-1">Sin especificar. Indícalo para que el maestro lleve el equipo correcto.</div>}
       </div>
 
       <LevantamientosRealizados site={site} proyecto={proyecto} />

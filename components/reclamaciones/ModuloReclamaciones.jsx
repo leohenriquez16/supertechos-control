@@ -4,7 +4,7 @@
 // Vistas: Kanban (por estado, drag&drop) · Lista · Mapa · Ficha de detalle.
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { ArrowLeft, Loader2, AlertTriangle, Plus, X, MapPin, Search, MessageCircle, Mail, Building2 } from 'lucide-react';
+import { ArrowLeft, Loader2, AlertTriangle, Plus, X, MapPin, Search, MessageCircle, Mail, Building2, Wrench } from 'lucide-react';
 import * as db from '../../lib/db';
 import MapaLeaflet from '../common/MapaLeaflet';
 
@@ -141,6 +141,8 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
               {COLS.map(c => <button key={c.e} onClick={() => cambiarEstado(r.id, c.e)} className={`px-3 py-1.5 text-[10px] font-bold uppercase rounded-card border ${r.estado === c.e ? `${c.color} text-white border-transparent` : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>{c.label}</button>)}
             </div>
           </div>
+          {/* Resolución: qué y cuándo se hizo */}
+          <ResolucionReclamacion r={r} onGuardado={() => setReload(x => x + 1)} />
           <div className="mt-3 flex gap-2 flex-wrap">
             <button onClick={() => recordarWhatsApp(r)} className="bg-green-700 hover:bg-green-600 text-white text-[10px] font-bold uppercase px-3 py-1.5 rounded-card flex items-center gap-1"><MessageCircle className="w-3 h-3" /> WhatsApp al cliente</button>
             {p && onVerProyecto && <button onClick={() => onVerProyecto(p)} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-bold uppercase px-3 py-1.5 rounded-card">Ver proyecto →</button>}
@@ -249,6 +251,52 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
       )}
 
       {modalNueva && <ModalNuevaReclamacion data={data} ubicaciones={ubicaciones} garantias={garantias} onCerrar={() => setModalNueva(false)} onCreada={() => { setModalNueva(false); setReload(r => r + 1); }} />}
+    </div>
+  );
+}
+
+// ---------- RESOLUCIÓN: qué y cuándo se hizo ----------
+function ResolucionReclamacion({ r, onGuardado }) {
+  const [trabajo, setTrabajo] = useState(r.trabajoRealizado || '');
+  const [fecha, setFecha] = useState(r.fechaResuelta || '');
+  const [guardando, setGuardando] = useState(false);
+  const [editando, setEditando] = useState(!r.trabajoRealizado && !r.fechaResuelta);
+  useEffect(() => { setTrabajo(r.trabajoRealizado || ''); setFecha(r.fechaResuelta || ''); }, [r.id]);
+
+  const guardar = async () => {
+    setGuardando(true);
+    try {
+      await db.actualizarReclamacion(r.id, { trabajoRealizado: trabajo, fechaResuelta: fecha || null });
+      setEditando(false);
+      if (onGuardado) await onGuardado();
+    } catch (e) { alert('Error: ' + (e.message || e)); }
+    setGuardando(false);
+  };
+
+  return (
+    <div className="mt-3 bg-zinc-950 border border-zinc-800 rounded-card p-3">
+      <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-2 flex items-center justify-between">
+        <span className="flex items-center gap-1"><Wrench className="w-3 h-3" /> Resolución — qué y cuándo se hizo</span>
+        {!editando && <button onClick={() => setEditando(true)} className="text-red-400 hover:underline text-[10px] normal-case tracking-normal">Editar</button>}
+      </div>
+      {editando ? (
+        <div className="space-y-2">
+          <div>
+            <div className="text-[10px] text-zinc-500 mb-1">¿Cuándo se hizo?</div>
+            <input type="date" value={fecha || ''} onChange={e => setFecha(e.target.value)} className="bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1.5 text-xs text-white outline-none focus:border-red-600" />
+          </div>
+          <div>
+            <div className="text-[10px] text-zinc-500 mb-1">¿Qué se hizo?</div>
+            <textarea value={trabajo} onChange={e => setTrabajo(e.target.value)} rows={3} placeholder="Describe la intervención realizada (materiales, área, hallazgos)…" className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1.5 text-sm text-white outline-none focus:border-red-600" />
+          </div>
+          <button onClick={guardar} disabled={guardando} className="bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-[10px] font-black uppercase px-3 py-1.5 rounded-card">{guardando ? 'Guardando…' : 'Guardar resolución'}</button>
+        </div>
+      ) : (
+        <div className="text-sm text-zinc-300">
+          <div className="text-[11px] text-zinc-500 mb-1">{r.fechaResuelta ? `Realizado el ${fmtFecha(r.fechaResuelta)}` : 'Sin fecha registrada'}</div>
+          <div className="whitespace-pre-wrap">{r.trabajoRealizado || 'Sin descripción del trabajo realizado.'}</div>
+        </div>
+      )}
     </div>
   );
 }

@@ -80,6 +80,7 @@ import VistaNomina from '../components/nomina/VistaNomina';
 import ModuloSurveys from '../components/surveys/ModuloSurveys';
 import VistaGarantias from '../components/garantias/VistaGarantias';
 import ModuloReclamaciones from '../components/reclamaciones/ModuloReclamaciones';
+import VistaMisAsignaciones from '../components/maestro/VistaMisAsignaciones';
 // v8.12: Caja Chica + Dieta
 import VistaMiCajaChica from '../components/caja-chica/VistaMiCajaChica';
 import VistaCajaChicaAdmin from '../components/caja-chica/VistaCajaChicaAdmin';
@@ -748,6 +749,8 @@ export default function App() {
   ] : [
     { seccion: 'MIS PROYECTOS', items: [
       { id: 'misProyectos', label: 'Proyectos', icon: Briefcase, vista: 'misProyectos' },
+      // v8.19.72: vista unificada del maestro (proyectos + levantamientos + reclamaciones + mapa)
+      ...((tieneRol(usuario, 'maestro') || tieneRol(usuario, 'supervisor')) ? [{ id: 'misAsignaciones', label: 'Mis asignaciones', icon: MapPin, vista: 'misAsignaciones' }] : []),
       ...(puede(usuario, data.permisos, 'planificacion', 'ver') ? [{ id: 'planificacion', label: 'Planificación', icon: Calendar, vista: 'planificacion' }] : []),
       // v8.9.18: Maestros ven su producción de la quincena
       ...(tieneRol(usuario, 'maestro') ? [{ id: 'miProduccion', label: 'Mi Producción', icon: Wallet, vista: 'miProduccion' }] : []),
@@ -1128,6 +1131,7 @@ export default function App() {
           />
         )}
         {!esAdmin && vista === 'misProyectos' && <MisProyectos usuario={usuario} data={data} onIrAReportar={(p) => { setProyectoActivo(p); setVista('reportar'); }} onVerDetalle={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
+        {!esAdmin && vista === 'misAsignaciones' && <VistaMisAsignaciones usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'reportar' && proyectoActivo && (() => {
           // v8.9.11: Bifurcación rápido vs manual según flag de persona
           const audioHabilitado = !!usuario?.reporteAudioHabilitado;

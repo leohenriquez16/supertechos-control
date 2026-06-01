@@ -9,7 +9,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Loader2, Plus, MapPin, Building, ChevronRight, ArrowLeft, List, Map as MapIcon, LayoutGrid, Search, User as UserIcon } from 'lucide-react';
-import { listarProyectosSurveys, listarSitesProyectoSurvey, listarTodosLosSitesSurvey, COMPANIES, PROJECT_STATUS, SITE_STATUS, SERVICE_LINES } from '../../lib/surveys';
+import { listarProyectosSurveys, listarSitesProyectoSurvey, listarTodosLosSitesSurvey, COMPANIES, PROJECT_STATUS, SITE_STATUS, SERVICE_LINES, ESCALERA } from '../../lib/surveys';
 import MapaLeaflet from '../common/MapaLeaflet';
 import ServiceLineBadge from './ServiceLineBadge';
 import SurveySiteDetail from './SurveySiteDetail';
@@ -300,7 +300,7 @@ function SurveysList({ usuario, onAbrirProyecto, onAbrirSiteDirecto }) {
                     <div className="p-2 space-y-2 min-h-[50px]">
                       {items.map(p => (
                         <button key={p.id} onClick={() => onAbrirProyecto(p)} style={{ borderLeftColor: SERVICE_LINES[p.service_line]?.color || '#666', borderLeftWidth: '4px' }} className="w-full text-left bg-zinc-900 border border-zinc-800 rounded-card p-2.5 hover:border-red-600">
-                          <div className="flex items-center gap-1 mb-1"><ServiceLineBadge serviceLine={p.service_line} /></div>
+                          <div className="flex items-center gap-1 mb-1 flex-wrap"><ServiceLineBadge serviceLine={p.service_line} />{p.requiere_escalera && <EscaleraBadge valor={p.requiere_escalera} />}</div>
                           <div className="font-bold text-xs truncate">{p.client_name}</div>
                           <div className="text-[10px] text-zinc-500 truncate">{p.name}</div>
                         </button>
@@ -329,6 +329,16 @@ function SurveysList({ usuario, onAbrirProyecto, onAbrirSiteDirecto }) {
 // ============================================================
 const fmtFechaSurvey = (s) => { if (!s) return '—'; try { return new Date(s).toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: '2-digit' }); } catch { return '—'; } };
 
+export function EscaleraBadge({ valor, full }) {
+  const e = ESCALERA[valor];
+  if (!e) return <span className="text-[10px] text-zinc-600">—</span>;
+  return (
+    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap inline-block" style={{ backgroundColor: e.color + '22', color: e.color, border: `1px solid ${e.color}66` }}>
+      {e.icon} {full ? e.label : e.short}
+    </span>
+  );
+}
+
 function FilaSurvey({ p, nSites, estado, onAbrir }) {
   const color = SERVICE_LINES[p.service_line]?.color || '#666';
   const company = COMPANIES[p.company] || p.company || '—';
@@ -343,6 +353,7 @@ function FilaSurvey({ p, nSites, estado, onAbrir }) {
       <td className="px-3 py-2"><ServiceLineBadge serviceLine={p.service_line} /></td>
       <td className="px-3 py-2 text-[10px] uppercase tracking-wider text-zinc-500">{company}</td>
       <td className="px-3 py-2"><span className="text-[10px] uppercase tracking-wider font-bold text-zinc-300">{estado}</span></td>
+      <td className="px-3 py-2"><EscaleraBadge valor={p.requiere_escalera} /></td>
       <td className="px-3 py-2 text-xs text-zinc-400">
         {p.asignado_a_nombre
           ? <span className="inline-flex items-center gap-1"><UserIcon className="w-3 h-3 text-zinc-500" />{p.asignado_a_nombre}</span>
@@ -379,6 +390,7 @@ function SurveysTabla({ grupos, sitesPorProy, estadoDe, agrupado, onAbrir }) {
         <th className="px-3 py-2">Servicio</th>
         <th className="px-3 py-2">Empresa</th>
         <th className="px-3 py-2">Estado</th>
+        <th className="px-3 py-2">Escalera</th>
         <th className="px-3 py-2">Levantador</th>
         <th className="px-3 py-2 text-right">Sitios</th>
         <th className="px-3 py-2 text-right">Creado</th>
@@ -397,7 +409,7 @@ function SurveysTabla({ grupos, sitesPorProy, estadoDe, agrupado, onAbrir }) {
               <React.Fragment key={g.key}>
                 {agrupado && (
                   <tr className="bg-zinc-950/80 border-b border-zinc-800">
-                    <td colSpan={9} className="px-3 py-1.5 text-[10px] uppercase tracking-widest font-black text-zinc-400">
+                    <td colSpan={10} className="px-3 py-1.5 text-[10px] uppercase tracking-widest font-black text-zinc-400">
                       {g.label} <span className="text-zinc-600">· {g.items.length}</span>
                     </td>
                   </tr>
@@ -435,10 +447,11 @@ function ProyectoCard({ proyecto, onClick }) {
       className="w-full text-left bg-zinc-900 border border-zinc-800 rounded-card hover:border-red-600 p-4 flex items-center justify-between gap-3 transition-colors"
     >
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-1">
+        <div className="flex items-center gap-2 mb-1 flex-wrap">
           <ServiceLineBadge serviceLine={proyecto.service_line} />
           <span className="text-[10px] text-zinc-500 uppercase tracking-wider">{company}</span>
           <span className="text-[10px] text-zinc-400 uppercase tracking-wider">· {estadoLabel}</span>
+          {proyecto.requiere_escalera && <EscaleraBadge valor={proyecto.requiere_escalera} />}
         </div>
         <div className="font-bold text-sm truncate">{proyecto.name}</div>
         <div className="text-xs text-zinc-500 mt-0.5">{proyecto.client_name}</div>

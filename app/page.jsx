@@ -4340,6 +4340,13 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
   };
 
   const maestros = getMaestros(personal);
+  // v8.19.77: documentos de cumplimiento pendientes.
+  const docsPendientes = (p) => {
+    const f = [];
+    if ((p.banco || p.bancoNumeroCuenta) && !p.cartaBancaria) f.push('Carta bancaria');
+    if ((p.puesto || '').toLowerCase().includes('operario') && !p.buenaConducta) f.push('Buena conducta');
+    return f;
+  };
   const rolLabel = (p) => {
     const r = [];
     if (tieneRol(p, 'admin')) r.push('Admin');
@@ -4551,6 +4558,9 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
                         {p.pinTemporal && (
                           <span className="text-[9px] bg-blue-900/50 border border-blue-700 text-blue-300 px-1.5 py-0.5 tracking-wider uppercase font-bold flex-shrink-0" title="Invitación pendiente de cambio de PIN">📨 Invitado</span>
                         )}
+                        {docsPendientes(p).length > 0 && (
+                          <span className="text-[9px] bg-orange-900/50 border border-orange-700 text-orange-300 px-1.5 py-0.5 tracking-wider uppercase font-bold flex-shrink-0" title={'Faltan documentos: ' + docsPendientes(p).join(', ')}>⚠ Docs</span>
+                        )}
                       </div>
                       <div className="text-[10px] text-zinc-500">{rolLabel(p)}{p.tienePin && ' · 🔐 Con login'}{maestro && ` · Con ${maestro.nombre}`}{ayudantes.length > 0 && ` · ${ayudantes.length} ayudante${ayudantes.length > 1 ? 's' : ''}`}{p.telefono && ` · ${p.telefono}`}</div>
                     </div>
@@ -4625,6 +4635,15 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
                   </div>
                 );
               })()}
+              {/* Documentos pendientes */}
+              {docsPendientes(p).length > 0 && (
+                <div className="px-4 pb-1">
+                  <button onClick={() => { cerrar(); onAbrirPerfil(p); }} className="w-full text-left bg-orange-900/20 border border-orange-800/60 rounded-card p-2.5 hover:border-orange-600">
+                    <div className="text-[11px] font-bold text-orange-300">⚠ Documentos pendientes</div>
+                    <div className="text-[10px] text-orange-200/80">Falta: {docsPendientes(p).join(', ')}. Toca para subir en el perfil.</div>
+                  </button>
+                </div>
+              )}
               {/* Datos RR.HH. (si existen) */}
               {(p.puesto || p.departamento || p.gerenteNombre || p.cedulaNumero || p.fechaNacimiento || p.email) && (
                 <div className="px-4 pb-1">
@@ -12734,6 +12753,8 @@ function MiPerfil({ usuario, persona, onVolver, onGuardar }) {
     foto2x2: persona.foto2x2 || '',
     cedulaFrente: persona.cedulaFrente || '',
     cedulaReverso: persona.cedulaReverso || '',
+    cartaBancaria: persona.cartaBancaria || '',
+    buenaConducta: persona.buenaConducta || '',
   });
   const [mostrarCedula, setMostrarCedula] = useState(false);
   const [subiendoFoto, setSubiendoFoto] = useState(null);
@@ -12750,6 +12771,21 @@ function MiPerfil({ usuario, persona, onVolver, onGuardar }) {
     } catch (e) { alert('Error: ' + e.message); }
     setSubiendoFoto(null);
   };
+
+  // v8.19.77: slot de documento (foto del documento) para cumplimiento.
+  const DocSlot = ({ valor, campo, titulo }) => (
+    <div className="relative aspect-[1.6] bg-zinc-950 border-2 border-dashed border-zinc-700 overflow-hidden rounded-card">
+      {valor ? (
+        <button onClick={() => setViendoImagen({ src: valor, titulo })} className="block w-full h-full"><img src={valor} className="w-full h-full object-contain" alt="" /></button>
+      ) : (
+        <div className="flex items-center justify-center h-full text-zinc-600 text-xs">Sin documento</div>
+      )}
+      <label className="absolute bottom-1 right-1 bg-red-600 p-1.5 cursor-pointer rounded-card">
+        {subiendoFoto === campo ? <Loader2 className="w-3 h-3 text-white animate-spin" /> : <Camera className="w-3 h-3 text-white" />}
+        <input type="file" accept="image/*" className="hidden" onChange={e => e.target.files[0] && subirImagen(campo, e.target.files[0], 1400, 0.75)} />
+      </label>
+    </div>
+  );
 
   const guardar = async () => {
     await onGuardar(form);
@@ -12881,9 +12917,44 @@ function MiPerfil({ usuario, persona, onVolver, onGuardar }) {
         </div>
       )}
 
+      {/* v8.19.77: Documentos de cumplimiento (carta bancaria + buena conducta) */}
+      {puedoVerCedula && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-3">
+          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold flex items-center gap-1"><FileText className="w-3 h-3" /> Documentos de cumplimiento</div>
+          {(() => {
+            const tieneBanco = !!(persona.banco || persona.bancoNumeroCuenta);
+            const falta = tieneBanco && !form.cartaBancaria;
+            return (
+              <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="text-xs font-bold">Carta bancaria {tieneBanco && <span className="text-red-400">*</span>}</div>
+                  {falta ? <span className="text-[9px] bg-red-900/50 border border-red-700 text-red-300 px-1.5 py-0.5 uppercase font-bold rounded-full">Falta</span> : form.cartaBancaria ? <span className="text-[9px] bg-green-900/40 border border-green-700 text-green-300 px-1.5 py-0.5 uppercase font-bold rounded-full">✓ OK</span> : null}
+                </div>
+                <div className="text-[10px] text-zinc-500 mb-2">Obligatoria para registrar la cuenta. Debe mostrar el nombre del titular y el tipo de cuenta.</div>
+                <DocSlot valor={form.cartaBancaria} campo="cartaBancaria" titulo="Carta bancaria" />
+              </div>
+            );
+          })()}
+          {(() => {
+            const esOperario = (persona.puesto || '').toLowerCase().includes('operario');
+            const falta = esOperario && !form.buenaConducta;
+            return (
+              <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="text-xs font-bold">Papel de buena conducta {esOperario && <span className="text-red-400">*</span>}</div>
+                  {falta ? <span className="text-[9px] bg-red-900/50 border border-red-700 text-red-300 px-1.5 py-0.5 uppercase font-bold rounded-full">Falta</span> : form.buenaConducta ? <span className="text-[9px] bg-green-900/40 border border-green-700 text-green-300 px-1.5 py-0.5 uppercase font-bold rounded-full">✓ OK</span> : null}
+                </div>
+                <div className="text-[10px] text-zinc-500 mb-2">{esOperario ? 'Requerido para operarios.' : 'Certificado de buena conducta (si aplica).'}</div>
+                <DocSlot valor={form.buenaConducta} campo="buenaConducta" titulo="Buena conducta" />
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
       {cambios && (
         <div className="sticky bottom-4 flex gap-2">
-          <button onClick={() => { setForm({ telefono: persona.telefono || '', direccion: persona.direccion || '', email: persona.email || '', fechaIngreso: persona.fechaIngreso || '', recomendadoPor: persona.recomendadoPor || '', cedulaNumero: persona.cedulaNumero || '', foto2x2: persona.foto2x2 || '', cedulaFrente: persona.cedulaFrente || '', cedulaReverso: persona.cedulaReverso || '' }); setCambios(false); }} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Descartar</button>
+          <button onClick={() => { setForm({ telefono: persona.telefono || '', direccion: persona.direccion || '', email: persona.email || '', fechaIngreso: persona.fechaIngreso || '', recomendadoPor: persona.recomendadoPor || '', cedulaNumero: persona.cedulaNumero || '', foto2x2: persona.foto2x2 || '', cedulaFrente: persona.cedulaFrente || '', cedulaReverso: persona.cedulaReverso || '', cartaBancaria: persona.cartaBancaria || '', buenaConducta: persona.buenaConducta || '' }); setCambios(false); }} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Descartar</button>
           <button onClick={guardar} className="flex-1 bg-red-600 hover:bg-red-700 text-white text-sm font-black uppercase py-3 flex items-center justify-center gap-2 shadow-2xl"><Save className="w-4 h-4" /> Guardar cambios</button>
         </div>
       )}

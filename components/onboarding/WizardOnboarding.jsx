@@ -75,6 +75,7 @@ export default function WizardOnboarding({ usuario, onListo }) {
     titularEsOtro: !!(usuario.bancoTitularNombre && usuario.bancoTitularNombre !== usuario.nombre),
     bancoTitularNombre: usuario.bancoTitularNombre || '',
     bancoTitularCedula: usuario.bancoTitularCedula || '',
+    cartaBancaria: usuario.cartaBancaria || '',
   });
 
   useEffect(() => {
@@ -145,6 +146,7 @@ export default function WizardOnboarding({ usuario, onListo }) {
         if (!datos.bancoTitularNombre.trim()) return 'Nombre del titular requerido.';
         if (datos.bancoTitularCedula.replace(/\D/g, '').length !== 11) return 'Cédula del titular debe tener 11 dígitos.';
       }
+      if (!datos.cartaBancaria) return 'Sube la carta bancaria (con tu nombre y el tipo de cuenta).';
     }
     return null;
   };
@@ -181,6 +183,7 @@ export default function WizardOnboarding({ usuario, onListo }) {
         bancoNumeroCuenta: datos.bancoNumeroCuenta.replace(/\D/g, ''),
         bancoTitularNombre: titularNombre,
         bancoTitularCedula: titularCedula,
+        cartaBancaria: datos.cartaBancaria,
         foto2x2: datos.foto2x2,
         cedulaFrente: datos.cedulaFrente,
         cedulaReverso: datos.cedulaReverso,
@@ -537,6 +540,20 @@ function PasoBancarios({ datos, set }) {
           </Field>
         </div>
       )}
+
+      {/* v8.19.77: carta bancaria obligatoria para registrar la cuenta */}
+      <div className="pt-2">
+        <div className="flex items-center gap-2 mb-1">
+          <div className="text-[11px] tracking-widest uppercase text-zinc-300 font-bold">Carta bancaria</div>
+          <span className="text-[9px] bg-red-900/50 border border-red-700 text-red-300 px-1.5 py-0.5 tracking-wider uppercase font-bold">Obligatoria</span>
+        </div>
+        <p className="text-[11px] text-zinc-400 mb-2">Sube la carta del banco donde se vea tu <b>nombre</b> y el <b>tipo de cuenta</b>. Sin ella no se puede registrar la cuenta.</p>
+        <CapturaFoto
+          valor={datos.cartaBancaria}
+          onCapturar={(d) => set('cartaBancaria', d)}
+          label="Subir carta bancaria"
+        />
+      </div>
     </div>
   );
 }

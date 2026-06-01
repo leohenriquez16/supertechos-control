@@ -4,7 +4,7 @@
 // Vistas: Kanban (por estado, drag&drop) · Lista · Mapa · Ficha de detalle.
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { ArrowLeft, Loader2, AlertTriangle, Plus, X, MapPin, Search, MessageCircle, Mail, Building2, Wrench } from 'lucide-react';
+import { ArrowLeft, Loader2, AlertTriangle, Plus, X, MapPin, Search, MessageCircle, Mail, Building2, Wrench, Trash2 } from 'lucide-react';
 import * as db from '../../lib/db';
 import MapaLeaflet from '../common/MapaLeaflet';
 import CalendarioLevantamientos from '../surveys/CalendarioLevantamientos';
@@ -110,6 +110,14 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
     try { await db.actualizarReclamacion(id, { estado }); } catch (e) { alert('Error: ' + (e.message || e)); setReload(x => x + 1); }
   };
 
+  // v8.19.91: eliminación con autorización del OWNER DEL APP (rol 'owner').
+  const esOwnerApp = (usuario?.roles || []).includes('owner');
+  const esAdminApp = (usuario?.roles || []).includes('admin');
+  const ownerNombreApp = (data.personal || []).find(p => (p.roles || []).includes('owner'))?.nombre || 'el dueño del app';
+  const eliminarRec = async (id) => { if (!confirm('¿Eliminar esta reclamación? No se puede deshacer.')) return; try { await db.eliminarReclamacion(id); setSel(null); setReload(r => r + 1); } catch (e) { alert('Error: ' + (e.message || e)); } };
+  const solicitarDelRec = async (id) => { try { await db.solicitarEliminacionReclamacion(id, usuario); setReload(r => r + 1); } catch (e) { alert('Error: ' + (e.message || e)); } };
+  const cancelarDelRec = async (id) => { try { await db.cancelarSolicitudEliminacionReclamacion(id); setReload(r => r + 1); } catch (e) { alert('Error: ' + (e.message || e)); } };
+
   const recordarWhatsApp = (r) => {
     const cli = clienteDe(r.clienteId); const u = ubic(r.ubicacionId);
     const tel = (u?.contactoTelefono || cli?.telefonoPrincipal || proyById(r.proyectoId)?.contactoClienteTelefono || '').replace(/\D/g, '').replace(/^(?!1)(8[024]9)/, '1$1');
@@ -153,6 +161,34 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
             {p && onVerProyecto && <button onClick={() => onVerProyecto(p)} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-bold uppercase px-3 py-1.5 rounded-card">Ver proyecto →</button>}
           </div>
           {g && <div className="mt-3 text-[11px] text-zinc-500">Garantía: {g.sistemaNombre || ''} · vence {fmtFecha(g.fechaVencimiento)}</div>}
+
+          {/* v8.19.91: eliminación con autorización del owner del app */}
+          {(esOwnerApp || esAdminApp) && (
+            <div className="mt-3 bg-zinc-950 border border-red-900/50 rounded-card p-3 space-y-2">
+              <div className="text-[10px] uppercase tracking-widest text-red-400 font-bold flex items-center gap-1"><Trash2 className="w-3 h-3" /> Eliminar reclamación</div>
+              {esOwnerApp ? (
+                <>
+                  {r.eliminacionSolicitadaPor && <div className="text-[11px] text-amber-300">El admin <b>{r.eliminacionSolicitadaPorNombre || '—'}</b> solicitó eliminar esta reclamación.</div>}
+                  <div className="flex gap-2">
+                    {r.eliminacionSolicitadaPor && <button onClick={() => cancelarDelRec(r.id)} className="px-3 bg-zinc-800 text-zinc-300 text-[10px] font-bold uppercase py-2 rounded-card">Rechazar</button>}
+                    <button onClick={() => eliminarRec(r.id)} className="flex-1 bg-red-600 hover:bg-red-700 text-white text-[11px] font-black uppercase py-2 rounded-card flex items-center justify-center gap-1"><Trash2 className="w-3 h-3" /> {r.eliminacionSolicitadaPor ? 'Autorizar y eliminar' : 'Eliminar reclamación'}</button>
+                  </div>
+                </>
+              ) : r.eliminacionSolicitadaPor === usuario.id ? (
+                <>
+                  <div className="text-[11px] text-amber-300">Solicitud enviada a <b>{ownerNombreApp}</b>. Esperando su autorización.</div>
+                  <button onClick={() => cancelarDelRec(r.id)} className="px-3 bg-zinc-800 text-zinc-300 text-[10px] font-bold uppercase py-2 rounded-card">Cancelar solicitud</button>
+                </>
+              ) : r.eliminacionSolicitadaPor ? (
+                <div className="text-[11px] text-zinc-500">Ya hay una solicitud de eliminación pendiente de autorización de <b>{ownerNombreApp}</b>.</div>
+              ) : (
+                <>
+                  <div className="text-[11px] text-zinc-500">Solo <b>{ownerNombreApp}</b> (dueño del app) puede eliminar. Puedes solicitar su autorización.</div>
+                  <button onClick={() => solicitarDelRec(r.id)} className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-[11px] font-bold uppercase py-2 rounded-card">Solicitar eliminación al dueño</button>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </div>
     );

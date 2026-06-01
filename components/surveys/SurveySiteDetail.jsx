@@ -14,12 +14,14 @@ import { ArrowLeft, Building, MapPin, Calendar, Clock, FileText, AlertTriangle, 
 import QuickActions from './QuickActions';
 import DynamicSurveyForm from './DynamicSurveyForm';
 import PuntosSingulares from './PuntosSingulares';
+import EstimacionLevantamiento from './EstimacionLevantamiento';
 import { SITE_STATUS, listarVisitasDeSite, listarAreasDeVisita, obtenerTemplateSurvey, asignarPersonaSurvey, ESCALERA, setRequiereEscaleraSurvey } from '../../lib/surveys';
 import { imprimirLevantamiento } from './imprimirLevantamiento';
 
 export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolver }) {
   const [formAbierto, setFormAbierto] = useState(false);
   const [puntosAbierto, setPuntosAbierto] = useState(false); // v8.19.82
+  const [estimacionAbierta, setEstimacionAbierta] = useState(false); // v8.19.83
   // v8.19.65: asignación de personal habilitado al levantamiento.
   const habilitados = (data?.personal || []).filter(p => p.levantamientoHabilitado && !p.archivado);
   const [asignadoId, setAsignadoId] = useState(proyecto?.asignado_a_id || '');
@@ -205,6 +207,13 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
         <span className="text-[10px] text-zinc-500">Marcar sobre la foto →</span>
       </button>
       {puntosAbierto && <PuntosSingulares site={site} onCerrar={() => setPuntosAbierto(false)} />}
+
+      {/* v8.19.83: estimación / cotización preliminar */}
+      <button onClick={() => setEstimacionAbierta(true)} className="w-full bg-zinc-900 border border-zinc-800 rounded-card p-3 flex items-center justify-between hover:border-red-600 text-left">
+        <div className="flex items-center gap-2 text-sm font-bold"><FileText className="w-4 h-4 text-red-500" /> Estimación / cotización preliminar</div>
+        <span className="text-[10px] text-zinc-500">Calcular rango →</span>
+      </button>
+      {estimacionAbierta && <EstimacionLevantamiento site={site} proyecto={proyecto} onCerrar={() => setEstimacionAbierta(false)} />}
 
       <LevantamientosRealizados site={site} proyecto={proyecto} />
 

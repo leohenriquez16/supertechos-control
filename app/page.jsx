@@ -4495,6 +4495,15 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
               <div className="text-[10px] text-zinc-500 pt-1 border-t border-zinc-800">Solo se aplica si el proyecto también tiene estos toggles activos.</div>
             </div>
           )}
+          {/* v8.19.76: Datos RR.HH. (Odoo) */}
+          <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3 space-y-2">
+            <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">Datos RR.HH.</div>
+            <div className="grid grid-cols-2 gap-2">
+              <Campo label="Puesto"><Input value={form.puesto || ''} onChange={v => setForm({ ...form, puesto: v })} placeholder="Operario, Maestro…" /></Campo>
+              <Campo label="Departamento"><Input value={form.departamento || ''} onChange={v => setForm({ ...form, departamento: v })} placeholder="Operaciones…" /></Campo>
+            </div>
+            <Campo label="Gerente / encargado"><Input value={form.gerenteNombre || ''} onChange={v => setForm({ ...form, gerenteNombre: v })} /></Campo>
+          </div>
           <div className="flex gap-2 pt-2"><button onClick={() => { setEditando(null); setForm(null); }} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button><button onClick={guardar} disabled={!form.nombre} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-3 flex items-center justify-center gap-1"><Save className="w-3 h-3" /> Guardar</button></div>
         </div>
       )}
@@ -4616,6 +4625,24 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
                   </div>
                 );
               })()}
+              {/* Datos RR.HH. (si existen) */}
+              {(p.puesto || p.departamento || p.gerenteNombre || p.cedulaNumero || p.fechaNacimiento || p.email) && (
+                <div className="px-4 pb-1">
+                  <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 text-xs space-y-1">
+                    <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-1">Datos RR.HH.</div>
+                    {[
+                      ['Puesto', p.puesto],
+                      ['Departamento', p.departamento],
+                      ['Gerente', p.gerenteNombre],
+                      ['Cédula', p.cedulaNumero],
+                      ['Nacimiento', p.fechaNacimiento ? formatFecha(p.fechaNacimiento) : ''],
+                      ['Email', p.email],
+                    ].filter(([, v]) => v).map(([k, v]) => (
+                      <div key={k} className="flex justify-between gap-3"><span className="text-zinc-500 flex-shrink-0">{k}</span><span className="text-zinc-200 text-right truncate">{v}</span></div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="p-4 space-y-2">
                 {acciones.map((a, i) => (
                   <button key={i} onClick={a.onClick} className="w-full flex items-center gap-3 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-red-600 rounded-card px-3 py-2.5 text-left transition-colors">

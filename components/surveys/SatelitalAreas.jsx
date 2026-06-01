@@ -11,6 +11,21 @@ import { formatNum } from '../../lib/helpers/formato';
 
 const COLORES = ['#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#14b8a6', '#ec4899'];
 
+// Token opcional de Mapbox (capa HD). Si no está, solo se ofrece Esri (gratis).
+const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
+
+// Fábrica de la capa base satelital según el proveedor elegido.
+function crearCapaBase(L, capa) {
+  if (capa === 'mapbox' && MAPBOX_TOKEN) {
+    return L.tileLayer(`https://api.mapbox.com/v4/mapbox.satellite/{z}/{x}/{y}@2x.png?access_token=${MAPBOX_TOKEN}`, {
+      maxZoom: 22, attribution: '© Mapbox © Maxar',
+    });
+  }
+  return L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 21, attribution: 'Tiles © Esri',
+  });
+}
+
 export default function SatelitalAreas({ site, proyecto, onCerrar }) {
   const center = (site?.latitude != null && site?.longitude != null)
     ? [Number(site.latitude), Number(site.longitude)]
@@ -20,16 +35,31 @@ export default function SatelitalAreas({ site, proyecto, onCerrar }) {
   const [dibujando, setDibujando] = useState(false);
   const [puntos, setPuntos] = useState([]);
   const [guardando, setGuardando] = useState(false);
+  const [capa, setCapa] = useState('esri'); // esri (gratis) | mapbox (HD)
 
   const contRef = useRef(null);
   const mapRef = useRef(null);
   const LRef = useRef(null);
   const tempRef = useRef(null);
   const savedRef = useRef(null);
+  const baseRef = useRef(null);
   const dibujandoRef = useRef(false);
   const puntosRef = useRef([]);
   useEffect(() => { dibujandoRef.current = dibujando; }, [dibujando]);
   useEffect(() => { puntosRef.current = puntos; }, [puntos]);
+
+  // Cambiar de capa base sin recrear el mapa.
+  useEffect(() => {
+    const L = LRef.current, map = mapRef.current; if (!L || !map) return;
+    if (baseRef.current) map.removeLayer(baseRef.current);
+    baseRef.current = crearCapaBase(L, capa).addTo(map);
+    baseRef.current.bringToBack();
+  }, [capa]);
+
+  const elegirCapa = (c) => {
+    if (c === 'mapbox' && !MAPBOX_TOKEN) { alert('La capa Mapbox (HD) requiere un token. Configura NEXT_PUBLIC_MAPBOX_TOKEN en el entorno para activarla. Mientras tanto puedes usar la capa Satélite (gratis).'); return; }
+    setCapa(c);
+  };
 
   // Montaje del mapa
   useEffect(() => {
@@ -45,9 +75,7 @@ export default function SatelitalAreas({ site, proyecto, onCerrar }) {
       LRef.current = L;
       const map = L.map(contRef.current, { center, zoom: 19, zoomControl: true });
       mapRef.current = map;
-      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-        maxZoom: 21, attribution: 'Tiles © Esri',
-      }).addTo(map);
+      baseRef.current = crearCapaBase(L, 'esri').addTo(map);
       savedRef.current = L.layerGroup().addTo(map);
       tempRef.current = L.layerGroup().addTo(map);
       map.on('click', (e) => {
@@ -127,6 +155,11 @@ export default function SatelitalAreas({ site, proyecto, onCerrar }) {
                   <button onClick={() => { setDibujando(false); setPuntos([]); }} className="text-zinc-500 text-[10px] underline">cancelar</button>
                 </>
               )}
+              {/* Selector de capa — el levantador elige */}
+              <div className="ml-auto flex gap-1 bg-zinc-900 border border-zinc-800 rounded-card p-0.5">
+                <button onClick={() => elegirCapa('esri')} className={`px-2 py-1 text-[10px] font-bold uppercase rounded-card ${capa === 'esri' ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>Satélite (gratis)</button>
+                <button onClick={() => elegirCapa('mapbox')} title={MAPBOX_TOKEN ? '' : 'Requiere token NEXT_PUBLIC_MAPBOX_TOKEN'} className={`px-2 py-1 text-[10px] font-bold uppercase rounded-card ${capa === 'mapbox' ? 'bg-red-600 text-white' : MAPBOX_TOKEN ? 'text-zinc-400' : 'text-zinc-600'}`}>Mapbox HD{!MAPBOX_TOKEN && ' 🔒'}</button>
+              </div>
             </div>
 
             <div ref={contRef} style={{ height: 420 }} className="rounded-card overflow-hidden border border-zinc-800" />

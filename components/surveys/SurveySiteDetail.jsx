@@ -15,6 +15,7 @@ import QuickActions from './QuickActions';
 import DynamicSurveyForm from './DynamicSurveyForm';
 import PuntosSingulares from './PuntosSingulares';
 import EstimacionLevantamiento from './EstimacionLevantamiento';
+import SatelitalAreas from './SatelitalAreas';
 import { SITE_STATUS, listarVisitasDeSite, listarAreasDeVisita, obtenerTemplateSurvey, asignarPersonaSurvey, ESCALERA, setRequiereEscaleraSurvey } from '../../lib/surveys';
 import { imprimirLevantamiento } from './imprimirLevantamiento';
 
@@ -22,6 +23,7 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
   const [formAbierto, setFormAbierto] = useState(false);
   const [puntosAbierto, setPuntosAbierto] = useState(false); // v8.19.82
   const [estimacionAbierta, setEstimacionAbierta] = useState(false); // v8.19.83
+  const [satelitalAbierta, setSatelitalAbierta] = useState(false); // v8.19.86
   // v8.19.65: asignación de personal habilitado al levantamiento.
   const habilitados = (data?.personal || []).filter(p => p.levantamientoHabilitado && !p.archivado);
   const [asignadoId, setAsignadoId] = useState(proyecto?.asignado_a_id || '');
@@ -214,6 +216,13 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
         <span className="text-[10px] text-zinc-500">Calcular rango →</span>
       </button>
       {estimacionAbierta && <EstimacionLevantamiento site={site} proyecto={proyecto} onCerrar={() => setEstimacionAbierta(false)} />}
+
+      {/* v8.19.86: vista satelital con dibujo de áreas (opcional) */}
+      <button onClick={() => setSatelitalAbierta(true)} className="w-full bg-zinc-900 border border-zinc-800 rounded-card p-3 flex items-center justify-between hover:border-red-600 text-left">
+        <div className="flex items-center gap-2 text-sm font-bold"><MapPin className="w-4 h-4 text-red-500" /> Vista satelital — áreas <span className="text-[9px] bg-zinc-800 border border-zinc-700 text-zinc-400 px-1.5 py-0.5 uppercase font-bold rounded">Opcional</span></div>
+        <span className="text-[10px] text-zinc-500">Dibujar sobre el techo →</span>
+      </button>
+      {satelitalAbierta && <SatelitalAreas site={site} proyecto={proyecto} onCerrar={() => setSatelitalAbierta(false)} />}
 
       <LevantamientosRealizados site={site} proyecto={proyecto} />
 

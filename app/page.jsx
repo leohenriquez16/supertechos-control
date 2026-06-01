@@ -4587,6 +4587,35 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
                 </div>
                 <button onClick={cerrar} className="text-zinc-500 hover:text-white flex-shrink-0"><X className="w-4 h-4" /></button>
               </div>
+              {/* Resumen rápido */}
+              {(() => {
+                const misProy = (data?.proyectos || []).filter(x => !x.archivado && (x.supervisorId === p.id || x.maestroId === p.id || (x.ayudantesIds || []).includes(p.id)));
+                const activos = misProy.filter(x => x.estado === 'en_ejecucion').length;
+                const nAyud = tieneRol(p, 'maestro') ? getAyudantesDeMaestro(personal, p.id).length : null;
+                const chips = [];
+                chips.push(p.pinTemporal ? '📨 Invitación pendiente' : p.tienePin ? '🔐 Con login' : '🚫 Sin login');
+                if (p.levantamientoHabilitado) chips.push('📍 Levantamientos');
+                if (p.cajaChicaHabilitada) chips.push('💵 Caja chica');
+                if (p.reporteAudioHabilitado) chips.push('🎤 Audio IA');
+                const Stat = ({ label, value, color }) => (
+                  <div className="bg-zinc-900 border border-zinc-800 rounded-card p-2 text-center">
+                    <div className="text-xl font-black" style={{ color: color || '#fafafa' }}>{value}</div>
+                    <div className="text-[9px] uppercase tracking-wider text-zinc-500 font-bold">{label}</div>
+                  </div>
+                );
+                return (
+                  <div className="px-4 pt-3 pb-1">
+                    <div className="grid grid-cols-3 gap-2">
+                      <Stat label="Proy. activos" value={activos} color="#22c55e" />
+                      <Stat label="Proyectos" value={misProy.length} />
+                      {nAyud != null ? <Stat label="Ayudantes" value={nAyud} /> : <Stat label="Tel." value={p.telefono ? '✓' : '—'} />}
+                    </div>
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {chips.map((c, i) => <span key={i} className="text-[9px] bg-zinc-900 border border-zinc-800 rounded-full px-2 py-0.5 text-zinc-300">{c}</span>)}
+                    </div>
+                  </div>
+                );
+              })()}
               <div className="p-4 space-y-2">
                 {acciones.map((a, i) => (
                   <button key={i} onClick={a.onClick} className="w-full flex items-center gap-3 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-red-600 rounded-card px-3 py-2.5 text-left transition-colors">

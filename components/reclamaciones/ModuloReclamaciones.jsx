@@ -7,6 +7,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { ArrowLeft, Loader2, AlertTriangle, Plus, X, MapPin, Search, MessageCircle, Mail, Building2, Wrench } from 'lucide-react';
 import * as db from '../../lib/db';
 import MapaLeaflet from '../common/MapaLeaflet';
+import CalendarioLevantamientos from '../surveys/CalendarioLevantamientos';
 
 const fmtFecha = (s) => { if (!s) return '—'; try { return new Date(s + 'T12:00:00').toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return s; } };
 const COLS = [
@@ -54,8 +55,12 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
   const ubic = (id) => ubicaciones.find(u => u.id === id);
   const clienteNombre = (r) => clienteDe(r.clienteId)?.nombre || proyById(r.proyectoId)?.cliente || r.clienteNombre || '—';
   // Pipeline de reclamaciones de Odoo (equipo Customer Care), en orden.
+  // Etapas del equipo Customer Care en Odoo, en su orden real (por sequence).
   const ORDEN_RECL = ['New', 'On Hold', 'Agendado', 'Visita Programada', 'In Progress', 'Solucion Cotizada espera Aprobación', 'Solved', 'Cancelled'];
-  const estadoOdoo = (r) => r.odooStage || (COLS.find(c => c.e === r.estado)?.label) || r.estado;
+  // Reclamaciones creadas localmente (sin odoo_stage) se mapean a una etapa de Odoo
+  // para que el Kanban use SIEMPRE las columnas de Odoo en el mismo orden.
+  const MAP_LOCAL_ODOO = { abierta: 'New', en_proceso: 'In Progress', resuelta: 'Solved', cerrada: 'Solved', rechazada: 'Cancelled' };
+  const estadoOdoo = (r) => r.odooStage || MAP_LOCAL_ODOO[r.estado] || 'New';
   const columnasRecl = useMemo(() => {
     const extras = [...new Set(recs.map(estadoOdoo))].filter(e => !ORDEN_RECL.includes(e));
     return [...ORDEN_RECL, ...extras];
@@ -183,7 +188,7 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex gap-1 bg-zinc-900 border border-zinc-800 rounded-card p-1 w-fit">
-            {[['kanban', 'Kanban'], ['lista', 'Lista'], ['mapa', 'Mapa']].map(([k, l]) => <button key={k} onClick={() => setVista(k)} className={`px-4 py-1.5 text-[11px] font-bold uppercase rounded-card ${vista === k ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>{l}</button>)}
+            {[['kanban', 'Kanban'], ['lista', 'Lista'], ['calendario', 'Calendario'], ['mapa', 'Mapa']].map(([k, l]) => <button key={k} onClick={() => setVista(k)} className={`px-4 py-1.5 text-[11px] font-bold uppercase rounded-card ${vista === k ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>{l}</button>)}
           </div>
           <div className="relative">
             <Search className="w-3.5 h-3.5 text-zinc-600 absolute left-2.5 top-1/2 -translate-y-1/2" />
@@ -240,6 +245,8 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
         </div>
       ) : vista === 'lista' ? (
         <ReclamacionesTabla grupos={grupos} agrupado={agruparPor !== 'none'} clienteNombre={clienteNombre} ubicNombre={ubicNombre} estadoOdoo={estadoOdoo} onAbrir={setSel} />
+      ) : vista === 'calendario' ? (
+        <CalendarioLevantamientos proyectos={[]} reclamaciones={filtradas} onReload={() => setReload(r => r + 1)} />
       ) : (
         // Mapa
         (() => {

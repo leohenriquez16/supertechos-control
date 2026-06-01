@@ -116,7 +116,10 @@ function SurveysList({ usuario, onAbrirProyecto, onAbrirSiteDirecto }) {
   // Estado del levantamiento: usa la etapa real de Odoo si existe, si no el status del ERP.
   // Solo las etapas del pipeline de Levantamientos (equipo "Levantamientos" en Odoo).
   const ORDEN_ODOO = ['New', 'Contactado', 'Asignado', 'Agendado', 'Realizado', 'Cotizacion en Revision', 'Cotizacion Realizada', 'No se pudo coordinar', 'No podemos cotizar', 'Cliente no esta interesado'];
-  const estadoDe = (p) => p.odoo_stage || PROJECT_STATUS[p.status] || p.status || 'Sin estado';
+  // Levantamientos creados localmente (sin odoo_stage) se mapean a una etapa de Odoo
+  // para que el Kanban use SIEMPRE las columnas de Odoo en su orden real.
+  const MAP_STATUS_ODOO = { planning: 'New', survey_in_progress: 'Asignado', survey_completed: 'Realizado', quoted: 'Cotizacion Realizada', awarded: 'Cotizacion Realizada', in_execution: 'Realizado', completed: 'Realizado', cancelled: 'No se pudo coordinar' };
+  const estadoDe = (p) => p.odoo_stage || MAP_STATUS_ODOO[p.status] || 'New';
   const columnasKanban = React.useMemo(() => {
     // Pipeline completo de Odoo en orden + cualquier estado extra (ERP) al final.
     const extras = [...new Set(proyectos.map(estadoDe))].filter(e => !ORDEN_ODOO.includes(e));

@@ -2150,9 +2150,9 @@ function ModalEntregarCaja({ usuario, data, onCerrar, onGuardado, saldosMap = {}
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-      <div className="bg-zinc-900 border-2 border-green-700 rounded-card max-w-md w-full p-5 space-y-4">
-        <div className="flex justify-between items-start">
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto">
+      <div className="bg-zinc-900 border-2 border-green-700 rounded-card max-w-md w-full p-5 space-y-4 max-h-[92vh] overflow-y-auto my-4">
+        <div className="flex justify-between items-start sticky -top-5 -mx-5 -mt-5 px-5 pt-5 pb-2 bg-zinc-900 z-10">
           <div>
             <div className="text-xs tracking-widest uppercase text-green-500 font-bold">Entregar caja chica</div>
             <div className="text-sm font-bold mt-1">Registro de efectivo entregado</div>

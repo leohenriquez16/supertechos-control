@@ -262,10 +262,10 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto }) {
           contactos={data?.contactos || []}
           sistemas={data?.sistemas || {}}
           onCerrar={() => setModalSimpleAbierto(false)}
-          onCreado={({ proyecto, site }) => {
+          onCreado={({ proyecto, site, iniciar = true }) => {
             setModalSimpleAbierto(false);
             setReloadKey(k => k + 1);
-            onAbrirSiteDirecto?.(proyecto, site);
+            if (iniciar) onAbrirSiteDirecto?.(proyecto, site); // "Solo crear" se queda en la lista
           }}
         />
       )}

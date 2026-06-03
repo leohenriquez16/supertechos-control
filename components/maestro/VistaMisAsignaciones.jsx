@@ -6,7 +6,7 @@
 // es larga). Para reclamaciones muestra cuándo y qué se hizo.
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { ArrowLeft, Loader2, Briefcase, MapPin, AlertTriangle, ChevronDown, MessageCircle } from 'lucide-react';
+import { ArrowLeft, Loader2, Briefcase, MapPin, AlertTriangle, ChevronDown, MessageCircle, Mail, Clock, User as UserIcon } from 'lucide-react';
 import * as db from '../../lib/db';
 import { obtenerUbicacion, distanciaMetros, formatDistancia } from '../../lib/geo';
 import { listarProyectosSurveys, listarTodosLosSitesSurvey, SERVICE_LINES, ESCALERA } from '../../lib/surveys';
@@ -15,6 +15,25 @@ import MapaLeaflet from '../common/MapaLeaflet';
 
 const fmt = (s) => { if (!s) return '—'; try { return new Date((s.length <= 10 ? s + 'T12:00:00' : s)).toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return s; } };
 const SEV = { baja: 'text-zinc-400', media: 'text-amber-400', alta: 'text-red-400' };
+
+// v8.25.3: contacto principal + canal preferido, y tiempo en etapa (igual que el Kanban).
+function infoContactoLev(l, clientes = [], contactos = []) {
+  const cli = clientes.find(c => (c.nombre || '').trim().toLowerCase() === (l.client_name || '').trim().toLowerCase());
+  const cts = contactos.filter(c => c.clienteId === cli?.id);
+  const ppal = cts.find(c => c.esPrincipal) || cts[0];
+  const ws = ppal?.whatsapp || ppal?.telefono || '';
+  const email = ppal?.email || '';
+  return { contacto: ppal?.nombre || '', canal: ppal?.prefComunicacion || (ws ? 'ws' : email ? 'email' : null) };
+}
+function tiempoEnEtapaLev(l) {
+  const iso = l.stage_changed_at || l.updated_at || l.created_at;
+  if (!iso) return '';
+  const h = Math.floor((Date.now() - new Date(iso).getTime()) / 3600000);
+  if (h < 1) return 'hoy';
+  if (h < 24) return `${h} h`;
+  const d = Math.floor(h / 24);
+  return d < 30 ? `${d} d` : `${Math.floor(d / 30)} mes`;
+}
 
 const ESTADOS_PROY = [
   ['planificado', 'Planificado'],
@@ -178,17 +197,21 @@ export default function VistaMisAsignaciones({ usuario, data, onVolver, onVerPro
             <Seccion icon={MapPin} color="#3b82f6" titulo="Levantamientos" n={levs.length} vacio="No tienes levantamientos asignados.">
               {levs.map(l => {
                 const abierto = exp === 'lev-' + l.id;
+                const ci = infoContactoLev(l, data?.clientes || [], data?.contactos || []);
                 return (
                   <div key={l.id} className="bg-zinc-900 border border-zinc-800 rounded-card" style={{ borderLeftColor: SERVICE_LINES[l.service_line]?.color || '#3b82f6', borderLeftWidth: 4 }}>
-                    <button onClick={() => setExp(abierto ? null : 'lev-' + l.id)} className="w-full text-left p-3 flex items-center justify-between gap-3">
+                    <button onClick={() => setExp(abierto ? null : 'lev-' + l.id)} className="w-full text-left p-3 flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap mb-0.5">
-                          <span className="font-bold truncate">{l.client_name}</span>
+                        <div className="font-bold truncate">{l.client_name}</div>
+                        {ci.contacto && <div className="text-[11px] text-zinc-400 truncate flex items-center gap-1"><UserIcon className="w-2.5 h-2.5 text-zinc-600" />{ci.contacto}</div>}
+                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                           <EscaleraBadge valor={l.requiere_escalera} />
+                          <span className="text-[10px] text-zinc-500">{SERVICE_LINES[l.service_line]?.label || ''}</span>
+                          <span className="text-[9px] text-zinc-500 flex items-center gap-0.5"><Clock className="w-2.5 h-2.5" /> {tiempoEnEtapaLev(l)}</span>
                         </div>
-                        <div className="text-[11px] text-zinc-500 truncate">{SERVICE_LINES[l.service_line]?.label || ''}{l.odoo_stage ? ` · ${l.odoo_stage}` : ''}</div>
                       </div>
-                      <span className="flex items-center gap-2 shrink-0">
+                      <span className="flex flex-col items-end gap-1 shrink-0">
+                        {ci.canal === 'ws' ? <MessageCircle className="w-4 h-4 text-green-500" /> : ci.canal === 'email' ? <Mail className="w-4 h-4 text-blue-400" /> : null}
                         {distTxt(l._coords) && <span className="text-[10px] font-bold text-green-400">📍 {distTxt(l._coords)}</span>}
                         <ChevronDown className={`w-4 h-4 text-zinc-500 transition-transform ${abierto ? 'rotate-180' : ''}`} />
                       </span>

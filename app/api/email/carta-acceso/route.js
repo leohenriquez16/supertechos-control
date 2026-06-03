@@ -5,6 +5,7 @@
 // configuración global.
 
 import { NextResponse } from 'next/server';
+import { emailsApagados } from '../../../../lib/emailGuard';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -40,6 +41,7 @@ function emailValido(e) {
 }
 
 export async function POST(request) {
+  if (emailsApagados()) return NextResponse.json({ ok: true, sent: false, reason: 'emails_apagados' }, { status: 200 });
   const RESEND_API_KEY = process.env.RESEND_API_KEY;
   const RESEND_FROM = process.env.RESEND_FROM_EMAIL;
 

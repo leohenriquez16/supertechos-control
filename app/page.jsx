@@ -9,6 +9,7 @@ import { obtenerUbicacion, distanciaMetros, formatDistancia, abrirEnMapa } from 
 import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps } from '../lib/geoutils';
 // v8.10.0: helpers extraídos a módulos separados
 import { APP_VERSION, EMPRESAS_RECEPTORAS } from '../lib/constants';
+import { TIPOS_GARANTIA, getTipoGarantia, serviciosDeTipo, tipoSugeridoParaSistema } from '../lib/garantiasCatalogo';
 import { toast } from '../lib/toast';
 import { formatRD, formatNum, formatFecha, formatFechaCorta, formatFechaLarga } from '../lib/helpers/formato';
 import {
@@ -39,6 +40,9 @@ import MiProduccionCard from '../components/dashboard/MiProduccionCard';
 // v8.10.3: Sidebar extraído
 import Sidebar from '../components/sidebar/Sidebar';
 import ToastContainer from '../components/common/ToastContainer';
+import ChatterPanel from '../components/common/ChatterPanel';
+import SettingsNotificaciones from '../components/settings/SettingsNotificaciones';
+import { registrarCreacion as chatterCreacion, registrarCambioEstado as chatterEstado } from '../lib/chatter';
 // v8.10.4: Campo e Input extraídos
 import Campo from '../components/common/Campo';
 import Input from '../components/common/Input';
@@ -79,6 +83,9 @@ import VistaNomina from '../components/nomina/VistaNomina';
 import ModuloSurveys from '../components/surveys/ModuloSurveys';
 import VistaGarantias from '../components/garantias/VistaGarantias';
 import ModuloReclamaciones from '../components/reclamaciones/ModuloReclamaciones';
+import VistaMisAsignaciones from '../components/maestro/VistaMisAsignaciones';
+import VistaUbicaciones from '../components/ubicaciones/VistaUbicaciones';
+import CubicacionesProyecto from '../components/proyecto/CubicacionesProyecto';
 // v8.12: Caja Chica + Dieta
 import VistaMiCajaChica from '../components/caja-chica/VistaMiCajaChica';
 import VistaCajaChicaAdmin from '../components/caja-chica/VistaCajaChicaAdmin';
@@ -713,6 +720,7 @@ export default function App() {
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, vista: 'dashboard' },
       { id: 'proyectos', label: 'Proyectos', icon: Briefcase, vista: 'proyectos', esProyectos: true },
       { id: 'surveys', label: 'Levantamientos', icon: MapPin, vista: 'surveys' },
+      { id: 'reclamaciones', label: 'Reclamaciones', icon: AlertTriangle, vista: 'reclamaciones' },
       { id: 'planificacion', label: 'Planificación', icon: Calendar, vista: 'planificacion' },
       { id: 'tareas', label: 'Tareas', icon: ClipboardList, vista: 'tareas', badge: tareas.length },
       { id: 'galeria', label: 'Galería', icon: ImageIcon, vista: 'galeria' },
@@ -728,9 +736,10 @@ export default function App() {
       { id: 'sistemas', label: 'Sistemas', icon: Settings, vista: 'sistemas' },
       { id: 'categorias', label: 'Categorías', icon: Settings, vista: 'categorias' },
       { id: 'clientes', label: 'Clientes', icon: Building2, vista: 'clientes' },
+      { id: 'ubicaciones', label: 'Ubicaciones', icon: MapPin, vista: 'ubicaciones' },
       { id: 'garantias', label: 'Garantías', icon: CheckCircle2, vista: 'garantias' },
-      { id: 'reclamaciones', label: 'Reclamaciones', icon: AlertTriangle, vista: 'reclamaciones' },
       { id: 'personal', label: 'Personal', icon: UserIcon, vista: 'personal' },
+      { id: 'notificaciones', label: 'Notificaciones', icon: Mail, vista: 'notificaciones' },
       { id: 'estadisticasPersonal', label: 'Estadísticas', icon: TrendingUp, vista: 'estadisticasPersonal' },
     ]},
     { seccion: 'PLANIFICACIÓN', colapsable: true, items: [
@@ -747,6 +756,8 @@ export default function App() {
   ] : [
     { seccion: 'MIS PROYECTOS', items: [
       { id: 'misProyectos', label: 'Proyectos', icon: Briefcase, vista: 'misProyectos' },
+      // v8.19.72: vista unificada del maestro (proyectos + levantamientos + reclamaciones + mapa)
+      ...((tieneRol(usuario, 'maestro') || tieneRol(usuario, 'supervisor')) ? [{ id: 'misAsignaciones', label: 'Mis asignaciones', icon: MapPin, vista: 'misAsignaciones' }] : []),
       ...(puede(usuario, data.permisos, 'planificacion', 'ver') ? [{ id: 'planificacion', label: 'Planificación', icon: Calendar, vista: 'planificacion' }] : []),
       // v8.9.18: Maestros ven su producción de la quincena
       ...(tieneRol(usuario, 'maestro') ? [{ id: 'miProduccion', label: 'Mi Producción', icon: Wallet, vista: 'miProduccion' }] : []),
@@ -848,7 +859,7 @@ export default function App() {
         {vista === 'planificacion' && puede(usuario, data.permisos, 'planificacion', 'ver') && <VistaPlanificacion usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'miProduccion' && tieneRol(usuario, 'maestro') && <VistaMiProduccion usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'miCajaChica' && (tieneRol(usuario, 'maestro') || tieneRol(usuario, 'supervisor')) && usuario.cajaChicaHabilitada && <VistaMiCajaChica usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} />}
-        {vista === 'surveys' && esAdmin && <ModuloSurveys usuario={usuario} />}
+        {vista === 'surveys' && esAdmin && <ModuloSurveys usuario={usuario} data={data} />}
         {vista === 'cajaChica' && esAdmin && <VistaCajaChicaAdmin usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onIrAProveedores={() => setVista('proveedoresCajaChica')} onIrACategorias={() => setVista('categoriasCajaChica')} />}
         {vista === 'proveedoresCajaChica' && esAdmin && <VistaProveedoresCajaChica usuario={usuario} data={data} onVolver={() => setVista('cajaChica')} />}
         {vista === 'categoriasCajaChica' && esAdmin && <VistaCategoriasCajaChica usuario={usuario} onVolver={() => setVista('cajaChica')} onCambio={() => recargar()} />}
@@ -867,7 +878,9 @@ export default function App() {
         {esAdmin && vista === 'personal' && <GestionPersonal usuario={usuario} personal={data.personal} data={data} onVolver={() => setVista('dashboard')} onActualizar={(p) => withSync(() => db.reemplazarPersonal(p))} onRecargar={recargar} onAbrirPerfil={(p) => { setPerfilViendo(p); setVista('perfilPersona'); }} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'perfilPersona' && perfilViendo && <MiPerfil usuario={usuario} persona={perfilViendo} soloLectura={false} onVolver={() => setVista('personal')} onGuardar={(campos) => withSync(async () => { await db.guardarPerfil(perfilViendo.id, campos); const d = await db.loadAllData(); const actualizada = d.personal.find(p => p.id === perfilViendo.id); if (actualizada) setPerfilViendo(actualizada); })} />}
         {esAdmin && vista === 'sistemas' && <GestionSistemas sistemas={data.sistemas} config={data.config} dataGlobal={data} onVolver={() => setVista('dashboard')} onActualizarSistemas={(s) => withSync(() => db.guardarSistemas(s))} onActualizarConfig={(c) => withSync(() => db.guardarConfig(c))} />}
-        {esAdmin && vista === 'clientes' && <GestionClientes clientes={data.clientes || []} contactos={data.contactos || []} proyectos={data.proyectos || []} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
+        {esAdmin && vista === 'clientes' && <GestionClientes clientes={data.clientes || []} contactos={data.contactos || []} proyectos={data.proyectos || []} usuario={usuario} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
+        {esAdmin && vista === 'ubicaciones' && <VistaUbicaciones data={data} usuario={usuario} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
+        {esAdmin && vista === 'notificaciones' && <SettingsNotificaciones usuario={usuario} onVolver={() => setVista('dashboard')} />}
         {esAdmin && vista === 'garantias' && <VistaGarantias data={data} usuario={usuario} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {esAdmin && vista === 'reclamaciones' && <ModuloReclamaciones data={data} usuario={usuario} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {esAdmin && vista === 'nuevoProyecto' && <NuevoProyecto personal={data.personal} sistemas={data.sistemas} clientes={data.clientes || []} contactos={data.contactos || []} proyectos={data.proyectos || []} onCancelar={() => setVista('dashboard')} onCrear={(proy) => withSync(async () => {
@@ -985,6 +998,7 @@ export default function App() {
           const proyLimpio = { ...proy };
           delete proyLimpio._pdfCotizacion;
           await db.crearProyecto({ ...proyLimpio, id: nuevoProyectoId });
+          try { await chatterCreacion('proyecto', nuevoProyectoId, usuario, `Creó el proyecto${proy.referenciaOdoo ? ' ' + proy.referenciaOdoo : ''}`); } catch {}
           // v8.17.58: persistir contactos asociados (principal + extras) en proyecto_contactos
           try {
             const ids = [proy.contactoPrincipalId, ...(proy.contactosExtraIds || [])].filter(Boolean);
@@ -1074,7 +1088,9 @@ export default function App() {
             onEliminarEnvio={async (id) => { if (confirm('¿Eliminar este envío de material?')) withSync(() => db.eliminarEnvio(id)); }}
             onEliminarJornada={async (id) => { if (confirm('¿Eliminar esta jornada?')) withSync(() => db.eliminarJornada(id)); }}
             onCambiarEstado={(proyId, estadoNuevo, nota, extra) => withSync(async () => {
+              const estadoPrev = data.proyectos.find(p => p.id === proyId)?.estado;
               await db.cambiarEstadoProyecto(proyId, estadoNuevo, usuario, nota, extra);
+              try { await chatterEstado('proyecto', proyId, estadoPrev, estadoNuevo, usuario, 'estado'); } catch {}
               // Cuando pasa a 'finalizado_no_entregado' creamos tarea al supervisor
               if (estadoNuevo === 'finalizado_no_entregado') {
                 const proy = data.proyectos.find(p => p.id === proyId);
@@ -1127,6 +1143,7 @@ export default function App() {
           />
         )}
         {!esAdmin && vista === 'misProyectos' && <MisProyectos usuario={usuario} data={data} onIrAReportar={(p) => { setProyectoActivo(p); setVista('reportar'); }} onVerDetalle={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
+        {!esAdmin && vista === 'misAsignaciones' && <VistaMisAsignaciones usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'reportar' && proyectoActivo && (() => {
           // v8.9.11: Bifurcación rápido vs manual según flag de persona
           const audioHabilitado = !!usuario?.reporteAudioHabilitado;
@@ -3353,7 +3370,7 @@ function Login({ onLogin }) {
 // ============================================================
 // v8.9.9: GESTIÓN DE CLIENTES + CONTACTOS
 // ============================================================
-function GestionClientes({ clientes, contactos, proyectos, onVolver, onRecargar }) {
+function GestionClientes({ clientes, contactos, proyectos, usuario, onVolver, onRecargar }) {
   const [busqueda, setBusqueda] = useState('');
   const [clienteSeleccionado, setClienteSeleccionado] = useState(null);
   const [modalCliente, setModalCliente] = useState(null); // null | 'nuevo' | { ...cliente }
@@ -3376,7 +3393,10 @@ function GestionClientes({ clientes, contactos, proyectos, onVolver, onRecargar 
     setGuardando(true);
     try {
       if (form.id && ubicaciones.some(u => u.id === form.id)) await db.actualizarUbicacionCliente(form);
-      else await db.crearUbicacionCliente({ ...form, clienteId: clienteSeleccionado.id });
+      else {
+        const nueva = await db.crearUbicacionCliente({ ...form, clienteId: clienteSeleccionado.id });
+        try { await chatterCreacion('locacion', nueva.id, usuario, `Creó la locación ${nueva.nombre || ''}`.trim()); } catch {}
+      }
       setUbicaciones(await db.listarUbicacionesCliente(clienteSeleccionado.id));
       setModalUbicacion(null);
     } catch (e) { alert('Error: ' + (e.message || e)); }
@@ -3428,7 +3448,9 @@ function GestionClientes({ clientes, contactos, proyectos, onVolver, onRecargar 
       if (formData.id && contactos.some(ct => ct.id === formData.id)) {
         await db.actualizarContacto(formData);
       } else {
-        await db.crearContacto({ ...formData, id: formData.id || ('con_' + Date.now() + Math.random().toString(36).slice(2, 7)) });
+        const id = formData.id || ('con_' + Date.now() + Math.random().toString(36).slice(2, 7));
+        await db.crearContacto({ ...formData, id });
+        try { await chatterCreacion('contacto', id, usuario, `Creó el contacto ${formData.nombre || ''}`.trim()); } catch {}
       }
       await onRecargar();
       setModalContacto(null);
@@ -3596,7 +3618,7 @@ function GestionClientes({ clientes, contactos, proyectos, onVolver, onRecargar 
         )}
 
         {modalCliente && <ModalEditarCliente cliente={modalCliente} onCerrar={() => setModalCliente(null)} onGuardar={guardarCliente} guardando={guardando} />}
-        {modalContacto && <ModalEditarContacto contacto={modalContacto} onCerrar={() => setModalContacto(null)} onGuardar={guardarContacto} guardando={guardando} />}
+        {modalContacto && <ModalEditarContacto contacto={modalContacto} usuario={usuario} onCerrar={() => setModalContacto(null)} onGuardar={guardarContacto} guardando={guardando} />}
         {modalUbicacion && <ModalEditarUbicacion ubicacion={modalUbicacion} onCerrar={() => setModalUbicacion(null)} onGuardar={guardarUbicacion} guardando={guardando} />}
       </div>
     );
@@ -3806,7 +3828,7 @@ function ModalEditarUbicacion({ ubicacion, onCerrar, onGuardar, guardando }) {
   );
 }
 
-function ModalEditarContacto({ contacto, onCerrar, onGuardar, guardando }) {
+function ModalEditarContacto({ contacto, usuario, onCerrar, onGuardar, guardando }) {
   const [form, setForm] = useState({
     id: contacto.id || '',
     clienteId: contacto.clienteId,
@@ -3846,6 +3868,7 @@ function ModalEditarContacto({ contacto, onCerrar, onGuardar, guardando }) {
           </div>
         </label>
         <Campo label="Nota"><textarea value={form.nota} onChange={e => setForm({ ...form, nota: e.target.value })} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm" rows={2} /></Campo>
+        {form.id && <ChatterPanel entityType="contacto" entityId={form.id} usuario={usuario} />}
         <div className="flex gap-2 pt-2">
           <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button>
           <button onClick={guardar} disabled={guardando} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-700 text-white text-xs font-black uppercase py-3">
@@ -4304,6 +4327,7 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
   const [busqueda, setBusqueda] = useState(''); // v8.17.2: buscador por nombre/PIN/teléfono
   const [modalInvitar, setModalInvitar] = useState(false); // v8.14: invitar maestro al app
   const [activando, setActivando] = useState(null); // v8.14.1: persona existente a activar para app
+  const [detalleDe, setDetalleDe] = useState(null); // v8.19.74: ficha de la persona con todas las acciones adentro
 
   const guardar = async () => {
     if (!form.nombre) return;
@@ -4334,6 +4358,13 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
   };
 
   const maestros = getMaestros(personal);
+  // v8.19.77: documentos de cumplimiento pendientes.
+  const docsPendientes = (p) => {
+    const f = [];
+    if ((p.banco || p.bancoNumeroCuenta) && !p.cartaBancaria) f.push('Carta bancaria');
+    if ((p.puesto || '').toLowerCase().includes('operario') && !p.buenaConducta) f.push('Buena conducta');
+    return f;
+  };
   const rolLabel = (p) => {
     const r = [];
     if (tieneRol(p, 'admin')) r.push('Admin');
@@ -4413,6 +4444,17 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
               </div>
             </label>
           )}
+          {/* v8.19.65: Toggle Levantamientos habilitado — admin habilita por persona */}
+          <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={!!form.levantamientoHabilitado} onChange={e => setForm({ ...form, levantamientoHabilitado: e.target.checked })} className="w-4 h-4 accent-red-600" />
+              <div className="flex-1">
+                <div className="text-xs font-bold flex items-center gap-1">📋 Levantamientos habilitado</div>
+                <div className="text-[10px] text-zinc-500">Podrá realizar levantamientos en sitio y ser asignado a ellos</div>
+              </div>
+            </label>
+          </div>
+
           {/* v8.12: Toggle Caja Chica + límite — admin habilita por persona */}
           {(form.roles.includes('maestro') || form.roles.includes('supervisor')) && (
             <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3 space-y-2">
@@ -4478,6 +4520,15 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
               <div className="text-[10px] text-zinc-500 pt-1 border-t border-zinc-800">Solo se aplica si el proyecto también tiene estos toggles activos.</div>
             </div>
           )}
+          {/* v8.19.76: Datos RR.HH. (Odoo) */}
+          <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3 space-y-2">
+            <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">Datos RR.HH.</div>
+            <div className="grid grid-cols-2 gap-2">
+              <Campo label="Puesto"><Input value={form.puesto || ''} onChange={v => setForm({ ...form, puesto: v })} placeholder="Operario, Maestro…" /></Campo>
+              <Campo label="Departamento"><Input value={form.departamento || ''} onChange={v => setForm({ ...form, departamento: v })} placeholder="Operaciones…" /></Campo>
+            </div>
+            <Campo label="Gerente / encargado"><Input value={form.gerenteNombre || ''} onChange={v => setForm({ ...form, gerenteNombre: v })} /></Campo>
+          </div>
           <div className="flex gap-2 pt-2"><button onClick={() => { setEditando(null); setForm(null); }} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button><button onClick={guardar} disabled={!form.nombre} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-3 flex items-center justify-center gap-1"><Save className="w-3 h-3" /> Guardar</button></div>
         </div>
       )}
@@ -4513,33 +4564,31 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
                 const maestro = p.maestroId ? getPersona(personal, p.maestroId) : null;
                 const ayudantes = tieneRol(p, 'maestro') ? getAyudantesDeMaestro(personal, p.id) : [];
                 return (
-                  <div key={p.id} className="bg-zinc-900 border border-zinc-800 rounded-card p-3 flex items-center gap-3">
+                  <div key={p.id} onClick={() => setDetalleDe(p)} className="bg-zinc-900 border border-zinc-800 rounded-card p-3 flex items-center gap-3 cursor-pointer hover:border-red-600 transition-colors">
                     {p.foto2x2 ? <img src={p.foto2x2} alt="" className="w-10 h-10 object-cover rounded-sm flex-shrink-0 border border-zinc-700" /> : <UserCircle className="w-10 h-10 text-zinc-500 flex-shrink-0" />}
                     <div className="flex-1 min-w-0">
                       <div className="font-bold text-sm flex items-center gap-2">
                         <span className="truncate">{p.nombre}</span>
-                        {/* v8.14.1: indicador de pendiente de activación al app */}
+                        {/* Anuncios (quedan afuera): pendiente de activación al app */}
                         {p.tienePin && !p.cedulaNumero && !tieneRol(p, 'admin') && !p.pinTemporal && (
                           <span className="text-[9px] bg-yellow-900/50 border border-yellow-700 text-yellow-300 px-1.5 py-0.5 tracking-wider uppercase font-bold flex-shrink-0" title="Aún no ha completado el onboarding del app">⚠ Sin app</span>
                         )}
                         {p.pinTemporal && (
                           <span className="text-[9px] bg-blue-900/50 border border-blue-700 text-blue-300 px-1.5 py-0.5 tracking-wider uppercase font-bold flex-shrink-0" title="Invitación pendiente de cambio de PIN">📨 Invitado</span>
                         )}
+                        {docsPendientes(p).length > 0 && (
+                          <span className="text-[9px] bg-orange-900/50 border border-orange-700 text-orange-300 px-1.5 py-0.5 tracking-wider uppercase font-bold flex-shrink-0" title={'Faltan documentos: ' + docsPendientes(p).join(', ')}>⚠ Docs</span>
+                        )}
                       </div>
                       <div className="text-[10px] text-zinc-500">{rolLabel(p)}{p.tienePin && ' · 🔐 Con login'}{maestro && ` · Con ${maestro.nombre}`}{ayudantes.length > 0 && ` · ${ayudantes.length} ayudante${ayudantes.length > 1 ? 's' : ''}`}{p.telefono && ` · ${p.telefono}`}</div>
                     </div>
-                    {/* v8.14.1: botón "Activar para app" — solo para personas con PIN, sin cédula y que no son admin */}
+                    {/* Anuncio (queda afuera): activar/reinvitar al app */}
                     {p.tienePin && !p.cedulaNumero && !tieneRol(p, 'admin') && (
-                      <button onClick={() => setActivando(p)} className="bg-green-700 hover:bg-green-600 text-white px-2 py-1.5 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider" title="Activar para el app y generar credenciales para WhatsApp">
+                      <button onClick={(e) => { e.stopPropagation(); setActivando(p); }} className="bg-green-700 hover:bg-green-600 text-white px-2 py-1.5 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider rounded-card flex-shrink-0" title="Activar para el app y generar credenciales para WhatsApp">
                         <Send className="w-3 h-3" /> {p.pinTemporal ? 'Reinvitar' : 'Activar'}
                       </button>
                     )}
-                    <button onClick={() => { setEditando(p.id); setForm({ ...p, roles: [...(p.roles || [])] }); }} className="text-zinc-500 hover:text-white p-1" title="Editar básico"><Edit2 className="w-3 h-3" /></button>
-                    <button onClick={() => onAbrirPerfil(p)} className="text-zinc-500 hover:text-red-500 p-1" title="Ver perfil"><UserIcon className="w-3 h-3" /></button>
-                    {data && <button onClick={() => setExperienciaDe(p)} className="text-zinc-500 hover:text-green-400 p-1" title="Ver experiencia"><TrendingUp className="w-3 h-3" /></button>}
-                    {data && <button onClick={() => setCapacidadesDe(p)} className="text-zinc-500 hover:text-blue-400 p-1" title="Capacidades técnicas">🧰</button>}
-                    {data && <button onClick={() => setAccesosDe(p)} className="text-zinc-500 hover:text-amber-400 p-1" title="Accesos y credenciales">🔐</button>}
-                    <button onClick={() => { if (confirm('¿Eliminar?')) onActualizar(personal.filter(x => x.id !== p.id)); }} className="text-zinc-500 hover:text-red-400 p-1"><Trash2 className="w-3 h-3" /></button>
+                    <ChevronRight className="w-4 h-4 text-zinc-600 flex-shrink-0" />
                   </div>
                 );
               })}
@@ -4547,6 +4596,113 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
           </div>
         );
       })}
+
+      {/* v8.19.74: Ficha de la persona — todas las acciones adentro */}
+      {detalleDe && (() => {
+        const p = detalleDe;
+        const maestro = p.maestroId ? getPersona(personal, p.maestroId) : null;
+        const cerrar = () => setDetalleDe(null);
+        const acciones = [
+          { label: 'Editar datos básicos', desc: 'Nombre, roles, PIN, toggles', icon: Edit2, onClick: () => { cerrar(); setEditando(p.id); setForm({ ...p, roles: [...(p.roles || [])] }); } },
+          { label: 'Ver perfil completo', desc: 'Foto, documentos, datos', icon: UserIcon, onClick: () => { cerrar(); onAbrirPerfil(p); } },
+          ...(data ? [
+            { label: 'Experiencia', desc: 'Proyectos y producción', icon: TrendingUp, onClick: () => { cerrar(); setExperienciaDe(p); } },
+            { label: 'Capacidades técnicas', desc: 'Sistemas que domina', emoji: '🧰', onClick: () => { cerrar(); setCapacidadesDe(p); } },
+            { label: 'Accesos y credenciales', desc: 'Clientes y documentos', emoji: '🔐', onClick: () => { cerrar(); setAccesosDe(p); } },
+          ] : []),
+        ];
+        return (
+          <div className="fixed inset-0 bg-black/80 z-50 flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto" onClick={cerrar}>
+            <div className="bg-zinc-950 border-2 border-red-600 rounded-card w-full max-w-md my-4" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between p-4 border-b border-zinc-800 gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  {p.foto2x2 ? <img src={p.foto2x2} alt="" className="w-12 h-12 object-cover rounded-sm border border-zinc-700" /> : <UserCircle className="w-12 h-12 text-zinc-500" />}
+                  <div className="min-w-0">
+                    <div className="font-black text-lg truncate">{p.nombre}</div>
+                    <div className="text-[11px] text-zinc-500">{rolLabel(p)}{p.tienePin && ' · 🔐 Con login'}{maestro && ` · Con ${maestro.nombre}`}{p.telefono && ` · ${p.telefono}`}</div>
+                  </div>
+                </div>
+                <button onClick={cerrar} className="text-zinc-500 hover:text-white flex-shrink-0"><X className="w-4 h-4" /></button>
+              </div>
+              {/* Resumen rápido */}
+              {(() => {
+                const misProy = (data?.proyectos || []).filter(x => !x.archivado && (x.supervisorId === p.id || x.maestroId === p.id || (x.ayudantesIds || []).includes(p.id)));
+                const activos = misProy.filter(x => x.estado === 'en_ejecucion').length;
+                const nAyud = tieneRol(p, 'maestro') ? getAyudantesDeMaestro(personal, p.id).length : null;
+                const chips = [];
+                chips.push(p.pinTemporal ? '📨 Invitación pendiente' : p.tienePin ? '🔐 Con login' : '🚫 Sin login');
+                if (p.levantamientoHabilitado) chips.push('📍 Levantamientos');
+                if (p.cajaChicaHabilitada) chips.push('💵 Caja chica');
+                if (p.reporteAudioHabilitado) chips.push('🎤 Audio IA');
+                const Stat = ({ label, value, color }) => (
+                  <div className="bg-zinc-900 border border-zinc-800 rounded-card p-2 text-center">
+                    <div className="text-xl font-black" style={{ color: color || '#fafafa' }}>{value}</div>
+                    <div className="text-[9px] uppercase tracking-wider text-zinc-500 font-bold">{label}</div>
+                  </div>
+                );
+                return (
+                  <div className="px-4 pt-3 pb-1">
+                    <div className="grid grid-cols-3 gap-2">
+                      <Stat label="Proy. activos" value={activos} color="#22c55e" />
+                      <Stat label="Proyectos" value={misProy.length} />
+                      {nAyud != null ? <Stat label="Ayudantes" value={nAyud} /> : <Stat label="Tel." value={p.telefono ? '✓' : '—'} />}
+                    </div>
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {chips.map((c, i) => <span key={i} className="text-[9px] bg-zinc-900 border border-zinc-800 rounded-full px-2 py-0.5 text-zinc-300">{c}</span>)}
+                    </div>
+                  </div>
+                );
+              })()}
+              {/* Documentos pendientes */}
+              {docsPendientes(p).length > 0 && (
+                <div className="px-4 pb-1">
+                  <button onClick={() => { cerrar(); onAbrirPerfil(p); }} className="w-full text-left bg-orange-900/20 border border-orange-800/60 rounded-card p-2.5 hover:border-orange-600">
+                    <div className="text-[11px] font-bold text-orange-300">⚠ Documentos pendientes</div>
+                    <div className="text-[10px] text-orange-200/80">Falta: {docsPendientes(p).join(', ')}. Toca para subir en el perfil.</div>
+                  </button>
+                </div>
+              )}
+              {/* Datos RR.HH. (si existen) */}
+              {(p.puesto || p.departamento || p.gerenteNombre || p.cedulaNumero || p.fechaNacimiento || p.email) && (
+                <div className="px-4 pb-1">
+                  <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 text-xs space-y-1">
+                    <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-1">Datos RR.HH.</div>
+                    {[
+                      ['Puesto', p.puesto],
+                      ['Departamento', p.departamento],
+                      ['Gerente', p.gerenteNombre],
+                      ['Cédula', p.cedulaNumero],
+                      ['Nacimiento', p.fechaNacimiento ? formatFecha(p.fechaNacimiento) : ''],
+                      ['Email', p.email],
+                    ].filter(([, v]) => v).map(([k, v]) => (
+                      <div key={k} className="flex justify-between gap-3"><span className="text-zinc-500 flex-shrink-0">{k}</span><span className="text-zinc-200 text-right truncate">{v}</span></div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="p-4 space-y-2">
+                {acciones.map((a, i) => (
+                  <button key={i} onClick={a.onClick} className="w-full flex items-center gap-3 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-red-600 rounded-card px-3 py-2.5 text-left transition-colors">
+                    <span className="w-9 h-9 rounded-card bg-zinc-950 border border-zinc-800 flex items-center justify-center text-zinc-300 flex-shrink-0">{a.icon ? <a.icon className="w-4 h-4" /> : <span className="text-base">{a.emoji}</span>}</span>
+                    <span className="min-w-0"><span className="block text-sm font-bold truncate">{a.label}</span><span className="block text-[10px] text-zinc-500 truncate">{a.desc}</span></span>
+                    <ChevronRight className="w-4 h-4 text-zinc-600 ml-auto flex-shrink-0" />
+                  </button>
+                ))}
+                {p.tienePin && !p.cedulaNumero && !tieneRol(p, 'admin') && (
+                  <button onClick={() => { cerrar(); setActivando(p); }} className="w-full flex items-center gap-3 bg-green-900/25 hover:bg-green-800/40 border border-green-700 rounded-card px-3 py-2.5 text-left transition-colors">
+                    <span className="w-9 h-9 rounded-card bg-green-950 border border-green-800 flex items-center justify-center text-green-300 flex-shrink-0"><Send className="w-4 h-4" /></span>
+                    <span className="text-sm font-bold text-green-200">{p.pinTemporal ? 'Reinvitar al app' : 'Activar para el app'}</span>
+                  </button>
+                )}
+                <button onClick={() => { if (confirm('¿Eliminar a ' + p.nombre + '?')) { onActualizar(personal.filter(x => x.id !== p.id)); cerrar(); } }} className="w-full flex items-center gap-3 bg-zinc-900 hover:bg-red-950/40 border border-zinc-800 hover:border-red-700 rounded-card px-3 py-2.5 text-left transition-colors">
+                  <span className="w-9 h-9 rounded-card bg-zinc-950 border border-zinc-800 flex items-center justify-center text-red-400 flex-shrink-0"><Trash2 className="w-4 h-4" /></span>
+                  <span className="text-sm font-bold text-red-300">Eliminar</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* v8.9.19: Modal de experiencia de persona */}
       {experienciaDe && data && (
@@ -4573,6 +4729,7 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
           persona={accesosDe}
           data={data}
           onCerrar={() => setAccesosDe(null)}
+          onVolver={() => { const p = accesosDe; setAccesosDe(null); setDetalleDe(p); }}
           onRecargar={onRecargar}
         />
       )}
@@ -4647,11 +4804,14 @@ function ModalCapacidadesPersona({ persona, data, onCerrar }) {
 }
 
 // v8.17.0: Modal de accesos / credenciales / autorizaciones por persona
-function ModalAccesosPersona({ persona, data, onCerrar, onRecargar }) {
+function ModalAccesosPersona({ persona, data, onCerrar, onVolver, onRecargar }) {
   const [tab, setTab] = useState('accesos');
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
       <div className="bg-zinc-900 border-2 border-amber-600 rounded-card max-w-2xl w-full p-5 space-y-3 my-8 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+        {onVolver && (
+          <button onClick={onVolver} className="flex items-center gap-1 text-zinc-400 hover:text-white text-xs font-bold"><ArrowLeft className="w-4 h-4" /> Volver</button>
+        )}
         <div className="flex justify-between items-start">
           <div>
             <div className="text-[10px] tracking-widest uppercase text-amber-500 font-bold">🔐 Accesos y credenciales</div>
@@ -6030,6 +6190,123 @@ function VistaLista({ proyectos, data, densidad = 'detallado', dx, onVerProyecto
 // ============================================================
 // DETALLE DE PROYECTO
 // ============================================================
+// v8.19.69: selector de localidad (cliente_ubicaciones) ligada al proyecto.
+// Lista las ubicaciones del cliente del proyecto y permite asignar/crear una nueva.
+function SelectorUbicacionProyecto({ proyecto, esAdmin, onRecargar }) {
+  const [ubics, setUbics] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [guardando, setGuardando] = useState(false);
+  const [creando, setCreando] = useState(false);
+
+  const recargarUbics = async () => {
+    if (!proyecto.clienteId) { setUbics([]); setLoading(false); return; }
+    setLoading(true);
+    try { setUbics(await db.listarUbicacionesCliente(proyecto.clienteId)); }
+    catch (e) { console.warn('ubicaciones proyecto:', e?.message); }
+    setLoading(false);
+  };
+  useEffect(() => { recargarUbics(); /* eslint-disable-next-line */ }, [proyecto.clienteId]);
+
+  const actual = ubics.find(u => u.id === proyecto.ubicacionId);
+  const cambiar = async (id) => {
+    setGuardando(true);
+    try { await db.asignarUbicacionProyecto(proyecto.id, id || null); if (onRecargar) await onRecargar(); }
+    catch (e) { alert('Error: ' + (e.message || e)); }
+    setGuardando(false);
+  };
+
+  if (!proyecto.clienteId) {
+    return <div className="mt-3 text-[11px] text-amber-400">⚠ Proyecto sin cliente vinculado — no se puede asignar ubicación.</div>;
+  }
+  return (
+    <div className="mt-3 flex items-center gap-2 flex-wrap text-xs">
+      <span className="text-zinc-500 inline-flex items-center gap-1"><MapPin className="w-3.5 h-3.5" /> Ubicación:</span>
+      {esAdmin ? (
+        <>
+          <select
+            value={proyecto.ubicacionId || ''}
+            disabled={guardando || loading}
+            onChange={e => cambiar(e.target.value)}
+            className="bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1 text-white text-xs outline-none focus:border-red-600 max-w-[280px] disabled:opacity-50"
+          >
+            <option value="">— Sin asignar —</option>
+            {ubics.map(u => <option key={u.id} value={u.id}>{u.nombre}{u.ciudad ? ` · ${u.ciudad}` : ''}</option>)}
+          </select>
+          <button onClick={() => setCreando(true)} className="text-zinc-400 hover:text-red-500 text-[11px] underline">＋ nueva</button>
+          {guardando && <Loader2 className="w-3 h-3 animate-spin text-zinc-500" />}
+        </>
+      ) : (
+        <span className="text-zinc-200 font-bold">{actual ? actual.nombre : 'Sin asignar'}</span>
+      )}
+      {creando && (
+        <ModalNuevaUbicacionRapida
+          clienteId={proyecto.clienteId}
+          onCerrar={() => setCreando(false)}
+          onCreada={async (u) => { setCreando(false); await recargarUbics(); await cambiar(u.id); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ModalNuevaUbicacionRapida({ clienteId, onCerrar, onCreada }) {
+  const [nombre, setNombre] = useState('');
+  const [direccion, setDireccion] = useState('');
+  const [ciudad, setCiudad] = useState('');
+  const [contactoNombre, setContactoNombre] = useState('');
+  const [contactoTelefono, setContactoTelefono] = useState('');
+  const [guardando, setGuardando] = useState(false);
+
+  const guardar = async () => {
+    if (!nombre.trim()) { alert('Ponle un nombre a la ubicación (ej. "Sucursal Naco").'); return; }
+    setGuardando(true);
+    try {
+      const u = await db.crearUbicacionCliente({ clienteId, nombre: nombre.trim(), direccion: direccion.trim(), ciudad: ciudad.trim(), contactoNombre: contactoNombre.trim(), contactoTelefono: contactoTelefono.trim() });
+      onCreada(u);
+    } catch (e) { alert('Error: ' + (e.message || e)); setGuardando(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-[60] flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto" onClick={onCerrar}>
+      <div className="bg-zinc-950 border-2 border-red-600 rounded-card w-full max-w-md my-4" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b border-zinc-800">
+          <div className="text-sm font-bold">Nueva ubicación del cliente</div>
+          <button onClick={onCerrar} className="text-zinc-500 hover:text-white"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="p-4 space-y-3">
+          <div>
+            <div className="text-[10px] uppercase text-zinc-500 mb-1">Nombre *</div>
+            <input value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Sucursal Naco, Torre principal…" className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm" autoFocus />
+          </div>
+          <div>
+            <div className="text-[10px] uppercase text-zinc-500 mb-1">Dirección</div>
+            <input value={direccion} onChange={e => setDireccion(e.target.value)} className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm" />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <div className="text-[10px] uppercase text-zinc-500 mb-1">Ciudad</div>
+              <input value={ciudad} onChange={e => setCiudad(e.target.value)} className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm" />
+            </div>
+            <div>
+              <div className="text-[10px] uppercase text-zinc-500 mb-1">Tel. contacto</div>
+              <input value={contactoTelefono} onChange={e => setContactoTelefono(e.target.value)} className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm" />
+            </div>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase text-zinc-500 mb-1">Contacto en sitio</div>
+            <input value={contactoNombre} onChange={e => setContactoNombre(e.target.value)} className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm" />
+          </div>
+          <div className="text-[10px] text-zinc-600">La georreferencia (GPS) se puede agregar luego desde el módulo Clientes → Ubicaciones.</div>
+        </div>
+        <div className="flex gap-2 p-4 border-t border-zinc-800">
+          <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2.5 rounded-card">Cancelar</button>
+          <button onClick={guardar} disabled={guardando} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-2.5 rounded-card">{guardando ? 'Creando…' : 'Crear y asignar'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onActualizarProyecto, onRegistrarEnvio, onRegistrarEnviosLote, esSupervisor, onIrAReportar, onIrASistemas, onCambiarEstado, onArchivarProyecto, onEliminarProyecto, onEliminarReporte, onEditarReporte, onEliminarEnvio, onEliminarJornada, onRecargar }) {
   const sistema = data.sistemas[proyecto.sistema];
   if (!sistema) return <div className="text-zinc-500">Sistema no encontrado.</div>;
@@ -6044,6 +6321,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
   const [modalEditar, setModalEditar] = useState(false);
   const [modalReporte, setModalReporte] = useState(false);
   const [modalPausa, setModalPausa] = useState(false); // v8.9.13
+  const [modalCubicaciones, setModalCubicaciones] = useState(false); // v8.19.98
   const pausaActiv = pausaActiva(proyecto);
 
   const reanudar = async () => {
@@ -6085,7 +6363,8 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
         <div className="flex items-center gap-2 mb-2">
           <button onClick={() => puedeCambiarEstado && setModalEstado(true)} disabled={!puedeCambiarEstado} className={`px-2 py-1 text-[10px] tracking-widest uppercase font-black text-white ${estadoColor(proyecto.estado)} ${puedeCambiarEstado ? 'cursor-pointer hover:opacity-80' : 'cursor-default'}`}>{estadoLabel(proyecto.estado)}</button>
           {puedeCambiarEstado && <button onClick={() => setModalEstado(true)} className="text-[10px] text-zinc-400 hover:text-red-500 underline">cambiar</button>}
-          {esAdmin && <button onClick={() => setModalReporte(true)} className="ml-auto text-xs text-zinc-400 hover:text-red-500 flex items-center gap-1"><FileText className="w-3 h-3" /> Reporte PDF</button>}
+          {esAdmin && <button onClick={() => setModalCubicaciones(true)} className="ml-auto text-xs text-zinc-400 hover:text-red-500 flex items-center gap-1"><DollarSign className="w-3 h-3" /> Cubicaciones</button>}
+          {esAdmin && <button onClick={() => setModalReporte(true)} className="text-xs text-zinc-400 hover:text-red-500 flex items-center gap-1"><FileText className="w-3 h-3" /> Reporte PDF</button>}
           {esAdmin && !pausaActiv && <button onClick={() => setModalPausa(true)} className="text-xs text-zinc-400 hover:text-yellow-500 flex items-center gap-1">⏸️ Pausar</button>}
           {esAdmin && <button onClick={() => setModalEditar(true)} className="text-xs text-zinc-400 hover:text-red-500 flex items-center gap-1"><Edit2 className="w-3 h-3" /> Editar</button>}
         </div>
@@ -6094,11 +6373,13 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
         <h1 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight">{proyecto.cliente}</h1>
         <div className="text-sm text-zinc-400 mt-0.5">{proyecto.referenciaProyecto || proyecto.nombre}</div>
         <div className="flex flex-wrap gap-3 mt-3 text-xs text-zinc-400">{supervisor && <span>👔 <span className="text-zinc-200 font-bold">{supervisor.nombre}</span></span>}{maestro && <span>🔨 <span className="text-zinc-200 font-bold">{maestro.nombre}</span></span>}</div>
+        <SelectorUbicacionProyecto proyecto={proyecto} esAdmin={esAdmin} onRecargar={onRecargar} />
       </div>
 
-      {modalEstado && <ModalCambiarEstado proyecto={proyecto} usuario={usuario} personal={data.personal} onCerrar={() => setModalEstado(false)} onConfirmar={async (estadoNuevo, nota, datosExtra) => { await onCambiarEstado(proyecto.id, estadoNuevo, nota, datosExtra); setModalEstado(false); }} />}
+      {modalEstado && <ModalCambiarEstado proyecto={proyecto} usuario={usuario} personal={data.personal} sistema={sistema} onCerrar={() => setModalEstado(false)} onConfirmar={async (estadoNuevo, nota, datosExtra) => { await onCambiarEstado(proyecto.id, estadoNuevo, nota, datosExtra); setModalEstado(false); }} />}
       {modalEditar && <ModalEditarProyecto proyecto={proyecto} data={data} usuario={usuario} onCerrar={() => setModalEditar(false)} onGuardar={onActualizarProyecto} onArchivar={onArchivarProyecto} onEliminar={onEliminarProyecto} />}
       {modalReporte && <ModalReporteAvancePDF proyecto={proyecto} sistema={sistema} data={data} usuario={usuario} onCerrar={() => setModalReporte(false)} />}
+      {modalCubicaciones && <CubicacionesProyecto proyecto={proyecto} usuario={usuario} esAdmin={esAdmin} data={data} onCerrar={() => setModalCubicaciones(false)} onRecargar={onRecargar} />}
       {modalPausa && <ModalPausarProyecto proyecto={proyecto} onCerrar={() => setModalPausa(false)} onConfirmar={async (fechaInicio, motivo) => {
         const nuevasPausas = [...(proyecto.pausas || []), {
           id: 'pau_' + Date.now(),
@@ -6165,6 +6446,8 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
       {tab === 'costo' && !esSupervisor && <TabCosto proyecto={proyecto} sistema={sistema} sistemas={data.sistemas} reportes={data.reportes} envios={data.envios} config={data.config} />}
       {tab === 'mdo' && esAdmin && <TabManoDeObra proyecto={proyecto} data={data} usuario={usuario} onActualizarProyecto={onActualizarProyecto} onRecargar={onRecargar} />}
       {tab === 'dieta' && !esSupervisor && <TabDieta proyecto={proyecto} reportes={data.reportes} personal={data.personal} onActualizarProyecto={onActualizarProyecto} />}
+
+      <ChatterPanel entityType="proyecto" entityId={proyecto?.id} usuario={usuario} />
     </div>
   );
 }
@@ -12267,16 +12550,30 @@ function ModalProgramarJornada({ proyecto, personal, personasElegibles, onCerrar
 // ============================================================
 // MODAL CAMBIAR ESTADO DE PROYECTO (v8)
 // ============================================================
-function ModalCambiarEstado({ proyecto, usuario, personal, onCerrar, onConfirmar }) {
+function ModalCambiarEstado({ proyecto, usuario, personal, sistema, onCerrar, onConfirmar }) {
   const [estadoNuevo, setEstadoNuevo] = useState(proyecto.estado);
   const [nota, setNota] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [numeroFactura, setNumeroFactura] = useState(proyecto.numeroFactura || '');
   const [montoFinal, setMontoFinal] = useState(proyecto.montoFinalCubicado || '');
-  // v8.19.57: al entregar, elegir tipo de garantía + periodicidad de mantenimiento.
-  const [garantiaAnos, setGarantiaAnos] = useState(5);
-  const [mantMeses, setMantMeses] = useState(12);
-  const [garantiaCobertura, setGarantiaCobertura] = useState('Garantía total del sistema');
+  // v8.19.70: al entregar, elegir TIPO DE GARANTÍA del catálogo (pre-seleccionado
+  // según el sistema del proyecto). El tipo autocompleta duración, periodicidad
+  // obligatoria, cobertura y condición; todo editable.
+  const tipoInicial = tipoSugeridoParaSistema(sistema);
+  const [tipoGarantia, setTipoGarantia] = useState(tipoInicial);
+  const defTipo = getTipoGarantia(tipoInicial);
+  const [garantiaAnos, setGarantiaAnos] = useState((defTipo?.duracionMeses || 60) / 12);
+  const [mantMeses, setMantMeses] = useState(defTipo?.mantObligatorioCadaMeses ?? 24);
+  const [garantiaCobertura, setGarantiaCobertura] = useState(defTipo?.cobertura || 'Garantía total del sistema');
+
+  // Al cambiar el tipo, recalcular los defaults (el usuario puede sobreescribir luego).
+  const elegirTipo = (key) => {
+    setTipoGarantia(key);
+    const t = getTipoGarantia(key);
+    if (t) { setGarantiaAnos((t.duracionMeses || 0) / 12); setMantMeses(t.mantObligatorioCadaMeses ?? 0); setGarantiaCobertura(t.cobertura || ''); }
+  };
+  const tipoSel = getTipoGarantia(tipoGarantia);
+  const serviciosTipo = serviciosDeTipo(tipoGarantia);
 
   const confirmar = async () => {
     setGuardando(true);
@@ -12285,6 +12582,8 @@ function ModalCambiarEstado({ proyecto, usuario, personal, onCerrar, onConfirmar
       if (montoFinal) extra.monto_final_cubicado = parseFloat(montoFinal);
       // _garantia se procesa en db.cambiarEstadoProyecto (no se escribe en proyectos).
       extra._garantia = {
+        tipo: tipoGarantia || null,
+        condicion: tipoSel?.condicion || null,
         duracionMeses: Math.round((parseFloat(garantiaAnos) || 0) * 12),
         cadaMeses: parseInt(mantMeses) || null,
         cobertura: garantiaCobertura || null,
@@ -12313,6 +12612,12 @@ function ModalCambiarEstado({ proyecto, usuario, personal, onCerrar, onConfirmar
             <div className="bg-zinc-950 border border-green-800/60 rounded-card p-3 space-y-2">
               <div className="text-[10px] tracking-widest uppercase text-green-400 font-bold flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> Garantía que arranca al entregar</div>
               <div>
+                <div className="text-[10px] uppercase text-zinc-500 mb-1">Tipo de garantía</div>
+                <select value={tipoGarantia} onChange={e => elegirTipo(e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-2 py-2 text-xs text-white outline-none focus:border-green-600">
+                  {TIPOS_GARANTIA.map(t => <option key={t.key} value={t.key}>{t.nombre}</option>)}
+                </select>
+              </div>
+              <div>
                 <div className="text-[10px] uppercase text-zinc-500 mb-1">Duración</div>
                 <div className="flex gap-1 flex-wrap">
                   {[1, 3, 5, 10].map(a => (
@@ -12323,14 +12628,32 @@ function ModalCambiarEstado({ proyecto, usuario, personal, onCerrar, onConfirmar
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <div className="text-[10px] uppercase text-zinc-500 mb-1">Mantenimiento cada (meses)</div>
-                  <input type="number" value={mantMeses} onChange={e => setMantMeses(e.target.value)} placeholder="12 (0 = sin mantenimiento)" className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1.5 text-xs text-white" />
+                  <div className="text-[10px] uppercase text-zinc-500 mb-1">Inspección obligatoria cada (meses)</div>
+                  <input type="number" value={mantMeses} onChange={e => setMantMeses(e.target.value)} placeholder="24 (0 = sin obligatorio)" className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1.5 text-xs text-white" />
                 </div>
                 <div>
                   <div className="text-[10px] uppercase text-zinc-500 mb-1">Cobertura</div>
                   <input value={garantiaCobertura} onChange={e => setGarantiaCobertura(e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1.5 text-xs text-white" />
                 </div>
               </div>
+              {tipoSel?.condicion && (
+                <div className="text-[10px] text-amber-300/90 bg-amber-900/10 border border-amber-800/40 rounded-card px-2 py-1.5">
+                  ⚠ {tipoSel.condicion} {parseInt(mantMeses) > 0 && <span className="text-amber-200">Si no se realiza la inspección, la garantía queda <b>suspendida</b> hasta cumplirla.</span>}
+                </div>
+              )}
+              {serviciosTipo.length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase text-zinc-500 mb-1">Servicios recomendados (vendibles) para este sistema</div>
+                  <div className="flex flex-wrap gap-1">
+                    {serviciosTipo.map(s => (
+                      <span key={s.key} className="text-[9px] bg-zinc-900 border border-zinc-800 rounded-full px-2 py-0.5 text-zinc-300" title={s.descripcion}>
+                        {s.nombre}{s.cadenciaMeses ? ` · ${s.cadenciaMeses}m` : ''}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="text-[9px] text-zinc-600 mt-1">Quedan descritos en la garantía para ofrecerlos como mantenimiento/cotización.</div>
+                </div>
+              )}
             </div>
           </>
         )}
@@ -12457,6 +12780,8 @@ function MiPerfil({ usuario, persona, onVolver, onGuardar }) {
     foto2x2: persona.foto2x2 || '',
     cedulaFrente: persona.cedulaFrente || '',
     cedulaReverso: persona.cedulaReverso || '',
+    cartaBancaria: persona.cartaBancaria || '',
+    buenaConducta: persona.buenaConducta || '',
   });
   const [mostrarCedula, setMostrarCedula] = useState(false);
   const [subiendoFoto, setSubiendoFoto] = useState(null);
@@ -12473,6 +12798,21 @@ function MiPerfil({ usuario, persona, onVolver, onGuardar }) {
     } catch (e) { alert('Error: ' + e.message); }
     setSubiendoFoto(null);
   };
+
+  // v8.19.77: slot de documento (foto del documento) para cumplimiento.
+  const DocSlot = ({ valor, campo, titulo }) => (
+    <div className="relative aspect-[1.6] bg-zinc-950 border-2 border-dashed border-zinc-700 overflow-hidden rounded-card">
+      {valor ? (
+        <button onClick={() => setViendoImagen({ src: valor, titulo })} className="block w-full h-full"><img src={valor} className="w-full h-full object-contain" alt="" /></button>
+      ) : (
+        <div className="flex items-center justify-center h-full text-zinc-600 text-xs">Sin documento</div>
+      )}
+      <label className="absolute bottom-1 right-1 bg-red-600 p-1.5 cursor-pointer rounded-card">
+        {subiendoFoto === campo ? <Loader2 className="w-3 h-3 text-white animate-spin" /> : <Camera className="w-3 h-3 text-white" />}
+        <input type="file" accept="image/*" className="hidden" onChange={e => e.target.files[0] && subirImagen(campo, e.target.files[0], 1400, 0.75)} />
+      </label>
+    </div>
+  );
 
   const guardar = async () => {
     await onGuardar(form);
@@ -12604,9 +12944,44 @@ function MiPerfil({ usuario, persona, onVolver, onGuardar }) {
         </div>
       )}
 
+      {/* v8.19.77: Documentos de cumplimiento (carta bancaria + buena conducta) */}
+      {puedoVerCedula && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-3">
+          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold flex items-center gap-1"><FileText className="w-3 h-3" /> Documentos de cumplimiento</div>
+          {(() => {
+            const tieneBanco = !!(persona.banco || persona.bancoNumeroCuenta);
+            const falta = tieneBanco && !form.cartaBancaria;
+            return (
+              <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="text-xs font-bold">Carta bancaria {tieneBanco && <span className="text-red-400">*</span>}</div>
+                  {falta ? <span className="text-[9px] bg-red-900/50 border border-red-700 text-red-300 px-1.5 py-0.5 uppercase font-bold rounded-full">Falta</span> : form.cartaBancaria ? <span className="text-[9px] bg-green-900/40 border border-green-700 text-green-300 px-1.5 py-0.5 uppercase font-bold rounded-full">✓ OK</span> : null}
+                </div>
+                <div className="text-[10px] text-zinc-500 mb-2">Obligatoria para registrar la cuenta. Debe mostrar el nombre del titular y el tipo de cuenta.</div>
+                <DocSlot valor={form.cartaBancaria} campo="cartaBancaria" titulo="Carta bancaria" />
+              </div>
+            );
+          })()}
+          {(() => {
+            const esOperario = (persona.puesto || '').toLowerCase().includes('operario');
+            const falta = esOperario && !form.buenaConducta;
+            return (
+              <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="text-xs font-bold">Papel de buena conducta {esOperario && <span className="text-red-400">*</span>}</div>
+                  {falta ? <span className="text-[9px] bg-red-900/50 border border-red-700 text-red-300 px-1.5 py-0.5 uppercase font-bold rounded-full">Falta</span> : form.buenaConducta ? <span className="text-[9px] bg-green-900/40 border border-green-700 text-green-300 px-1.5 py-0.5 uppercase font-bold rounded-full">✓ OK</span> : null}
+                </div>
+                <div className="text-[10px] text-zinc-500 mb-2">{esOperario ? 'Requerido para operarios.' : 'Certificado de buena conducta (si aplica).'}</div>
+                <DocSlot valor={form.buenaConducta} campo="buenaConducta" titulo="Buena conducta" />
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
       {cambios && (
         <div className="sticky bottom-4 flex gap-2">
-          <button onClick={() => { setForm({ telefono: persona.telefono || '', direccion: persona.direccion || '', email: persona.email || '', fechaIngreso: persona.fechaIngreso || '', recomendadoPor: persona.recomendadoPor || '', cedulaNumero: persona.cedulaNumero || '', foto2x2: persona.foto2x2 || '', cedulaFrente: persona.cedulaFrente || '', cedulaReverso: persona.cedulaReverso || '' }); setCambios(false); }} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Descartar</button>
+          <button onClick={() => { setForm({ telefono: persona.telefono || '', direccion: persona.direccion || '', email: persona.email || '', fechaIngreso: persona.fechaIngreso || '', recomendadoPor: persona.recomendadoPor || '', cedulaNumero: persona.cedulaNumero || '', foto2x2: persona.foto2x2 || '', cedulaFrente: persona.cedulaFrente || '', cedulaReverso: persona.cedulaReverso || '', cartaBancaria: persona.cartaBancaria || '', buenaConducta: persona.buenaConducta || '' }); setCambios(false); }} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Descartar</button>
           <button onClick={guardar} className="flex-1 bg-red-600 hover:bg-red-700 text-white text-sm font-black uppercase py-3 flex items-center justify-center gap-2 shadow-2xl"><Save className="w-4 h-4" /> Guardar cambios</button>
         </div>
       )}

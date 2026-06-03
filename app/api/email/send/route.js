@@ -1,6 +1,7 @@
 // app/api/email/send/route.js
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { emailsApagados } from '../../../../lib/emailGuard';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -95,6 +96,7 @@ function renderEmailText({ titulo, mensaje, detalles }) {
 }
 
 export async function POST(request) {
+  if (emailsApagados()) return NextResponse.json({ ok: true, sent: false, reason: 'emails_apagados' }, { status: 200 });
   const RESEND_API_KEY = process.env.RESEND_API_KEY;
   const RESEND_FROM = process.env.RESEND_FROM_EMAIL;
   const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;

@@ -7,34 +7,53 @@
 // PR 3B.1 entrega: lista de proyectos. PRs siguientes agregan detalle
 // proyecto + sites + DynamicSurveyForm + photos.
 
-import React, { useState, useEffect } from 'react';
-import { Loader2, Plus, MapPin, Building, ChevronRight, ArrowLeft, List, Map as MapIcon } from 'lucide-react';
-import { listarProyectosSurveys, listarSitesProyectoSurvey, COMPANIES, PROJECT_STATUS, SITE_STATUS } from '../../lib/surveys';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Loader2, Plus, MapPin, Building, ChevronRight, ArrowLeft, List, Map as MapIcon, LayoutGrid, Search, User as UserIcon, Calendar, Mail, MessageCircle, Clock, ArrowLeftRight } from 'lucide-react';
+import { listarProyectosSurveys, listarSitesProyectoSurvey, listarTodosLosSitesSurvey, crearSiteSurvey, COMPANIES, PROJECT_STATUS, SITE_STATUS, SERVICE_LINES, ESCALERA } from '../../lib/surveys';
+import * as db from '../../lib/db';
+import MapaLeaflet from '../common/MapaLeaflet';
+import MapaPickerModal from '../common/MapaPickerModal';
 import ServiceLineBadge from './ServiceLineBadge';
 import SurveySiteDetail from './SurveySiteDetail';
 import SurveySitesMap from './SurveySitesMap';
 import ModalNuevoProyecto from './ModalNuevoProyecto';
 import ModalLevantamientoSimple from './ModalLevantamientoSimple';
+import CalendarioLevantamientos from './CalendarioLevantamientos';
 
-export default function ModuloSurveys({ usuario }) {
+export default function ModuloSurveys({ usuario, data }) {
   // Subvistas: 'lista' (default) | 'proyecto' | 'site'
   const [subvista, setSubvista] = useState('lista');
   const [proyectoActivo, setProyectoActivo] = useState(null);
   const [siteActivo, setSiteActivo] = useState(null);
+  // v8.19.64: si entramos directo a la ficha del sitio (levantamiento de 1 sitio),
+  // "Volver" regresa a la lista, no a la pantalla de "sitios".
+  const [siteDirecto, setSiteDirecto] = useState(false);
+
+  // Abrir levantamiento: si tiene UN solo sitio, va directo a la ficha del cliente.
+  const abrirProyecto = async (p) => {
+    setProyectoActivo(p);
+    try {
+      const ss = await listarSitesProyectoSurvey(p.id);
+      if (ss.length === 1) { setSiteActivo(ss[0]); setSiteDirecto(true); setSubvista('site'); return; }
+    } catch (e) { console.warn('abrirProyecto:', e?.message); }
+    setSiteDirecto(false);
+    setSubvista('proyecto');
+  };
 
   return (
     <div className="space-y-4">
       {subvista === 'lista' && (
         <SurveysList
           usuario={usuario}
-          onAbrirProyecto={(p) => { setProyectoActivo(p); setSubvista('proyecto'); }}
-          onAbrirSiteDirecto={(p, s) => { setProyectoActivo(p); setSiteActivo(s); setSubvista('site'); }}
+          data={data}
+          onAbrirProyecto={abrirProyecto}
+          onAbrirSiteDirecto={(p, s) => { setProyectoActivo(p); setSiteActivo(s); setSiteDirecto(true); setSubvista('site'); }}
         />
       )}
       {subvista === 'proyecto' && proyectoActivo && (
         <SurveyProjectDetail
           proyecto={proyectoActivo}
-          onAbrirSite={(s) => { setSiteActivo(s); setSubvista('site'); }}
+          onAbrirSite={(s) => { setSiteActivo(s); setSiteDirecto(false); setSubvista('site'); }}
           onVolver={() => { setSubvista('lista'); setProyectoActivo(null); }}
         />
       )}
@@ -43,7 +62,12 @@ export default function ModuloSurveys({ usuario }) {
           site={siteActivo}
           proyecto={proyectoActivo}
           usuario={usuario}
-          onVolver={() => { setSubvista('proyecto'); setSiteActivo(null); }}
+          data={data}
+          onVerEdificaciones={() => { setSiteDirecto(false); setSiteActivo(null); setSubvista('proyecto'); }}
+          onVolver={() => {
+            if (siteDirecto) { setSubvista('lista'); setSiteActivo(null); setProyectoActivo(null); }
+            else { setSubvista('proyecto'); setSiteActivo(null); }
+          }}
         />
       )}
     </div>
@@ -53,22 +77,37 @@ export default function ModuloSurveys({ usuario }) {
 // ============================================================
 // LISTA DE PROYECTOS
 // ============================================================
-function SurveysList({ usuario, onAbrirProyecto, onAbrirSiteDirecto }) {
+function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto }) {
   const [loading, setLoading] = useState(true);
   const [proyectos, setProyectos] = useState([]);
   const [errorMsg, setErrorMsg] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [modalNuevoAbierto, setModalNuevoAbierto] = useState(false);     // multi-sitio (excepción)
   const [modalSimpleAbierto, setModalSimpleAbierto] = useState(false);   // levantamiento simple (principal)
+  const [vista, setVista] = useState('kanban');                          // kanban (principal) | lista | mapa
+  const [sites, setSites] = useState([]);
+  const [busqueda, setBusqueda] = useState('');
+  const [agruparPor, setAgruparPor] = useState('estado');                // estado | servicio | empresa | levantador | none
+  // Filtros (aplican a TODAS las vistas).
+  const [fServicio, setFServicio] = useState('');
+  const [fEmpresa, setFEmpresa] = useState('');
+  const [fEstado, setFEstado] = useState('');
+  const [fLevantador, setFLevantador] = useState('');
+  const [recs, setRecs] = useState([]); // v8.19.85: reclamaciones para el calendario
+  const esAdmin = (usuario?.roles || []).includes('admin') || (usuario?.roles || []).includes('owner');
+  const [ordenCols, setOrdenCols] = useState(data?.config?.kanbanLevOrden || null); // orden custom de etapas
+  const [editandoEtapas, setEditandoEtapas] = useState(false);
 
   useEffect(() => {
     let cancelado = false;
     (async () => {
       setLoading(true);
       try {
-        const data = await listarProyectosSurveys();
+        const [data, ss, rs] = await Promise.all([listarProyectosSurveys(), listarTodosLosSitesSurvey(), db.listarReclamaciones().catch(() => [])]);
         if (!cancelado) {
           setProyectos(data);
+          setSites(ss);
+          setRecs(rs || []);
           setErrorMsg(null);
         }
       } catch (e) {
@@ -79,6 +118,109 @@ function SurveysList({ usuario, onAbrirProyecto, onAbrirSiteDirecto }) {
     })();
     return () => { cancelado = true; };
   }, [reloadKey]);
+
+  // Estado del levantamiento: usa la etapa real de Odoo si existe, si no el status del ERP.
+  // Solo las etapas del pipeline de Levantamientos (equipo "Levantamientos" en Odoo).
+  const ORDEN_ODOO = ['New', 'Contactado', 'Asignado', 'Agendado', 'Realizado', 'Cotizacion en Revision', 'Cotizacion Realizada', 'No se pudo coordinar', 'No podemos cotizar', 'Cliente no esta interesado'];
+  // Levantamientos creados localmente (sin odoo_stage) se mapean a una etapa de Odoo
+  // para que el Kanban use SIEMPRE las columnas de Odoo en su orden real.
+  const MAP_STATUS_ODOO = { planning: 'New', survey_in_progress: 'Asignado', survey_completed: 'Realizado', quoted: 'Cotizacion Realizada', awarded: 'Cotizacion Realizada', in_execution: 'Realizado', completed: 'Realizado', cancelled: 'No se pudo coordinar' };
+  const estadoDe = (p) => p.odoo_stage || MAP_STATUS_ODOO[p.status] || 'New';
+  const columnasKanban = React.useMemo(() => {
+    // Orden: custom del admin (si existe) → pipeline Odoo → etapas extra presentes.
+    const presentes = [...new Set(proyectos.map(estadoDe))];
+    const base = (ordenCols && ordenCols.length) ? ordenCols : ORDEN_ODOO;
+    const extras = [...new Set([...ORDEN_ODOO, ...presentes])].filter(e => !base.includes(e));
+    return [...base, ...extras];
+  }, [proyectos, ordenCols]);
+  const moverCol = async (e, dir) => {
+    const arr = [...columnasKanban];
+    const i = arr.indexOf(e); const j = i + dir;
+    if (i < 0 || j < 0 || j >= arr.length) return;
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+    setOrdenCols(arr);
+    try { await db.setKanbanLevOrden(arr); } catch (err) { console.warn('guardar orden etapas:', err?.message); }
+  };
+  // Coords por proyecto (del primer site con GPS).
+  const coordsProy = React.useMemo(() => {
+    const m = {};
+    for (const s of sites) { if (s.latitude != null && s.longitude != null && !m[s.project_id]) m[s.project_id] = { lat: Number(s.latitude), lng: Number(s.longitude) }; }
+    return m;
+  }, [sites]);
+  // Conteo de sitios por proyecto (para la columna "Sitios" de la tabla).
+  const sitesPorProy = React.useMemo(() => {
+    const m = {};
+    for (const s of sites) m[s.project_id] = (m[s.project_id] || 0) + 1;
+    return m;
+  }, [sites]);
+  const levantadorDe = (p) => p.asignado_a_nombre || '(Sin asignar)';
+
+  // v8.25.0: info para la tarjeta — cliente, contacto principal y canal preferido.
+  const siteDeProy = React.useMemo(() => { const m = {}; for (const s of sites) { if (!m[s.project_id]) m[s.project_id] = s; } return m; }, [sites]);
+  const clientesData = data?.clientes || [];
+  const contactosData = data?.contactos || [];
+  const infoTarjeta = (p) => {
+    const site = siteDeProy[p.id];
+    const cli = clientesData.find(c => c.id === site?.cliente_id) || clientesData.find(c => (c.nombre || '').trim().toLowerCase() === (p.client_name || '').trim().toLowerCase());
+    const cts = contactosData.filter(c => c.clienteId === cli?.id);
+    const ppal = cts.find(c => c.esPrincipal) || cts[0];
+    const contacto = ppal?.nombre || site?.contact_name || '';
+    const ws = ppal?.whatsapp || ppal?.telefono || site?.mobile_phone || '';
+    const email = ppal?.email || '';
+    const canal = ppal?.prefComunicacion || (ws ? 'ws' : email ? 'email' : null);
+    return { cliente: p.client_name || cli?.nombre || '—', contacto, canal };
+  };
+  const tiempoEnEtapa = (p) => {
+    const iso = p.stage_changed_at || p.updated_at || p.created_at;
+    if (!iso) return '';
+    const ms = Date.now() - new Date(iso).getTime();
+    const h = Math.floor(ms / 3600000);
+    if (h < 1) return 'hoy';
+    if (h < 24) return `${h} h`;
+    const d = Math.floor(h / 24);
+    if (d < 30) return `${d} d`;
+    return `${Math.floor(d / 30)} mes`;
+  };
+  // Filtro de búsqueda + filtros (cliente, levantamiento, servicio, empresa, estado, levantador).
+  const proyFiltrados = React.useMemo(() => {
+    const q = busqueda.toLowerCase().trim();
+    return proyectos.filter(p => {
+      if (q && !(
+        (p.client_name || '').toLowerCase().includes(q) ||
+        (p.name || '').toLowerCase().includes(q) ||
+        (p.description || '').toLowerCase().includes(q) ||
+        (p.asignado_a_nombre || '').toLowerCase().includes(q) ||
+        estadoDe(p).toLowerCase().includes(q)
+      )) return false;
+      if (fServicio && p.service_line !== fServicio) return false;
+      if (fEmpresa && p.company !== fEmpresa) return false;
+      if (fEstado && estadoDe(p) !== fEstado) return false;
+      if (fLevantador && levantadorDe(p) !== fLevantador) return false;
+      return true;
+    });
+  }, [proyectos, busqueda, fServicio, fEmpresa, fEstado, fLevantador]);
+
+  // Opciones presentes (para los selects de filtro).
+  const opcServicios = React.useMemo(() => [...new Set(proyectos.map(p => p.service_line).filter(Boolean))], [proyectos]);
+  const opcEmpresas = React.useMemo(() => [...new Set(proyectos.map(p => p.company).filter(Boolean))], [proyectos]);
+  const opcLevantadores = React.useMemo(() => [...new Set(proyectos.map(levantadorDe))].sort(), [proyectos]);
+
+  // Agrupación según la dimensión elegida.
+  const grupos = React.useMemo(() => {
+    const defs = {
+      estado:     { keyOf: estadoDe, orden: columnasKanban, labelOf: k => k },
+      servicio:   { keyOf: p => p.service_line || 'other', orden: Object.keys(SERVICE_LINES), labelOf: k => SERVICE_LINES[k]?.label || k },
+      empresa:    { keyOf: p => p.company || '—', orden: Object.keys(COMPANIES), labelOf: k => COMPANIES[k] || k },
+      levantador: { keyOf: levantadorDe, orden: opcLevantadores, labelOf: k => k },
+      none:       { keyOf: () => 'Todos', orden: ['Todos'], labelOf: k => k },
+    };
+    const { keyOf, orden, labelOf } = defs[agruparPor] || defs.estado;
+    const map = new Map();
+    for (const p of proyFiltrados) { const k = keyOf(p); if (!map.has(k)) map.set(k, []); map.get(k).push(p); }
+    const keys = [...map.keys()];
+    const ordered = [...orden.filter(k => map.has(k)), ...keys.filter(k => !orden.includes(k)).sort()];
+    return ordered.map(k => ({ key: k, label: labelOf(k), items: map.get(k) }));
+  }, [proyFiltrados, agruparPor, columnasKanban, opcLevantadores]);
 
   return (
     <div className="space-y-4">
@@ -110,6 +252,9 @@ function SurveysList({ usuario, onAbrirProyecto, onAbrirSiteDirecto }) {
       {modalSimpleAbierto && (
         <ModalLevantamientoSimple
           usuario={usuario}
+          clientes={data?.clientes || []}
+          contactos={data?.contactos || []}
+          sistemas={data?.sistemas || {}}
           onCerrar={() => setModalSimpleAbierto(false)}
           onCreado={({ proyecto, site }) => {
             setModalSimpleAbierto(false);
@@ -153,29 +298,243 @@ function SurveysList({ usuario, onAbrirProyecto, onAbrirSiteDirecto }) {
       )}
 
       {!loading && !errorMsg && proyectos.length > 0 && (
-        <div className="space-y-2">
-          {proyectos.map(p => (
-            <ProyectoCard key={p.id} proyecto={p} onClick={() => onAbrirProyecto(p)} />
-          ))}
-        </div>
+        <>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex gap-1 bg-zinc-900 border border-zinc-800 rounded-card p-1 w-fit">
+                {[['kanban', 'Kanban', LayoutGrid], ['lista', 'Lista', List], ['calendario', 'Calendario', Calendar], ['mapa', 'Mapa', MapIcon]].map(([k, l, Icon]) => (
+                  <button key={k} onClick={() => setVista(k)} className={`px-4 py-1.5 text-[11px] font-bold uppercase rounded-card flex items-center gap-1 ${vista === k ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>
+                    {Icon && <Icon className="w-3 h-3" />}{l}
+                  </button>
+                ))}
+              </div>
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-zinc-600 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar…" className="bg-zinc-950 border border-zinc-800 rounded-card pl-8 pr-3 py-1.5 text-xs text-white outline-none focus:border-red-600 w-44 sm:w-56" />
+              </div>
+            </div>
+            {/* Filtros (aplican a todas las vistas) + agrupar (lista) */}
+            <div className="flex items-center gap-1.5 flex-wrap text-xs">
+              <FiltroSelect value={fServicio} onChange={setFServicio} placeholder="Servicio" options={opcServicios.map(s => [s, SERVICE_LINES[s]?.label || s])} />
+              <FiltroSelect value={fEmpresa} onChange={setFEmpresa} placeholder="Empresa" options={opcEmpresas.map(c => [c, COMPANIES[c] || c])} />
+              <FiltroSelect value={fEstado} onChange={setFEstado} placeholder="Estado" options={columnasKanban.map(e => [e, e])} />
+              <FiltroSelect value={fLevantador} onChange={setFLevantador} placeholder="Levantador" options={opcLevantadores.map(l => [l, l])} />
+              {(fServicio || fEmpresa || fEstado || fLevantador || busqueda) && (
+                <button onClick={() => { setFServicio(''); setFEmpresa(''); setFEstado(''); setFLevantador(''); setBusqueda(''); }} className="text-[10px] text-zinc-400 hover:text-red-500 underline px-1">Limpiar</button>
+              )}
+              <span className="text-[10px] text-zinc-600 ml-auto">{proyFiltrados.length} de {proyectos.length}</span>
+              {vista === 'lista' && (
+                <label className="flex items-center gap-1 ml-1">
+                  <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold">Agrupar:</span>
+                  <select value={agruparPor} onChange={e => setAgruparPor(e.target.value)} className="bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1 text-xs text-white outline-none focus:border-red-600">
+                    <option value="estado">Estado</option>
+                    <option value="servicio">Servicio</option>
+                    <option value="empresa">Empresa</option>
+                    <option value="levantador">Levantador</option>
+                    <option value="none">Sin agrupar</option>
+                  </select>
+                </label>
+              )}
+            </div>
+          </div>
+
+          {vista === 'lista' ? (
+            <SurveysTabla grupos={grupos} sitesPorProy={sitesPorProy} estadoDe={estadoDe} agrupado={agruparPor !== 'none'} onAbrir={onAbrirProyecto} />
+          ) : vista === 'kanban' ? (
+            <>
+            {esAdmin && agruparPor === 'estado' && (
+              <div className="flex justify-end mb-2">
+                <button onClick={() => setEditandoEtapas(v => !v)} className={`text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-card border flex items-center gap-1 ${editandoEtapas ? 'border-red-600 bg-red-900/20 text-white' : 'border-zinc-700 text-zinc-400 hover:text-white'}`}>
+                  <ArrowLeftRight className="w-3.5 h-3.5" /> {editandoEtapas ? 'Listo' : 'Ordenar etapas'}
+                </button>
+              </div>
+            )}
+            <div className="flex gap-3 overflow-x-auto pb-2">
+              {columnasKanban.map(e => {
+                const items = proyFiltrados.filter(p => estadoDe(p) === e);
+                return (
+                  <div key={e} className="w-60 flex-shrink-0 bg-zinc-950 border border-zinc-800 rounded-card">
+                    <div className="px-3 py-2 flex items-center justify-between border-b border-zinc-800 gap-1">
+                      {editandoEtapas && esAdmin && (
+                        <button onClick={() => moverCol(e, -1)} className="text-zinc-500 hover:text-white shrink-0" title="Mover a la izquierda"><ChevronRight className="w-3.5 h-3.5 rotate-180" /></button>
+                      )}
+                      <span className="text-[10px] uppercase tracking-widest font-bold text-zinc-300 truncate flex-1">{e}</span>
+                      {editandoEtapas && esAdmin ? (
+                        <button onClick={() => moverCol(e, 1)} className="text-zinc-500 hover:text-white shrink-0" title="Mover a la derecha"><ChevronRight className="w-3.5 h-3.5" /></button>
+                      ) : (
+                        <span className="text-[9px] text-zinc-600">{items.length}</span>
+                      )}
+                    </div>
+                    <div className="p-2 space-y-2 min-h-[50px]">
+                      {items.map(p => {
+                        const info = infoTarjeta(p);
+                        return (
+                          <button key={p.id} onClick={() => onAbrirProyecto(p)} style={{ borderLeftColor: SERVICE_LINES[p.service_line]?.color || '#666', borderLeftWidth: '4px' }} className="w-full text-left bg-zinc-900 border border-zinc-800 rounded-card p-2.5 hover:border-red-600">
+                            <div className="flex items-start justify-between gap-1.5">
+                              <div className="min-w-0">
+                                <div className="font-bold text-xs truncate text-white">{info.cliente}</div>
+                                {info.contacto && <div className="text-[10px] text-zinc-400 truncate flex items-center gap-1"><UserIcon className="w-2.5 h-2.5 text-zinc-600" />{info.contacto}</div>}
+                              </div>
+                              {info.canal === 'ws' ? <MessageCircle className="w-4 h-4 text-green-500 shrink-0" title="WhatsApp" /> : info.canal === 'email' ? <Mail className="w-4 h-4 text-blue-400 shrink-0" title="Email" /> : null}
+                            </div>
+                            <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                              <ServiceLineBadge serviceLine={p.service_line} />
+                              {p.requiere_escalera && <EscaleraBadge valor={p.requiere_escalera} />}
+                              <span className="text-[9px] text-zinc-500 flex items-center gap-0.5 ml-auto" title="Tiempo en esta etapa"><Clock className="w-2.5 h-2.5" /> {tiempoEnEtapa(p)}</span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            </>
+          ) : vista === 'calendario' ? (
+            <CalendarioLevantamientos proyectos={proyFiltrados} reclamaciones={recs} onReload={() => setReloadKey(k => k + 1)} onAbrir={onAbrirProyecto} />
+          ) : (
+            (() => {
+              const conC = proyFiltrados.map(p => ({ p, c: coordsProy[p.id] })).filter(x => x.c);
+              if (conC.length === 0) return <div className="bg-zinc-950 border border-zinc-800 rounded-card p-8 text-center text-zinc-500 text-sm">Ningún levantamiento (de los filtrados) tiene ubicación con GPS aún.</div>;
+              const markers = conC.map(({ p, c }) => ({ lat: c.lat, lng: c.lng, color: 'red', label: p.client_name, popup: `<b>${p.client_name}</b><br/>${p.name}`, onClick: () => onAbrirProyecto(p) }));
+              return <MapaLeaflet center={[markers[0].lat, markers[0].lng]} zoom={11} height={460} markers={markers} scrollWheelZoom className="rounded-card overflow-hidden" />;
+            })()
+          )}
+        </>
       )}
     </div>
   );
 }
 
+// ============================================================
+// TABLA DENSA (desktop) + cards (mobile) — vista Lista
+// ============================================================
+const fmtFechaSurvey = (s) => { if (!s) return '—'; try { return new Date(s).toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: '2-digit' }); } catch { return '—'; } };
+
+export function EscaleraBadge({ valor, full }) {
+  const e = ESCALERA[valor];
+  if (!e) return <span className="text-[10px] text-zinc-600">—</span>;
+  return (
+    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap inline-block" style={{ backgroundColor: e.color + '22', color: e.color, border: `1px solid ${e.color}66` }}>
+      {e.icon} {full ? e.label : e.short}
+    </span>
+  );
+}
+
+function FilaSurvey({ p, nSites, estado, onAbrir }) {
+  const color = SERVICE_LINES[p.service_line]?.color || '#666';
+  const company = COMPANIES[p.company] || p.company || '—';
+  return (
+    <tr onClick={() => onAbrir(p)} className="border-b border-zinc-800 hover:bg-zinc-800/40 cursor-pointer">
+      <td className="w-1 p-0" style={{ backgroundColor: color }} />
+      <td className="px-3 py-2 max-w-[220px]">
+        <div className="font-bold truncate">{p.client_name || '—'}</div>
+        {p.description && <div className="text-[10px] text-zinc-500 truncate" title={p.description}>{p.description}</div>}
+      </td>
+      <td className="px-3 py-2 text-zinc-400 text-xs max-w-[200px] truncate">{p.name || '—'}</td>
+      <td className="px-3 py-2"><ServiceLineBadge serviceLine={p.service_line} /></td>
+      <td className="px-3 py-2 text-[10px] uppercase tracking-wider text-zinc-500">{company}</td>
+      <td className="px-3 py-2"><span className="text-[10px] uppercase tracking-wider font-bold text-zinc-300">{estado}</span></td>
+      <td className="px-3 py-2"><EscaleraBadge valor={p.requiere_escalera} /></td>
+      <td className="px-3 py-2 text-xs text-zinc-400">
+        {p.asignado_a_nombre
+          ? <span className="inline-flex items-center gap-1"><UserIcon className="w-3 h-3 text-zinc-500" />{p.asignado_a_nombre}</span>
+          : <span className="text-zinc-600">— sin asignar</span>}
+      </td>
+      <td className="px-3 py-2 text-right tabular-nums text-zinc-400">{nSites || 0}</td>
+      <td className="px-3 py-2 text-right text-[10px] text-zinc-500 whitespace-nowrap">{fmtFechaSurvey(p.created_at)}</td>
+    </tr>
+  );
+}
+
+// Select de filtro compacto reutilizable: opciones = [value, label][].
+function FiltroSelect({ value, onChange, placeholder, options }) {
+  return (
+    <select value={value} onChange={e => onChange(e.target.value)} className={`bg-zinc-900 border rounded-card px-2 py-1 text-xs outline-none focus:border-red-600 ${value ? 'border-red-600 text-white' : 'border-zinc-800 text-zinc-400'}`}>
+      <option value="">{placeholder}: todos</option>
+      {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+    </select>
+  );
+}
+
+function SurveysTabla({ grupos, sitesPorProy, estadoDe, agrupado, onAbrir }) {
+  const total = grupos.reduce((a, g) => a + g.items.length, 0);
+  if (total === 0) {
+    return <div className="bg-zinc-950 border border-zinc-800 rounded-card p-6 text-center text-zinc-500 text-sm">Sin resultados.</div>;
+  }
+
+  const Encabezado = () => (
+    <thead className="bg-zinc-950 border-b border-zinc-800 sticky top-0 z-10">
+      <tr className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold text-left">
+        <th className="w-1 p-0" />
+        <th className="px-3 py-2">Cliente</th>
+        <th className="px-3 py-2">Levantamiento</th>
+        <th className="px-3 py-2">Servicio</th>
+        <th className="px-3 py-2">Empresa</th>
+        <th className="px-3 py-2">Estado</th>
+        <th className="px-3 py-2">Escalera</th>
+        <th className="px-3 py-2">Levantador</th>
+        <th className="px-3 py-2 text-right">Sitios</th>
+        <th className="px-3 py-2 text-right">Creado</th>
+      </tr>
+    </thead>
+  );
+
+  return (
+    <>
+      {/* DESKTOP: tabla densa */}
+      <div className="hidden md:block bg-zinc-900 border border-zinc-800 rounded-card overflow-x-auto">
+        <table className="w-full text-sm">
+          <Encabezado />
+          <tbody>
+            {grupos.map(g => (
+              <React.Fragment key={g.key}>
+                {agrupado && (
+                  <tr className="bg-zinc-950/80 border-b border-zinc-800">
+                    <td colSpan={10} className="px-3 py-1.5 text-[10px] uppercase tracking-widest font-black text-zinc-400">
+                      {g.label} <span className="text-zinc-600">· {g.items.length}</span>
+                    </td>
+                  </tr>
+                )}
+                {g.items.map(p => (
+                  <FilaSurvey key={p.id} p={p} nSites={sitesPorProy[p.id]} estado={estadoDe(p)} onAbrir={onAbrir} />
+                ))}
+              </React.Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* MOBILE: cards (agrupadas si aplica) */}
+      <div className="md:hidden space-y-3">
+        {grupos.map(g => (
+          <div key={g.key} className="space-y-2">
+            {agrupado && <div className="text-[10px] uppercase tracking-widest font-black text-zinc-500 px-1">{g.label} · {g.items.length}</div>}
+            {g.items.map(p => <ProyectoCard key={p.id} proyecto={p} onClick={() => onAbrir(p)} />)}
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
 function ProyectoCard({ proyecto, onClick }) {
-  const estadoLabel = PROJECT_STATUS[proyecto.status] || proyecto.status;
+  const estadoLabel = proyecto.odoo_stage || PROJECT_STATUS[proyecto.status] || proyecto.status;
   const company = COMPANIES[proyecto.company] || proyecto.company;
+  const color = SERVICE_LINES[proyecto.service_line]?.color || '#666';
   return (
     <button
       onClick={onClick}
+      style={{ borderLeftColor: color, borderLeftWidth: '4px' }}
       className="w-full text-left bg-zinc-900 border border-zinc-800 rounded-card hover:border-red-600 p-4 flex items-center justify-between gap-3 transition-colors"
     >
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-1">
+        <div className="flex items-center gap-2 mb-1 flex-wrap">
           <ServiceLineBadge serviceLine={proyecto.service_line} />
           <span className="text-[10px] text-zinc-500 uppercase tracking-wider">{company}</span>
           <span className="text-[10px] text-zinc-400 uppercase tracking-wider">· {estadoLabel}</span>
+          {proyecto.requiere_escalera && <EscaleraBadge valor={proyecto.requiere_escalera} />}
         </div>
         <div className="font-bold text-sm truncate">{proyecto.name}</div>
         <div className="text-xs text-zinc-500 mt-0.5">{proyecto.client_name}</div>
@@ -197,25 +556,15 @@ function SurveyProjectDetail({ proyecto, onAbrirSite, onVolver }) {
   const [sites, setSites] = useState([]);
   const [errorMsg, setErrorMsg] = useState(null);
   const [vistaSites, setVistaSites] = useState('lista'); // 'lista' | 'mapa'
+  const [modalEdif, setModalEdif] = useState(false);
 
-  useEffect(() => {
-    let cancelado = false;
-    (async () => {
-      setLoading(true);
-      try {
-        const data = await listarSitesProyectoSurvey(proyecto.id);
-        if (!cancelado) {
-          setSites(data);
-          setErrorMsg(null);
-        }
-      } catch (e) {
-        if (!cancelado) setErrorMsg(e?.message || String(e));
-      } finally {
-        if (!cancelado) setLoading(false);
-      }
-    })();
-    return () => { cancelado = true; };
-  }, [proyecto.id]);
+  const recargar = async () => {
+    setLoading(true);
+    try { setSites(await listarSitesProyectoSurvey(proyecto.id)); setErrorMsg(null); }
+    catch (e) { setErrorMsg(e?.message || String(e)); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { recargar(); /* eslint-disable-next-line */ }, [proyecto.id]);
 
   const stats = {
     total: sites.length,
@@ -265,10 +614,13 @@ function SurveyProjectDetail({ proyecto, onAbrirSite, onVolver }) {
 
       {!loading && !errorMsg && (
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">
-              Sitios ({sites.length})
+              Edificaciones ({sites.length})
             </div>
+            <button onClick={() => setModalEdif(true)} className="bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-card flex items-center gap-1">
+              <Plus className="w-3 h-3" /> Agregar edificación
+            </button>
             <div className="flex border border-zinc-800">
               <button
                 onClick={() => setVistaSites('lista')}
@@ -302,6 +654,84 @@ function SurveyProjectDetail({ proyecto, onAbrirSite, onVolver }) {
           )}
         </div>
       )}
+
+      {modalEdif && (
+        <ModalNuevaEdificacion
+          proyecto={proyecto}
+          onCerrar={() => setModalEdif(false)}
+          onCreada={async (site) => { setModalEdif(false); await recargar(); onAbrirSite(site); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Crear una edificación (site) dentro del levantamiento.
+function ModalNuevaEdificacion({ proyecto, onCerrar, onCreada }) {
+  const [nombre, setNombre] = useState('');
+  const [direccion, setDireccion] = useState('');
+  const [lat, setLat] = useState(null);
+  const [lng, setLng] = useState(null);
+  const [contacto, setContacto] = useState('');
+  const [telefono, setTelefono] = useState('');
+  const [mapaAbierto, setMapaAbierto] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState(null);
+
+  const guardar = async () => {
+    if (!nombre.trim()) { setError('Ponle un nombre a la edificación.'); return; }
+    setGuardando(true); setError(null);
+    try {
+      const site = await crearSiteSurvey({
+        projectId: proyecto.id,
+        name: nombre.trim(),
+        address: direccion.trim() || null,
+        latitude: lat, longitude: lng,
+        contactName: contacto.trim() || null,
+        mobilePhone: telefono.trim() || null,
+        clienteId: proyecto.cliente_id || null,
+        ubicacionId: proyecto.ubicacion_id || null,
+        surveyStatus: 'pending',
+      });
+      onCreada?.(site);
+    } catch (e) { setError(e?.message || String(e)); setGuardando(false); }
+  };
+
+  const inp = 'w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm';
+  return (
+    <div className="fixed inset-0 bg-black/80 z-[60] flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto" onClick={onCerrar}>
+      <div className="bg-zinc-950 border-2 border-red-600 rounded-card w-full max-w-md my-4 p-4 space-y-3" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-bold">Nueva edificación</div>
+          <button onClick={onCerrar} className="text-zinc-500 hover:text-white"><Plus className="w-4 h-4 rotate-45" /></button>
+        </div>
+        <div>
+          <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1.5">Nombre de la edificación *</div>
+          <input value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Ej: Edificio A, Torre, Caseta, Nave 2…" className={inp} />
+        </div>
+        <div>
+          <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1.5">Dirección / referencia</div>
+          <input value={direccion} onChange={e => setDireccion(e.target.value)} placeholder="Opcional" className={inp} />
+        </div>
+        <div className="flex items-center gap-3">
+          <button onClick={() => setMapaAbierto(true)} className="text-[11px] text-red-400 hover:text-red-300 font-bold flex items-center gap-1"><MapPin className="w-3.5 h-3.5" /> Marcar en el mapa</button>
+          {lat != null && <span className="text-[11px] text-green-300">{Number(lat).toFixed(5)}, {Number(lng).toFixed(5)}</span>}
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <input value={contacto} onChange={e => setContacto(e.target.value)} placeholder="Contacto (opcional)" className={inp} />
+          <input value={telefono} onChange={e => setTelefono(e.target.value)} placeholder="Teléfono" className={inp} />
+        </div>
+        {error && <div className="bg-red-900/20 border border-red-700 rounded-card text-red-300 p-2 text-xs">{error}</div>}
+        <div className="flex gap-2 pt-1">
+          <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2.5 rounded-card">Cancelar</button>
+          <button onClick={guardar} disabled={guardando} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-2.5 rounded-card flex items-center justify-center gap-2">
+            {guardando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Crear y abrir
+          </button>
+        </div>
+        {mapaAbierto && (
+          <MapaPickerModal initialLat={lat} initialLng={lng} onCerrar={() => setMapaAbierto(false)} onSelect={(la, ln) => { setLat(la); setLng(ln); setMapaAbierto(false); }} />
+        )}
+      </div>
     </div>
   );
 }

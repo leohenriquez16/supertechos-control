@@ -20,8 +20,9 @@
 //   - allValues: objeto con todos los valores del bloque/sección (para show_if y computed)
 
 import React, { useState, useRef } from 'react';
-import { Star, Camera, Plus, Trash2, Calculator, X, Mic, Square } from 'lucide-react';
+import { Star, Camera, Plus, Trash2, Calculator, X, Mic, Square, MapPin } from 'lucide-react';
 import PhotoCapture from './PhotoCapture';
+import MapaPickerModal from '../common/MapaPickerModal';
 
 export default function SurveyFieldRenderer({ field, value, onChange, allValues = {}, context = {} }) {
   // Soporte de show_if simple: "field_id == valor" o "field_id == true"
@@ -269,6 +270,9 @@ export default function SurveyFieldRenderer({ field, value, onChange, allValues 
     case 'voice_note':
       return <VoiceNoteField field={field} value={value} onChange={onChange} />;
 
+    case 'map_point':
+      return <MapPointField field={field} value={value} onChange={onChange} context={context} />;
+
     case 'measurement_table':
       return <MeasurementTableField field={field} value={value} onChange={onChange} />;
 
@@ -295,6 +299,41 @@ export default function SurveyFieldRenderer({ field, value, onChange, allValues 
         </div>
       );
   }
+}
+
+// ============================================================
+// MapPoint — marca la ubicación del área en el mapa (PIN). Valor: {lat, lng}.
+// ============================================================
+function MapPointField({ field, value, onChange, context }) {
+  const [abierto, setAbierto] = useState(false);
+  const v = value && value.lat != null ? value : null;
+  return (
+    <div>
+      <div className="flex items-center gap-1 mb-1">
+        <span className="text-[11px] uppercase tracking-wider text-zinc-400 font-bold">{field.label || 'Ubicación en el mapa'}</span>
+        {field.required && <span className="text-red-500 text-[11px]">*</span>}
+      </div>
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={() => setAbierto(true)} className="flex items-center gap-1.5 bg-zinc-900 border-2 border-zinc-800 hover:border-red-600 rounded-card px-3 py-2 text-sm text-zinc-200">
+          <MapPin className="w-4 h-4 text-red-500" /> {v ? 'Editar punto' : 'Marcar en el mapa'}
+        </button>
+        {v && (
+          <>
+            <span className="text-[11px] text-green-300">{Number(v.lat).toFixed(5)}, {Number(v.lng).toFixed(5)}</span>
+            <button type="button" onClick={() => onChange(null)} className="text-zinc-500 hover:text-red-400"><X className="w-3.5 h-3.5" /></button>
+          </>
+        )}
+      </div>
+      {abierto && (
+        <MapaPickerModal
+          initialLat={v?.lat ?? context?.siteLat}
+          initialLng={v?.lng ?? context?.siteLng}
+          onSelect={(la, ln) => { onChange({ lat: la, lng: ln }); setAbierto(false); }}
+          onCerrar={() => setAbierto(false)}
+        />
+      )}
+    </div>
+  );
 }
 
 // ============================================================

@@ -356,6 +356,8 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
               visitId={visit?.id}
               tiposArea={tiposArea}
               tipoLabel={tipoLabel}
+              siteLat={site?.latitude != null ? Number(site.latitude) : null}
+              siteLng={site?.longitude != null ? Number(site.longitude) : null}
             />
           ))}
 
@@ -426,7 +428,7 @@ function SeccionGeneral({ seccion, values, onChange, visitId, excluirIds = [] })
 // ============================================================
 // Bloque repetible (N areas)
 // ============================================================
-function BloqueRepetible({ bloque, areas, onAgregar, onCambioCampo, onRenombrar, onEliminar, supportsSimilar, visitId, tiposArea = [], tipoLabel = 'Tipo' }) {
+function BloqueRepetible({ bloque, areas, onAgregar, onCambioCampo, onRenombrar, onEliminar, supportsSimilar, visitId, tiposArea = [], tipoLabel = 'Tipo', siteLat = null, siteLng = null }) {
   return (
     <div className="border-b border-zinc-800">
       <div className="bg-zinc-900 px-4 py-2 flex items-center justify-between">
@@ -459,6 +461,8 @@ function BloqueRepetible({ bloque, areas, onAgregar, onCambioCampo, onRenombrar,
           tiposArea={tiposArea}
           tipoLabel={tipoLabel}
           onAgregarSiguiente={onAgregar}
+          siteLat={siteLat}
+          siteLng={siteLng}
         />
       ))}
       {/* v8.23.5: agregar otra sección al final del formulario */}
@@ -473,7 +477,7 @@ function BloqueRepetible({ bloque, areas, onAgregar, onCambioCampo, onRenombrar,
   );
 }
 
-function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, supportsSimilar, visitId, areasAnteriores = [], tiposArea = [], tipoLabel = 'Tipo', onAgregarSiguiente }) {
+function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, supportsSimilar, visitId, areasAnteriores = [], tiposArea = [], tipoLabel = 'Tipo', onAgregarSiguiente, siteLat = null, siteLng = null }) {
   const [colapsado, setColapsado] = useState(false);
   const nombreInputRef = useRef(null);
   const esSimilar = !!area.similar_to_area_id;
@@ -648,7 +652,7 @@ function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, suppor
               value={(area.data || {})[f.id]}
               onChange={(v) => onCambioCampo(f.id, v)}
               allValues={area.data || {}}
-              context={{ visitId, areaId: area.id }}
+              context={{ visitId, areaId: area.id, siteLat, siteLng }}
             />
           ))}
 

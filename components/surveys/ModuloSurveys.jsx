@@ -9,9 +9,10 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Loader2, Plus, MapPin, Building, ChevronRight, ArrowLeft, List, Map as MapIcon, LayoutGrid, Search, User as UserIcon, Calendar } from 'lucide-react';
-import { listarProyectosSurveys, listarSitesProyectoSurvey, listarTodosLosSitesSurvey, COMPANIES, PROJECT_STATUS, SITE_STATUS, SERVICE_LINES, ESCALERA } from '../../lib/surveys';
+import { listarProyectosSurveys, listarSitesProyectoSurvey, listarTodosLosSitesSurvey, crearSiteSurvey, COMPANIES, PROJECT_STATUS, SITE_STATUS, SERVICE_LINES, ESCALERA } from '../../lib/surveys';
 import * as db from '../../lib/db';
 import MapaLeaflet from '../common/MapaLeaflet';
+import MapaPickerModal from '../common/MapaPickerModal';
 import ServiceLineBadge from './ServiceLineBadge';
 import SurveySiteDetail from './SurveySiteDetail';
 import SurveySitesMap from './SurveySitesMap';
@@ -62,6 +63,7 @@ export default function ModuloSurveys({ usuario, data }) {
           proyecto={proyectoActivo}
           usuario={usuario}
           data={data}
+          onVerEdificaciones={() => { setSiteDirecto(false); setSiteActivo(null); setSubvista('proyecto'); }}
           onVolver={() => {
             if (siteDirecto) { setSubvista('lista'); setSiteActivo(null); setProyectoActivo(null); }
             else { setSubvista('proyecto'); setSiteActivo(null); }
@@ -486,25 +488,15 @@ function SurveyProjectDetail({ proyecto, onAbrirSite, onVolver }) {
   const [sites, setSites] = useState([]);
   const [errorMsg, setErrorMsg] = useState(null);
   const [vistaSites, setVistaSites] = useState('lista'); // 'lista' | 'mapa'
+  const [modalEdif, setModalEdif] = useState(false);
 
-  useEffect(() => {
-    let cancelado = false;
-    (async () => {
-      setLoading(true);
-      try {
-        const data = await listarSitesProyectoSurvey(proyecto.id);
-        if (!cancelado) {
-          setSites(data);
-          setErrorMsg(null);
-        }
-      } catch (e) {
-        if (!cancelado) setErrorMsg(e?.message || String(e));
-      } finally {
-        if (!cancelado) setLoading(false);
-      }
-    })();
-    return () => { cancelado = true; };
-  }, [proyecto.id]);
+  const recargar = async () => {
+    setLoading(true);
+    try { setSites(await listarSitesProyectoSurvey(proyecto.id)); setErrorMsg(null); }
+    catch (e) { setErrorMsg(e?.message || String(e)); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { recargar(); /* eslint-disable-next-line */ }, [proyecto.id]);
 
   const stats = {
     total: sites.length,
@@ -554,10 +546,13 @@ function SurveyProjectDetail({ proyecto, onAbrirSite, onVolver }) {
 
       {!loading && !errorMsg && (
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">
-              Sitios ({sites.length})
+              Edificaciones ({sites.length})
             </div>
+            <button onClick={() => setModalEdif(true)} className="bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-card flex items-center gap-1">
+              <Plus className="w-3 h-3" /> Agregar edificación
+            </button>
             <div className="flex border border-zinc-800">
               <button
                 onClick={() => setVistaSites('lista')}
@@ -591,6 +586,84 @@ function SurveyProjectDetail({ proyecto, onAbrirSite, onVolver }) {
           )}
         </div>
       )}
+
+      {modalEdif && (
+        <ModalNuevaEdificacion
+          proyecto={proyecto}
+          onCerrar={() => setModalEdif(false)}
+          onCreada={async (site) => { setModalEdif(false); await recargar(); onAbrirSite(site); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Crear una edificación (site) dentro del levantamiento.
+function ModalNuevaEdificacion({ proyecto, onCerrar, onCreada }) {
+  const [nombre, setNombre] = useState('');
+  const [direccion, setDireccion] = useState('');
+  const [lat, setLat] = useState(null);
+  const [lng, setLng] = useState(null);
+  const [contacto, setContacto] = useState('');
+  const [telefono, setTelefono] = useState('');
+  const [mapaAbierto, setMapaAbierto] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState(null);
+
+  const guardar = async () => {
+    if (!nombre.trim()) { setError('Ponle un nombre a la edificación.'); return; }
+    setGuardando(true); setError(null);
+    try {
+      const site = await crearSiteSurvey({
+        projectId: proyecto.id,
+        name: nombre.trim(),
+        address: direccion.trim() || null,
+        latitude: lat, longitude: lng,
+        contactName: contacto.trim() || null,
+        mobilePhone: telefono.trim() || null,
+        clienteId: proyecto.cliente_id || null,
+        ubicacionId: proyecto.ubicacion_id || null,
+        surveyStatus: 'pending',
+      });
+      onCreada?.(site);
+    } catch (e) { setError(e?.message || String(e)); setGuardando(false); }
+  };
+
+  const inp = 'w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm';
+  return (
+    <div className="fixed inset-0 bg-black/80 z-[60] flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto" onClick={onCerrar}>
+      <div className="bg-zinc-950 border-2 border-red-600 rounded-card w-full max-w-md my-4 p-4 space-y-3" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-bold">Nueva edificación</div>
+          <button onClick={onCerrar} className="text-zinc-500 hover:text-white"><Plus className="w-4 h-4 rotate-45" /></button>
+        </div>
+        <div>
+          <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1.5">Nombre de la edificación *</div>
+          <input value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Ej: Edificio A, Torre, Caseta, Nave 2…" className={inp} />
+        </div>
+        <div>
+          <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1.5">Dirección / referencia</div>
+          <input value={direccion} onChange={e => setDireccion(e.target.value)} placeholder="Opcional" className={inp} />
+        </div>
+        <div className="flex items-center gap-3">
+          <button onClick={() => setMapaAbierto(true)} className="text-[11px] text-red-400 hover:text-red-300 font-bold flex items-center gap-1"><MapPin className="w-3.5 h-3.5" /> Marcar en el mapa</button>
+          {lat != null && <span className="text-[11px] text-green-300">{Number(lat).toFixed(5)}, {Number(lng).toFixed(5)}</span>}
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <input value={contacto} onChange={e => setContacto(e.target.value)} placeholder="Contacto (opcional)" className={inp} />
+          <input value={telefono} onChange={e => setTelefono(e.target.value)} placeholder="Teléfono" className={inp} />
+        </div>
+        {error && <div className="bg-red-900/20 border border-red-700 rounded-card text-red-300 p-2 text-xs">{error}</div>}
+        <div className="flex gap-2 pt-1">
+          <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2.5 rounded-card">Cancelar</button>
+          <button onClick={guardar} disabled={guardando} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-2.5 rounded-card flex items-center justify-center gap-2">
+            {guardando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Crear y abrir
+          </button>
+        </div>
+        {mapaAbierto && (
+          <MapaPickerModal initialLat={lat} initialLng={lng} onCerrar={() => setMapaAbierto(false)} onSelect={(la, ln) => { setLat(la); setLng(ln); setMapaAbierto(false); }} />
+        )}
+      </div>
     </div>
   );
 }

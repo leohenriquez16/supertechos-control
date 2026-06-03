@@ -21,7 +21,7 @@ import { imprimirLevantamiento } from './imprimirLevantamiento';
 import ChatterPanel from '../common/ChatterPanel';
 import { registrarEvento as chatterEventoSurvey } from '../../lib/chatter';
 
-export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolver }) {
+export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolver, onVerEdificaciones }) {
   const [formAbierto, setFormAbierto] = useState(false);
   const [puntosAbierto, setPuntosAbierto] = useState(false); // v8.19.82
   const [estimacionAbierta, setEstimacionAbierta] = useState(false); // v8.19.83
@@ -114,9 +114,16 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
 
   return (
     <div className="space-y-4">
-      <button onClick={onVolver} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm">
-        <ArrowLeft className="w-4 h-4" /> Volver a sitios
-      </button>
+      <div className="flex items-center justify-between gap-2">
+        <button onClick={onVolver} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm">
+          <ArrowLeft className="w-4 h-4" /> Volver
+        </button>
+        {onVerEdificaciones && (
+          <button onClick={onVerEdificaciones} className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-3 py-1.5 rounded-card">
+            <Building className="w-3.5 h-3.5" /> Edificaciones / ＋ agregar
+          </button>
+        )}
+      </div>
 
       {/* Header */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-3">

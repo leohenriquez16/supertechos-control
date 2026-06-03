@@ -29,10 +29,20 @@ async function obtenerAuthUserIdActual() {
 
 const nuevaAreaVacia = () => ({ id: 'ar_' + Date.now() + Math.random().toString(36).slice(2, 5), nombre: '', m2: '', sistemaId: '' });
 
+// v8.20.4: familias de servicio — para elegir por categoría cuando no se conoce
+// el servicio exacto. Cada familia agrupa varios service_line (templates).
+const FAMILIAS = [
+  { key: 'pisos',       label: 'Pisos',                      lines: ['epoxy_floor', 'urethane_cement', 'concrete_polishing', 'concrete_repair'] },
+  { key: 'pintura',     label: 'Pintura',                    lines: ['paint'] },
+  { key: 'impermeable', label: 'Impermeabilizante / Aislante', lines: ['waterproofing', 'thermal_insulation'] },
+];
+const familiaDeLine = (line) => FAMILIAS.find(f => f.lines.includes(line))?.key || null;
+
 export default function ModalLevantamientoSimple({ usuario, clientes = [], sistemas = {}, onCerrar, onCreado }) {
   const [templates, setTemplates] = useState([]);
   const [loadingTpl, setLoadingTpl] = useState(true);
   const [templateId, setTemplateId] = useState('');
+  const [familiaKey, setFamiliaKey] = useState(null); // 'pisos' | 'pintura' | 'impermeable'
   const [company, setCompany] = useState('super_techos');
 
   // Cliente (de la lista)
@@ -98,6 +108,12 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], siste
   }, []);
 
   const templateActual = templates.find(t => t.id === templateId);
+  const templatesFamilia = familiaKey ? templates.filter(t => familiaDeLine(t.service_line) === familiaKey) : [];
+  const seleccionarFamilia = (key) => {
+    setFamiliaKey(key);
+    const tpls = templates.filter(t => familiaDeLine(t.service_line) === key);
+    setTemplateId(tpls[0]?.id || ''); // por defecto el primero de la familia (si no conoce el específico)
+  };
   const clienteNombreFinal = (clienteNombre || clienteQuery).trim();
   const puedeGuardar = !!templateId && clienteNombreFinal.length > 0 && !guardando;
 
@@ -290,30 +306,56 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], siste
         </div>
 
         <div className="p-4 space-y-4">
-          {/* Tipo de servicio */}
+          {/* Tipo de servicio — por familia (si no conoces el específico) */}
           <div>
             <div className={labCls}>Tipo de servicio *</div>
             {loadingTpl ? (
               <div className="flex items-center gap-2 text-zinc-500 text-sm py-2"><Loader2 className="w-4 h-4 animate-spin" /> Cargando…</div>
             ) : (
-              <div className="grid grid-cols-2 gap-1.5">
-                {templates.map(t => {
-                  const activo = templateId === t.id;
-                  return (
-                    <button
-                      key={t.id}
-                      onClick={() => setTemplateId(t.id)}
-                      className={`text-left px-2.5 py-2 rounded-card border text-xs ${activo ? 'border-red-600 bg-red-900/20' : 'border-zinc-800 bg-zinc-900 hover:border-zinc-700'}`}
-                    >
-                      <div className="flex items-center justify-between gap-1">
-                        <ServiceLineBadge serviceLine={t.service_line} />
-                        {activo && <Check className="w-3 h-3 text-red-400" />}
-                      </div>
-                      <div className="font-bold mt-1 truncate">{t.name}</div>
-                    </button>
-                  );
-                })}
-              </div>
+              <>
+                {/* Familia */}
+                <div className="grid grid-cols-3 gap-1.5">
+                  {FAMILIAS.map(f => {
+                    const activo = familiaKey === f.key;
+                    const disponibles = templates.some(t => familiaDeLine(t.service_line) === f.key);
+                    return (
+                      <button
+                        key={f.key}
+                        onClick={() => disponibles && seleccionarFamilia(f.key)}
+                        disabled={!disponibles}
+                        className={`px-2 py-2.5 rounded-card border text-xs font-bold text-center leading-tight ${activo ? 'border-red-600 bg-red-900/20 text-white' : 'border-zinc-800 bg-zinc-900 text-zinc-300 hover:border-zinc-700'} disabled:opacity-40`}
+                      >
+                        {f.label}
+                        {activo && <Check className="w-3 h-3 text-red-400 inline ml-1 -mt-0.5" />}
+                      </button>
+                    );
+                  })}
+                </div>
+                {/* Refinamiento dentro de la familia (opcional) */}
+                {familiaKey && templatesFamilia.length > 1 && (
+                  <div className="mt-2">
+                    <div className="text-[10px] text-zinc-500 mb-1">¿Sabes el específico? (opcional — si no, usamos el general)</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {templatesFamilia.map(t => {
+                        const activo = templateId === t.id;
+                        return (
+                          <button
+                            key={t.id}
+                            onClick={() => setTemplateId(t.id)}
+                            className={`px-2.5 py-1.5 rounded-card border text-[11px] flex items-center gap-1 ${activo ? 'border-red-600 bg-red-900/20 text-white' : 'border-zinc-800 bg-zinc-900 text-zinc-400 hover:border-zinc-700'}`}
+                          >
+                            <ServiceLineBadge serviceLine={t.service_line} />
+                            {activo && <Check className="w-3 h-3 text-red-400" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                {familiaKey && templatesFamilia.length === 1 && (
+                  <div className="mt-1.5 text-[11px] text-zinc-500">{templatesFamilia[0]?.name}</div>
+                )}
+              </>
             )}
           </div>
 

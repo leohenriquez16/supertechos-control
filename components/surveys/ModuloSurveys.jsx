@@ -44,6 +44,7 @@ export default function ModuloSurveys({ usuario, data }) {
       {subvista === 'lista' && (
         <SurveysList
           usuario={usuario}
+          data={data}
           onAbrirProyecto={abrirProyecto}
           onAbrirSiteDirecto={(p, s) => { setProyectoActivo(p); setSiteActivo(s); setSiteDirecto(true); setSubvista('site'); }}
         />
@@ -74,7 +75,7 @@ export default function ModuloSurveys({ usuario, data }) {
 // ============================================================
 // LISTA DE PROYECTOS
 // ============================================================
-function SurveysList({ usuario, onAbrirProyecto, onAbrirSiteDirecto }) {
+function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto }) {
   const [loading, setLoading] = useState(true);
   const [proyectos, setProyectos] = useState([]);
   const [errorMsg, setErrorMsg] = useState(null);
@@ -209,6 +210,8 @@ function SurveysList({ usuario, onAbrirProyecto, onAbrirSiteDirecto }) {
       {modalSimpleAbierto && (
         <ModalLevantamientoSimple
           usuario={usuario}
+          clientes={data?.clientes || []}
+          sistemas={data?.sistemas || {}}
           onCerrar={() => setModalSimpleAbierto(false)}
           onCreado={({ proyecto, site }) => {
             setModalSimpleAbierto(false);

@@ -84,20 +84,26 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
     return () => { cancel = true; };
   }, []);
   const familiaActual = familiaDeServiceLine(tipoServiceLine);
-  const cambiarTipoFamilia = async (familiaKey) => {
-    // Template por defecto de la familia (primero disponible).
-    const fam = FAMILIAS_SERVICIO.find(f => f.key === familiaKey);
-    const tpl = tpls.find(t => fam?.lines.includes(t.service_line)) || tpls.find(t => t.service_line === 'other');
-    if (!tpl) { alert('No hay plantilla para ese tipo.'); return; }
+  // Templates específicos de la familia activa (ej. Impermeabilización / Aislamiento Térmico).
+  const tplsFamiliaActual = familiaActual ? tpls.filter(t => familiaDeServiceLine(t.service_line) === familiaActual) : [];
+  // Aplica un template específico (define el formulario de captura).
+  const aplicarTemplate = async (tpl) => {
+    if (!tpl || tpl.id === tipoTemplateId) return;
     setCambiandoTipo(true);
     const prevLabel = SERVICE_LINES[tipoServiceLine]?.label || 'Sin tipo';
     try {
       await actualizarTipoProyectoSurvey(proyecto.id, tpl.service_line, tpl.id);
       setTipoServiceLine(tpl.service_line); setTipoTemplateId(tpl.id);
-      const nuevoLabel = SERVICE_LINES[tpl.service_line]?.label || (familiaKey === 'generico' ? 'Genérico' : familiaKey);
+      const nuevoLabel = SERVICE_LINES[tpl.service_line]?.label || tpl.service_line;
       try { await chatterEventoSurvey('levantamiento', proyecto.id, `Cambió el tipo: ${prevLabel} → ${nuevoLabel}`, usuario); } catch {}
     } catch (e) { alert('Error: ' + (e.message || e)); }
     setCambiandoTipo(false);
+  };
+  const cambiarTipoFamilia = async (familiaKey) => {
+    const fam = FAMILIAS_SERVICIO.find(f => f.key === familiaKey);
+    const tpl = tpls.find(t => fam?.lines.includes(t.service_line)) || tpls.find(t => t.service_line === 'other');
+    if (!tpl) { alert('No hay plantilla para ese tipo.'); return; }
+    await aplicarTemplate(tpl);
   };
   // Proyecto con el tipo actualizado para la captura (DynamicSurveyForm lee template_id).
   const proyectoConTipo = { ...proyecto, service_line: tipoServiceLine, template_id: tipoTemplateId };
@@ -242,10 +248,27 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
             );
           })}
         </div>
+        {/* Sub-selector: cuando la familia tiene varios formularios (ej. Impermeabilización vs Aislamiento) */}
+        {tplsFamiliaActual.length > 1 && (
+          <div className="mt-2">
+            <div className="text-[10px] uppercase tracking-wide text-zinc-500 font-bold mb-1">Formulario de captura</div>
+            <div className="flex flex-wrap gap-1.5">
+              {tplsFamiliaActual.map(t => {
+                const activo = tipoTemplateId === t.id;
+                return (
+                  <button key={t.id} onClick={() => !activo && aplicarTemplate(t)} disabled={cambiandoTipo}
+                    className={`px-2.5 py-1.5 rounded-card border text-[11px] font-bold flex items-center gap-1 ${activo ? 'border-red-600 bg-red-900/30 text-white' : 'border-zinc-800 bg-zinc-950 text-zinc-400 hover:border-zinc-700'}`}>
+                    {SERVICE_LINES[t.service_line]?.label || t.service_line}{activo && <Check className="w-3 h-3 text-red-400" />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
         <div className="text-[10px] text-zinc-500 mt-1.5">
           {familiaActual === 'generico' || !familiaActual
             ? 'Sin tipo definido (genérico). Elige una familia; el tipo específico se elige por área al capturar.'
-            : `Actual: ${SERVICE_LINES[tipoServiceLine]?.label || tipoServiceLine}. El específico se elige por área al capturar.`}
+            : `Actual: ${SERVICE_LINES[tipoServiceLine]?.label || tipoServiceLine}. El formulario de captura corresponde a este tipo.`}
         </div>
       </div>
 

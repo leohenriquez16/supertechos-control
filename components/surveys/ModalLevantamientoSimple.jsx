@@ -15,6 +15,7 @@ import { listarUbicacionesCliente, crearUbicacionCliente, setAreasUbicacionClien
 import { obtenerUbicacion } from '../../lib/geo';
 import { expandirYExtraer } from '../../lib/geoutils';
 import ServiceLineBadge from './ServiceLineBadge';
+import MapaPickerModal from '../common/MapaPickerModal';
 
 // Helper local (convención del repo: helpers locales para evitar imports circulares).
 async function obtenerAuthUserIdActual() {
@@ -70,6 +71,7 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], siste
   const [extrayendo, setExtrayendo] = useState(false);
   const [origenUbicacion, setOrigenUbicacion] = useState(null); // 'link' | 'gps' | 'guardada'
   const [gpsCargando, setGpsCargando] = useState(false);
+  const [mapaAbierto, setMapaAbierto] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
 
@@ -459,14 +461,19 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], siste
                   </div>
                   {lat != null && (
                     <div className="mt-1.5 flex items-center justify-between gap-2 bg-green-900/20 border border-green-700/50 rounded-card px-2 py-1.5 text-[11px]">
-                      <span className="flex items-center gap-1 text-green-300"><MapPin className="w-3 h-3" /> {Number(lat).toFixed(5)}, {Number(lng).toFixed(5)} <span className="text-green-600/70 uppercase text-[9px]">· {origenUbicacion === 'gps' ? 'GPS' : origenUbicacion === 'guardada' ? 'guardada' : 'link'}</span></span>
+                      <span className="flex items-center gap-1 text-green-300"><MapPin className="w-3 h-3" /> {Number(lat).toFixed(5)}, {Number(lng).toFixed(5)} <span className="text-green-600/70 uppercase text-[9px]">· {origenUbicacion === 'gps' ? 'GPS' : origenUbicacion === 'guardada' ? 'guardada' : origenUbicacion === 'mapa' ? 'mapa' : 'link'}</span></span>
                       <button onClick={() => { setLat(null); setLng(null); setOrigenUbicacion(null); }} className="text-zinc-500 hover:text-red-400"><X className="w-3 h-3" /></button>
                     </div>
                   )}
-                  <button onClick={capturarGps} disabled={gpsCargando} className="mt-1 text-[10px] text-zinc-500 hover:text-zinc-300 flex items-center gap-1">
-                    {gpsCargando ? <Loader2 className="w-3 h-3 animate-spin" /> : <Crosshair className="w-3 h-3" />}
-                    o capturar mi GPS actual
-                  </button>
+                  <div className="mt-1 flex items-center gap-3">
+                    <button onClick={() => setMapaAbierto(true)} className="text-[10px] text-red-400 hover:text-red-300 font-bold flex items-center gap-1">
+                      <MapPin className="w-3 h-3" /> Elegir en el mapa
+                    </button>
+                    <button onClick={capturarGps} disabled={gpsCargando} className="text-[10px] text-zinc-500 hover:text-zinc-300 flex items-center gap-1">
+                      {gpsCargando ? <Loader2 className="w-3 h-3 animate-spin" /> : <Crosshair className="w-3 h-3" />}
+                      o capturar mi GPS actual
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -519,6 +526,15 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], siste
           </button>
         </div>
       </div>
+
+      {mapaAbierto && (
+        <MapaPickerModal
+          initialLat={lat}
+          initialLng={lng}
+          onCerrar={() => setMapaAbierto(false)}
+          onSelect={(la, ln) => { setLat(la); setLng(ln); setOrigenUbicacion('mapa'); setMapaAbierto(false); }}
+        />
+      )}
     </div>
   );
 }

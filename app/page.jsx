@@ -41,6 +41,7 @@ import MiProduccionCard from '../components/dashboard/MiProduccionCard';
 import Sidebar from '../components/sidebar/Sidebar';
 import ToastContainer from '../components/common/ToastContainer';
 import ChatterPanel from '../components/common/ChatterPanel';
+import SettingsNotificaciones from '../components/settings/SettingsNotificaciones';
 import { registrarCreacion as chatterCreacion, registrarCambioEstado as chatterEstado } from '../lib/chatter';
 // v8.10.4: Campo e Input extraídos
 import Campo from '../components/common/Campo';
@@ -738,6 +739,7 @@ export default function App() {
       { id: 'ubicaciones', label: 'Ubicaciones', icon: MapPin, vista: 'ubicaciones' },
       { id: 'garantias', label: 'Garantías', icon: CheckCircle2, vista: 'garantias' },
       { id: 'personal', label: 'Personal', icon: UserIcon, vista: 'personal' },
+      { id: 'notificaciones', label: 'Notificaciones', icon: Mail, vista: 'notificaciones' },
       { id: 'estadisticasPersonal', label: 'Estadísticas', icon: TrendingUp, vista: 'estadisticasPersonal' },
     ]},
     { seccion: 'PLANIFICACIÓN', colapsable: true, items: [
@@ -878,6 +880,7 @@ export default function App() {
         {esAdmin && vista === 'sistemas' && <GestionSistemas sistemas={data.sistemas} config={data.config} dataGlobal={data} onVolver={() => setVista('dashboard')} onActualizarSistemas={(s) => withSync(() => db.guardarSistemas(s))} onActualizarConfig={(c) => withSync(() => db.guardarConfig(c))} />}
         {esAdmin && vista === 'clientes' && <GestionClientes clientes={data.clientes || []} contactos={data.contactos || []} proyectos={data.proyectos || []} usuario={usuario} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
         {esAdmin && vista === 'ubicaciones' && <VistaUbicaciones data={data} usuario={usuario} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
+        {esAdmin && vista === 'notificaciones' && <SettingsNotificaciones usuario={usuario} onVolver={() => setVista('dashboard')} />}
         {esAdmin && vista === 'garantias' && <VistaGarantias data={data} usuario={usuario} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {esAdmin && vista === 'reclamaciones' && <ModuloReclamaciones data={data} usuario={usuario} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {esAdmin && vista === 'nuevoProyecto' && <NuevoProyecto personal={data.personal} sistemas={data.sistemas} clientes={data.clientes || []} contactos={data.contactos || []} proyectos={data.proyectos || []} onCancelar={() => setVista('dashboard')} onCrear={(proy) => withSync(async () => {

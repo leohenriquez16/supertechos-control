@@ -458,13 +458,22 @@ function BloqueRepetible({ bloque, areas, onAgregar, onCambioCampo, onRenombrar,
           areasAnteriores={areas.slice(0, idx)}
           tiposArea={tiposArea}
           tipoLabel={tipoLabel}
+          onAgregarSiguiente={onAgregar}
         />
       ))}
+      {/* v8.23.5: agregar otra sección al final del formulario */}
+      {areas.length > 0 && (
+        <div className="px-4 py-3 border-t border-zinc-800">
+          <button onClick={onAgregar} className="w-full bg-red-600 hover:bg-red-700 text-white text-xs font-bold uppercase tracking-wider py-2.5 rounded-card flex items-center justify-center gap-1">
+            <Plus className="w-3.5 h-3.5" /> {bloque.block_label || 'Agregar otra sección'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
-function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, supportsSimilar, visitId, areasAnteriores = [], tiposArea = [], tipoLabel = 'Tipo' }) {
+function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, supportsSimilar, visitId, areasAnteriores = [], tiposArea = [], tipoLabel = 'Tipo', onAgregarSiguiente }) {
   const [colapsado, setColapsado] = useState(false);
   const nombreInputRef = useRef(null);
   const esSimilar = !!area.similar_to_area_id;
@@ -640,11 +649,16 @@ function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, suppor
             />
           ))}
 
-          {/* v8.23.1: guardar y colapsar el área (los datos ya se autoguardan) */}
-          <div className="pt-1">
-            <button type="button" onClick={() => setColapsado(true)} className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-xs font-bold uppercase py-2.5 rounded-card flex items-center justify-center gap-1">
-              <Check className="w-3.5 h-3.5" /> Guardar y cerrar área
+          {/* v8.23.1/8.23.5: guardar y colapsar el área; o guardar y agregar otra (datos ya autoguardados) */}
+          <div className="pt-1 flex gap-2">
+            <button type="button" onClick={() => setColapsado(true)} className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-xs font-bold uppercase py-2.5 rounded-card flex items-center justify-center gap-1">
+              <Check className="w-3.5 h-3.5" /> Guardar y cerrar
             </button>
+            {onAgregarSiguiente && (
+              <button type="button" onClick={() => { setColapsado(true); onAgregarSiguiente(); }} className="flex-1 bg-red-600 hover:bg-red-700 text-white text-xs font-bold uppercase py-2.5 rounded-card flex items-center justify-center gap-1">
+                <Plus className="w-3.5 h-3.5" /> Guardar y agregar otra
+              </button>
+            )}
           </div>
         </div>
       )}

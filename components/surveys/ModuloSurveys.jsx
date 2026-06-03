@@ -8,7 +8,7 @@
 // proyecto + sites + DynamicSurveyForm + photos.
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Loader2, Plus, MapPin, Building, ChevronRight, ArrowLeft, List, Map as MapIcon, LayoutGrid, Search, User as UserIcon, Calendar } from 'lucide-react';
+import { Loader2, Plus, MapPin, Building, ChevronRight, ArrowLeft, List, Map as MapIcon, LayoutGrid, Search, User as UserIcon, Calendar, Mail, MessageCircle, Clock, ArrowLeftRight } from 'lucide-react';
 import { listarProyectosSurveys, listarSitesProyectoSurvey, listarTodosLosSitesSurvey, crearSiteSurvey, COMPANIES, PROJECT_STATUS, SITE_STATUS, SERVICE_LINES, ESCALERA } from '../../lib/surveys';
 import * as db from '../../lib/db';
 import MapaLeaflet from '../common/MapaLeaflet';
@@ -94,6 +94,9 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto }) {
   const [fEstado, setFEstado] = useState('');
   const [fLevantador, setFLevantador] = useState('');
   const [recs, setRecs] = useState([]); // v8.19.85: reclamaciones para el calendario
+  const esAdmin = (usuario?.roles || []).includes('admin') || (usuario?.roles || []).includes('owner');
+  const [ordenCols, setOrdenCols] = useState(data?.config?.kanbanLevOrden || null); // orden custom de etapas
+  const [editandoEtapas, setEditandoEtapas] = useState(false);
 
   useEffect(() => {
     let cancelado = false;
@@ -124,10 +127,20 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto }) {
   const MAP_STATUS_ODOO = { planning: 'New', survey_in_progress: 'Asignado', survey_completed: 'Realizado', quoted: 'Cotizacion Realizada', awarded: 'Cotizacion Realizada', in_execution: 'Realizado', completed: 'Realizado', cancelled: 'No se pudo coordinar' };
   const estadoDe = (p) => p.odoo_stage || MAP_STATUS_ODOO[p.status] || 'New';
   const columnasKanban = React.useMemo(() => {
-    // Pipeline completo de Odoo en orden + cualquier estado extra (ERP) al final.
-    const extras = [...new Set(proyectos.map(estadoDe))].filter(e => !ORDEN_ODOO.includes(e));
-    return [...ORDEN_ODOO, ...extras];
-  }, [proyectos]);
+    // Orden: custom del admin (si existe) → pipeline Odoo → etapas extra presentes.
+    const presentes = [...new Set(proyectos.map(estadoDe))];
+    const base = (ordenCols && ordenCols.length) ? ordenCols : ORDEN_ODOO;
+    const extras = [...new Set([...ORDEN_ODOO, ...presentes])].filter(e => !base.includes(e));
+    return [...base, ...extras];
+  }, [proyectos, ordenCols]);
+  const moverCol = async (e, dir) => {
+    const arr = [...columnasKanban];
+    const i = arr.indexOf(e); const j = i + dir;
+    if (i < 0 || j < 0 || j >= arr.length) return;
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+    setOrdenCols(arr);
+    try { await db.setKanbanLevOrden(arr); } catch (err) { console.warn('guardar orden etapas:', err?.message); }
+  };
   // Coords por proyecto (del primer site con GPS).
   const coordsProy = React.useMemo(() => {
     const m = {};
@@ -141,6 +154,33 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto }) {
     return m;
   }, [sites]);
   const levantadorDe = (p) => p.asignado_a_nombre || '(Sin asignar)';
+
+  // v8.25.0: info para la tarjeta — cliente, contacto principal y canal preferido.
+  const siteDeProy = React.useMemo(() => { const m = {}; for (const s of sites) { if (!m[s.project_id]) m[s.project_id] = s; } return m; }, [sites]);
+  const clientesData = data?.clientes || [];
+  const contactosData = data?.contactos || [];
+  const infoTarjeta = (p) => {
+    const site = siteDeProy[p.id];
+    const cli = clientesData.find(c => c.id === site?.cliente_id) || clientesData.find(c => (c.nombre || '').trim().toLowerCase() === (p.client_name || '').trim().toLowerCase());
+    const cts = contactosData.filter(c => c.clienteId === cli?.id);
+    const ppal = cts.find(c => c.esPrincipal) || cts[0];
+    const contacto = ppal?.nombre || site?.contact_name || '';
+    const ws = ppal?.whatsapp || ppal?.telefono || site?.mobile_phone || '';
+    const email = ppal?.email || '';
+    const canal = ppal?.prefComunicacion || (ws ? 'ws' : email ? 'email' : null);
+    return { cliente: p.client_name || cli?.nombre || '—', contacto, canal };
+  };
+  const tiempoEnEtapa = (p) => {
+    const iso = p.stage_changed_at || p.updated_at || p.created_at;
+    if (!iso) return '';
+    const ms = Date.now() - new Date(iso).getTime();
+    const h = Math.floor(ms / 3600000);
+    if (h < 1) return 'hoy';
+    if (h < 24) return `${h} h`;
+    const d = Math.floor(h / 24);
+    if (d < 30) return `${d} d`;
+    return `${Math.floor(d / 30)} mes`;
+  };
   // Filtro de búsqueda + filtros (cliente, levantamiento, servicio, empresa, estado, levantador).
   const proyFiltrados = React.useMemo(() => {
     const q = busqueda.toLowerCase().trim();
@@ -301,28 +341,56 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto }) {
           {vista === 'lista' ? (
             <SurveysTabla grupos={grupos} sitesPorProy={sitesPorProy} estadoDe={estadoDe} agrupado={agruparPor !== 'none'} onAbrir={onAbrirProyecto} />
           ) : vista === 'kanban' ? (
+            <>
+            {esAdmin && agruparPor === 'estado' && (
+              <div className="flex justify-end mb-2">
+                <button onClick={() => setEditandoEtapas(v => !v)} className={`text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-card border flex items-center gap-1 ${editandoEtapas ? 'border-red-600 bg-red-900/20 text-white' : 'border-zinc-700 text-zinc-400 hover:text-white'}`}>
+                  <ArrowLeftRight className="w-3.5 h-3.5" /> {editandoEtapas ? 'Listo' : 'Ordenar etapas'}
+                </button>
+              </div>
+            )}
             <div className="flex gap-3 overflow-x-auto pb-2">
               {columnasKanban.map(e => {
                 const items = proyFiltrados.filter(p => estadoDe(p) === e);
                 return (
                   <div key={e} className="w-60 flex-shrink-0 bg-zinc-950 border border-zinc-800 rounded-card">
-                    <div className="px-3 py-2 flex items-center justify-between border-b border-zinc-800">
-                      <span className="text-[10px] uppercase tracking-widest font-bold text-zinc-300 truncate">{e}</span>
-                      <span className="text-[9px] text-zinc-600">{items.length}</span>
+                    <div className="px-3 py-2 flex items-center justify-between border-b border-zinc-800 gap-1">
+                      {editandoEtapas && esAdmin && (
+                        <button onClick={() => moverCol(e, -1)} className="text-zinc-500 hover:text-white shrink-0" title="Mover a la izquierda"><ChevronRight className="w-3.5 h-3.5 rotate-180" /></button>
+                      )}
+                      <span className="text-[10px] uppercase tracking-widest font-bold text-zinc-300 truncate flex-1">{e}</span>
+                      {editandoEtapas && esAdmin ? (
+                        <button onClick={() => moverCol(e, 1)} className="text-zinc-500 hover:text-white shrink-0" title="Mover a la derecha"><ChevronRight className="w-3.5 h-3.5" /></button>
+                      ) : (
+                        <span className="text-[9px] text-zinc-600">{items.length}</span>
+                      )}
                     </div>
                     <div className="p-2 space-y-2 min-h-[50px]">
-                      {items.map(p => (
-                        <button key={p.id} onClick={() => onAbrirProyecto(p)} style={{ borderLeftColor: SERVICE_LINES[p.service_line]?.color || '#666', borderLeftWidth: '4px' }} className="w-full text-left bg-zinc-900 border border-zinc-800 rounded-card p-2.5 hover:border-red-600">
-                          <div className="flex items-center gap-1 mb-1 flex-wrap"><ServiceLineBadge serviceLine={p.service_line} />{p.requiere_escalera && <EscaleraBadge valor={p.requiere_escalera} />}</div>
-                          <div className="font-bold text-xs truncate">{p.client_name}</div>
-                          <div className="text-[10px] text-zinc-500 truncate">{p.name}</div>
-                        </button>
-                      ))}
+                      {items.map(p => {
+                        const info = infoTarjeta(p);
+                        return (
+                          <button key={p.id} onClick={() => onAbrirProyecto(p)} style={{ borderLeftColor: SERVICE_LINES[p.service_line]?.color || '#666', borderLeftWidth: '4px' }} className="w-full text-left bg-zinc-900 border border-zinc-800 rounded-card p-2.5 hover:border-red-600">
+                            <div className="flex items-start justify-between gap-1.5">
+                              <div className="min-w-0">
+                                <div className="font-bold text-xs truncate text-white">{info.cliente}</div>
+                                {info.contacto && <div className="text-[10px] text-zinc-400 truncate flex items-center gap-1"><UserIcon className="w-2.5 h-2.5 text-zinc-600" />{info.contacto}</div>}
+                              </div>
+                              {info.canal === 'ws' ? <MessageCircle className="w-4 h-4 text-green-500 shrink-0" title="WhatsApp" /> : info.canal === 'email' ? <Mail className="w-4 h-4 text-blue-400 shrink-0" title="Email" /> : null}
+                            </div>
+                            <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                              <ServiceLineBadge serviceLine={p.service_line} />
+                              {p.requiere_escalera && <EscaleraBadge valor={p.requiere_escalera} />}
+                              <span className="text-[9px] text-zinc-500 flex items-center gap-0.5 ml-auto" title="Tiempo en esta etapa"><Clock className="w-2.5 h-2.5" /> {tiempoEnEtapa(p)}</span>
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 );
               })}
             </div>
+            </>
           ) : vista === 'calendario' ? (
             <CalendarioLevantamientos proyectos={proyFiltrados} reclamaciones={recs} onReload={() => setReloadKey(k => k + 1)} onAbrir={onAbrirProyecto} />
           ) : (

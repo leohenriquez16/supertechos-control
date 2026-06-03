@@ -40,6 +40,8 @@ import MiProduccionCard from '../components/dashboard/MiProduccionCard';
 // v8.10.3: Sidebar extraído
 import Sidebar from '../components/sidebar/Sidebar';
 import ToastContainer from '../components/common/ToastContainer';
+import ChatterPanel from '../components/common/ChatterPanel';
+import { registrarCreacion as chatterCreacion, registrarCambioEstado as chatterEstado } from '../lib/chatter';
 // v8.10.4: Campo e Input extraídos
 import Campo from '../components/common/Campo';
 import Input from '../components/common/Input';
@@ -993,6 +995,7 @@ export default function App() {
           const proyLimpio = { ...proy };
           delete proyLimpio._pdfCotizacion;
           await db.crearProyecto({ ...proyLimpio, id: nuevoProyectoId });
+          try { await chatterCreacion('proyecto', nuevoProyectoId, usuario, `Creó el proyecto${proy.referenciaOdoo ? ' ' + proy.referenciaOdoo : ''}`); } catch {}
           // v8.17.58: persistir contactos asociados (principal + extras) en proyecto_contactos
           try {
             const ids = [proy.contactoPrincipalId, ...(proy.contactosExtraIds || [])].filter(Boolean);
@@ -1082,7 +1085,9 @@ export default function App() {
             onEliminarEnvio={async (id) => { if (confirm('¿Eliminar este envío de material?')) withSync(() => db.eliminarEnvio(id)); }}
             onEliminarJornada={async (id) => { if (confirm('¿Eliminar esta jornada?')) withSync(() => db.eliminarJornada(id)); }}
             onCambiarEstado={(proyId, estadoNuevo, nota, extra) => withSync(async () => {
+              const estadoPrev = data.proyectos.find(p => p.id === proyId)?.estado;
               await db.cambiarEstadoProyecto(proyId, estadoNuevo, usuario, nota, extra);
+              try { await chatterEstado('proyecto', proyId, estadoPrev, estadoNuevo, usuario, 'estado'); } catch {}
               // Cuando pasa a 'finalizado_no_entregado' creamos tarea al supervisor
               if (estadoNuevo === 'finalizado_no_entregado') {
                 const proy = data.proyectos.find(p => p.id === proyId);
@@ -6432,6 +6437,8 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
       {tab === 'costo' && !esSupervisor && <TabCosto proyecto={proyecto} sistema={sistema} sistemas={data.sistemas} reportes={data.reportes} envios={data.envios} config={data.config} />}
       {tab === 'mdo' && esAdmin && <TabManoDeObra proyecto={proyecto} data={data} usuario={usuario} onActualizarProyecto={onActualizarProyecto} onRecargar={onRecargar} />}
       {tab === 'dieta' && !esSupervisor && <TabDieta proyecto={proyecto} reportes={data.reportes} personal={data.personal} onActualizarProyecto={onActualizarProyecto} />}
+
+      <ChatterPanel entityType="proyecto" entityId={proyecto?.id} usuario={usuario} />
     </div>
   );
 }

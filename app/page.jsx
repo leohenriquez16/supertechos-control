@@ -876,8 +876,8 @@ export default function App() {
         {esAdmin && vista === 'personal' && <GestionPersonal usuario={usuario} personal={data.personal} data={data} onVolver={() => setVista('dashboard')} onActualizar={(p) => withSync(() => db.reemplazarPersonal(p))} onRecargar={recargar} onAbrirPerfil={(p) => { setPerfilViendo(p); setVista('perfilPersona'); }} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'perfilPersona' && perfilViendo && <MiPerfil usuario={usuario} persona={perfilViendo} soloLectura={false} onVolver={() => setVista('personal')} onGuardar={(campos) => withSync(async () => { await db.guardarPerfil(perfilViendo.id, campos); const d = await db.loadAllData(); const actualizada = d.personal.find(p => p.id === perfilViendo.id); if (actualizada) setPerfilViendo(actualizada); })} />}
         {esAdmin && vista === 'sistemas' && <GestionSistemas sistemas={data.sistemas} config={data.config} dataGlobal={data} onVolver={() => setVista('dashboard')} onActualizarSistemas={(s) => withSync(() => db.guardarSistemas(s))} onActualizarConfig={(c) => withSync(() => db.guardarConfig(c))} />}
-        {esAdmin && vista === 'clientes' && <GestionClientes clientes={data.clientes || []} contactos={data.contactos || []} proyectos={data.proyectos || []} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
-        {esAdmin && vista === 'ubicaciones' && <VistaUbicaciones data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
+        {esAdmin && vista === 'clientes' && <GestionClientes clientes={data.clientes || []} contactos={data.contactos || []} proyectos={data.proyectos || []} usuario={usuario} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
+        {esAdmin && vista === 'ubicaciones' && <VistaUbicaciones data={data} usuario={usuario} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {esAdmin && vista === 'garantias' && <VistaGarantias data={data} usuario={usuario} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {esAdmin && vista === 'reclamaciones' && <ModuloReclamaciones data={data} usuario={usuario} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {esAdmin && vista === 'nuevoProyecto' && <NuevoProyecto personal={data.personal} sistemas={data.sistemas} clientes={data.clientes || []} contactos={data.contactos || []} proyectos={data.proyectos || []} onCancelar={() => setVista('dashboard')} onCrear={(proy) => withSync(async () => {
@@ -3367,7 +3367,7 @@ function Login({ onLogin }) {
 // ============================================================
 // v8.9.9: GESTIÓN DE CLIENTES + CONTACTOS
 // ============================================================
-function GestionClientes({ clientes, contactos, proyectos, onVolver, onRecargar }) {
+function GestionClientes({ clientes, contactos, proyectos, usuario, onVolver, onRecargar }) {
   const [busqueda, setBusqueda] = useState('');
   const [clienteSeleccionado, setClienteSeleccionado] = useState(null);
   const [modalCliente, setModalCliente] = useState(null); // null | 'nuevo' | { ...cliente }
@@ -3390,7 +3390,10 @@ function GestionClientes({ clientes, contactos, proyectos, onVolver, onRecargar 
     setGuardando(true);
     try {
       if (form.id && ubicaciones.some(u => u.id === form.id)) await db.actualizarUbicacionCliente(form);
-      else await db.crearUbicacionCliente({ ...form, clienteId: clienteSeleccionado.id });
+      else {
+        const nueva = await db.crearUbicacionCliente({ ...form, clienteId: clienteSeleccionado.id });
+        try { await chatterCreacion('locacion', nueva.id, usuario, `Creó la locación ${nueva.nombre || ''}`.trim()); } catch {}
+      }
       setUbicaciones(await db.listarUbicacionesCliente(clienteSeleccionado.id));
       setModalUbicacion(null);
     } catch (e) { alert('Error: ' + (e.message || e)); }
@@ -3442,7 +3445,9 @@ function GestionClientes({ clientes, contactos, proyectos, onVolver, onRecargar 
       if (formData.id && contactos.some(ct => ct.id === formData.id)) {
         await db.actualizarContacto(formData);
       } else {
-        await db.crearContacto({ ...formData, id: formData.id || ('con_' + Date.now() + Math.random().toString(36).slice(2, 7)) });
+        const id = formData.id || ('con_' + Date.now() + Math.random().toString(36).slice(2, 7));
+        await db.crearContacto({ ...formData, id });
+        try { await chatterCreacion('contacto', id, usuario, `Creó el contacto ${formData.nombre || ''}`.trim()); } catch {}
       }
       await onRecargar();
       setModalContacto(null);
@@ -3610,7 +3615,7 @@ function GestionClientes({ clientes, contactos, proyectos, onVolver, onRecargar 
         )}
 
         {modalCliente && <ModalEditarCliente cliente={modalCliente} onCerrar={() => setModalCliente(null)} onGuardar={guardarCliente} guardando={guardando} />}
-        {modalContacto && <ModalEditarContacto contacto={modalContacto} onCerrar={() => setModalContacto(null)} onGuardar={guardarContacto} guardando={guardando} />}
+        {modalContacto && <ModalEditarContacto contacto={modalContacto} usuario={usuario} onCerrar={() => setModalContacto(null)} onGuardar={guardarContacto} guardando={guardando} />}
         {modalUbicacion && <ModalEditarUbicacion ubicacion={modalUbicacion} onCerrar={() => setModalUbicacion(null)} onGuardar={guardarUbicacion} guardando={guardando} />}
       </div>
     );
@@ -3820,7 +3825,7 @@ function ModalEditarUbicacion({ ubicacion, onCerrar, onGuardar, guardando }) {
   );
 }
 
-function ModalEditarContacto({ contacto, onCerrar, onGuardar, guardando }) {
+function ModalEditarContacto({ contacto, usuario, onCerrar, onGuardar, guardando }) {
   const [form, setForm] = useState({
     id: contacto.id || '',
     clienteId: contacto.clienteId,
@@ -3860,6 +3865,7 @@ function ModalEditarContacto({ contacto, onCerrar, onGuardar, guardando }) {
           </div>
         </label>
         <Campo label="Nota"><textarea value={form.nota} onChange={e => setForm({ ...form, nota: e.target.value })} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm" rows={2} /></Campo>
+        {form.id && <ChatterPanel entityType="contacto" entityId={form.id} usuario={usuario} />}
         <div className="flex gap-2 pt-2">
           <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button>
           <button onClick={guardar} disabled={guardando} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-700 text-white text-xs font-black uppercase py-3">

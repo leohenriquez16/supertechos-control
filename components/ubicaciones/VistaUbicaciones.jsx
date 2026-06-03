@@ -10,6 +10,7 @@ import * as db from '../../lib/db';
 import { listarProyectosSurveys, SERVICE_LINES } from '../../lib/surveys';
 import { formatNum } from '../../lib/helpers/formato';
 import FotosLevantamiento from '../surveys/FotosLevantamiento';
+import ChatterPanel from '../common/ChatterPanel';
 import MapaLeaflet from '../common/MapaLeaflet';
 
 const fmt = (s) => { if (!s) return '—'; try { return new Date((s.length <= 10 ? s + 'T12:00:00' : s)).toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return s; } };
@@ -17,7 +18,7 @@ const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '
 const SEV = { baja: 'text-zinc-400', media: 'text-amber-400', alta: 'text-red-400' };
 const EST_GAR = { vigente: '#22c55e', por_vencer: '#f59e0b', suspendida: '#fb923c', vencida: '#ef4444', anulada: '#71717a' };
 
-export default function VistaUbicaciones({ data, onVolver, onVerProyecto }) {
+export default function VistaUbicaciones({ data, usuario, onVolver, onVerProyecto }) {
   const [loading, setLoading] = useState(true);
   const [ubicaciones, setUbicaciones] = useState([]);
   const [garantias, setGarantias] = useState([]);
@@ -155,6 +156,8 @@ export default function VistaUbicaciones({ data, onVolver, onVerProyecto }) {
         </Seccion>
 
         {fotosLev && <FotosLevantamiento projectId={fotosLev.id} titulo={fotosLev.titulo} onCerrar={() => setFotosLev(null)} />}
+
+        <ChatterPanel entityType="locacion" entityId={u.id} usuario={usuario} />
       </div>
     );
   }

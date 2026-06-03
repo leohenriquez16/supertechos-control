@@ -189,18 +189,31 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
       }
       return;
     }
-    setAreas(prev => prev.map(a => {
-      if (a.id !== areaId) return a;
-      const data = { ...(a.data || {}), [campo]: valor };
-      return { ...a, data };
-    }));
     const area = areas.find(a => a.id === areaId);
     const data = { ...((area && area.data) || {}), [campo]: valor };
+    // v8.24.15: calcular el m² del área desde las tablas de medidas y guardarlo en
+    // la columna gross_area_m2 (antes solo quedaba en data → el resumen mostraba 0).
+    const gross = calcularGrossArea(area, data);
+    setAreas(prev => prev.map(a => (a.id === areaId ? { ...a, data, gross_area_m2: gross } : a)));
     try {
-      await actualizarArea(areaId, { data });
+      await actualizarArea(areaId, gross != null ? { data, gross_area_m2: gross } : { data });
     } catch (e) {
       console.warn('No se pudo guardar campo de area:', e?.message);
     }
+  };
+
+  // Suma el área (m²) de todas las tablas de medidas del bloque del área.
+  const calcularGrossArea = (area, data) => {
+    const block = (template?.schema?.sections || []).find(s => s.id === area?.block_id);
+    if (!block) return area?.gross_area_m2 ?? null;
+    const measFields = (block.fields || []).filter(f => f.type === 'measurement_table');
+    if (!measFields.length) return area?.gross_area_m2 ?? null;
+    let tot = 0;
+    for (const f of measFields) {
+      const filas = Array.isArray(data[f.id]) ? data[f.id] : [];
+      for (const r of filas) tot += Number(r.area_m2) || 0;
+    }
+    return Number(tot.toFixed(2));
   };
 
   const renombrarArea = async (areaId, nuevoNombre) => {

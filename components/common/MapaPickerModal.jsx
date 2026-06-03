@@ -136,7 +136,7 @@ export default function MapaPickerModal({ initialLat, initialLng, onSelect, onCe
             </button>
           </div>
           {resultados.length > 0 && (
-            <div className="absolute z-[80] left-3 right-3 mt-1 bg-zinc-900 border-2 border-zinc-700 rounded-card max-h-48 overflow-y-auto shadow-xl">
+            <div className="absolute left-3 right-3 mt-1 bg-zinc-900 border-2 border-zinc-700 rounded-card max-h-48 overflow-y-auto shadow-xl" style={{ zIndex: 1200 }}>
               {resultados.map((r, i) => (
                 <button key={i} onClick={() => irAResultado(r)} className="w-full text-left px-3 py-2 text-xs text-zinc-200 hover:bg-zinc-800 border-b border-zinc-800/60 flex items-start gap-2">
                   <MapPin className="w-3.5 h-3.5 text-red-500 shrink-0 mt-0.5" /> <span>{r.label}</span>

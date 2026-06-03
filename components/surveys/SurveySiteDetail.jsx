@@ -14,7 +14,7 @@ import { ArrowLeft, Building, MapPin, Calendar, Clock, FileText, AlertTriangle, 
 import QuickActions from './QuickActions';
 import DynamicSurveyForm from './DynamicSurveyForm';
 import SatelitalAreas from './SatelitalAreas';
-import { SITE_STATUS, listarVisitasDeSite, listarAreasDeVisita, obtenerTemplateSurvey, asignarPersonaSurvey, ESCALERA, setRequiereEscaleraSurvey, eliminarProyectoSurvey, solicitarEliminacionSurvey, cancelarSolicitudEliminacionSurvey, listarTemplatesSurveys, actualizarTipoProyectoSurvey, eliminarVisita, listarFotosVisita, getSignedUrlFotoSurvey, SERVICE_LINES, FAMILIAS_SERVICIO, familiaDeServiceLine } from '../../lib/surveys';
+import { SITE_STATUS, listarVisitasDeSite, listarAreasDeVisita, obtenerTemplateSurvey, asignarPersonaSurvey, ESCALERA, setRequiereEscaleraSurvey, eliminarProyectoSurvey, solicitarEliminacionSurvey, cancelarSolicitudEliminacionSurvey, listarTemplatesSurveys, actualizarTipoProyectoSurvey, eliminarVisita, listarFotosVisita, getSignedUrlFotoSurvey, finalizarLevantamientoSurvey, reabrirLevantamientoSurvey, SERVICE_LINES, FAMILIAS_SERVICIO, familiaDeServiceLine } from '../../lib/surveys';
 import { imprimirLevantamiento } from './imprimirLevantamiento';
 import ChatterPanel from '../common/ChatterPanel';
 import { registrarEvento as chatterEventoSurvey } from '../../lib/chatter';
@@ -104,6 +104,30 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
   // Proyecto con el tipo actualizado para la captura (DynamicSurveyForm lee template_id).
   const proyectoConTipo = { ...proyecto, service_line: tipoServiceLine, template_id: tipoTemplateId };
 
+  // v8.24.17: finalizar el levantamiento → "Realizado".
+  const [statusProy, setStatusProy] = useState(proyecto?.status || 'planning');
+  const [finalizando, setFinalizando] = useState(false);
+  const finalizar = async () => {
+    setFinalizando(true);
+    try {
+      const vs = await listarVisitasDeSite(site.id);
+      let nAreas = 0;
+      for (const v of vs) { const as = await listarAreasDeVisita(v.id); nAreas += as.length; }
+      if (nAreas === 0) { alert('No hay secciones capturadas todavía. Captura al menos una antes de finalizar.'); setFinalizando(false); return; }
+      if (!confirm(`¿Finalizar el levantamiento y marcarlo como Realizado? (${nAreas} sección(es) capturada(s))`)) { setFinalizando(false); return; }
+      await finalizarLevantamientoSurvey(proyecto.id);
+      setStatusProy('survey_completed');
+      try { await chatterEventoSurvey('levantamiento', proyecto.id, 'Levantamiento finalizado → Realizado', usuario); } catch {}
+    } catch (e) { alert('Error: ' + (e?.message || e)); }
+    setFinalizando(false);
+  };
+  const reabrir = async () => {
+    setFinalizando(true);
+    try { await reabrirLevantamientoSurvey(proyecto.id); setStatusProy('survey_in_progress'); try { await chatterEventoSurvey('levantamiento', proyecto.id, 'Levantamiento reabierto', usuario); } catch {} }
+    catch (e) { alert('Error: ' + (e?.message || e)); }
+    setFinalizando(false);
+  };
+
   const status = SITE_STATUS[site.survey_status] || SITE_STATUS.pending;
   const hasGeo = site.latitude != null && site.longitude != null;
   const tieneInfoFaltante = site.survey_status === 'missing_info';
@@ -189,6 +213,18 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
         <Play className="w-4 h-4" />
         Iniciar levantamiento
       </button>
+
+      {/* v8.24.17: finalizar / estado realizado */}
+      {statusProy === 'survey_completed' ? (
+        <div className="flex items-center justify-between gap-2 bg-green-900/20 border border-green-700 rounded-card px-3 py-2">
+          <span className="text-sm font-bold text-green-300 flex items-center gap-1.5"><Check className="w-4 h-4" /> Levantamiento realizado</span>
+          <button onClick={reabrir} disabled={finalizando} className="text-[11px] text-zinc-400 hover:text-white underline">Reabrir</button>
+        </div>
+      ) : (
+        <button onClick={finalizar} disabled={finalizando} className="w-full bg-green-700 hover:bg-green-600 disabled:bg-zinc-800 disabled:text-zinc-500 text-white font-bold uppercase tracking-wider py-2.5 rounded-card flex items-center justify-center gap-2">
+          {finalizando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Finalizar levantamiento
+        </button>
+      )}
 
       {/* Acciones rápidas */}
       <div>

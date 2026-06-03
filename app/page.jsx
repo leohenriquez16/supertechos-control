@@ -12950,14 +12950,13 @@ function MiPerfil({ usuario, persona, onVolver, onGuardar }) {
           <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold flex items-center gap-1"><FileText className="w-3 h-3" /> Documentos de cumplimiento</div>
           {(() => {
             const tieneBanco = !!(persona.banco || persona.bancoNumeroCuenta);
-            const falta = tieneBanco && !form.cartaBancaria;
             return (
               <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3">
                 <div className="flex items-center justify-between mb-1">
-                  <div className="text-xs font-bold">Carta bancaria {tieneBanco && <span className="text-red-400">*</span>}</div>
-                  {falta ? <span className="text-[9px] bg-red-900/50 border border-red-700 text-red-300 px-1.5 py-0.5 uppercase font-bold rounded-full">Falta</span> : form.cartaBancaria ? <span className="text-[9px] bg-green-900/40 border border-green-700 text-green-300 px-1.5 py-0.5 uppercase font-bold rounded-full">✓ OK</span> : null}
+                  <div className="text-xs font-bold">Carta bancaria</div>
+                  {form.cartaBancaria ? <span className="text-[9px] bg-green-900/40 border border-green-700 text-green-300 px-1.5 py-0.5 uppercase font-bold rounded-full">✓ OK</span> : <span className="text-[9px] bg-zinc-800 border border-zinc-700 text-zinc-400 px-1.5 py-0.5 uppercase font-bold rounded-full">Opcional</span>}
                 </div>
-                <div className="text-[10px] text-zinc-500 mb-2">Obligatoria para registrar la cuenta. Debe mostrar el nombre del titular y el tipo de cuenta.</div>
+                <div className="text-[10px] text-zinc-500 mb-2">Opcional. Si la registras, debe mostrar el nombre del titular y el tipo de cuenta.</div>
                 <DocSlot valor={form.cartaBancaria} campo="cartaBancaria" titulo="Carta bancaria" />
               </div>
             );

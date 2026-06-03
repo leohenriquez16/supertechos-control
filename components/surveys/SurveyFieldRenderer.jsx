@@ -136,7 +136,8 @@ export default function SurveyFieldRenderer({ field, value, onChange, allValues 
     }
 
     case 'multi_select': {
-      const opts = field.options || [];
+      // v8.22.9: las opciones pueden tener show_if (ej. "Óxido" solo si metálico).
+      const opts = (field.options || []).filter(opt => typeof opt === 'string' || !opt.show_if || evaluarShowIf(opt.show_if, allValues));
       const current = Array.isArray(value) ? value : [];
       const toggle = (v) => {
         if (current.includes(v)) onChange(current.filter(x => x !== v));

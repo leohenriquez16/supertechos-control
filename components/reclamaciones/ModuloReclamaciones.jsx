@@ -8,6 +8,8 @@ import { ArrowLeft, Loader2, AlertTriangle, Plus, X, MapPin, Search, MessageCirc
 import * as db from '../../lib/db';
 import MapaLeaflet from '../common/MapaLeaflet';
 import CalendarioLevantamientos from '../surveys/CalendarioLevantamientos';
+import ChatterPanel from '../common/ChatterPanel';
+import { registrarCreacion as chatterCreacion, registrarCambioEstado as chatterEstado } from '../../lib/chatter';
 
 const fmtFecha = (s) => { if (!s) return '—'; try { return new Date(s + 'T12:00:00').toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return s; } };
 const COLS = [
@@ -106,8 +108,12 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
   }, [filtradas, agruparPor, columnasRecl]);
 
   const cambiarEstado = async (id, estado) => {
+    const estadoPrev = recs.find(r => r.id === id)?.estado;
     setRecs(prev => prev.map(r => r.id === id ? { ...r, estado } : r)); // optimista
-    try { await db.actualizarReclamacion(id, { estado }); } catch (e) { alert('Error: ' + (e.message || e)); setReload(x => x + 1); }
+    try {
+      await db.actualizarReclamacion(id, { estado });
+      try { await chatterEstado('reclamacion', id, estadoPrev, estado, usuario, 'estado'); } catch {}
+    } catch (e) { alert('Error: ' + (e.message || e)); setReload(x => x + 1); }
   };
 
   // v8.19.91: eliminación con autorización del OWNER DEL APP (rol 'owner').
@@ -190,6 +196,8 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
             </div>
           )}
         </div>
+
+        <ChatterPanel entityType="reclamacion" entityId={r.id} usuario={usuario} />
       </div>
     );
   }
@@ -293,7 +301,7 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
         })()
       )}
 
-      {modalNueva && <ModalNuevaReclamacion data={data} ubicaciones={ubicaciones} garantias={garantias} onCerrar={() => setModalNueva(false)} onCreada={() => { setModalNueva(false); setReload(r => r + 1); }} />}
+      {modalNueva && <ModalNuevaReclamacion data={data} usuario={usuario} ubicaciones={ubicaciones} garantias={garantias} onCerrar={() => setModalNueva(false)} onCreada={() => { setModalNueva(false); setReload(r => r + 1); }} />}
     </div>
   );
 }
@@ -443,7 +451,7 @@ function ReclamacionesTabla({ grupos, agrupado, clienteNombre, ubicNombre, estad
 }
 
 // ---------- MODAL NUEVA RECLAMACIÓN ----------
-function ModalNuevaReclamacion({ data, ubicaciones, garantias, onCerrar, onCreada }) {
+function ModalNuevaReclamacion({ data, usuario, ubicaciones, garantias, onCerrar, onCreada }) {
   const [clienteId, setClienteId] = useState('');
   const [ubicacionId, setUbicacionId] = useState('');
   const [proyectoId, setProyectoId] = useState('');
@@ -462,11 +470,12 @@ function ModalNuevaReclamacion({ data, ubicaciones, garantias, onCerrar, onCread
     setGuardando(true);
     try {
       const proy = (data.proyectos || []).find(p => p.id === proyectoId);
-      await db.crearReclamacion({
+      const rec = await db.crearReclamacion({
         clienteId: clienteId || null, ubicacionId: ubicacionId || null, proyectoId: proyectoId || null,
         garantiaId: garantiaDeProy?.id || null, referenciaCotizacion: proy?.referenciaOdoo || null,
         canal, descripcion: descripcion.trim(), severidad,
       });
+      try { await chatterCreacion('reclamacion', rec.id, usuario, 'Creó la reclamación'); } catch {}
       onCreada();
     } catch (e) { alert('Error: ' + (e.message || e)); setGuardando(false); }
   };

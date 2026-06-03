@@ -444,9 +444,11 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
   const ubicacionActual = ubicaciones.find(u => u.id === ubicSelId);
 
   return (
-    <div className="fixed inset-0 bg-black/80 z-[60] flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto">
-      <div className="bg-zinc-950 border-2 border-red-600 rounded-card w-full max-w-3xl my-4">
-        <div className="flex items-center justify-between p-4 border-b border-zinc-800 sticky top-0 bg-zinc-950 z-10 rounded-t-card">
+    <div className="fixed inset-0 bg-black/80 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4">
+      {/* v8.25.18: columna flex con altura de viewport dinámico (dvh) y scroll solo en el
+          cuerpo → friendly en iPad y con el teclado abierto (header/footer siempre visibles). */}
+      <div className="bg-zinc-950 border-2 border-red-600 rounded-t-2xl sm:rounded-card w-full max-w-3xl flex flex-col max-h-[100dvh] sm:max-h-[90dvh]">
+        <div className="flex items-center justify-between p-4 border-b border-zinc-800 bg-zinc-950 rounded-t-2xl sm:rounded-t-card shrink-0">
           <div>
             <div className="text-xs tracking-widest uppercase text-red-500 font-bold">Nuevo levantamiento</div>
             <div className="text-sm font-bold mt-0.5">Un techo / un sitio</div>
@@ -454,7 +456,8 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
           <button onClick={onCerrar} className="text-zinc-500 hover:text-white"><X className="w-4 h-4" /></button>
         </div>
 
-        <div className="p-4 space-y-4">
+        <div className="p-4 space-y-4 overflow-y-auto flex-1 overscroll-contain"
+          onFocus={e => { const t = e.target; if (t && t.matches && t.matches('input,textarea,select')) setTimeout(() => { try { t.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch {} }, 280); }}>
           {/* Tipo de servicio — por familia (opcional; se puede definir después) */}
           <div>
             <div className="flex items-center justify-between">
@@ -792,7 +795,7 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
           {errorMsg && <div className="bg-red-900/20 border border-red-700 rounded-card text-red-300 p-2 text-xs">{errorMsg}</div>}
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-2 p-4 border-t border-zinc-800 sticky bottom-0 bg-zinc-950 rounded-b-card">
+        <div className="flex flex-col sm:flex-row gap-2 p-4 border-t border-zinc-800 bg-zinc-950 sm:rounded-b-card shrink-0">
           <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-sm font-bold uppercase py-3 rounded-card sm:w-auto">Cancelar</button>
           {/* v8.25.13: crear sin iniciar la captura (para asignar/capturar después) */}
           <button onClick={() => guardar(false)} disabled={!puedeGuardar} className="flex-1 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 border border-zinc-600 text-white text-sm font-bold uppercase py-3 rounded-card flex items-center justify-center gap-2">

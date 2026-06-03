@@ -9851,7 +9851,8 @@ function FormReporte({ usuario, proyecto, reportes, sistema, sistemas, onGuardar
           // v8.9.2: calcular con sistema del área
           const sisA = (sistemas && sistemas[a.sistemaId || proyecto.sistema]) || sistema;
           const { porcentaje } = calcAvanceArea(proyecto, a.id, reportes, sisA);
-          return <button key={a.id} onClick={() => setForm({ ...form, areaId: a.id, tareaId: '' })} className={`w-full p-4 border-2 text-left ${form.areaId === a.id ? 'border-red-600 bg-red-600/10' : 'border-zinc-800 bg-zinc-900'}`}><div className="flex justify-between items-center"><div><div className="font-bold">{a.nombre}</div><div className="text-xs text-zinc-500">{a.m2} m² · <span className="text-red-400">{sisA?.nombre || '(sin sistema)'}</span></div></div><div className="text-sm font-black text-zinc-400">{porcentaje.toFixed(0)}%</div></div></button>;
+          // v8.25.9: al tocar el área se entra directo al paso de tareas.
+          return <button key={a.id} onClick={() => { setForm({ ...form, areaId: a.id, tareaId: '' }); setPaso(2); }} className={`w-full p-4 border-2 text-left ${form.areaId === a.id ? 'border-red-600 bg-red-600/10' : 'border-zinc-800 bg-zinc-900'}`}><div className="flex justify-between items-center"><div><div className="font-bold">{a.nombre}</div><div className="text-xs text-zinc-500">{a.m2} m² · <span className="text-red-400">{sisA?.nombre || '(sin sistema)'}</span></div></div><div className="text-sm font-black text-zinc-400">{porcentaje.toFixed(0)}%</div></div></button>;
         })}
         <BotonPrincipal disabled={!form.areaId} onClick={() => setPaso(2)}>Siguiente →</BotonPrincipal>
       </div>}

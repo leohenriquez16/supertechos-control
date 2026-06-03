@@ -23,6 +23,7 @@ import React, { useState, useRef } from 'react';
 import { Star, Camera, Plus, Trash2, Calculator, X, Mic, Square, MapPin } from 'lucide-react';
 import PhotoCapture from './PhotoCapture';
 import MapaPickerModal from '../common/MapaPickerModal';
+import MapaPoligonoModal from '../common/MapaPoligonoModal';
 
 export default function SurveyFieldRenderer({ field, value, onChange, allValues = {}, context = {} }) {
   // Soporte de show_if simple: "field_id == valor" o "field_id == true"
@@ -273,6 +274,9 @@ export default function SurveyFieldRenderer({ field, value, onChange, allValues 
     case 'map_point':
       return <MapPointField field={field} value={value} onChange={onChange} context={context} />;
 
+    case 'map_polygon':
+      return <MapPolygonField field={field} value={value} onChange={onChange} context={context} />;
+
     case 'measurement_table':
       return <MeasurementTableField field={field} value={value} onChange={onChange} />;
 
@@ -329,6 +333,43 @@ function MapPointField({ field, value, onChange, context }) {
           initialLat={v?.lat ?? context?.siteLat}
           initialLng={v?.lng ?? context?.siteLng}
           onSelect={(la, ln) => { onChange({ lat: la, lng: ln }); setAbierto(false); }}
+          onCerrar={() => setAbierto(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// MapPolygon — dibuja el polígono del área sobre el techo. Valor: {vertices, areaM2}.
+// ============================================================
+function MapPolygonField({ field, value, onChange, context }) {
+  const [abierto, setAbierto] = useState(false);
+  const verts = Array.isArray(value?.vertices) ? value.vertices : [];
+  const areaM2 = value?.areaM2;
+  return (
+    <div>
+      <div className="flex items-center gap-1 mb-1">
+        <span className="text-[11px] uppercase tracking-wider text-zinc-400 font-bold">{field.label || 'Dibujar área en el mapa'}</span>
+        {field.required && <span className="text-red-500 text-[11px]">*</span>}
+      </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <button type="button" onClick={() => setAbierto(true)} className="flex items-center gap-1.5 bg-zinc-900 border-2 border-zinc-800 hover:border-red-600 rounded-card px-3 py-2 text-sm text-zinc-200">
+          <MapPin className="w-4 h-4 text-red-500" /> {verts.length ? 'Editar polígono' : 'Dibujar área'}
+        </button>
+        {verts.length >= 3 && (
+          <>
+            <span className="text-[11px] text-green-300">{verts.length} pts · {areaM2 != null ? `${areaM2} m²` : ''}</span>
+            <button type="button" onClick={() => onChange(null)} className="text-zinc-500 hover:text-red-400"><X className="w-3.5 h-3.5" /></button>
+          </>
+        )}
+      </div>
+      {abierto && (
+        <MapaPoligonoModal
+          initialLat={(verts[0] && verts[0][0]) ?? context?.siteLat}
+          initialLng={(verts[0] && verts[0][1]) ?? context?.siteLng}
+          value={value}
+          onSelect={(res) => { onChange(res); setAbierto(false); }}
           onCerrar={() => setAbierto(false)}
         />
       )}

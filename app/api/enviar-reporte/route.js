@@ -2,10 +2,13 @@
 // Endpoint para envío de reportes (entregas, incidentes) por correo vía Resend
 // Recibe { destinatarios, asunto, html } y envía el correo
 
+import { emailsApagados } from '../../../lib/emailGuard';
+
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request) {
+  if (emailsApagados()) return Response.json({ ok: true, sent: false, reason: 'emails_apagados' }, { status: 200 });
   // Validar config
   const RESEND_API_KEY = process.env.RESEND_API_KEY;
   const RESEND_FROM = process.env.RESEND_FROM_EMAIL;

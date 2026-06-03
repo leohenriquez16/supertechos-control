@@ -17,6 +17,7 @@ import SatelitalAreas from './SatelitalAreas';
 import { SITE_STATUS, listarVisitasDeSite, listarAreasDeVisita, obtenerTemplateSurvey, asignarPersonaSurvey, ESCALERA, setRequiereEscaleraSurvey, eliminarProyectoSurvey, solicitarEliminacionSurvey, cancelarSolicitudEliminacionSurvey, listarTemplatesSurveys, actualizarTipoProyectoSurvey, eliminarVisita, listarFotosVisita, getSignedUrlFotoSurvey, finalizarLevantamientoSurvey, reabrirLevantamientoSurvey, SERVICE_LINES, FAMILIAS_SERVICIO, familiaDeServiceLine } from '../../lib/surveys';
 import { imprimirLevantamiento } from './imprimirLevantamiento';
 import ChatterPanel from '../common/ChatterPanel';
+import Lightbox from '../common/Lightbox';
 import { registrarEvento as chatterEventoSurvey } from '../../lib/chatter';
 
 export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolver, onVerEdificaciones }) {
@@ -107,20 +108,6 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
   // v8.24.17: finalizar el levantamiento → "Realizado".
   const [statusProy, setStatusProy] = useState(proyecto?.status || 'planning');
   const [finalizando, setFinalizando] = useState(false);
-  const finalizar = async () => {
-    setFinalizando(true);
-    try {
-      const vs = await listarVisitasDeSite(site.id);
-      let nAreas = 0;
-      for (const v of vs) { const as = await listarAreasDeVisita(v.id); nAreas += as.length; }
-      if (nAreas === 0) { alert('No hay secciones capturadas todavía. Captura al menos una antes de finalizar.'); setFinalizando(false); return; }
-      if (!confirm(`¿Finalizar el levantamiento y marcarlo como Realizado? (${nAreas} sección(es) capturada(s))`)) { setFinalizando(false); return; }
-      await finalizarLevantamientoSurvey(proyecto.id);
-      setStatusProy('survey_completed');
-      try { await chatterEventoSurvey('levantamiento', proyecto.id, 'Levantamiento finalizado → Realizado', usuario); } catch {}
-    } catch (e) { alert('Error: ' + (e?.message || e)); }
-    setFinalizando(false);
-  };
   const reabrir = async () => {
     setFinalizando(true);
     try { await reabrirLevantamientoSurvey(proyecto.id); setStatusProy('survey_in_progress'); try { await chatterEventoSurvey('levantamiento', proyecto.id, 'Levantamiento reabierto', usuario); } catch {} }
@@ -144,6 +131,8 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
           </button>
         )}
       </div>
+
+      <FachadaHero site={site} />
 
       {/* Header */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-3">
@@ -214,16 +203,12 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
         Iniciar levantamiento
       </button>
 
-      {/* v8.24.17: finalizar / estado realizado */}
-      {statusProy === 'survey_completed' ? (
+      {/* v8.24.18: el estado "Realizado" se marca al finalizar DENTRO del modal de captura */}
+      {statusProy === 'survey_completed' && (
         <div className="flex items-center justify-between gap-2 bg-green-900/20 border border-green-700 rounded-card px-3 py-2">
           <span className="text-sm font-bold text-green-300 flex items-center gap-1.5"><Check className="w-4 h-4" /> Levantamiento realizado</span>
           <button onClick={reabrir} disabled={finalizando} className="text-[11px] text-zinc-400 hover:text-white underline">Reabrir</button>
         </div>
-      ) : (
-        <button onClick={finalizar} disabled={finalizando} className="w-full bg-green-700 hover:bg-green-600 disabled:bg-zinc-800 disabled:text-zinc-500 text-white font-bold uppercase tracking-wider py-2.5 rounded-card flex items-center justify-center gap-2">
-          {finalizando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Finalizar levantamiento
-        </button>
       )}
 
       {/* Acciones rápidas */}
@@ -402,9 +387,9 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
           proyecto={proyectoConTipo}
           usuario={usuario}
           onCerrar={() => setFormAbierto(false)}
-          onCompletado={() => {
+          onCompletado={(res) => {
             setFormAbierto(false);
-            onVolver();
+            if (res === 'finalizado') setStatusProy('survey_completed');
           }}
         />
       )}
@@ -437,6 +422,62 @@ function fmtCampoApp(field, v) {
     case 'voice_note': case 'text': case 'textarea': return String(v);
     default: return typeof v === 'object' ? null : String(v);
   }
+}
+
+// v8.24.18: hero de fachada — fotos generales (frontal/panorámicas) prominentes arriba.
+function FachadaHero({ site }) {
+  const [fotos, setFotos] = useState([]);
+  const [idx, setIdx] = useState(0);
+  useEffect(() => {
+    let cancel = false;
+    (async () => {
+      try {
+        const vs = await listarVisitasDeSite(site.id);
+        const generales = [];
+        for (const v of vs) {
+          const fs = await listarFotosVisita(v.id);
+          generales.push(...(fs || []).filter(f => f.area_id == null));
+        }
+        // priorizar las de fachada/frontal
+        generales.sort((a, b) => (/(frontal|fachada|frente)/i.test(`${b.photo_type || ''} ${b.caption || ''}`) ? 1 : 0) - (/(frontal|fachada|frente)/i.test(`${a.photo_type || ''} ${a.caption || ''}`) ? 1 : 0));
+        const conUrl = await Promise.all(generales.map(async f => {
+          let url = ''; try { url = await getSignedUrlFotoSurvey(f.storage_path, 3600); } catch {}
+          return { url, caption: f.caption || '' };
+        }));
+        if (!cancel) setFotos(conUrl.filter(x => x.url));
+      } catch {}
+    })();
+    return () => { cancel = true; };
+  }, [site.id]);
+
+  const [visor, setVisor] = useState(null);
+  if (fotos.length === 0) return null;
+  const actual = fotos[Math.min(idx, fotos.length - 1)];
+  return (
+    <div className="rounded-card overflow-hidden border border-zinc-800">
+      {visor != null && <Lightbox fotos={fotos} inicial={visor} onCerrar={() => setVisor(null)} />}
+      <div className="relative cursor-pointer" onClick={() => setVisor(idx)}>
+        <img src={actual.url} alt="" className="w-full h-56 object-cover bg-zinc-900" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/10 to-transparent" />
+        <div className="absolute bottom-0 left-0 right-0 p-3">
+          <div className="text-white font-black text-xl leading-tight drop-shadow">{site.name}</div>
+          {site.address && <div className="text-zinc-200 text-xs drop-shadow">{site.address}</div>}
+        </div>
+        {fotos.length > 1 && (
+          <div className="absolute top-2 right-2 bg-black/50 rounded-full px-2 py-0.5 text-[10px] text-white font-bold">{idx + 1}/{fotos.length}</div>
+        )}
+      </div>
+      {fotos.length > 1 && (
+        <div className="flex gap-1 p-1.5 bg-zinc-950 overflow-x-auto">
+          {fotos.map((f, i) => (
+            <button key={i} onClick={() => setIdx(i)} className={`shrink-0 rounded overflow-hidden border-2 ${i === idx ? 'border-red-600' : 'border-transparent'}`}>
+              <img src={f.url} alt="" className="w-14 h-12 object-cover" />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function TablaMedidas({ label, filas, ducto = false }) {
@@ -480,6 +521,7 @@ function DetalleArea({ area, fields }) {
   const data = area.data || {};
   const [fotos, setFotos] = useState([]);
   const [cargandoFotos, setCargandoFotos] = useState(true);
+  const [visor, setVisor] = useState(null);
   useEffect(() => {
     let cancel = false;
     (async () => {
@@ -526,11 +568,12 @@ function DetalleArea({ area, fields }) {
           <div className="text-[10px] uppercase tracking-wide text-zinc-500 font-bold mb-1">Fotos ({fotos.length})</div>
           <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5">
             {fotos.map((f, i) => (
-              <a key={i} href={f.url} target="_blank" rel="noreferrer" title={f.caption}>
+              <button key={i} onClick={() => setVisor(i)} title={f.caption}>
                 <img src={f.url} alt="" className="w-full h-16 object-cover rounded border border-zinc-800 hover:border-red-600" />
-              </a>
+              </button>
             ))}
           </div>
+          {visor != null && <Lightbox fotos={fotos} inicial={visor} onCerrar={() => setVisor(null)} />}
         </div>
       )}
       {vacio && (cargandoFotos ? <div className="text-[10px] text-zinc-600">Cargando…</div> : <div className="text-[10px] text-zinc-600">Sin datos adicionales capturados.</div>)}

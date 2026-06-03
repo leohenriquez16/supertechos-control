@@ -18,7 +18,7 @@
 
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { Loader2, X, Save, Check, Plus, Copy, Trash2, ChevronDown, ChevronUp, Zap, Sun, Moon } from 'lucide-react';
-import { obtenerTemplateSurvey, crearVisita, obtenerVisitaAbiertaDeSite, actualizarVisita, cerrarVisita, listarAreasDeVisita, crearArea, actualizarArea, eliminarArea, calcularCompletitud, setCompletitudProyecto, familiaDeServiceLine, tiposDeFamilia, familiaPorKey } from '../../lib/surveys';
+import { obtenerTemplateSurvey, crearVisita, obtenerVisitaAbiertaDeSite, actualizarVisita, cerrarVisita, listarAreasDeVisita, crearArea, actualizarArea, eliminarArea, calcularCompletitud, setCompletitudProyecto, finalizarLevantamientoSurvey, familiaDeServiceLine, tiposDeFamilia, familiaPorKey } from '../../lib/surveys';
 import { obtenerUbicacion, distanciaMetros } from '../../lib/geo';
 import SurveyFieldRenderer from './SurveyFieldRenderer';
 
@@ -244,12 +244,14 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
       alert(`Faltan ${completitud.faltantes.length} requisito(s) (${completitud.pct}% completo). No se puede cerrar:\n\n${lista}${extra}`);
       return;
     }
-    if (!confirm(forzar ? `El levantamiento está al ${completitud.pct}%. ¿Cerrar de todas formas (justificado)?` : '¿Cerrar la visita? Después no podrás editarla desde aquí.')) return;
+    if (!confirm(forzar ? `El levantamiento está al ${completitud.pct}%. ¿Cerrar sin finalizar (queda pendiente)?` : '¿Finalizar el levantamiento? Quedará como REALIZADO y no podrás editar esta visita desde aquí.')) return;
     setCerrando(true);
     try {
       await cerrarVisita(visit.id);
       try { await setCompletitudProyecto(proyecto?.id, completitud.pct); } catch {}
-      onCompletado?.();
+      // v8.24.18: si se cierra completo (no forzado), el levantamiento pasa a "Realizado".
+      if (!forzar) { try { await finalizarLevantamientoSurvey(proyecto?.id); } catch {} }
+      onCompletado?.(forzar ? 'cerrado' : 'finalizado');
     } catch (e) {
       setErrorMsg(e?.message || String(e));
     } finally {
@@ -443,7 +445,7 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
                   className={`px-4 py-2 text-xs font-bold uppercase flex items-center gap-1 disabled:opacity-50 text-white ${completitud.faltantes.length > 0 ? 'bg-zinc-700 hover:bg-zinc-600' : 'bg-green-600 hover:bg-green-700'}`}
                 >
                   {cerrando ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
-                  {completitud.faltantes.length > 0 ? `Faltan ${completitud.faltantes.length}` : 'Cerrar levantamiento'}
+                  {completitud.faltantes.length > 0 ? `Faltan ${completitud.faltantes.length}` : 'Finalizar levantamiento'}
                 </button>
               </div>
             </div>

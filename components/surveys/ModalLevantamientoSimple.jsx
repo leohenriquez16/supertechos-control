@@ -80,6 +80,7 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
   // v8.25.15: datos del cliente nuevo (manual): teléfono + cédula/RNC.
   const [nuevoClienteTel, setNuevoClienteTel] = useState('');
   const [nuevoClienteCedula, setNuevoClienteCedula] = useState('');
+  const [tipoClienteNuevo, setTipoClienteNuevo] = useState('empresa'); // v8.25.17: 'empresa' | 'persona'
   // v8.25.12: crear un contacto nuevo y guardarlo en el cliente.
   const [contactosExtra, setContactosExtra] = useState([]); // creados en esta sesión
   const [nuevoCt, setNuevoCt] = useState({ nombre: '', cargo: '', telefono: '', email: '' });
@@ -321,8 +322,13 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
       const cnombre = clienteNombreFinal;
       // v8.25.14: el contacto de la obra es el ELEGIDO en el selector (no el predeterminado).
       const ctElegido = contactoMode === 'cliente' ? contactosCliente.find(c => c.id === contactoSelId) : null;
-      const finalContactName = (ctElegido?.nombre || contactName).trim() || null;
-      const finalContactPhone = (ctElegido ? (ctElegido.telefono || ctElegido.whatsapp || '') : mobilePhone).trim() || null;
+      let finalContactName = (ctElegido?.nombre || contactName).trim() || null;
+      let finalContactPhone = (ctElegido ? (ctElegido.telefono || ctElegido.whatsapp || '') : mobilePhone).trim() || null;
+      // v8.25.17: para una PERSONA nueva, el contacto es ella misma si no se indicó "quien recibe".
+      if (!clienteId && tipoClienteNuevo === 'persona') {
+        if (!finalContactName) finalContactName = cnombre;
+        if (!finalContactPhone) finalContactPhone = nuevoClienteTel.trim() || null;
+      }
 
       // Áreas limpias (tipo proyecto)
       const areasLimpias = areas
@@ -333,7 +339,7 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
       let cid = clienteId;
       if (!cid) {
         cid = 'cli_' + Date.now() + Math.random().toString(36).slice(2, 7);
-        await crearCliente({ id: cid, nombre: cnombre, tipo: 'empresa', telefonoPrincipal: nuevoClienteTel.trim() || null, rnc: nuevoClienteCedula.trim() || null });
+        await crearCliente({ id: cid, nombre: cnombre, tipo: tipoClienteNuevo, telefonoPrincipal: nuevoClienteTel.trim() || null, rnc: nuevoClienteCedula.trim() || null });
       }
 
       // 2. Resolver locación
@@ -542,14 +548,24 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
             )}
           </div>
 
-          {/* v8.25.15: datos del cliente nuevo (manual) — teléfono + cédula/RNC */}
+          {/* v8.25.17: datos del cliente nuevo (manual) — empresa o persona */}
           {!clienteId && clienteNombreFinal && (
             <div className="border border-red-800/40 bg-red-900/10 rounded-card p-3 space-y-2">
-              <div className="text-[11px] text-red-300 font-bold">Nuevo cliente «{clienteNombreFinal}» — datos (opcional)</div>
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[11px] text-red-300 font-bold">Nuevo cliente «{clienteNombreFinal}»</div>
+                <div className="flex gap-1">
+                  {[['empresa', 'Empresa'], ['persona', 'Persona']].map(([k, l]) => (
+                    <button key={k} onClick={() => setTipoClienteNuevo(k)} className={`px-2.5 py-0.5 rounded-card text-[10px] font-bold uppercase border ${tipoClienteNuevo === k ? 'border-red-600 bg-red-900/20 text-white' : 'border-zinc-700 text-zinc-400'}`}>{l}</button>
+                  ))}
+                </div>
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <input value={nuevoClienteTel} onChange={e => setNuevoClienteTel(e.target.value)} placeholder="Teléfono" inputMode="tel" className={inpCls} />
-                <input value={nuevoClienteCedula} onChange={e => setNuevoClienteCedula(e.target.value)} placeholder="Cédula / RNC" inputMode="numeric" className={inpCls} />
+                <input value={nuevoClienteCedula} onChange={e => setNuevoClienteCedula(e.target.value)} placeholder={tipoClienteNuevo === 'persona' ? 'Cédula' : 'RNC'} inputMode="numeric" className={inpCls} />
               </div>
+              {tipoClienteNuevo === 'persona' && (
+                <div className="text-[10px] text-zinc-400">El contacto de la obra es <b>{clienteNombreFinal}</b> por defecto. Si recibe otra persona, ponla en <b>"Contacto en sitio → Otro"</b>.</div>
+              )}
             </div>
           )}
 

@@ -9,7 +9,7 @@
 // se permite agregar ÁREAS (tipo proyecto: nombre, m², sistema) dentro de ella.
 
 import React, { useEffect, useState } from 'react';
-import { X, Loader2, MapPin, Check, Crosshair, Plus, Trash2, Building2, ChevronDown } from 'lucide-react';
+import { X, Loader2, MapPin, Check, Crosshair, Plus, Trash2, Building2, ChevronDown, Search } from 'lucide-react';
 import { listarTemplatesSurveys, crearProyectoSurvey, crearSiteSurvey, SERVICE_LINES, COMPANIES, FAMILIAS_SERVICIO, familiaDeServiceLine } from '../../lib/surveys';
 import { listarUbicacionesCliente, crearUbicacionCliente, setAreasUbicacionCliente, crearCliente } from '../../lib/db';
 import { obtenerUbicacion, geocodificarInverso } from '../../lib/geo';
@@ -73,6 +73,8 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
   const [mobilePhone, setMobilePhone] = useState('');
   const [contactoMode, setContactoMode] = useState('manual'); // 'cliente' | 'manual'
   const [contactoSelId, setContactoSelId] = useState('');
+  const [buscarUbic, setBuscarUbic] = useState('');      // v8.25.11: buscador de locaciones
+  const [buscarContacto, setBuscarContacto] = useState(''); // v8.25.11: buscador de contactos
   const [notes, setNotes] = useState('');
 
   // Áreas dentro de la locación (tipo proyecto)
@@ -140,6 +142,18 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
 
   // Contactos del cliente seleccionado (para "contacto en sitio").
   const contactosCliente = clienteId ? contactos.filter(c => c.clienteId === clienteId) : [];
+  // v8.25.11: filtros de búsqueda (cuando hay muchas locaciones/contactos).
+  const _norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const ubicacionesFiltradas = (() => {
+    const q = _norm(buscarUbic.trim());
+    if (!q) return ubicaciones;
+    return ubicaciones.filter(u => u.id === ubicSelId || _norm(`${u.nombre} ${u.ciudad || ''} ${u.direccion || ''}`).includes(q));
+  })();
+  const contactosFiltrados = (() => {
+    const q = _norm(buscarContacto.trim());
+    if (!q) return contactosCliente;
+    return contactosCliente.filter(c => c.id === contactoSelId || _norm(`${c.nombre} ${c.cargo || ''} ${c.telefono || ''} ${c.email || ''}`).includes(q));
+  })();
   // Al cambiar de cliente: si tiene contactos, modo "del cliente"; si no, manual.
   useEffect(() => {
     const cts = clienteId ? contactos.filter(c => c.clienteId === clienteId) : [];
@@ -508,10 +522,17 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
             {/* Modo: locación existente */}
             {!loadingUbic && ubicMode === 'existente' && ubicaciones.length > 0 && (
               <div className="space-y-2">
-                <select value={ubicSelId} onChange={e => { const ub = ubicaciones.find(u => u.id === e.target.value); if (ub) seleccionarUbicacion(ub); }} className={inpCls}>
-                  {ubicaciones.map(u => (
+                {ubicaciones.length > 6 && (
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                    <input value={buscarUbic} onChange={e => setBuscarUbic(e.target.value)} placeholder={`Buscar entre ${ubicaciones.length} locaciones…`} className={inpCls + ' pl-8'} />
+                  </div>
+                )}
+                <select value={ubicSelId} onChange={e => { const ub = ubicaciones.find(u => u.id === e.target.value); if (ub) seleccionarUbicacion(ub); }} className={inpCls} size={ubicaciones.length > 6 ? Math.min(8, ubicacionesFiltradas.length || 1) : undefined}>
+                  {ubicacionesFiltradas.map(u => (
                     <option key={u.id} value={u.id}>{u.nombre}{u.ciudad ? ` · ${u.ciudad}` : ''}</option>
                   ))}
+                  {ubicacionesFiltradas.length === 0 && <option value="" disabled>Sin coincidencias</option>}
                 </select>
                 {ubicacionActual && (
                   <div className="text-[11px] text-zinc-400 flex items-start gap-1">
@@ -626,14 +647,22 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
               )}
             </div>
             {contactoMode === 'cliente' && contactosCliente.length > 0 ? (
-              <select value={contactoSelId} onChange={e => elegirContacto(e.target.value)} className={inpCls}>
-                <option value="">— Selecciona un contacto del cliente —</option>
-                {contactosCliente.map(c => (
-                  <option key={c.id} value={c.id}>
-                    {c.nombre}{c.cargo ? ` · ${c.cargo}` : ''}{c.telefono ? ` · ${c.telefono}` : ''}{c.esPrincipal ? ' ★' : ''}
-                  </option>
-                ))}
-              </select>
+              <div className="space-y-2">
+                {contactosCliente.length > 6 && (
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                    <input value={buscarContacto} onChange={e => setBuscarContacto(e.target.value)} placeholder={`Buscar entre ${contactosCliente.length} contactos…`} className={inpCls + ' pl-8'} />
+                  </div>
+                )}
+                <select value={contactoSelId} onChange={e => elegirContacto(e.target.value)} className={inpCls} size={contactosCliente.length > 6 ? Math.min(8, (contactosFiltrados.length || 0) + 1) : undefined}>
+                  <option value="">— Selecciona un contacto del cliente —</option>
+                  {contactosFiltrados.map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.nombre}{c.cargo ? ` · ${c.cargo}` : ''}{c.telefono ? ` · ${c.telefono}` : ''}{c.esPrincipal ? ' ★' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
             ) : (
               <div className="grid grid-cols-2 gap-2">
                 <input value={contactName} onChange={e => setContactName(e.target.value)} placeholder="Nombre de quien recibe" className={inpCls} />

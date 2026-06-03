@@ -52,6 +52,19 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
   const [fachadaDiferida, setFachadaDiferida] = useState(false);
   const [cerrando, setCerrando] = useState(false);
   const [modoCampo, setModoCampo] = useState(false); // v8.24.3: fondo claro para uso bajo el sol
+  const [brillo, setBrillo] = useState(100); // v8.24.3: atenuador (no puede superar el máximo del equipo)
+
+  // v8.24.3: mantener la pantalla encendida durante el levantamiento (Wake Lock).
+  useEffect(() => {
+    let lock = null;
+    const pedir = async () => {
+      try { if ('wakeLock' in navigator) lock = await navigator.wakeLock.request('screen'); } catch {}
+    };
+    pedir();
+    const onVis = () => { if (document.visibilityState === 'visible') pedir(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => { document.removeEventListener('visibilitychange', onVis); try { lock?.release?.(); } catch {} };
+  }, []);
 
   // 1. Cargar template + crear/recuperar visita
   useEffect(() => {
@@ -265,6 +278,9 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
         .modo-campo input::placeholder, .modo-campo textarea::placeholder { color:#71717a !important; }
         .modo-campo .border-2 { border-color:#a1a1aa !important; }
       `}</style>
+      {brillo < 100 && (
+        <div className="fixed inset-0 bg-black pointer-events-none" style={{ opacity: ((100 - brillo) / 100) * 0.8, zIndex: 55 }} />
+      )}
       <div className="min-h-full p-2 sm:p-4">
         <div className={`bg-zinc-950 border-2 ${modoCampo ? 'border-zinc-400' : 'border-zinc-800'} max-w-3xl mx-auto`}>
           {/* Header sticky */}
@@ -286,6 +302,11 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
                   <div className="h-full rounded-full transition-all" style={{ width: `${completitud.pct}%`, backgroundColor: completitud.pct >= 100 ? '#22c55e' : completitud.pct >= 50 ? '#f59e0b' : '#ef4444' }} />
                 </div>
                 <span className="text-[11px] font-bold tabular-nums" style={{ color: completitud.pct >= 100 ? '#22c55e' : '#a1a1aa' }}>{completitud.pct}%</span>
+              </div>
+              {/* v8.24.3: atenuador de brillo (capa encima; no sube del máximo del equipo) */}
+              <div className="flex items-center gap-1" title="Atenuar brillo (para subir, usa el brillo del equipo al máximo + Modo campo)">
+                <Sun className="w-3.5 h-3.5 text-zinc-500" />
+                <input type="range" min="30" max="100" value={brillo} onChange={e => setBrillo(Number(e.target.value))} className="w-16 accent-amber-500" />
               </div>
               <button
                 onClick={() => setModoCampo(v => !v)}

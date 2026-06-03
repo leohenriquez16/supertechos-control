@@ -84,7 +84,9 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto }) {
   const [reloadKey, setReloadKey] = useState(0);
   const [modalNuevoAbierto, setModalNuevoAbierto] = useState(false);     // multi-sitio (excepción)
   const [modalSimpleAbierto, setModalSimpleAbierto] = useState(false);   // levantamiento simple (principal)
-  const [vista, setVista] = useState('kanban');                          // kanban (principal) | lista | mapa
+  // v8.25.9: el supervisor abre el módulo en LISTA (no kanban).
+  const _esAdminInit = (usuario?.roles || []).includes('admin') || (usuario?.roles || []).includes('owner');
+  const [vista, setVista] = useState(_esAdminInit ? 'kanban' : 'lista'); // kanban (principal) | lista | mapa
   const [sites, setSites] = useState([]);
   const [busqueda, setBusqueda] = useState('');
   const [agruparPor, setAgruparPor] = useState('estado');                // estado | servicio | empresa | levantador | none
@@ -95,6 +97,9 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto }) {
   const [fLevantador, setFLevantador] = useState('');
   const [recs, setRecs] = useState([]); // v8.19.85: reclamaciones para el calendario
   const esAdmin = (usuario?.roles || []).includes('admin') || (usuario?.roles || []).includes('owner');
+  // v8.25.9: el supervisor solo ve etapas operativas (hasta "Realizado"); no las comerciales.
+  const esSup = !esAdmin && (usuario?.roles || []).includes('supervisor');
+  const ETAPAS_SUP = ['New', 'Contactado', 'Asignado', 'Agendado', 'Realizado'];
   const [ordenCols, setOrdenCols] = useState(data?.config?.kanbanLevOrden || null); // orden custom de etapas
   const [editandoEtapas, setEditandoEtapas] = useState(false);
 
@@ -185,6 +190,7 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto }) {
   const proyFiltrados = React.useMemo(() => {
     const q = busqueda.toLowerCase().trim();
     return proyectos.filter(p => {
+      if (esSup && !ETAPAS_SUP.includes(estadoDe(p))) return false; // supervisor: solo hasta "Realizado"
       if (q && !(
         (p.client_name || '').toLowerCase().includes(q) ||
         (p.name || '').toLowerCase().includes(q) ||
@@ -198,7 +204,7 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto }) {
       if (fLevantador && levantadorDe(p) !== fLevantador) return false;
       return true;
     });
-  }, [proyectos, busqueda, fServicio, fEmpresa, fEstado, fLevantador]);
+  }, [proyectos, busqueda, fServicio, fEmpresa, fEstado, fLevantador, esSup]);
 
   // Opciones presentes (para los selects de filtro).
   const opcServicios = React.useMemo(() => [...new Set(proyectos.map(p => p.service_line).filter(Boolean))], [proyectos]);
@@ -302,7 +308,7 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto }) {
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div className="flex gap-1 bg-zinc-900 border border-zinc-800 rounded-card p-1 w-fit">
-                {[['kanban', 'Kanban', LayoutGrid], ['lista', 'Lista', List], ['calendario', 'Calendario', Calendar], ['mapa', 'Mapa', MapIcon]].map(([k, l, Icon]) => (
+                {[['kanban', 'Kanban', LayoutGrid], ['lista', 'Lista', List], ['calendario', 'Calendario', Calendar], ['mapa', 'Mapa', MapIcon]].filter(([k]) => !(esSup && k === 'kanban')).map(([k, l, Icon]) => (
                   <button key={k} onClick={() => setVista(k)} className={`px-4 py-1.5 text-[11px] font-bold uppercase rounded-card flex items-center gap-1 ${vista === k ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>
                     {Icon && <Icon className="w-3 h-3" />}{l}
                   </button>

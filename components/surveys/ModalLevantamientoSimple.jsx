@@ -9,9 +9,9 @@
 // se permite agregar ÁREAS (tipo proyecto: nombre, m², sistema) dentro de ella.
 
 import React, { useEffect, useState } from 'react';
-import { X, Loader2, MapPin, Check, Crosshair, Plus, Trash2, Building2, ChevronDown } from 'lucide-react';
+import { X, Loader2, MapPin, Check, Crosshair, Plus, Trash2, Building2, ChevronDown, Search } from 'lucide-react';
 import { listarTemplatesSurveys, crearProyectoSurvey, crearSiteSurvey, SERVICE_LINES, COMPANIES, FAMILIAS_SERVICIO, familiaDeServiceLine } from '../../lib/surveys';
-import { listarUbicacionesCliente, crearUbicacionCliente, setAreasUbicacionCliente, crearCliente } from '../../lib/db';
+import { listarUbicacionesCliente, crearUbicacionCliente, setAreasUbicacionCliente, crearCliente, crearContacto } from '../../lib/db';
 import { obtenerUbicacion, geocodificarInverso } from '../../lib/geo';
 import { expandirYExtraer } from '../../lib/geoutils';
 import ServiceLineBadge from './ServiceLineBadge';
@@ -73,6 +73,12 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
   const [mobilePhone, setMobilePhone] = useState('');
   const [contactoMode, setContactoMode] = useState('manual'); // 'cliente' | 'manual'
   const [contactoSelId, setContactoSelId] = useState('');
+  const [buscarUbic, setBuscarUbic] = useState('');      // v8.25.11: buscador de locaciones
+  const [buscarContacto, setBuscarContacto] = useState(''); // v8.25.11: buscador de contactos
+  // v8.25.12: crear un contacto nuevo y guardarlo en el cliente.
+  const [contactosExtra, setContactosExtra] = useState([]); // creados en esta sesión
+  const [nuevoCt, setNuevoCt] = useState({ nombre: '', cargo: '', telefono: '', email: '' });
+  const [guardandoCt, setGuardandoCt] = useState(false);
   const [notes, setNotes] = useState('');
 
   // Áreas dentro de la locación (tipo proyecto)
@@ -138,8 +144,41 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
     })();
   }, []);
 
-  // Contactos del cliente seleccionado (para "contacto en sitio").
-  const contactosCliente = clienteId ? contactos.filter(c => c.clienteId === clienteId) : [];
+  // Contactos del cliente seleccionado (para "contacto en sitio"), incluyendo los recién creados.
+  const contactosCliente = clienteId ? [...contactos, ...contactosExtra].filter(c => c.clienteId === clienteId) : [];
+  // v8.25.12: crear y guardar un contacto nuevo en el cliente, y dejarlo elegido.
+  const guardarNuevoContacto = async () => {
+    if (!clienteId) { setErrorMsg('Primero elige un cliente existente para guardarle el contacto.'); return; }
+    if (!nuevoCt.nombre.trim()) { setErrorMsg('El contacto necesita un nombre.'); return; }
+    setGuardandoCt(true); setErrorMsg('');
+    try {
+      const id = 'ct_' + Date.now() + Math.floor(Math.random() * 1000);
+      const tel = nuevoCt.telefono.trim() || null;
+      await crearContacto({ id, clienteId, nombre: nuevoCt.nombre.trim(), cargo: nuevoCt.cargo.trim() || null, telefono: tel, whatsapp: tel, email: nuevoCt.email.trim() || null });
+      const nuevo = { id, clienteId, nombre: nuevoCt.nombre.trim(), cargo: nuevoCt.cargo.trim() || '', telefono: tel || '', whatsapp: tel || '', email: nuevoCt.email.trim() || '', esPrincipal: false };
+      setContactosExtra(prev => [...prev, nuevo]);
+      setNuevoCt({ nombre: '', cargo: '', telefono: '', email: '' });
+      setContactoMode('cliente');
+      setContactoSelId(id);
+      setContactName(nuevo.nombre);
+      setMobilePhone(nuevo.telefono);
+    } catch (e) {
+      setErrorMsg('No se pudo crear el contacto: ' + (e?.message || e));
+    }
+    setGuardandoCt(false);
+  };
+  // v8.25.11: filtros de búsqueda (cuando hay muchas locaciones/contactos).
+  const _norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const ubicacionesFiltradas = (() => {
+    const q = _norm(buscarUbic.trim());
+    if (!q) return ubicaciones;
+    return ubicaciones.filter(u => u.id === ubicSelId || _norm(`${u.nombre} ${u.ciudad || ''} ${u.direccion || ''}`).includes(q));
+  })();
+  const contactosFiltrados = (() => {
+    const q = _norm(buscarContacto.trim());
+    if (!q) return contactosCliente;
+    return contactosCliente.filter(c => c.id === contactoSelId || _norm(`${c.nombre} ${c.cargo || ''} ${c.telefono || ''} ${c.email || ''}`).includes(q));
+  })();
   // Al cambiar de cliente: si tiene contactos, modo "del cliente"; si no, manual.
   useEffect(() => {
     const cts = clienteId ? contactos.filter(c => c.clienteId === clienteId) : [];
@@ -508,10 +547,17 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
             {/* Modo: locación existente */}
             {!loadingUbic && ubicMode === 'existente' && ubicaciones.length > 0 && (
               <div className="space-y-2">
-                <select value={ubicSelId} onChange={e => { const ub = ubicaciones.find(u => u.id === e.target.value); if (ub) seleccionarUbicacion(ub); }} className={inpCls}>
-                  {ubicaciones.map(u => (
+                {ubicaciones.length > 6 && (
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                    <input value={buscarUbic} onChange={e => setBuscarUbic(e.target.value)} placeholder={`Buscar entre ${ubicaciones.length} locaciones…`} className={inpCls + ' pl-8'} />
+                  </div>
+                )}
+                <select value={ubicSelId} onChange={e => { const ub = ubicaciones.find(u => u.id === e.target.value); if (ub) seleccionarUbicacion(ub); }} className={inpCls} size={ubicaciones.length > 6 ? Math.min(8, ubicacionesFiltradas.length || 1) : undefined}>
+                  {ubicacionesFiltradas.map(u => (
                     <option key={u.id} value={u.id}>{u.nombre}{u.ciudad ? ` · ${u.ciudad}` : ''}</option>
                   ))}
+                  {ubicacionesFiltradas.length === 0 && <option value="" disabled>Sin coincidencias</option>}
                 </select>
                 {ubicacionActual && (
                   <div className="text-[11px] text-zinc-400 flex items-start gap-1">
@@ -616,24 +662,46 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
 
           {/* Contacto en sitio — del cliente o manual (quien recibe) */}
           <div>
-            <div className="flex items-center justify-between mb-1.5">
+            <div className="flex items-center justify-between mb-1.5 gap-2 flex-wrap">
               <div className={labCls + ' mb-0'}>Contacto en sitio (quien recibe)</div>
-              {contactosCliente.length > 0 && (
+              {(clienteId || contactosCliente.length > 0) && (
                 <div className="flex gap-1">
-                  <button onClick={() => setContactoMode('cliente')} className={`px-2 py-0.5 rounded-card text-[10px] font-bold uppercase border ${contactoMode === 'cliente' ? 'border-red-600 bg-red-900/20 text-white' : 'border-zinc-700 text-zinc-400'}`}>Del cliente</button>
+                  {contactosCliente.length > 0 && <button onClick={() => setContactoMode('cliente')} className={`px-2 py-0.5 rounded-card text-[10px] font-bold uppercase border ${contactoMode === 'cliente' ? 'border-red-600 bg-red-900/20 text-white' : 'border-zinc-700 text-zinc-400'}`}>Del cliente</button>}
+                  {clienteId && <button onClick={() => setContactoMode('nuevo')} className={`px-2 py-0.5 rounded-card text-[10px] font-bold uppercase border ${contactoMode === 'nuevo' ? 'border-red-600 bg-red-900/20 text-white' : 'border-zinc-700 text-zinc-400'}`}>＋ Nuevo</button>}
                   <button onClick={() => { setContactoMode('manual'); setContactoSelId(''); setContactName(''); setMobilePhone(''); }} className={`px-2 py-0.5 rounded-card text-[10px] font-bold uppercase border ${contactoMode === 'manual' ? 'border-red-600 bg-red-900/20 text-white' : 'border-zinc-700 text-zinc-400'}`}>Otro</button>
                 </div>
               )}
             </div>
-            {contactoMode === 'cliente' && contactosCliente.length > 0 ? (
-              <select value={contactoSelId} onChange={e => elegirContacto(e.target.value)} className={inpCls}>
-                <option value="">— Selecciona un contacto del cliente —</option>
-                {contactosCliente.map(c => (
-                  <option key={c.id} value={c.id}>
-                    {c.nombre}{c.cargo ? ` · ${c.cargo}` : ''}{c.telefono ? ` · ${c.telefono}` : ''}{c.esPrincipal ? ' ★' : ''}
-                  </option>
-                ))}
-              </select>
+            {contactoMode === 'nuevo' && clienteId ? (
+              <div className="space-y-2 bg-zinc-900/50 border border-zinc-800 rounded-card p-2.5">
+                <div className="text-[11px] text-zinc-400">Crear un contacto nuevo y guardarlo en <b>{clienteNombreFinal}</b>.</div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input value={nuevoCt.nombre} onChange={e => setNuevoCt({ ...nuevoCt, nombre: e.target.value })} placeholder="Nombre *" className={inpCls} />
+                  <input value={nuevoCt.cargo} onChange={e => setNuevoCt({ ...nuevoCt, cargo: e.target.value })} placeholder="Cargo (opcional)" className={inpCls} />
+                  <input value={nuevoCt.telefono} onChange={e => setNuevoCt({ ...nuevoCt, telefono: e.target.value })} placeholder="Teléfono / WhatsApp" className={inpCls} />
+                  <input value={nuevoCt.email} onChange={e => setNuevoCt({ ...nuevoCt, email: e.target.value })} placeholder="Email (opcional)" className={inpCls} />
+                </div>
+                <button onClick={guardarNuevoContacto} disabled={guardandoCt || !nuevoCt.nombre.trim()} className="w-full bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-[11px] font-bold uppercase py-2 rounded-card flex items-center justify-center gap-1.5">
+                  {guardandoCt ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Guardar contacto en el cliente
+                </button>
+              </div>
+            ) : contactoMode === 'cliente' && contactosCliente.length > 0 ? (
+              <div className="space-y-2">
+                {contactosCliente.length > 6 && (
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                    <input value={buscarContacto} onChange={e => setBuscarContacto(e.target.value)} placeholder={`Buscar entre ${contactosCliente.length} contactos…`} className={inpCls + ' pl-8'} />
+                  </div>
+                )}
+                <select value={contactoSelId} onChange={e => elegirContacto(e.target.value)} className={inpCls} size={contactosCliente.length > 6 ? Math.min(8, (contactosFiltrados.length || 0) + 1) : undefined}>
+                  <option value="">— Selecciona un contacto del cliente —</option>
+                  {contactosFiltrados.map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.nombre}{c.cargo ? ` · ${c.cargo}` : ''}{c.telefono ? ` · ${c.telefono}` : ''}{c.esPrincipal ? ' ★' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
             ) : (
               <div className="grid grid-cols-2 gap-2">
                 <input value={contactName} onChange={e => setContactName(e.target.value)} placeholder="Nombre de quien recibe" className={inpCls} />

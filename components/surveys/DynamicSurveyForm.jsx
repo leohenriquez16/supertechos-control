@@ -259,6 +259,12 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
     }
   };
 
+  // v8.25.8: no cerrar mientras hay un guardado en vuelo (evita perder cambios).
+  const cerrarSeguro = () => {
+    if (guardando || cerrando) { alert('Espera un segundo: guardando tus cambios…'); return; }
+    onCerrar?.();
+  };
+
   if (loading) {
     return (
       <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4">
@@ -334,9 +340,9 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
                 {modoCampo ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
               </button>
               <button
-                onClick={onCerrar}
+                onClick={cerrarSeguro}
                 className="text-zinc-400 hover:text-white p-1"
-                title="Cerrar (sin completar)"
+                title="Cerrar (los cambios se guardan solos)"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -421,6 +427,22 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
             />
           ))}
 
+          {/* v8.25.8: Finalizar levantamiento inline — al final de las secciones, para
+              cuando no hay más secciones que agregar (sin tener que buscar el footer). */}
+          {areas.length > 0 && (
+            <div className="p-4 border-b border-zinc-800">
+              <div className="text-[11px] text-zinc-500 mb-2 text-center">¿No hay más secciones que agregar?</div>
+              <button
+                onClick={() => cerrarVisitaCompleta(false)}
+                disabled={cerrando}
+                className={`w-full py-3.5 text-sm font-black uppercase tracking-wider rounded-card flex items-center justify-center gap-2 disabled:opacity-50 text-white ${completitud.faltantes.length > 0 ? 'bg-zinc-700 hover:bg-zinc-600' : 'bg-green-600 hover:bg-green-700'}`}
+              >
+                {cerrando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                {completitud.faltantes.length > 0 ? `Finalizar — faltan ${completitud.faltantes.length} requisito(s)` : 'Finalizar levantamiento'}
+              </button>
+            </div>
+          )}
+
           {/* Footer con cerrar visita */}
           <div className="border-t-2 border-zinc-800 p-4 sticky bottom-0 bg-zinc-950 space-y-2">
             {completitud.faltantes.length > 0 && (
@@ -433,8 +455,8 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
                 {areas.length} área{areas.length === 1 ? '' : 's'} · {completitud.pct}% completo · check-in {visit?.checkin_at ? new Date(visit.checkin_at).toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' }) : '—'}
               </div>
               <div className="flex items-center gap-2">
-                <button onClick={onCerrar} className="bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 text-xs font-bold uppercase">
-                  Pausar (guardar y salir)
+                <button onClick={cerrarSeguro} disabled={guardando} className="bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-white px-4 py-2 text-xs font-bold uppercase flex items-center gap-1">
+                  {guardando && <Loader2 className="w-3 h-3 animate-spin" />} {guardando ? 'Guardando…' : 'Pausar (guardar y salir)'}
                 </button>
                 {completitud.faltantes.length > 0 && (
                   <button onClick={() => cerrarVisitaCompleta(true)} disabled={cerrando} className="bg-amber-700/30 border border-amber-700 text-amber-300 hover:bg-amber-700/50 px-3 py-2 text-[11px] font-bold uppercase rounded-card disabled:opacity-50">Cerrar sin completar</button>

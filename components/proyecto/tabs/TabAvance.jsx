@@ -340,8 +340,13 @@ export default function TabAvance({ proyecto, reportes, sistema, sistemas, esSup
   //     se renderizan anidadas (con sangría).
   //   - "Otro sistema aquí" (v8.19.25) sigue agrupando por nombre dentro del
   //     mismo padre — el mismo nombre + mismo padre = misma zona física.
+  // v8.25.10: las áreas marcadas "bloqueada" (no disponibles) no salen para medir avance.
+  const areasBloqueadas = React.useMemo(
+    () => new Set((data?.estadosArea || []).filter(e => e.proyectoId === proyecto.id && e.estado === 'bloqueada').map(e => e.areaId)),
+    [data?.estadosArea, proyecto.id]
+  );
   const jerarquiaAreas = React.useMemo(() => {
-    const todas = proyecto.areas || [];
+    const todas = (proyecto.areas || []).filter(a => !areasBloqueadas.has(a.id));
     const construir = (padreIds) => {
       const directas = todas.filter(a => padreIds.includes(a.padreId || null));
       const mapa = {};
@@ -361,7 +366,7 @@ export default function TabAvance({ proyecto, reportes, sistema, sistemas, esSup
       });
     };
     return construir([null]);
-  }, [proyecto.areas]);
+  }, [proyecto.areas, areasBloqueadas]);
 
   const toggleColapsar = (key) => {
     const next = new Set(areasColapsadas);

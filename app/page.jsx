@@ -1217,7 +1217,7 @@ export default function App() {
           }
 
           // Modo manual (flujo original)
-          return <FormReporte usuario={usuario} proyecto={proyectoActivo} reportes={data.reportes} sistema={data.sistemas[proyectoActivo.sistema]} sistemas={data.sistemas} onCancelar={salir} onTerminar={salir} onGuardar={async (r, fotos) => withSync(async () => {
+          return <FormReporte usuario={usuario} proyecto={proyectoActivo} reportes={data.reportes} sistema={data.sistemas[proyectoActivo.sistema]} sistemas={data.sistemas} estadosArea={data.estadosArea} onCancelar={salir} onTerminar={salir} onGuardar={async (r, fotos) => withSync(async () => {
           const reporteId = 'r_' + Date.now() + Math.random();
           await db.crearReporte({ ...r, id: reporteId });
           // v8.9.14: auto-mover a 'en_ejecucion' si está en 'aprobado'
@@ -9767,7 +9767,10 @@ function FormReporteRapidoAudio({ usuario, proyecto, sistema, sistemas, personal
 }
 
 
-function FormReporte({ usuario, proyecto, reportes, sistema, sistemas, onGuardar, onCancelar, onTerminar }) {
+function FormReporte({ usuario, proyecto, reportes, sistema, sistemas, estadosArea, onGuardar, onCancelar, onTerminar }) {
+  // v8.25.10: las áreas marcadas "bloqueada" (no disponibles) no salen para reportar.
+  const areasBloqueadasRep = new Set((estadosArea || []).filter(e => e.proyectoId === proyecto.id && e.estado === 'bloqueada').map(e => e.areaId));
+  const areasReportables = (proyecto.areas || []).filter(a => !areasBloqueadasRep.has(a.id));
   const [paso, setPaso] = useState(1);
   const [form, setForm] = useState({ areaId: '', tareaId: '', m2: '', rollos: '', cubetas: '', fecha: new Date().toISOString().split('T')[0], nota: '' });
   const [fotos, setFotos] = useState([]);
@@ -9847,11 +9850,13 @@ function FormReporte({ usuario, proyecto, reportes, sistema, sistemas, onGuardar
       {paso === 1 && <div className="space-y-3">
         <Label>Fecha</Label><Input type="date" value={form.fecha} onChange={v => setForm({ ...form, fecha: v })} />
         <Label>Área</Label>
-        {proyecto.areas.map(a => {
+        {areasReportables.length === 0 && <div className="text-xs text-amber-300 bg-amber-900/15 border border-amber-800/40 rounded-card p-3">No hay áreas disponibles para reportar. Marca alguna como "Disponible" en la pestaña Áreas (las bloqueadas no salen).</div>}
+        {areasReportables.map(a => {
           // v8.9.2: calcular con sistema del área
           const sisA = (sistemas && sistemas[a.sistemaId || proyecto.sistema]) || sistema;
           const { porcentaje } = calcAvanceArea(proyecto, a.id, reportes, sisA);
-          return <button key={a.id} onClick={() => setForm({ ...form, areaId: a.id, tareaId: '' })} className={`w-full p-4 border-2 text-left ${form.areaId === a.id ? 'border-red-600 bg-red-600/10' : 'border-zinc-800 bg-zinc-900'}`}><div className="flex justify-between items-center"><div><div className="font-bold">{a.nombre}</div><div className="text-xs text-zinc-500">{a.m2} m² · <span className="text-red-400">{sisA?.nombre || '(sin sistema)'}</span></div></div><div className="text-sm font-black text-zinc-400">{porcentaje.toFixed(0)}%</div></div></button>;
+          // v8.25.9: al tocar el área se entra directo al paso de tareas.
+          return <button key={a.id} onClick={() => { setForm({ ...form, areaId: a.id, tareaId: '' }); setPaso(2); }} className={`w-full p-4 border-2 text-left ${form.areaId === a.id ? 'border-red-600 bg-red-600/10' : 'border-zinc-800 bg-zinc-900'}`}><div className="flex justify-between items-center"><div><div className="font-bold">{a.nombre}</div><div className="text-xs text-zinc-500">{a.m2} m² · <span className="text-red-400">{sisA?.nombre || '(sin sistema)'}</span></div></div><div className="text-sm font-black text-zinc-400">{porcentaje.toFixed(0)}%</div></div></button>;
         })}
         <BotonPrincipal disabled={!form.areaId} onClick={() => setPaso(2)}>Siguiente →</BotonPrincipal>
       </div>}

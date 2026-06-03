@@ -31,6 +31,10 @@ async function obtenerAuthUserIdActual() {
 
 const nuevaAreaVacia = () => ({ id: 'ar_' + Date.now() + Math.random().toString(36).slice(2, 5), nombre: '', m2: '', sistemaId: '' });
 
+// v8.22.1: el correo automático "Levantamiento recibido" queda APAGADO hasta que el
+// cliente defina el texto oficial de la plantilla (evita enviar placeholder en prod).
+const EMAIL_LEVANTAMIENTO_RECIBIDO_ON = false;
+
 // Familias de servicio compartidas (lib/surveys): Pisos / Pintura /
 // Impermeabilizante-Aislante / Genérico-Otro. El específico se elige por área.
 const FAMILIAS = FAMILIAS_SERVICIO;
@@ -341,7 +345,9 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
         const cliente = clientes.find(c => c.id === cid);
         const contactoSel = contactosCliente.find(c => c.id === contactoSelId);
         const correos = [contactoSel?.email, cliente?.emailPrincipal].filter(Boolean);
-        if (correos.length > 0) {
+        // v8.22.1: APAGADO hasta tener la plantilla oficial. En prod Resend está activo,
+        // así que un placeholder llegaría a clientes reales. Activar cuando el texto esté listo.
+        if (EMAIL_LEVANTAMIENTO_RECIBIDO_ON && correos.length > 0) {
           fetch('/api/email/levantamiento-recibido', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

@@ -18,7 +18,7 @@
 
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { Loader2, X, Save, Check, Plus, Copy, Trash2, ChevronDown, ChevronUp, Zap, Sun, Moon } from 'lucide-react';
-import { obtenerTemplateSurvey, crearVisita, actualizarVisita, cerrarVisita, listarAreasDeVisita, crearArea, actualizarArea, eliminarArea, calcularCompletitud, setCompletitudProyecto, familiaDeServiceLine, tiposDeFamilia, familiaPorKey } from '../../lib/surveys';
+import { obtenerTemplateSurvey, crearVisita, obtenerVisitaAbiertaDeSite, actualizarVisita, cerrarVisita, listarAreasDeVisita, crearArea, actualizarArea, eliminarArea, calcularCompletitud, setCompletitudProyecto, familiaDeServiceLine, tiposDeFamilia, familiaPorKey } from '../../lib/surveys';
 import { obtenerUbicacion, distanciaMetros } from '../../lib/geo';
 import SurveyFieldRenderer from './SurveyFieldRenderer';
 
@@ -77,17 +77,20 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
         if (cancelado) return;
         setTemplate(t);
 
-        // Crear visita nueva. (Iteración futura: reusar visita abierta del site.)
-        // v8.19.51: el levantador se toma de la persona (authUserId) o de la sesión.
-        // Si no hay id válido, NO bloqueamos — la visita se crea sin levantador
-        // ligado a auth (surveyor_id es nullable). crearVisita reintenta sin él si
-        // el FK falla (entornos con auth.users desfasado).
+        // v8.24.7: reusar la visita ABIERTA del sitio si existe (evita acumular visitas
+        // vacías al reabrir el formulario). Si no hay, se crea una nueva.
         const authUserId = (usuario && usuario.authUserId) || await obtenerAuthUserIdActual();
-        const v = await crearVisita({ siteId: site.id, surveyorAuthUserId: authUserId || null });
+        let v = await obtenerVisitaAbiertaDeSite(site.id);
+        let areasExistentes = [];
+        if (v) {
+          try { areasExistentes = await listarAreasDeVisita(v.id); } catch {}
+        } else {
+          v = await crearVisita({ siteId: site.id, surveyorAuthUserId: authUserId || null });
+        }
         if (cancelado) return;
         setVisit(v);
         setGeneralData(v.general_data || {});
-        setAreas([]);
+        setAreas(areasExistentes);
         setErrorMsg(null);
 
         // v8.19.52: validar ubicación EN SITIO al abrir (no bloquea el form).

@@ -14,7 +14,7 @@ import { ArrowLeft, Building, MapPin, Calendar, Clock, FileText, AlertTriangle, 
 import QuickActions from './QuickActions';
 import DynamicSurveyForm from './DynamicSurveyForm';
 import SatelitalAreas from './SatelitalAreas';
-import { SITE_STATUS, listarVisitasDeSite, listarAreasDeVisita, obtenerTemplateSurvey, asignarPersonaSurvey, ESCALERA, setRequiereEscaleraSurvey, eliminarProyectoSurvey, solicitarEliminacionSurvey, cancelarSolicitudEliminacionSurvey, listarTemplatesSurveys, actualizarTipoProyectoSurvey, SERVICE_LINES, FAMILIAS_SERVICIO, familiaDeServiceLine } from '../../lib/surveys';
+import { SITE_STATUS, listarVisitasDeSite, listarAreasDeVisita, obtenerTemplateSurvey, asignarPersonaSurvey, ESCALERA, setRequiereEscaleraSurvey, eliminarProyectoSurvey, solicitarEliminacionSurvey, cancelarSolicitudEliminacionSurvey, listarTemplatesSurveys, actualizarTipoProyectoSurvey, eliminarVisita, SERVICE_LINES, FAMILIAS_SERVICIO, familiaDeServiceLine } from '../../lib/surveys';
 import { imprimirLevantamiento } from './imprimirLevantamiento';
 import ChatterPanel from '../common/ChatterPanel';
 import { registrarEvento as chatterEventoSurvey } from '../../lib/chatter';
@@ -437,29 +437,26 @@ function LevantamientosRealizados({ site, proyecto }) {
     setGenerandoPdf(null);
   };
 
-  useEffect(() => {
-    let cancel = false;
-    (async () => {
-      setLoading(true);
-      try {
-        const vs = await listarVisitasDeSite(site.id);
-        if (cancel) return;
-        const mapa = {};
-        for (const v of vs) {
-          const as = await listarAreasDeVisita(v.id);
-          if (cancel) return;
-          mapa[v.id] = as;
-        }
-        if (!cancel) {
-          setVisitas(vs);
-          setAreasPorVisita(mapa);
-          setExpandida(vs[0]?.id || null); // expandir la visita más reciente
-        }
-      } catch (e) { console.warn('LevantamientosRealizados:', e?.message); }
-      if (!cancel) setLoading(false);
-    })();
-    return () => { cancel = true; };
-  }, [site.id]);
+  const recargar = async () => {
+    setLoading(true);
+    try {
+      const vs = await listarVisitasDeSite(site.id);
+      const mapa = {};
+      for (const v of vs) { mapa[v.id] = await listarAreasDeVisita(v.id); }
+      setVisitas(vs);
+      setAreasPorVisita(mapa);
+      setExpandida(vs[0]?.id || null);
+    } catch (e) { console.warn('LevantamientosRealizados:', e?.message); }
+    setLoading(false);
+  };
+  useEffect(() => { recargar(); /* eslint-disable-next-line */ }, [site.id]);
+
+  const borrarVisita = async (v, areas) => {
+    const vacia = (areas?.length || 0) === 0;
+    if (!confirm(vacia ? '¿Eliminar esta visita vacía?' : 'Esta visita tiene áreas capturadas. ¿Eliminarla de todas formas? No se puede deshacer.')) return;
+    try { await eliminarVisita(v.id); await recargar(); }
+    catch (e) { alert('Error: ' + (e?.message || e)); }
+  };
 
   if (loading) {
     return (
@@ -513,6 +510,12 @@ function LevantamientosRealizados({ site, proyecto }) {
                 >
                   {generandoPdf === v.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
                   {generandoPdf === v.id ? 'Generando…' : 'Exportar PDF del levantamiento'}
+                </button>
+                <button
+                  onClick={() => borrarVisita(v, areas)}
+                  className="w-full flex items-center justify-center gap-2 bg-zinc-800 hover:bg-red-900/40 text-zinc-300 hover:text-red-300 text-[11px] font-bold uppercase py-1.5 rounded-card"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Eliminar esta visita
                 </button>
                 {grupos.map(({ piso, items, subPared, subTecho }) => (
                   <div key={piso}>

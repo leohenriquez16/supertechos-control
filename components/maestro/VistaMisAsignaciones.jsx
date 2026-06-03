@@ -6,7 +6,7 @@
 // es larga). Para reclamaciones muestra cuándo y qué se hizo.
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { ArrowLeft, Loader2, Briefcase, MapPin, AlertTriangle, ChevronDown, MessageCircle, Mail, Clock, User as UserIcon } from 'lucide-react';
+import { ArrowLeft, Loader2, Briefcase, MapPin, AlertTriangle, ChevronDown, MessageCircle, Mail, Clock, User as UserIcon, Play } from 'lucide-react';
 import * as db from '../../lib/db';
 import { obtenerUbicacion, distanciaMetros, formatDistancia } from '../../lib/geo';
 import { listarProyectosSurveys, listarTodosLosSitesSurvey, listarSitesProyectoSurvey, SERVICE_LINES, ESCALERA } from '../../lib/surveys';
@@ -284,11 +284,14 @@ export default function VistaMisAsignaciones({ usuario, data, onVolver, onVerPro
                         {l.name && <div><span className="text-zinc-500">Levantamiento: </span><span className="text-zinc-300">{l.name}</span></div>}
                         {l.description && <div className="text-zinc-400">{l.description}</div>}
                         {l._coords && <a href={`https://www.google.com/maps?q=${l._coords.lat},${l._coords.lng}`} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline inline-flex items-center gap-1"><MapPin className="w-3 h-3" /> Abrir en Maps</a>}
-                        <button onClick={() => abrirCaptura(l)} disabled={cargandoCaptura} className="w-full mt-1 px-3 py-2.5 rounded-card bg-blue-600 hover:bg-blue-500 disabled:opacity-60 text-white text-sm font-bold uppercase tracking-wide flex items-center justify-center gap-2">
-                          {cargandoCaptura ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />} Abrir levantamiento
-                        </button>
                       </div>
                     )}
+                    {/* v8.25.6: CTA principal SIEMPRE visible (no escondido tras expandir) */}
+                    <div className="px-3 pb-3 pt-0">
+                      <button onClick={() => abrirCaptura(l)} disabled={cargandoCaptura} className="w-full px-3 py-3 rounded-card bg-blue-600 hover:bg-blue-500 disabled:opacity-60 text-white text-sm font-black uppercase tracking-wide flex items-center justify-center gap-2 shadow-lg">
+                        {cargandoCaptura ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />} Abrir / hacer levantamiento
+                      </button>
+                    </div>
                   </div>
                 );
               })}

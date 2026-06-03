@@ -93,6 +93,27 @@ export async function imprimirLevantamiento({ proyecto, site, visit, areas = [],
   const serviceLabel = SERVICE_LINES[proyecto?.service_line]?.label || proyecto?.service_line || '';
   const totalM2 = areas.reduce((s, a) => s + (Number(a.net_area_m2) || Number(a.gross_area_m2) || 0), 0);
 
+  // v8.24.8: foto de fachada (check-in) + mapa de la ubicación para el encabezado.
+  let fachadaUrl = '';
+  const ff = (visit?.general_data || {}).foto_frontal;
+  if (Array.isArray(ff) && ff[0]) {
+    if (ff[0].signedUrl) fachadaUrl = ff[0].signedUrl;
+    else if (ff[0].storage_path) { try { fachadaUrl = await getSignedUrlFotoSurvey(ff[0].storage_path, 3600); } catch { fachadaUrl = ''; } }
+  }
+  if (!fachadaUrl) {
+    const ffp = fotosConUrl.find(f => f.photoType === 'foto_frontal' || /fachada|frontal|frente/i.test(f.caption || ''));
+    if (ffp) fachadaUrl = ffp.url;
+  }
+  const lat = site?.latitude ?? visit?.checkin_latitude;
+  const lng = site?.longitude ?? visit?.checkin_longitude;
+  const MAPBOX = (typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_MAPBOX_TOKEN) || '';
+  let mapaUrl = '';
+  if (lat != null && lng != null) {
+    mapaUrl = MAPBOX
+      ? `https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/static/pin-l+CC0000(${lng},${lat})/${lng},${lat},16,0/640x320@2x?access_token=${MAPBOX}`
+      : '';
+  }
+
   // --- Secciones generales (visit.general_data) ---
   const htmlGenerales = generalSections.map(sec => `
     <section class="bloque">
@@ -125,6 +146,11 @@ export async function imprimirLevantamiento({ proyecto, site, visit, areas = [],
     .portada .sub { font-size: 13px; font-weight: bold; }
     .portada .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 18px; margin-top: 10px; font-size: 11px; }
     .portada .meta b { color: #555; font-weight: 600; }
+    .cabecera-visual { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; page-break-inside: avoid; }
+    .cv-item { margin: 0; }
+    .cv-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #777; margin-bottom: 3px; font-weight: 700; }
+    .cv-item img { width: 100%; height: 210px; object-fit: cover; border-radius: 8px; border: 1px solid #ddd; }
+    .cv-ph { width: 100%; height: 210px; border: 1px dashed #ccc; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #999; font-size: 11px; background: #fafafa; text-align: center; }
     .resumen { display: flex; gap: 10px; margin-bottom: 16px; }
     .kpi { flex: 1; border: 1px solid #ddd; border-radius: 8px; padding: 8px 12px; }
     .kpi .n { font-size: 18px; font-weight: 800; color: #CC0000; }
@@ -160,6 +186,17 @@ export async function imprimirLevantamiento({ proyecto, site, visit, areas = [],
         <div><b>Visita:</b> ${fmtFecha(visit?.checkin_at)}</div>
         <div><b>Cierre:</b> ${fmtFecha(visit?.checkout_at)}</div>
       </div>
+    </div>
+
+    <div class="cabecera-visual">
+      <figure class="cv-item">
+        <div class="cv-label">Fachada / frente</div>
+        ${fachadaUrl ? `<img src="${esc(fachadaUrl)}" />` : `<div class="cv-ph">Sin foto de fachada</div>`}
+      </figure>
+      <figure class="cv-item">
+        <div class="cv-label">Ubicación</div>
+        ${mapaUrl ? `<img src="${esc(mapaUrl)}" />` : `<div class="cv-ph">${lat != null ? `${esc(lat)}, ${esc(lng)}` : 'Sin ubicación registrada'}</div>`}
+      </figure>
     </div>
 
     <div class="resumen">

@@ -563,7 +563,7 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-2">
-                <input value={nuevoClienteTel} onChange={e => setNuevoClienteTel(e.target.value)} placeholder="Teléfono" inputMode="tel" className={inpCls} />
+                <input value={nuevoClienteTel} onChange={e => setNuevoClienteTel(e.target.value)} placeholder="Teléfono" inputMode="numeric" className={inpCls} />
                 <input value={nuevoClienteCedula} onChange={e => setNuevoClienteCedula(e.target.value)} placeholder={tipoClienteNuevo === 'persona' ? 'Cédula' : 'RNC'} inputMode="numeric" className={inpCls} />
               </div>
               {tipoClienteNuevo === 'persona' && (
@@ -748,7 +748,7 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
                 <div className="grid grid-cols-2 gap-2">
                   <input value={nuevoCt.nombre} onChange={e => setNuevoCt({ ...nuevoCt, nombre: e.target.value })} placeholder="Nombre *" className={inpCls} />
                   <input value={nuevoCt.cargo} onChange={e => setNuevoCt({ ...nuevoCt, cargo: e.target.value })} placeholder="Cargo (opcional)" className={inpCls} />
-                  <input value={nuevoCt.telefono} onChange={e => setNuevoCt({ ...nuevoCt, telefono: e.target.value })} placeholder="Teléfono / WhatsApp" inputMode="tel" className={inpCls} />
+                  <input value={nuevoCt.telefono} onChange={e => setNuevoCt({ ...nuevoCt, telefono: e.target.value })} placeholder="Teléfono / WhatsApp" inputMode="numeric" className={inpCls} />
                   <input value={nuevoCt.email} onChange={e => setNuevoCt({ ...nuevoCt, email: e.target.value })} placeholder="Email (opcional)" className={inpCls} />
                 </div>
                 <button onClick={guardarNuevoContacto} disabled={guardandoCt || !nuevoCt.nombre.trim()} className="w-full bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-[11px] font-bold uppercase py-2 rounded-card flex items-center justify-center gap-1.5">
@@ -787,7 +787,7 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
             ) : (
               <div className="grid grid-cols-2 gap-2">
                 <input value={contactName} onChange={e => setContactName(e.target.value)} placeholder="Nombre de quien recibe" className={inpCls} />
-                <input value={mobilePhone} onChange={e => setMobilePhone(e.target.value)} placeholder="809-…" inputMode="tel" className={inpCls} />
+                <input value={mobilePhone} onChange={e => setMobilePhone(e.target.value)} placeholder="809-…" inputMode="numeric" className={inpCls} />
               </div>
             )}
           </div>

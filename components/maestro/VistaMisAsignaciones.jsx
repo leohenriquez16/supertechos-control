@@ -6,7 +6,7 @@
 // es larga). Para reclamaciones muestra cuándo y qué se hizo.
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { ArrowLeft, Loader2, Briefcase, MapPin, AlertTriangle, ChevronDown, MessageCircle, Mail, Clock, User as UserIcon, Play } from 'lucide-react';
+import { ArrowLeft, Loader2, Briefcase, MapPin, AlertTriangle, ChevronDown, MessageCircle, Mail, Clock, User as UserIcon, Play, RefreshCw } from 'lucide-react';
 import * as db from '../../lib/db';
 import { obtenerUbicacion, distanciaMetros, formatDistancia } from '../../lib/geo';
 import { listarProyectosSurveys, listarTodosLosSitesSurvey, listarSitesProyectoSurvey, SERVICE_LINES, ESCALERA } from '../../lib/surveys';
@@ -52,7 +52,7 @@ const CAPAS = [
   { key: 'reclamaciones', label: 'Reclamaciones', icon: AlertTriangle, color: '#f59e0b', leaflet: 'orange' },
 ];
 
-export default function VistaMisAsignaciones({ usuario, data, onVolver, onVerProyecto }) {
+export default function VistaMisAsignaciones({ usuario, data, onVolver, onVerProyecto, onRecargar }) {
   const [loading, setLoading] = useState(true);
   const [levs, setLevs] = useState([]);
   const [recs, setRecs] = useState([]);
@@ -87,28 +87,28 @@ export default function VistaMisAsignaciones({ usuario, data, onVolver, onVerPro
   };
   const distTxt = (coords) => (miUbic && coords && coords.lat != null) ? formatDistancia(distanciaMetros(miUbic.lat, miUbic.lng, coords.lat, coords.lng)) : null;
 
-  useEffect(() => {
-    let cancel = false;
-    (async () => {
-      setLoading(true);
-      try {
-        const [sp, sites, rs, us] = await Promise.all([
-          listarProyectosSurveys(), listarTodosLosSitesSurvey(), db.listarReclamaciones(), db.listarUbicacionesCliente(null),
-        ]);
-        if (cancel) return;
-        const coordsProj = {};
-        for (const s of sites) { if (s.latitude != null && s.longitude != null && !coordsProj[s.project_id]) coordsProj[s.project_id] = { lat: Number(s.latitude), lng: Number(s.longitude) }; }
-        const dirProj = {};
-        for (const s of sites) { if (!dirProj[s.project_id] && (s.address || s.name)) dirProj[s.project_id] = s.address || s.name; }
-        const misLev = sp.filter(p => p.asignado_a_id === usuario.id).map(p => ({ ...p, _coords: coordsProj[p.id] || null, _dir: dirProj[p.id] || '' }));
-        setLevs(misLev);
-        setRecs(rs.filter(r => r.asignadoA === usuario.id));
-        setUbicaciones(us);
-      } catch (e) { console.warn('MisAsignaciones:', e?.message); }
-      if (!cancel) setLoading(false);
-    })();
-    return () => { cancel = true; };
-  }, [usuario.id]);
+  const [refrescando, setRefrescando] = useState(false);
+  // v8.25.7: carga reutilizable (para el botón Refrescar sin recargar la app).
+  const cargar = async ({ silent } = {}) => {
+    if (silent) setRefrescando(true); else setLoading(true);
+    try {
+      const [sp, sites, rs, us] = await Promise.all([
+        listarProyectosSurveys(), listarTodosLosSitesSurvey(), db.listarReclamaciones(), db.listarUbicacionesCliente(null),
+      ]);
+      const coordsProj = {};
+      for (const s of sites) { if (s.latitude != null && s.longitude != null && !coordsProj[s.project_id]) coordsProj[s.project_id] = { lat: Number(s.latitude), lng: Number(s.longitude) }; }
+      const dirProj = {};
+      for (const s of sites) { if (!dirProj[s.project_id] && (s.address || s.name)) dirProj[s.project_id] = s.address || s.name; }
+      const misLev = sp.filter(p => p.asignado_a_id === usuario.id).map(p => ({ ...p, _coords: coordsProj[p.id] || null, _dir: dirProj[p.id] || '' }));
+      setLevs(misLev);
+      setRecs(rs.filter(r => r.asignadoA === usuario.id));
+      setUbicaciones(us);
+    } catch (e) { console.warn('MisAsignaciones:', e?.message); }
+    setLoading(false); setRefrescando(false);
+  };
+  const refrescar = async () => { await Promise.all([cargar({ silent: true }), onRecargar?.()]); };
+
+  useEffect(() => { cargar(); /* eslint-disable-next-line */ }, [usuario.id]);
 
   // Proyectos asignados al usuario (supervisor / maestro / ayudante).
   const proyectosAsignados = useMemo(() => (data.proyectos || []).filter(p => !p.archivado && (
@@ -185,9 +185,14 @@ export default function VistaMisAsignaciones({ usuario, data, onVolver, onVerPro
           <h1 className="text-3xl font-black tracking-tight">Mis asignaciones</h1>
           <div className="text-xs text-zinc-500 mt-1">Tus proyectos, levantamientos y reclamaciones. Elige qué ver en el mapa.</div>
         </div>
-        <button onClick={verMiUbicacion} disabled={buscandoUbic} className={`flex-shrink-0 px-3 py-2 rounded-card text-xs font-bold uppercase flex items-center gap-1.5 border ${miUbic ? 'bg-green-600/20 border-green-600 text-green-300' : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-red-600'}`}>
-          {buscandoUbic ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MapPin className="w-3.5 h-3.5" />} {miUbic ? 'Ubicación activa' : 'Mi ubicación'}
-        </button>
+        <div className="flex-shrink-0 flex items-center gap-2">
+          <button onClick={refrescar} disabled={refrescando} className="px-3 py-2 rounded-card text-xs font-bold uppercase flex items-center gap-1.5 border bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-blue-500 disabled:opacity-60">
+            <RefreshCw className={`w-3.5 h-3.5 ${refrescando ? 'animate-spin' : ''}`} /> {refrescando ? 'Actualizando…' : 'Refrescar'}
+          </button>
+          <button onClick={verMiUbicacion} disabled={buscandoUbic} className={`px-3 py-2 rounded-card text-xs font-bold uppercase flex items-center gap-1.5 border ${miUbic ? 'bg-green-600/20 border-green-600 text-green-300' : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-red-600'}`}>
+            {buscandoUbic ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MapPin className="w-3.5 h-3.5" />} {miUbic ? 'Ubicación activa' : 'Mi ubicación'}
+          </button>
+        </div>
       </div>
 
       {/* Capas */}

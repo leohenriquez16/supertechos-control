@@ -45,11 +45,21 @@ export default function SurveyFieldRenderer({ field, value, onChange, allValues 
           {label}
           <input
             type="text"
+            inputMode={field.numeric ? 'decimal' : undefined}
             value={value || ''}
             onChange={e => onChange(e.target.value)}
             placeholder={field.placeholder || ''}
             className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-sm text-white"
           />
+          {Array.isArray(field.presets) && field.presets.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-1.5">
+              <span className="text-[10px] text-zinc-500 uppercase tracking-wider self-center">Sugeridos:</span>
+              {field.presets.map(p => (
+                <button key={p} type="button" onClick={() => onChange(p)}
+                  className={`text-xs px-2.5 py-1.5 border-2 ${value === p ? 'bg-red-600 border-red-600 text-white' : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-red-600'}`}>{p}</button>
+              ))}
+            </div>
+          )}
         </div>
       );
 
@@ -649,7 +659,7 @@ function MeasurementTableField({ field, value, onChange }) {
                       step="any"
                       value={f[c.id] ?? ''}
                       onChange={e => setCampo(idx, c.id, c.type === 'number' ? (e.target.value === '' ? null : Number(e.target.value)) : e.target.value)}
-                      className="w-full bg-transparent border border-zinc-800 focus:border-red-600 outline-none px-2 py-1 text-xs text-white"
+                      className={`w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-2.5 py-3 text-white ${c.type === 'number' ? 'text-base font-bold text-center tabular-nums' : 'text-sm'}`}
                     />
                   </td>
                 ))}

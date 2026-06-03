@@ -694,8 +694,8 @@ function OpeningsTableField({ field, value, onChange }) {
 // Evalúa show_if simple: "field_id == valor" o "field_id == true" o "field_id != null"
 function evaluarShowIf(expr, allValues) {
   if (!expr || typeof expr !== 'string') return true;
-  // Parsing muy simple: <field_id> <op> <literal>
-  const m = expr.match(/^\s*([\w.-]+)\s*(==|!=|>|<|>=|<=)\s*(.+?)\s*$/);
+  // Parsing muy simple: <field_id> <op> <literal>  (op incluye 'includes' para arrays)
+  const m = expr.match(/^\s*([\w.-]+)\s*(==|!=|>=|<=|>|<|includes)\s*(.+?)\s*$/);
   if (!m) return true;
   const [, fieldId, op, rhsRaw] = m;
   const lhs = allValues[fieldId];
@@ -704,8 +704,9 @@ function evaluarShowIf(expr, allValues) {
   if (rhs === 'true') rhs = true;
   else if (rhs === 'false') rhs = false;
   else if (rhs === 'null') rhs = null;
-  else if (!isNaN(Number(rhs))) rhs = Number(rhs);
+  else if (op !== 'includes' && !isNaN(Number(rhs))) rhs = Number(rhs);
   else if ((rhs.startsWith('"') && rhs.endsWith('"')) || (rhs.startsWith("'") && rhs.endsWith("'"))) rhs = rhs.slice(1, -1);
+  if (op === 'includes') return Array.isArray(lhs) && lhs.includes(rhs);
   switch (op) {
     case '==': return lhs == rhs;
     case '!=': return lhs != rhs;

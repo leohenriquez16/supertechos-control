@@ -12,6 +12,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import { X, MapPin, Crosshair, Loader2, Check, Search } from 'lucide-react';
 import { obtenerUbicacion, buscarDireccion } from '../../lib/geo';
 
+function crearBase(L, c) {
+  if (c === 'satelite') return L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 21, attribution: 'Tiles © Esri' });
+  return L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' });
+}
+
 const PIN_SVG = (color = '#dc2626', size = 34) => {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size * 1.3}" viewBox="0 0 32 42">
     <path d="M16 0 C7.16 0 0 7.16 0 16 C0 28 16 42 16 42 C16 42 32 28 32 16 C32 7.16 24.84 0 16 0Z" fill="${color}" stroke="white" stroke-width="2"/>
@@ -28,6 +33,8 @@ export default function MapaPickerModal({ initialLat, initialLng, onSelect, onCe
   const tieneInicial = initialLat != null && initialLng != null;
   const [pos, setPos] = useState(tieneInicial ? { lat: Number(initialLat), lng: Number(initialLng) } : null);
   const [gpsCargando, setGpsCargando] = useState(false);
+  const [capa, setCapa] = useState('mapa'); // 'mapa' | 'satelite'
+  const baseRef = useRef(null);
   const [q, setQ] = useState('');
   const [resultados, setResultados] = useState([]);
   const [buscando, setBuscando] = useState(false);
@@ -80,9 +87,7 @@ export default function MapaPickerModal({ initialLat, initialLng, onSelect, onCe
       const center = tieneInicial ? [Number(initialLat), Number(initialLng)] : [18.4861, -69.9312]; // Santo Domingo
       const map = L.map(contRef.current, { center, zoom: tieneInicial ? 17 : 13, zoomControl: true, scrollWheelZoom: true });
       mapRef.current = map;
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap', maxZoom: 19,
-      }).addTo(map);
+      baseRef.current = crearBase(L, 'mapa').addTo(map);
       if (tieneInicial) setMarcador(Number(initialLat), Number(initialLng));
       map.on('click', (e) => setMarcador(e.latlng.lat, e.latlng.lng));
       setTimeout(() => map.invalidateSize(), 120);
@@ -92,6 +97,14 @@ export default function MapaPickerModal({ initialLat, initialLng, onSelect, onCe
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const cambiarCapa = (c) => {
+    setCapa(c);
+    const L = Lref.current, map = mapRef.current;
+    if (!L || !map) return;
+    if (baseRef.current) baseRef.current.remove();
+    baseRef.current = crearBase(L, c).addTo(map);
+  };
 
   const usarGps = async () => {
     setGpsCargando(true);
@@ -146,7 +159,13 @@ export default function MapaPickerModal({ initialLat, initialLng, onSelect, onCe
           )}
         </div>
 
-        <div className="px-3 pt-1.5 text-[11px] text-zinc-400">Toca el mapa para colocar el PIN, o arrástralo para ajustarlo.</div>
+        <div className="px-3 pt-1.5 flex items-center justify-between gap-2">
+          <span className="text-[11px] text-zinc-400">Toca el mapa para colocar el PIN, o arrástralo para ajustarlo.</span>
+          <div className="flex border border-zinc-700 rounded-card overflow-hidden shrink-0">
+            <button onClick={() => cambiarCapa('mapa')} className={`px-2.5 py-1 text-[10px] font-bold uppercase ${capa === 'mapa' ? 'bg-red-600 text-white' : 'bg-zinc-900 text-zinc-400'}`}>Mapa</button>
+            <button onClick={() => cambiarCapa('satelite')} className={`px-2.5 py-1 text-[10px] font-bold uppercase ${capa === 'satelite' ? 'bg-red-600 text-white' : 'bg-zinc-900 text-zinc-400'}`}>Satélite</button>
+          </div>
+        </div>
 
         <div className="p-3">
           <div ref={contRef} className="w-full rounded-card overflow-hidden" style={{ height: '52vh', minHeight: 280, background: '#18181b' }} />

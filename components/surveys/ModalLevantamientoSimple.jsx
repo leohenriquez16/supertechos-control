@@ -35,7 +35,7 @@ const nuevaAreaVacia = () => ({ id: 'ar_' + Date.now() + Math.random().toString(
 const FAMILIAS = FAMILIAS_SERVICIO;
 const familiaDeLine = familiaDeServiceLine;
 
-export default function ModalLevantamientoSimple({ usuario, clientes = [], sistemas = {}, onCerrar, onCreado }) {
+export default function ModalLevantamientoSimple({ usuario, clientes = [], contactos = [], sistemas = {}, onCerrar, onCreado }) {
   const [templates, setTemplates] = useState([]);
   const [loadingTpl, setLoadingTpl] = useState(true);
   const [templateId, setTemplateId] = useState('');
@@ -62,6 +62,8 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], siste
   const [lng, setLng] = useState(null);
   const [contactName, setContactName] = useState('');
   const [mobilePhone, setMobilePhone] = useState('');
+  const [contactoMode, setContactoMode] = useState('manual'); // 'cliente' | 'manual'
+  const [contactoSelId, setContactoSelId] = useState('');
   const [notes, setNotes] = useState('');
 
   // Áreas dentro de la locación (tipo proyecto)
@@ -104,6 +106,22 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], siste
       finally { setLoadingTpl(false); }
     })();
   }, []);
+
+  // Contactos del cliente seleccionado (para "contacto en sitio").
+  const contactosCliente = clienteId ? contactos.filter(c => c.clienteId === clienteId) : [];
+  // Al cambiar de cliente: si tiene contactos, modo "del cliente"; si no, manual.
+  useEffect(() => {
+    const cts = clienteId ? contactos.filter(c => c.clienteId === clienteId) : [];
+    setContactoMode(cts.length > 0 ? 'cliente' : 'manual');
+    setContactoSelId('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clienteId]);
+
+  const elegirContacto = (id) => {
+    setContactoSelId(id);
+    const ct = contactosCliente.find(c => c.id === id);
+    if (ct) { setContactName(ct.nombre || ''); setMobilePhone(ct.telefono || ct.whatsapp || ''); }
+  };
 
   const templateActual = templates.find(t => t.id === templateId);
   const templatesFamilia = familiaKey ? templates.filter(t => familiaDeLine(t.service_line) === familiaKey) : [];
@@ -503,16 +521,32 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], siste
             )}
           </div>
 
-          {/* Contacto en sitio */}
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <div className={labCls}>Contacto en sitio</div>
-              <input value={contactName} onChange={e => setContactName(e.target.value)} placeholder="Nombre" className={inpCls} />
+          {/* Contacto en sitio — del cliente o manual (quien recibe) */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <div className={labCls + ' mb-0'}>Contacto en sitio (quien recibe)</div>
+              {contactosCliente.length > 0 && (
+                <div className="flex gap-1">
+                  <button onClick={() => setContactoMode('cliente')} className={`px-2 py-0.5 rounded-card text-[10px] font-bold uppercase border ${contactoMode === 'cliente' ? 'border-red-600 bg-red-900/20 text-white' : 'border-zinc-700 text-zinc-400'}`}>Del cliente</button>
+                  <button onClick={() => { setContactoMode('manual'); setContactoSelId(''); setContactName(''); setMobilePhone(''); }} className={`px-2 py-0.5 rounded-card text-[10px] font-bold uppercase border ${contactoMode === 'manual' ? 'border-red-600 bg-red-900/20 text-white' : 'border-zinc-700 text-zinc-400'}`}>Otro</button>
+                </div>
+              )}
             </div>
-            <div>
-              <div className={labCls}>Teléfono</div>
-              <input value={mobilePhone} onChange={e => setMobilePhone(e.target.value)} placeholder="809-…" className={inpCls} />
-            </div>
+            {contactoMode === 'cliente' && contactosCliente.length > 0 ? (
+              <select value={contactoSelId} onChange={e => elegirContacto(e.target.value)} className={inpCls}>
+                <option value="">— Selecciona un contacto del cliente —</option>
+                {contactosCliente.map(c => (
+                  <option key={c.id} value={c.id}>
+                    {c.nombre}{c.cargo ? ` · ${c.cargo}` : ''}{c.telefono ? ` · ${c.telefono}` : ''}{c.esPrincipal ? ' ★' : ''}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                <input value={contactName} onChange={e => setContactName(e.target.value)} placeholder="Nombre de quien recibe" className={inpCls} />
+                <input value={mobilePhone} onChange={e => setMobilePhone(e.target.value)} placeholder="809-…" className={inpCls} />
+              </div>
+            )}
           </div>
 
           {errorMsg && <div className="bg-red-900/20 border border-red-700 rounded-card text-red-300 p-2 text-xs">{errorMsg}</div>}

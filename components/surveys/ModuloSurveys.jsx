@@ -211,6 +211,7 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto }) {
         <ModalLevantamientoSimple
           usuario={usuario}
           clientes={data?.clientes || []}
+          contactos={data?.contactos || []}
           sistemas={data?.sistemas || {}}
           onCerrar={() => setModalSimpleAbierto(false)}
           onCreado={({ proyecto, site }) => {

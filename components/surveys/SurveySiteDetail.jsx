@@ -18,6 +18,7 @@ import EstimacionLevantamiento from './EstimacionLevantamiento';
 import SatelitalAreas from './SatelitalAreas';
 import { SITE_STATUS, listarVisitasDeSite, listarAreasDeVisita, obtenerTemplateSurvey, asignarPersonaSurvey, ESCALERA, setRequiereEscaleraSurvey, eliminarProyectoSurvey, solicitarEliminacionSurvey, cancelarSolicitudEliminacionSurvey } from '../../lib/surveys';
 import { imprimirLevantamiento } from './imprimirLevantamiento';
+import ChatterPanel from '../common/ChatterPanel';
 
 export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolver }) {
   const [formAbierto, setFormAbierto] = useState(false);
@@ -289,6 +290,9 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
           Iniciar levantamiento
         </button>
       </div>
+
+      {/* Chatter tipo Odoo: quién creó, cambios de estado y notas */}
+      <ChatterPanel entityType="levantamiento" entityId={proyecto?.id} usuario={usuario} />
 
       {formAbierto && (
         <DynamicSurveyForm

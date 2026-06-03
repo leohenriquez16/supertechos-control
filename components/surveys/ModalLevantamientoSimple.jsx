@@ -16,6 +16,7 @@ import { obtenerUbicacion, geocodificarInverso } from '../../lib/geo';
 import { expandirYExtraer } from '../../lib/geoutils';
 import ServiceLineBadge from './ServiceLineBadge';
 import MapaPickerModal from '../common/MapaPickerModal';
+import { registrarCreacion } from '../../lib/chatter';
 
 // Helper local (convención del repo: helpers locales para evitar imports circulares).
 async function obtenerAuthUserIdActual() {
@@ -328,6 +329,34 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
         clienteId: cid,
         ubicacionId: ubicId,
       });
+
+      // Chatter: registrar la creación del levantamiento (entidad = proyecto survey).
+      try {
+        await registrarCreacion('levantamiento', proyecto.id, usuario,
+          `Creó el levantamiento — ${serviceLabel}${locNombreFinal ? ' · ' + locNombreFinal : ''}`);
+      } catch { /* el chatter no debe romper el flujo */ }
+
+      // Correo "levantamiento recibido" al cliente. Fire-and-forget; en LOCAL no envía.
+      try {
+        const cliente = clientes.find(c => c.id === cid);
+        const contactoSel = contactosCliente.find(c => c.id === contactoSelId);
+        const correos = [contactoSel?.email, cliente?.emailPrincipal].filter(Boolean);
+        if (correos.length > 0) {
+          fetch('/api/email/levantamiento-recibido', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              destinatarios: correos,
+              clienteNombre: cnombre,
+              contactoNombre: contactName.trim() || contactoSel?.nombre || '',
+              servicio: serviceLabel,
+              locacion: locNombreFinal,
+              fecha: new Date().toLocaleDateString('es-DO', { day: '2-digit', month: 'long', year: 'numeric' }),
+              empresa: COMPANIES[company] || 'Super Techos',
+            }),
+          }).catch(() => {});
+        }
+      } catch { /* no bloquear creación */ }
+
       onCreado?.({ proyecto, site });
     } catch (e) {
       setErrorMsg(e?.message || String(e));

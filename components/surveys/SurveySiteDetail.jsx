@@ -178,6 +178,15 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
         </div>
       )}
 
+      {/* CTA: iniciar levantamiento — primero */}
+      <button
+        onClick={() => setFormAbierto(true)}
+        className="w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-wider py-4 rounded-card flex items-center justify-center gap-2"
+      >
+        <Play className="w-4 h-4" />
+        Iniciar levantamiento
+      </button>
+
       {/* Acciones rápidas */}
       <div>
         <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold mb-2">
@@ -356,17 +365,6 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
       )}
 
       <LevantamientosRealizados site={site} proyecto={proyecto} />
-
-      {/* CTA: iniciar levantamiento */}
-      <div className="pt-2">
-        <button
-          onClick={() => setFormAbierto(true)}
-          className="w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-wider py-4 flex items-center justify-center gap-2"
-        >
-          <Play className="w-4 h-4" />
-          Iniciar levantamiento
-        </button>
-      </div>
 
       {/* Chatter tipo Odoo: quién creó, cambios de estado y notas */}
       <ChatterPanel entityType="levantamiento" entityId={proyecto?.id} usuario={usuario} />

@@ -826,7 +826,13 @@ export default function App() {
             <div className="w-8 h-8 bg-red-600 flex items-center justify-center font-black text-white text-sm" style={{ transform: 'skewX(-12deg)' }}><span style={{ transform: 'skewX(12deg)' }}>ST</span></div>
             <div className="font-black tracking-tight text-sm">SUPER TECHOS</div>
           </div>
-          <div className="w-10">{syncing && <Loader2 className="w-4 h-4 text-red-500 animate-spin" />}</div>
+          <div className="flex items-center gap-1">
+            {syncing && <Loader2 className="w-4 h-4 text-red-500 animate-spin" />}
+            {/* v8.25.13: refresco global de la app (recarga datos + versión nueva) */}
+            <button onClick={() => window.location.reload()} title="Actualizar app" className="text-zinc-400 hover:text-white p-2">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
+            </button>
+          </div>
         </div>
       </header>
 
@@ -834,7 +840,13 @@ export default function App() {
           en el outer reserva 240px a la izquierda en md+. El inner contiene la
           lógica de max-width: en <lg max-w-6xl centrado; en lg+ full-width. */}
       <main className="md:ml-60 px-4 lg:px-6 py-6"><div className="max-w-6xl mx-auto lg:max-w-none lg:mx-0">
-        {syncing && <div className="hidden md:block fixed top-2 right-4 z-30"><Loader2 className="w-4 h-4 text-red-500 animate-spin" /></div>}
+        <div className="hidden md:flex items-center gap-2 fixed top-2 right-4 z-30">
+          {syncing && <Loader2 className="w-4 h-4 text-red-500 animate-spin" />}
+          {/* v8.25.13: refresco global de la app (recarga datos + versión nueva) */}
+          <button onClick={() => window.location.reload()} title="Actualizar app" className="bg-zinc-900 border border-zinc-800 hover:border-red-600 text-zinc-300 rounded-card p-2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
+          </button>
+        </div>
         {esAdmin && vista === 'dashboard' && <Dashboard usuario={usuario} data={data} tareas={tareas} jornadasHoy={jornadasHoy} onVerProyecto={(p) => navegarA('proyecto', { proyectoActivo: p, tab: 'avance' })} onNuevoProyecto={() => navegarA('nuevoProyecto')} onImportarOdoo={() => setModalOdooAbierto(true)} onCompletarTarea={async (id) => withSync(async () => { await db.completarTarea(id, usuario.id); })} onCambiarEstadoRapido={async (proyId, estadoNuevo) => withSync(async () => { await db.cambiarEstadoProyecto(proyId, estadoNuevo, usuario, 'Cambio rápido desde Kanban'); })} />}
         {/* v8.10.23: Modal importar desde Odoo */}
         {esAdmin && modalOdooAbierto && <ModalImportarOdoo usuario={usuario} sistemas={data.sistemas} proyectos={data.proyectos} onCerrar={() => setModalOdooAbierto(false)} onCrear={async (proy) => { await withSync(async () => { await db.crearProyecto({ ...proy, id: 'p_' + Date.now() }); }); setModalOdooAbierto(false); }} />}

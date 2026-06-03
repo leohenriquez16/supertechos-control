@@ -295,7 +295,7 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
     } finally { setGpsCargando(false); }
   };
 
-  const guardar = async () => {
+  const guardar = async (iniciar = true) => {
     if (!puedeGuardar) return;
     setGuardando(true);
     setErrorMsg(null);
@@ -409,21 +409,22 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
         }
       } catch { /* no bloquear creación */ }
 
-      onCreado?.({ proyecto, site });
+      onCreado?.({ proyecto, site, iniciar });
     } catch (e) {
       setErrorMsg(e?.message || String(e));
       setGuardando(false);
     }
   };
 
-  const inpCls = 'w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm';
-  const labCls = 'text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1.5';
+  // v8.25.13: inputs más grandes (cómodos con dedo y mouse).
+  const inpCls = 'w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3.5 py-2.5 text-white text-sm sm:text-base';
+  const labCls = 'text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-1.5';
 
   const ubicacionActual = ubicaciones.find(u => u.id === ubicSelId);
 
   return (
     <div className="fixed inset-0 bg-black/80 z-[60] flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto">
-      <div className="bg-zinc-950 border-2 border-red-600 rounded-card w-full max-w-lg my-4">
+      <div className="bg-zinc-950 border-2 border-red-600 rounded-card w-full max-w-3xl my-4">
         <div className="flex items-center justify-between p-4 border-b border-zinc-800 sticky top-0 bg-zinc-950 z-10 rounded-t-card">
           <div>
             <div className="text-xs tracking-widest uppercase text-red-500 font-bold">Nuevo levantamiento</div>
@@ -713,11 +714,16 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
           {errorMsg && <div className="bg-red-900/20 border border-red-700 rounded-card text-red-300 p-2 text-xs">{errorMsg}</div>}
         </div>
 
-        <div className="flex gap-2 p-4 border-t border-zinc-800 sticky bottom-0 bg-zinc-950 rounded-b-card">
-          <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2.5 rounded-card">Cancelar</button>
-          <button onClick={guardar} disabled={!puedeGuardar} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-xs font-black uppercase py-2.5 rounded-card flex items-center justify-center gap-2">
-            {guardando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MapPin className="w-3.5 h-3.5" />}
-            {guardando ? 'Creando…' : 'Crear y empezar a capturar'}
+        <div className="flex flex-col sm:flex-row gap-2 p-4 border-t border-zinc-800 sticky bottom-0 bg-zinc-950 rounded-b-card">
+          <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-sm font-bold uppercase py-3 rounded-card sm:w-auto">Cancelar</button>
+          {/* v8.25.13: crear sin iniciar la captura (para asignar/capturar después) */}
+          <button onClick={() => guardar(false)} disabled={!puedeGuardar} className="flex-1 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 border border-zinc-600 text-white text-sm font-bold uppercase py-3 rounded-card flex items-center justify-center gap-2">
+            {guardando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+            Solo crear
+          </button>
+          <button onClick={() => guardar(true)} disabled={!puedeGuardar} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-sm font-black uppercase py-3 rounded-card flex items-center justify-center gap-2">
+            {guardando ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
+            {guardando ? 'Creando…' : 'Crear y capturar'}
           </button>
         </div>
       </div>

@@ -73,6 +73,16 @@ function gridFotos(fotos) {
     </figure>`).join('')}</div>`;
 }
 
+// v8.24.19: panorámicas a dimensión completa (sin recortar).
+function gridFotosPano(fotos) {
+  if (!fotos || fotos.length === 0) return '';
+  return `<div class="fotos-pano">${fotos.map(f => `
+    <figure>
+      <img src="${esc(f.url)}" />
+      ${f.caption ? `<figcaption>${esc(f.caption)}</figcaption>` : ''}
+    </figure>`).join('')}</div>`;
+}
+
 export async function imprimirLevantamiento({ proyecto, site, visit, areas = [], template }) {
   const schema = template?.schema || {};
   const sections = schema.sections || [];
@@ -180,6 +190,10 @@ export async function imprimirLevantamiento({ proyecto, site, visit, areas = [],
     .fotos figure { margin: 0; }
     .fotos img { width: 100%; height: 110px; object-fit: cover; border-radius: 6px; border: 1px solid #ddd; }
     .fotos figcaption { font-size: 9px; color: #777; margin-top: 2px; }
+    .fotos-pano { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 6px; }
+    .fotos-pano figure { margin: 0; page-break-inside: avoid; }
+    .fotos-pano img { width: 100%; height: auto; max-height: 420px; object-fit: contain; border-radius: 6px; border: 1px solid #ddd; background: #f4f4f5; }
+    .fotos-pano figcaption { font-size: 10px; color: #777; margin-top: 3px; text-align: center; }
     .footer { margin-top: 20px; padding-top: 8px; border-top: 1px solid #ccc; font-size: 9px; color: #999; text-align: center; }
     @media print { body { padding: 0; } @page { margin: 14mm; } }
   </style></head><body>
@@ -215,7 +229,7 @@ export async function imprimirLevantamiento({ proyecto, site, visit, areas = [],
       <div class="kpi"><div class="n">${fotosConUrl.filter(f => f.url).length}</div><div class="l">Fotos</div></div>
     </div>
 
-    ${fotosGenerales.length ? `<section class="bloque"><h2>Fotos panorámicas</h2>${gridFotos(fotosGenerales)}</section>` : ''}
+    ${fotosGenerales.length ? `<section class="bloque"><h2>Fotos panorámicas</h2>${gridFotosPano(fotosGenerales)}</section>` : ''}
     ${htmlGenerales}
     ${htmlBloques}
     ${visit?.general_notes ? `<section class="bloque"><h2>Notas del supervisor</h2><div>${esc(visit.general_notes)}</div></section>` : ''}

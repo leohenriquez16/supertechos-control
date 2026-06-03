@@ -797,14 +797,14 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
 
         <div className="flex flex-col sm:flex-row gap-2 p-4 border-t border-zinc-800 bg-zinc-950 sm:rounded-b-card shrink-0">
           <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-sm font-bold uppercase py-3 rounded-card sm:w-auto">Cancelar</button>
-          {/* v8.25.13: crear sin iniciar la captura (para asignar/capturar después) */}
-          <button onClick={() => guardar(false)} disabled={!puedeGuardar} className="flex-1 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 border border-zinc-600 text-white text-sm font-bold uppercase py-3 rounded-card flex items-center justify-center gap-2">
-            {guardando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-            Solo crear
-          </button>
-          <button onClick={() => guardar(true)} disabled={!puedeGuardar} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-sm font-black uppercase py-3 rounded-card flex items-center justify-center gap-2">
+          {/* v8.25.19: "Crear y capturar" es secundario (no rojo) para no empujar a capturar; lo principal es CREAR */}
+          <button onClick={() => guardar(true)} disabled={!puedeGuardar} className="flex-1 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 border border-zinc-600 text-zinc-200 text-sm font-bold uppercase py-3 rounded-card flex items-center justify-center gap-2">
             {guardando ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
-            {guardando ? 'Creando…' : 'Crear y capturar'}
+            Crear y capturar
+          </button>
+          <button onClick={() => guardar(false)} disabled={!puedeGuardar} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-sm font-black uppercase py-3 rounded-card flex items-center justify-center gap-2">
+            {guardando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+            {guardando ? 'Creando…' : 'Crear levantamiento'}
           </button>
         </div>
       </div>

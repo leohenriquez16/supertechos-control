@@ -5,6 +5,7 @@
 // Uso: await imprimirInformeFotografico({ proyecto, site, usuario });
 
 import { listarVisitasDeSite, listarAreasDeVisita, listarFotosVisita, getSignedUrlFotoSurvey, SERVICE_LINES } from '../../lib/surveys';
+import { membreteHTML, MEMBRETE_CSS } from '../../lib/membrete';
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -77,8 +78,10 @@ export async function imprimirInformeFotografico({ proyecto, site, usuario }) {
     figcaption { font-size: 10px; color: #777; margin-top: 3px; text-align: center; }
     .vacio { color: #999; padding: 20px; text-align: center; }
     .footer { margin-top: 18px; padding-top: 8px; border-top: 1px solid #ccc; font-size: 9px; color: #999; text-align: center; }
+    ${MEMBRETE_CSS}
     @media print { body { padding: 0; } @page { margin: 14mm; } }
   </style></head><body>
+    ${membreteHTML(proyecto?.company)}
     <div class="portada">
       <div class="tit">Informe Fotográfico de Levantamiento</div>
       <h1>${esc(site?.name || proyecto?.client_name || '')}</h1>

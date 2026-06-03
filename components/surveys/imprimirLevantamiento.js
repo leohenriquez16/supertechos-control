@@ -9,6 +9,7 @@
 // Carga internamente las fotos de la visita y sus signed URLs.
 
 import { listarFotosVisita, getSignedUrlFotoSurvey, SERVICE_LINES } from '../../lib/surveys';
+import { membreteHTML, MEMBRETE_CSS } from '../../lib/membrete';
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -195,8 +196,10 @@ export async function imprimirLevantamiento({ proyecto, site, visit, areas = [],
     .fotos-pano img { width: 100%; height: auto; max-height: 420px; object-fit: contain; border-radius: 6px; border: 1px solid #ddd; background: #f4f4f5; }
     .fotos-pano figcaption { font-size: 10px; color: #777; margin-top: 3px; text-align: center; }
     .footer { margin-top: 20px; padding-top: 8px; border-top: 1px solid #ccc; font-size: 9px; color: #999; text-align: center; }
+    ${MEMBRETE_CSS}
     @media print { body { padding: 0; } @page { margin: 14mm; } }
   </style></head><body>
+    ${membreteHTML(proyecto?.company)}
     <div class="portada">
       <h1>Levantamiento Técnico</h1>
       <div class="sub">${esc(site?.name || proyecto?.name || '')}${site?.external_code ? ' · ' + esc(site.external_code) : ''}</div>

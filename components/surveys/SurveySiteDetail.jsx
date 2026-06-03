@@ -13,8 +13,6 @@ import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Building, MapPin, Calendar, Clock, FileText, AlertTriangle, Play, ClipboardList, Layers, ChevronDown, Loader2, Trash2, Check } from 'lucide-react';
 import QuickActions from './QuickActions';
 import DynamicSurveyForm from './DynamicSurveyForm';
-import PuntosSingulares from './PuntosSingulares';
-import EstimacionLevantamiento from './EstimacionLevantamiento';
 import SatelitalAreas from './SatelitalAreas';
 import { SITE_STATUS, listarVisitasDeSite, listarAreasDeVisita, obtenerTemplateSurvey, asignarPersonaSurvey, ESCALERA, setRequiereEscaleraSurvey, eliminarProyectoSurvey, solicitarEliminacionSurvey, cancelarSolicitudEliminacionSurvey, listarTemplatesSurveys, actualizarTipoProyectoSurvey, SERVICE_LINES, FAMILIAS_SERVICIO, familiaDeServiceLine } from '../../lib/surveys';
 import { imprimirLevantamiento } from './imprimirLevantamiento';
@@ -23,8 +21,6 @@ import { registrarEvento as chatterEventoSurvey } from '../../lib/chatter';
 
 export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolver, onVerEdificaciones }) {
   const [formAbierto, setFormAbierto] = useState(false);
-  const [puntosAbierto, setPuntosAbierto] = useState(false); // v8.19.82
-  const [estimacionAbierta, setEstimacionAbierta] = useState(false); // v8.19.83
   const [satelitalAbierta, setSatelitalAbierta] = useState(false); // v8.19.86
 
   // v8.19.91: eliminación con autorización del OWNER DEL APP (rol 'owner').
@@ -322,19 +318,7 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
         {!escalera && <div className="text-[10px] text-zinc-600 mt-1">Sin especificar. Indícalo para que el maestro lleve el equipo correcto.</div>}
       </div>
 
-      {/* v8.19.82: puntos singulares sobre la foto */}
-      <button onClick={() => setPuntosAbierto(true)} className="w-full bg-zinc-900 border border-zinc-800 rounded-card p-3 flex items-center justify-between hover:border-red-600 text-left">
-        <div className="flex items-center gap-2 text-sm font-bold"><MapPin className="w-4 h-4 text-red-500" /> Puntos singulares</div>
-        <span className="text-[10px] text-zinc-500">Marcar sobre la foto →</span>
-      </button>
-      {puntosAbierto && <PuntosSingulares site={site} onCerrar={() => setPuntosAbierto(false)} />}
-
-      {/* v8.19.83: estimación / cotización preliminar */}
-      <button onClick={() => setEstimacionAbierta(true)} className="w-full bg-zinc-900 border border-zinc-800 rounded-card p-3 flex items-center justify-between hover:border-red-600 text-left">
-        <div className="flex items-center gap-2 text-sm font-bold"><FileText className="w-4 h-4 text-red-500" /> Estimación / cotización preliminar</div>
-        <span className="text-[10px] text-zinc-500">Calcular rango →</span>
-      </button>
-      {estimacionAbierta && <EstimacionLevantamiento site={site} proyecto={proyecto} onCerrar={() => setEstimacionAbierta(false)} />}
+      {/* v8.24.6: "Puntos singulares" y "Estimación / cotización preliminar" removidos por ahora */}
 
       {/* v8.19.86: vista satelital con dibujo de áreas (opcional) */}
       <button onClick={() => setSatelitalAbierta(true)} className="w-full bg-zinc-900 border border-zinc-800 rounded-card p-3 flex items-center justify-between hover:border-red-600 text-left">

@@ -9,8 +9,9 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { ArrowLeft, Loader2, Briefcase, MapPin, AlertTriangle, ChevronDown, MessageCircle, Mail, Clock, User as UserIcon } from 'lucide-react';
 import * as db from '../../lib/db';
 import { obtenerUbicacion, distanciaMetros, formatDistancia } from '../../lib/geo';
-import { listarProyectosSurveys, listarTodosLosSitesSurvey, SERVICE_LINES, ESCALERA } from '../../lib/surveys';
+import { listarProyectosSurveys, listarTodosLosSitesSurvey, listarSitesProyectoSurvey, SERVICE_LINES, ESCALERA } from '../../lib/surveys';
 import { EscaleraBadge } from '../surveys/ModuloSurveys';
+import SurveySiteDetail from '../surveys/SurveySiteDetail';
 import MapaLeaflet from '../common/MapaLeaflet';
 
 const fmt = (s) => { if (!s) return '—'; try { return new Date((s.length <= 10 ? s + 'T12:00:00' : s)).toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return s; } };
@@ -58,6 +59,24 @@ export default function VistaMisAsignaciones({ usuario, data, onVolver, onVerPro
   const [ubicaciones, setUbicaciones] = useState([]);
   const [show, setShow] = useState({ proyectos: true, levantamientos: true, reclamaciones: true });
   const [exp, setExp] = useState(null); // item expandido (lev/rec)
+  // v8.25.4: el supervisor abre/captura SU levantamiento asignado (solo los suyos).
+  const [capturaLev, setCapturaLev] = useState(null);   // proyecto-levantamiento abierto
+  const [capturaSites, setCapturaSites] = useState([]); // edificaciones del levantamiento
+  const [capturaSite, setCapturaSite] = useState(null); // edificación elegida
+  const [cargandoCaptura, setCargandoCaptura] = useState(false);
+  const abrirCaptura = async (l) => {
+    setCargandoCaptura(true);
+    try {
+      const sites = await listarSitesProyectoSurvey(l.id);
+      setCapturaLev(l);
+      setCapturaSites(sites);
+      setCapturaSite(sites.length === 1 ? sites[0] : null);
+    } catch (e) {
+      alert('No se pudo abrir el levantamiento: ' + (e?.message || 'error'));
+    }
+    setCargandoCaptura(false);
+  };
+  const cerrarCaptura = () => { setCapturaLev(null); setCapturaSites([]); setCapturaSite(null); };
   const [miUbic, setMiUbic] = useState(null); // v8.19.96: ubicación del supervisor
   const [buscandoUbic, setBuscandoUbic] = useState(false);
   const verMiUbicacion = async () => {
@@ -117,6 +136,46 @@ export default function VistaMisAsignaciones({ usuario, data, onVolver, onVerPro
     if (miUbic) out.push({ lat: miUbic.lat, lng: miUbic.lng, color: 'green', label: 'Tú', popup: `<b>📍 Tu ubicación</b>${miUbic.precision ? `<br/>±${miUbic.precision} m` : ''}` });
     return out;
   }, [show, proyectos, levs, recs, ubicaciones, miUbic]);
+
+  // v8.25.4: captura del levantamiento asignado (embebida, scope = solo los del supervisor).
+  if (capturaLev && capturaSite) {
+    return (
+      <SurveySiteDetail
+        site={capturaSite}
+        proyecto={capturaLev}
+        usuario={usuario}
+        data={data}
+        onVerEdificaciones={capturaSites.length > 1 ? () => setCapturaSite(null) : undefined}
+        onVolver={cerrarCaptura}
+      />
+    );
+  }
+  if (capturaLev && !capturaSite) {
+    return (
+      <div className="space-y-4">
+        <button onClick={cerrarCaptura} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button>
+        <div>
+          <h1 className="text-2xl font-black tracking-tight">{capturaLev.client_name}</h1>
+          <div className="text-xs text-zinc-500 mt-1">Elige la edificación a levantar.</div>
+        </div>
+        {capturaSites.length === 0 ? (
+          <div className="bg-zinc-950 border border-zinc-800 rounded-card p-6 text-center text-zinc-500 text-sm">Este levantamiento aún no tiene edificaciones registradas. Avisa al administrador.</div>
+        ) : (
+          <div className="space-y-2">
+            {capturaSites.map(s => (
+              <button key={s.id} onClick={() => setCapturaSite(s)} className="w-full text-left bg-zinc-900 border border-zinc-800 rounded-card p-3 hover:border-blue-600 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="font-bold truncate">{s.name || s.external_code || 'Edificación'}</div>
+                  {s.address && <div className="text-[11px] text-zinc-500 truncate">{s.address}</div>}
+                </div>
+                <span className="text-[10px] text-blue-400 shrink-0">Abrir →</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -225,6 +284,9 @@ export default function VistaMisAsignaciones({ usuario, data, onVolver, onVerPro
                         {l.name && <div><span className="text-zinc-500">Levantamiento: </span><span className="text-zinc-300">{l.name}</span></div>}
                         {l.description && <div className="text-zinc-400">{l.description}</div>}
                         {l._coords && <a href={`https://www.google.com/maps?q=${l._coords.lat},${l._coords.lng}`} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline inline-flex items-center gap-1"><MapPin className="w-3 h-3" /> Abrir en Maps</a>}
+                        <button onClick={() => abrirCaptura(l)} disabled={cargandoCaptura} className="w-full mt-1 px-3 py-2.5 rounded-card bg-blue-600 hover:bg-blue-500 disabled:opacity-60 text-white text-sm font-bold uppercase tracking-wide flex items-center justify-center gap-2">
+                          {cargandoCaptura ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />} Abrir levantamiento
+                        </button>
                       </div>
                     )}
                   </div>

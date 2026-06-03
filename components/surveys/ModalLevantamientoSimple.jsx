@@ -11,7 +11,7 @@
 import React, { useEffect, useState } from 'react';
 import { X, Loader2, MapPin, Check, Crosshair, Plus, Trash2, Building2, ChevronDown, Search } from 'lucide-react';
 import { listarTemplatesSurveys, crearProyectoSurvey, crearSiteSurvey, SERVICE_LINES, COMPANIES, FAMILIAS_SERVICIO, familiaDeServiceLine } from '../../lib/surveys';
-import { listarUbicacionesCliente, crearUbicacionCliente, setAreasUbicacionCliente, crearCliente } from '../../lib/db';
+import { listarUbicacionesCliente, crearUbicacionCliente, setAreasUbicacionCliente, crearCliente, crearContacto } from '../../lib/db';
 import { obtenerUbicacion, geocodificarInverso } from '../../lib/geo';
 import { expandirYExtraer } from '../../lib/geoutils';
 import ServiceLineBadge from './ServiceLineBadge';
@@ -75,6 +75,10 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
   const [contactoSelId, setContactoSelId] = useState('');
   const [buscarUbic, setBuscarUbic] = useState('');      // v8.25.11: buscador de locaciones
   const [buscarContacto, setBuscarContacto] = useState(''); // v8.25.11: buscador de contactos
+  // v8.25.12: crear un contacto nuevo y guardarlo en el cliente.
+  const [contactosExtra, setContactosExtra] = useState([]); // creados en esta sesión
+  const [nuevoCt, setNuevoCt] = useState({ nombre: '', cargo: '', telefono: '', email: '' });
+  const [guardandoCt, setGuardandoCt] = useState(false);
   const [notes, setNotes] = useState('');
 
   // Áreas dentro de la locación (tipo proyecto)
@@ -140,8 +144,29 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
     })();
   }, []);
 
-  // Contactos del cliente seleccionado (para "contacto en sitio").
-  const contactosCliente = clienteId ? contactos.filter(c => c.clienteId === clienteId) : [];
+  // Contactos del cliente seleccionado (para "contacto en sitio"), incluyendo los recién creados.
+  const contactosCliente = clienteId ? [...contactos, ...contactosExtra].filter(c => c.clienteId === clienteId) : [];
+  // v8.25.12: crear y guardar un contacto nuevo en el cliente, y dejarlo elegido.
+  const guardarNuevoContacto = async () => {
+    if (!clienteId) { setErrorMsg('Primero elige un cliente existente para guardarle el contacto.'); return; }
+    if (!nuevoCt.nombre.trim()) { setErrorMsg('El contacto necesita un nombre.'); return; }
+    setGuardandoCt(true); setErrorMsg('');
+    try {
+      const id = 'ct_' + Date.now() + Math.floor(Math.random() * 1000);
+      const tel = nuevoCt.telefono.trim() || null;
+      await crearContacto({ id, clienteId, nombre: nuevoCt.nombre.trim(), cargo: nuevoCt.cargo.trim() || null, telefono: tel, whatsapp: tel, email: nuevoCt.email.trim() || null });
+      const nuevo = { id, clienteId, nombre: nuevoCt.nombre.trim(), cargo: nuevoCt.cargo.trim() || '', telefono: tel || '', whatsapp: tel || '', email: nuevoCt.email.trim() || '', esPrincipal: false };
+      setContactosExtra(prev => [...prev, nuevo]);
+      setNuevoCt({ nombre: '', cargo: '', telefono: '', email: '' });
+      setContactoMode('cliente');
+      setContactoSelId(id);
+      setContactName(nuevo.nombre);
+      setMobilePhone(nuevo.telefono);
+    } catch (e) {
+      setErrorMsg('No se pudo crear el contacto: ' + (e?.message || e));
+    }
+    setGuardandoCt(false);
+  };
   // v8.25.11: filtros de búsqueda (cuando hay muchas locaciones/contactos).
   const _norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
   const ubicacionesFiltradas = (() => {
@@ -637,16 +662,30 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
 
           {/* Contacto en sitio — del cliente o manual (quien recibe) */}
           <div>
-            <div className="flex items-center justify-between mb-1.5">
+            <div className="flex items-center justify-between mb-1.5 gap-2 flex-wrap">
               <div className={labCls + ' mb-0'}>Contacto en sitio (quien recibe)</div>
-              {contactosCliente.length > 0 && (
+              {(clienteId || contactosCliente.length > 0) && (
                 <div className="flex gap-1">
-                  <button onClick={() => setContactoMode('cliente')} className={`px-2 py-0.5 rounded-card text-[10px] font-bold uppercase border ${contactoMode === 'cliente' ? 'border-red-600 bg-red-900/20 text-white' : 'border-zinc-700 text-zinc-400'}`}>Del cliente</button>
+                  {contactosCliente.length > 0 && <button onClick={() => setContactoMode('cliente')} className={`px-2 py-0.5 rounded-card text-[10px] font-bold uppercase border ${contactoMode === 'cliente' ? 'border-red-600 bg-red-900/20 text-white' : 'border-zinc-700 text-zinc-400'}`}>Del cliente</button>}
+                  {clienteId && <button onClick={() => setContactoMode('nuevo')} className={`px-2 py-0.5 rounded-card text-[10px] font-bold uppercase border ${contactoMode === 'nuevo' ? 'border-red-600 bg-red-900/20 text-white' : 'border-zinc-700 text-zinc-400'}`}>＋ Nuevo</button>}
                   <button onClick={() => { setContactoMode('manual'); setContactoSelId(''); setContactName(''); setMobilePhone(''); }} className={`px-2 py-0.5 rounded-card text-[10px] font-bold uppercase border ${contactoMode === 'manual' ? 'border-red-600 bg-red-900/20 text-white' : 'border-zinc-700 text-zinc-400'}`}>Otro</button>
                 </div>
               )}
             </div>
-            {contactoMode === 'cliente' && contactosCliente.length > 0 ? (
+            {contactoMode === 'nuevo' && clienteId ? (
+              <div className="space-y-2 bg-zinc-900/50 border border-zinc-800 rounded-card p-2.5">
+                <div className="text-[11px] text-zinc-400">Crear un contacto nuevo y guardarlo en <b>{clienteNombreFinal}</b>.</div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input value={nuevoCt.nombre} onChange={e => setNuevoCt({ ...nuevoCt, nombre: e.target.value })} placeholder="Nombre *" className={inpCls} />
+                  <input value={nuevoCt.cargo} onChange={e => setNuevoCt({ ...nuevoCt, cargo: e.target.value })} placeholder="Cargo (opcional)" className={inpCls} />
+                  <input value={nuevoCt.telefono} onChange={e => setNuevoCt({ ...nuevoCt, telefono: e.target.value })} placeholder="Teléfono / WhatsApp" className={inpCls} />
+                  <input value={nuevoCt.email} onChange={e => setNuevoCt({ ...nuevoCt, email: e.target.value })} placeholder="Email (opcional)" className={inpCls} />
+                </div>
+                <button onClick={guardarNuevoContacto} disabled={guardandoCt || !nuevoCt.nombre.trim()} className="w-full bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-[11px] font-bold uppercase py-2 rounded-card flex items-center justify-center gap-1.5">
+                  {guardandoCt ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Guardar contacto en el cliente
+                </button>
+              </div>
+            ) : contactoMode === 'cliente' && contactosCliente.length > 0 ? (
               <div className="space-y-2">
                 {contactosCliente.length > 6 && (
                   <div className="relative">

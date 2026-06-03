@@ -555,8 +555,11 @@ function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, suppor
         </button>
       </div>
       {sinNombre && (
-        <div className="px-3 py-1 bg-amber-900/10 border-l-2 border-amber-600 text-[10px] text-amber-400">
-          Escribe un nombre para identificar el espacio (ej. "Fachada norte", "Oficina 201").
+        <div className="px-3 py-1.5 bg-amber-900/10 border-l-2 border-amber-600 space-y-1.5">
+          <div className="text-[10px] text-amber-400">Escribe un nombre o elige uno rápido:</div>
+          {(bloque.name_presets?.length ? [...bloque.name_presets, `Sección ${area.area_number}`] : [`Sección ${area.area_number}`]).map(p => (
+            <button key={p} type="button" onClick={() => onRenombrar(p)} className="mr-1.5 mb-1 px-2 py-0.5 rounded-card text-[11px] font-bold border border-zinc-700 bg-zinc-900 text-zinc-200 hover:border-red-600">{p}</button>
+          ))}
         </div>
       )}
 

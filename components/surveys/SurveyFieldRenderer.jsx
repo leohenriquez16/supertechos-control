@@ -456,15 +456,23 @@ function MeasurementTableField({ field, value, onChange }) {
   const eliminarFila = (idx) => {
     onChange(filas.filter((_, i) => i !== idx));
   };
+  const recalc = (row) => {
+    if (!autoCalcArea) return row;
+    const l = Number(row.length_m) || 0;
+    const h = Number(row.height_m) || Number(row.width_m) || 0;
+    let a = (l && h) ? Number((l * h).toFixed(2)) : null;
+    if (a != null && row.restar) a = -Math.abs(a); // v8.23.8: fila de resta (deducción)
+    row.area_m2 = a;
+    return row;
+  };
   const setCampo = (idx, colId, val) => {
     const nuevo = [...filas];
-    nuevo[idx] = { ...nuevo[idx], [colId]: val };
-    // Auto-calc area si hay length_m * height_m o length_m * width_m
-    if (autoCalcArea) {
-      const l = Number(nuevo[idx].length_m) || 0;
-      const h = Number(nuevo[idx].height_m) || Number(nuevo[idx].width_m) || 0;
-      nuevo[idx].area_m2 = (l && h) ? Number((l * h).toFixed(2)) : null;
-    }
+    nuevo[idx] = recalc({ ...nuevo[idx], [colId]: val });
+    onChange(nuevo);
+  };
+  const toggleRestar = (idx) => {
+    const nuevo = [...filas];
+    nuevo[idx] = recalc({ ...nuevo[idx], restar: !nuevo[idx].restar });
     onChange(nuevo);
   };
 
@@ -502,11 +510,12 @@ function MeasurementTableField({ field, value, onChange }) {
               </tr>
             )}
             {filas.map((f, idx) => (
-              <tr key={f.id || idx} className="border-b border-zinc-800/50">
+              <tr key={f.id || idx} className={`border-b border-zinc-800/50 ${f.restar ? 'bg-amber-900/10' : ''}`}>
                 {columns.map(c => (
                   <td key={c.id} className="px-1 py-1">
                     <input
                       type={c.type === 'number' ? 'number' : 'text'}
+                      inputMode={c.type === 'number' ? 'decimal' : undefined}
                       step="any"
                       value={f[c.id] ?? ''}
                       onChange={e => setCampo(idx, c.id, c.type === 'number' ? (e.target.value === '' ? null : Number(e.target.value)) : e.target.value)}
@@ -515,11 +524,21 @@ function MeasurementTableField({ field, value, onChange }) {
                   </td>
                 ))}
                 {autoCalcArea && (
-                  <td className="px-2 py-1 text-right text-xs text-red-400 font-bold">
+                  <td className={`px-2 py-1 text-right text-xs font-bold ${f.restar ? 'text-amber-400' : 'text-red-400'}`}>
                     {f.area_m2 != null ? f.area_m2.toFixed(2) : '—'}
                   </td>
                 )}
-                <td className="px-1 py-1">
+                <td className="px-1 py-1 whitespace-nowrap text-center">
+                  {autoCalcArea && (
+                    <button
+                      type="button"
+                      onClick={() => toggleRestar(idx)}
+                      className={`mr-1 px-1.5 rounded text-[11px] font-black border ${f.restar ? 'border-amber-600 bg-amber-900/30 text-amber-300' : 'border-zinc-700 text-zinc-400'}`}
+                      title={f.restar ? 'Fila resta (deducción). Click para sumar.' : 'Convertir en resta (deducción)'}
+                    >
+                      {f.restar ? '−' : '±'}
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => eliminarFila(idx)}

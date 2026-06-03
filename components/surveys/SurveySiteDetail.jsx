@@ -14,7 +14,7 @@ import { ArrowLeft, Building, MapPin, Calendar, Clock, FileText, AlertTriangle, 
 import QuickActions from './QuickActions';
 import DynamicSurveyForm from './DynamicSurveyForm';
 import SatelitalAreas from './SatelitalAreas';
-import { SITE_STATUS, listarVisitasDeSite, listarAreasDeVisita, obtenerTemplateSurvey, asignarPersonaSurvey, ESCALERA, setRequiereEscaleraSurvey, eliminarProyectoSurvey, solicitarEliminacionSurvey, cancelarSolicitudEliminacionSurvey, listarTemplatesSurveys, actualizarTipoProyectoSurvey, eliminarVisita, SERVICE_LINES, FAMILIAS_SERVICIO, familiaDeServiceLine } from '../../lib/surveys';
+import { SITE_STATUS, listarVisitasDeSite, listarAreasDeVisita, obtenerTemplateSurvey, asignarPersonaSurvey, ESCALERA, setRequiereEscaleraSurvey, eliminarProyectoSurvey, solicitarEliminacionSurvey, cancelarSolicitudEliminacionSurvey, listarTemplatesSurveys, actualizarTipoProyectoSurvey, eliminarVisita, listarFotosVisita, getSignedUrlFotoSurvey, SERVICE_LINES, FAMILIAS_SERVICIO, familiaDeServiceLine } from '../../lib/surveys';
 import { imprimirLevantamiento } from './imprimirLevantamiento';
 import ChatterPanel from '../common/ChatterPanel';
 import { registrarEvento as chatterEventoSurvey } from '../../lib/chatter';
@@ -403,22 +403,101 @@ function fmtCampoApp(field, v) {
   }
 }
 
+function TablaMedidas({ label, filas, ducto = false }) {
+  const total = (filas || []).reduce((s, f) => s + (Number(f.area_m2) || 0), 0);
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wide text-zinc-500 font-bold mb-1">{label}</div>
+      <table className="w-full text-[11px]">
+        <thead>
+          <tr className="text-zinc-500 text-[9px] uppercase border-b border-zinc-800">
+            <th className="text-left py-0.5">{ducto ? 'Ducto' : 'Tramo'}</th>
+            <th className="text-right">Largo</th>
+            <th className="text-right">Ancho</th>
+            {ducto && <th className="text-right">Alto</th>}
+            <th className="text-right">m²</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(filas || []).map((r, i) => (
+            <tr key={i} className="border-b border-zinc-800/40">
+              <td className="text-zinc-300 py-0.5">{r.label || r.identificacion || `#${i + 1}`}</td>
+              <td className="text-right">{r.length_m ?? r.largo ?? '—'}</td>
+              <td className="text-right">{r.width_m ?? r.ancho ?? '—'}</td>
+              {ducto && <td className="text-right">{r.alto ?? '—'}</td>}
+              <td className="text-right font-bold text-red-300">{r.area_m2 != null ? Number(r.area_m2).toFixed(2) : '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="border-t border-zinc-700">
+            <td colSpan={ducto ? 4 : 3} className="text-right text-zinc-400 font-bold uppercase text-[9px] pt-1">Total</td>
+            <td className="text-right font-black text-red-300 pt-1">{total.toFixed(2)} m²</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  );
+}
+
 function DetalleArea({ area, fields }) {
   const data = area.data || {};
-  const items = (fields || [])
-    .filter(f => f.type !== 'map_point' && f.type !== 'map_polygon' && f.id !== 'measurements')
+  const [fotos, setFotos] = useState([]);
+  const [cargandoFotos, setCargandoFotos] = useState(true);
+  useEffect(() => {
+    let cancel = false;
+    (async () => {
+      setCargandoFotos(true);
+      try {
+        const fs = await listarFotosVisita(area.visit_id);
+        const mias = (fs || []).filter(f => f.area_id === area.id);
+        const conUrl = await Promise.all(mias.map(async f => {
+          let url = ''; try { url = await getSignedUrlFotoSurvey(f.storage_path, 3600); } catch {}
+          return { url, caption: f.caption || '' };
+        }));
+        if (!cancel) setFotos(conUrl.filter(x => x.url));
+      } catch { if (!cancel) setFotos([]); }
+      if (!cancel) setCargandoFotos(false);
+    })();
+    return () => { cancel = true; };
+  }, [area.id, area.visit_id]);
+
+  const ocultar = ['photos', 'fotos_previas', 'map_point', 'map_polygon', 'measurement_table', 'ductos_table'];
+  const escalares = (fields || [])
+    .filter(f => !ocultar.includes(f.type))
     .map(f => ({ label: f.label, valor: fmtCampoApp(f, data[f.id]) }))
     .filter(x => x.valor != null);
+  const tablasMedida = (fields || []).filter(f => f.type === 'measurement_table' && Array.isArray(data[f.id]) && data[f.id].length);
+  const tablasDucto = (fields || []).filter(f => f.type === 'ductos_table' && Array.isArray(data[f.id]) && data[f.id].length);
+  const vacio = !escalares.length && !tablasMedida.length && !tablasDucto.length && !fotos.length;
+
   return (
-    <div className="border-t border-zinc-800 px-3 py-2 space-y-1">
-      {items.length === 0 ? (
-        <div className="text-[10px] text-zinc-600">Sin datos adicionales capturados.</div>
-      ) : items.map((x, i) => (
-        <div key={i} className="flex items-start justify-between gap-3 text-[11px]">
-          <span className="text-zinc-500">{x.label}</span>
-          <span className="text-zinc-200 font-semibold text-right">{x.valor}</span>
+    <div className="border-t border-zinc-800 px-3 py-2.5 space-y-3">
+      {escalares.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5">
+          {escalares.map((x, i) => (
+            <div key={i} className="flex items-start justify-between gap-3 text-[11px] border-b border-zinc-800/50 py-0.5">
+              <span className="text-zinc-500">{x.label}</span>
+              <span className="text-zinc-200 font-semibold text-right">{x.valor}</span>
+            </div>
+          ))}
         </div>
-      ))}
+      )}
+      {tablasMedida.map(f => <TablaMedidas key={f.id} label={f.label} filas={data[f.id]} />)}
+      {tablasDucto.map(f => <TablaMedidas key={f.id} label={f.label} filas={data[f.id]} ducto />)}
+      {fotos.length > 0 && (
+        <div>
+          <div className="text-[10px] uppercase tracking-wide text-zinc-500 font-bold mb-1">Fotos ({fotos.length})</div>
+          <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5">
+            {fotos.map((f, i) => (
+              <a key={i} href={f.url} target="_blank" rel="noreferrer" title={f.caption}>
+                <img src={f.url} alt="" className="w-full h-16 object-cover rounded border border-zinc-800 hover:border-red-600" />
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+      {vacio && (cargandoFotos ? <div className="text-[10px] text-zinc-600">Cargando…</div> : <div className="text-[10px] text-zinc-600">Sin datos adicionales capturados.</div>)}
     </div>
   );
 }
@@ -530,7 +609,7 @@ function LevantamientosRealizados({ site, proyecto }) {
             >
               <div className="min-w-0">
                 <div className="font-bold text-sm">
-                  {areas.length} área{areas.length !== 1 ? 's' : ''} · {fmtM2(totalPared)} m² pared
+                  {areas.length} área{areas.length !== 1 ? 's' : ''} · {fmtM2(totalPared)} m²
                   {totalTecho > 0 ? ` · ${fmtM2(totalTecho)} m² techo` : ''}
                 </div>
                 <div className="text-[10px] text-zinc-500">
@@ -590,7 +669,7 @@ function LevantamientosRealizados({ site, proyecto }) {
                 ))}
                 <div className="border-t border-zinc-700 pt-2 flex items-center justify-between text-sm font-black">
                   <span className="uppercase tracking-wider text-zinc-400">Total</span>
-                  <span>{fmtM2(totalPared)} m² pared{totalTecho > 0 ? ` · ${fmtM2(totalTecho)} m² techo` : ''}</span>
+                  <span>{fmtM2(totalPared)} m²{totalTecho > 0 ? ` · ${fmtM2(totalTecho)} m² techo` : ''}</span>
                 </div>
                 {v.general_notes && (
                   <div className="text-[10px] text-zinc-500 border-t border-zinc-800 pt-2">{v.general_notes}</div>

@@ -10,15 +10,16 @@
 //  - Botón "Iniciar levantamiento" (placeholder — se conecta en PR 3B.4)
 
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Building, MapPin, Calendar, Clock, FileText, AlertTriangle, Play, ClipboardList, Layers, ChevronDown, Loader2, Trash2 } from 'lucide-react';
+import { ArrowLeft, Building, MapPin, Calendar, Clock, FileText, AlertTriangle, Play, ClipboardList, Layers, ChevronDown, Loader2, Trash2, Check } from 'lucide-react';
 import QuickActions from './QuickActions';
 import DynamicSurveyForm from './DynamicSurveyForm';
 import PuntosSingulares from './PuntosSingulares';
 import EstimacionLevantamiento from './EstimacionLevantamiento';
 import SatelitalAreas from './SatelitalAreas';
-import { SITE_STATUS, listarVisitasDeSite, listarAreasDeVisita, obtenerTemplateSurvey, asignarPersonaSurvey, ESCALERA, setRequiereEscaleraSurvey, eliminarProyectoSurvey, solicitarEliminacionSurvey, cancelarSolicitudEliminacionSurvey } from '../../lib/surveys';
+import { SITE_STATUS, listarVisitasDeSite, listarAreasDeVisita, obtenerTemplateSurvey, asignarPersonaSurvey, ESCALERA, setRequiereEscaleraSurvey, eliminarProyectoSurvey, solicitarEliminacionSurvey, cancelarSolicitudEliminacionSurvey, listarTemplatesSurveys, actualizarTipoProyectoSurvey, SERVICE_LINES, FAMILIAS_SERVICIO, familiaDeServiceLine } from '../../lib/surveys';
 import { imprimirLevantamiento } from './imprimirLevantamiento';
 import ChatterPanel from '../common/ChatterPanel';
+import { registrarEvento as chatterEventoSurvey } from '../../lib/chatter';
 
 export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolver }) {
   const [formAbierto, setFormAbierto] = useState(false);
@@ -72,6 +73,35 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
     catch (e) { alert('Error: ' + (e.message || e)); }
     setGuardandoEsc(false);
   };
+  // v8.22.3: tipo de levantamiento (familia/template) editable dentro del levantamiento.
+  const [tipoServiceLine, setTipoServiceLine] = useState(proyecto?.service_line || 'other');
+  const [tipoTemplateId, setTipoTemplateId] = useState(proyecto?.template_id || '');
+  const [tpls, setTpls] = useState([]);
+  const [cambiandoTipo, setCambiandoTipo] = useState(false);
+  useEffect(() => {
+    let cancel = false;
+    (async () => { try { const l = await listarTemplatesSurveys(); if (!cancel) setTpls(l); } catch {} })();
+    return () => { cancel = true; };
+  }, []);
+  const familiaActual = familiaDeServiceLine(tipoServiceLine);
+  const cambiarTipoFamilia = async (familiaKey) => {
+    // Template por defecto de la familia (primero disponible).
+    const fam = FAMILIAS_SERVICIO.find(f => f.key === familiaKey);
+    const tpl = tpls.find(t => fam?.lines.includes(t.service_line)) || tpls.find(t => t.service_line === 'other');
+    if (!tpl) { alert('No hay plantilla para ese tipo.'); return; }
+    setCambiandoTipo(true);
+    const prevLabel = SERVICE_LINES[tipoServiceLine]?.label || 'Sin tipo';
+    try {
+      await actualizarTipoProyectoSurvey(proyecto.id, tpl.service_line, tpl.id);
+      setTipoServiceLine(tpl.service_line); setTipoTemplateId(tpl.id);
+      const nuevoLabel = SERVICE_LINES[tpl.service_line]?.label || (familiaKey === 'generico' ? 'Genérico' : familiaKey);
+      try { await chatterEventoSurvey('levantamiento', proyecto.id, `Cambió el tipo: ${prevLabel} → ${nuevoLabel}`, usuario); } catch {}
+    } catch (e) { alert('Error: ' + (e.message || e)); }
+    setCambiandoTipo(false);
+  };
+  // Proyecto con el tipo actualizado para la captura (DynamicSurveyForm lee template_id).
+  const proyectoConTipo = { ...proyecto, service_line: tipoServiceLine, template_id: tipoTemplateId };
+
   const status = SITE_STATUS[site.survey_status] || SITE_STATUS.pending;
   const hasGeo = site.latitude != null && site.longitude != null;
   const tieneInfoFaltante = site.survey_status === 'missing_info';
@@ -195,6 +225,30 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
       )}
 
       {/* Levantamiento(s) ya capturado(s) — solo lectura */}
+      {/* v8.22.3: Tipo de levantamiento — editable (se puede crear sin tipo y definirlo aquí) */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
+        <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1.5 flex items-center gap-1">
+          <Layers className="w-3.5 h-3.5 text-red-500" /> Tipo de levantamiento
+          {cambiandoTipo && <Loader2 className="w-3 h-3 animate-spin text-zinc-500" />}
+        </div>
+        <div className="grid grid-cols-2 gap-1.5">
+          {FAMILIAS_SERVICIO.map(f => {
+            const activo = familiaActual === f.key;
+            return (
+              <button key={f.key} onClick={() => !activo && cambiarTipoFamilia(f.key)} disabled={cambiandoTipo}
+                className={`px-2 py-2 rounded-card border text-xs font-bold text-center leading-tight ${activo ? 'border-red-600 bg-red-900/20 text-white' : 'border-zinc-800 bg-zinc-950 text-zinc-300 hover:border-zinc-700'}`}>
+                {f.label}{activo && <Check className="w-3 h-3 inline ml-1 -mt-0.5 text-red-400" />}
+              </button>
+            );
+          })}
+        </div>
+        <div className="text-[10px] text-zinc-500 mt-1.5">
+          {familiaActual === 'generico' || !familiaActual
+            ? 'Sin tipo definido (genérico). Elige una familia; el tipo específico se elige por área al capturar.'
+            : `Actual: ${SERVICE_LINES[tipoServiceLine]?.label || tipoServiceLine}. El específico se elige por área al capturar.`}
+        </div>
+      </div>
+
       {/* v8.19.65: Asignar levantador (personal habilitado) */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
         <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1.5 flex items-center gap-1">
@@ -297,7 +351,7 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
       {formAbierto && (
         <DynamicSurveyForm
           site={site}
-          proyecto={proyecto}
+          proyecto={proyectoConTipo}
           usuario={usuario}
           onCerrar={() => setFormAbierto(false)}
           onCompletado={() => {

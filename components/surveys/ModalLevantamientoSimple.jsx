@@ -162,7 +162,10 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
     setTemplateId(tpls[0]?.id || ''); // por defecto el primero de la familia (si no conoce el específico)
   };
   const clienteNombreFinal = (clienteNombre || clienteQuery).trim();
-  const puedeGuardar = !!templateId && clienteNombreFinal.length > 0 && !guardando;
+  // v8.22.3: el tipo es OPCIONAL. Sin familia se crea genérico (template generic-v1)
+  // y se puede definir el tipo después dentro del levantamiento.
+  const templateGenerico = templates.find(t => t.id === 'generic-v1') || templates.find(t => t.service_line === 'other');
+  const puedeGuardar = clienteNombreFinal.length > 0 && !guardando;
 
   // ---- Cliente ----
   const q = clienteQuery.trim().toLowerCase();
@@ -258,8 +261,12 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
     setGuardando(true);
     setErrorMsg(null);
     try {
-      const serviceLine = templateActual.service_line;
-      const serviceLabel = SERVICE_LINES[serviceLine]?.label || serviceLine;
+      // Si no se eligió tipo, usa el template genérico (definible después).
+      const tpl = templateActual || templateGenerico;
+      if (!tpl) { setErrorMsg('No hay plantillas disponibles.'); setGuardando(false); return; }
+      const templateIdFinal = tpl.id;
+      const serviceLine = tpl.service_line;
+      const serviceLabel = templateActual ? (SERVICE_LINES[serviceLine]?.label || serviceLine) : 'Sin tipo';
       const authUserId = await obtenerAuthUserIdActual();
       const cnombre = clienteNombreFinal;
 
@@ -314,7 +321,7 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
         clientName: cnombre,
         serviceLine,
         company,
-        templateId,
+        templateId: templateIdFinal,
         description: null,
         createdByAuthUserId: authUserId,
       });
@@ -387,9 +394,12 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
         </div>
 
         <div className="p-4 space-y-4">
-          {/* Tipo de servicio — por familia (si no conoces el específico) */}
+          {/* Tipo de servicio — por familia (opcional; se puede definir después) */}
           <div>
-            <div className={labCls}>Tipo de servicio *</div>
+            <div className="flex items-center justify-between">
+              <div className={labCls}>Tipo de servicio (opcional)</div>
+              {familiaKey && <button onClick={() => { setFamiliaKey(null); setTemplateId(''); }} className="text-[10px] text-zinc-500 hover:text-zinc-300 mb-1.5">Sin tipo</button>}
+            </div>
             {loadingTpl ? (
               <div className="flex items-center gap-2 text-zinc-500 text-sm py-2"><Loader2 className="w-4 h-4 animate-spin" /> Cargando…</div>
             ) : (
@@ -415,10 +425,12 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
                 {/* El tipo específico (techo/piso) se elige POR ÁREA dentro del levantamiento. */}
                 {familiaKey === 'generico' ? (
                   <div className="mt-1.5 text-[11px] text-zinc-500">Captura manual: tú describes cada superficie. Útil para algo no convencional o sin template.</div>
-                ) : familiaKey && templatesFamilia.length >= 1 && (
+                ) : familiaKey && templatesFamilia.length >= 1 ? (
                   <div className="mt-1.5 text-[11px] text-zinc-500">
                     El tipo específico ({familiaKey === 'pisos' ? 'tipo de piso' : familiaKey === 'impermeable' ? 'tipo de techo' : 'tipo'}) se elige por área al capturar.
                   </div>
+                ) : (
+                  <div className="mt-1.5 text-[11px] text-zinc-500">Puedes crear <b className="text-zinc-300">sin tipo</b> y definirlo después dentro del levantamiento.</div>
                 )}
               </>
             )}

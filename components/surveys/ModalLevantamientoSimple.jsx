@@ -184,6 +184,7 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
     const cts = clienteId ? contactos.filter(c => c.clienteId === clienteId) : [];
     setContactoMode(cts.length > 0 ? 'cliente' : 'manual');
     setContactoSelId('');
+    setContactName(''); setMobilePhone(''); // v8.25.14: sin contacto hasta que se elija
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clienteId]);
 
@@ -257,8 +258,8 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
     setLat(ub.latitud ?? null);
     setLng(ub.longitud ?? null);
     setOrigenUbicacion(ub.latitud != null ? 'guardada' : null);
-    setContactName(ub.contactoNombre || '');
-    setMobilePhone(ub.contactoTelefono || '');
+    // v8.25.14: NO pisar el contacto en sitio con el guardado de la locación; el
+    // contacto de la obra lo gobierna el selector "Contacto en sitio" (el que se elija).
     setAreas(Array.isArray(ub.areas) ? ub.areas.map(a => ({
       id: a.id || ('ar_' + Math.random().toString(36).slice(2, 6)),
       nombre: a.nombre || '', m2: a.m2 ?? '', sistemaId: a.sistemaId || '',
@@ -308,6 +309,10 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
       const serviceLabel = templateActual ? (SERVICE_LINES[serviceLine]?.label || serviceLine) : 'Sin tipo';
       const authUserId = await obtenerAuthUserIdActual();
       const cnombre = clienteNombreFinal;
+      // v8.25.14: el contacto de la obra es el ELEGIDO en el selector (no el predeterminado).
+      const ctElegido = contactoMode === 'cliente' ? contactosCliente.find(c => c.id === contactoSelId) : null;
+      const finalContactName = (ctElegido?.nombre || contactName).trim() || null;
+      const finalContactPhone = (ctElegido ? (ctElegido.telefono || ctElegido.whatsapp || '') : mobilePhone).trim() || null;
 
       // Áreas limpias (tipo proyecto)
       const areasLimpias = areas
@@ -346,8 +351,8 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
           pais: pais.trim() || null,
           latitud: lat,
           longitud: lng,
-          contactoNombre: contactName.trim() || null,
-          contactoTelefono: mobilePhone.trim() || null,
+          contactoNombre: finalContactName,
+          contactoTelefono: finalContactPhone,
           areas: areasLimpias,
         });
         ubicId = nueva.id;
@@ -372,8 +377,8 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
         city: city.trim() || null,
         latitude: lat,
         longitude: lng,
-        contactName: contactName.trim() || null,
-        mobilePhone: mobilePhone.trim() || null,
+        contactName: finalContactName,
+        mobilePhone: finalContactPhone,
         notes: notes.trim() || null,
         surveyStatus: 'pending',
         clienteId: cid,
@@ -399,7 +404,7 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
             body: JSON.stringify({
               destinatarios: correos,
               clienteNombre: cnombre,
-              contactoNombre: contactName.trim() || contactoSel?.nombre || '',
+              contactoNombre: finalContactName || '',
               servicio: serviceLabel,
               locacion: locNombreFinal,
               fecha: new Date().toLocaleDateString('es-DO', { day: '2-digit', month: 'long', year: 'numeric' }),

@@ -75,6 +75,12 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
   const [contactoSelId, setContactoSelId] = useState('');
   const [buscarUbic, setBuscarUbic] = useState('');      // v8.25.11: buscador de locaciones
   const [buscarContacto, setBuscarContacto] = useState(''); // v8.25.11: buscador de contactos
+  const [ubicAbierto, setUbicAbierto] = useState(false);     // v8.25.15: combobox locaciones
+  const [contactoAbierto, setContactoAbierto] = useState(false); // v8.25.15: combobox contactos
+  // v8.25.15: datos del cliente nuevo (manual): teléfono + cédula/RNC.
+  const [nuevoClienteTel, setNuevoClienteTel] = useState('');
+  const [nuevoClienteCedula, setNuevoClienteCedula] = useState('');
+  const [tipoClienteNuevo, setTipoClienteNuevo] = useState('empresa'); // v8.25.17: 'empresa' | 'persona'
   // v8.25.12: crear un contacto nuevo y guardarlo en el cliente.
   const [contactosExtra, setContactosExtra] = useState([]); // creados en esta sesión
   const [nuevoCt, setNuevoCt] = useState({ nombre: '', cargo: '', telefono: '', email: '' });
@@ -184,21 +190,26 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
     const cts = clienteId ? contactos.filter(c => c.clienteId === clienteId) : [];
     setContactoMode(cts.length > 0 ? 'cliente' : 'manual');
     setContactoSelId('');
+    setContactName(''); setMobilePhone(''); // v8.25.14: sin contacto hasta que se elija
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clienteId]);
 
   const elegirContacto = (id) => {
     setContactoSelId(id);
     const ct = contactosCliente.find(c => c.id === id);
-    if (ct) { setContactName(ct.nombre || ''); setMobilePhone(ct.telefono || ct.whatsapp || ''); }
+    if (ct) { setContactName(ct.nombre || ''); setMobilePhone(ct.telefono || ct.whatsapp || ''); setBuscarContacto(ct.nombre || ''); }
   };
 
   const templateActual = templates.find(t => t.id === templateId);
   const templatesFamilia = familiaKey ? templates.filter(t => familiaDeLine(t.service_line) === familiaKey) : [];
   const seleccionarFamilia = (key) => {
     setFamiliaKey(key);
+    const fam = FAMILIAS.find(f => f.key === key);
     const tpls = templates.filter(t => familiaDeLine(t.service_line) === key);
-    setTemplateId(tpls[0]?.id || ''); // por defecto el primero de la familia (si no conoce el específico)
+    // v8.25.16: por defecto el template del PRIMER service_line de la familia
+    // (ej. Impermeabilizante/Aislante → Impermeabilización, no Aislante).
+    const preferido = (fam?.lines || []).map(line => tpls.find(t => t.service_line === line)).find(Boolean);
+    setTemplateId((preferido || tpls[0])?.id || '');
   };
   const clienteNombreFinal = (clienteNombre || clienteQuery).trim();
   // v8.22.3: el tipo es OPCIONAL. Sin familia se crea genérico (template generic-v1)
@@ -248,6 +259,7 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
   // ---- Locación ----
   const seleccionarUbicacion = (ub) => {
     setUbicSelId(ub.id);
+    setBuscarUbic(ub.nombre || ''); // v8.25.15: refleja la selección en el combobox
     setLocNombre(ub.nombre || '');
     setAddress(ub.direccion || '');
     setCity(ub.ciudad || '');
@@ -257,8 +269,8 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
     setLat(ub.latitud ?? null);
     setLng(ub.longitud ?? null);
     setOrigenUbicacion(ub.latitud != null ? 'guardada' : null);
-    setContactName(ub.contactoNombre || '');
-    setMobilePhone(ub.contactoTelefono || '');
+    // v8.25.14: NO pisar el contacto en sitio con el guardado de la locación; el
+    // contacto de la obra lo gobierna el selector "Contacto en sitio" (el que se elija).
     setAreas(Array.isArray(ub.areas) ? ub.areas.map(a => ({
       id: a.id || ('ar_' + Math.random().toString(36).slice(2, 6)),
       nombre: a.nombre || '', m2: a.m2 ?? '', sistemaId: a.sistemaId || '',
@@ -308,6 +320,15 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
       const serviceLabel = templateActual ? (SERVICE_LINES[serviceLine]?.label || serviceLine) : 'Sin tipo';
       const authUserId = await obtenerAuthUserIdActual();
       const cnombre = clienteNombreFinal;
+      // v8.25.14: el contacto de la obra es el ELEGIDO en el selector (no el predeterminado).
+      const ctElegido = contactoMode === 'cliente' ? contactosCliente.find(c => c.id === contactoSelId) : null;
+      let finalContactName = (ctElegido?.nombre || contactName).trim() || null;
+      let finalContactPhone = (ctElegido ? (ctElegido.telefono || ctElegido.whatsapp || '') : mobilePhone).trim() || null;
+      // v8.25.17: para una PERSONA nueva, el contacto es ella misma si no se indicó "quien recibe".
+      if (!clienteId && tipoClienteNuevo === 'persona') {
+        if (!finalContactName) finalContactName = cnombre;
+        if (!finalContactPhone) finalContactPhone = nuevoClienteTel.trim() || null;
+      }
 
       // Áreas limpias (tipo proyecto)
       const areasLimpias = areas
@@ -318,7 +339,7 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
       let cid = clienteId;
       if (!cid) {
         cid = 'cli_' + Date.now() + Math.random().toString(36).slice(2, 7);
-        await crearCliente({ id: cid, nombre: cnombre, tipo: 'empresa' });
+        await crearCliente({ id: cid, nombre: cnombre, tipo: tipoClienteNuevo, telefonoPrincipal: nuevoClienteTel.trim() || null, rnc: nuevoClienteCedula.trim() || null });
       }
 
       // 2. Resolver locación
@@ -346,8 +367,8 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
           pais: pais.trim() || null,
           latitud: lat,
           longitud: lng,
-          contactoNombre: contactName.trim() || null,
-          contactoTelefono: mobilePhone.trim() || null,
+          contactoNombre: finalContactName,
+          contactoTelefono: finalContactPhone,
           areas: areasLimpias,
         });
         ubicId = nueva.id;
@@ -372,8 +393,8 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
         city: city.trim() || null,
         latitude: lat,
         longitude: lng,
-        contactName: contactName.trim() || null,
-        mobilePhone: mobilePhone.trim() || null,
+        contactName: finalContactName,
+        mobilePhone: finalContactPhone,
         notes: notes.trim() || null,
         surveyStatus: 'pending',
         clienteId: cid,
@@ -399,7 +420,7 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
             body: JSON.stringify({
               destinatarios: correos,
               clienteNombre: cnombre,
-              contactoNombre: contactName.trim() || contactoSel?.nombre || '',
+              contactoNombre: finalContactName || '',
               servicio: serviceLabel,
               locacion: locNombreFinal,
               fecha: new Date().toLocaleDateString('es-DO', { day: '2-digit', month: 'long', year: 'numeric' }),
@@ -423,9 +444,11 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
   const ubicacionActual = ubicaciones.find(u => u.id === ubicSelId);
 
   return (
-    <div className="fixed inset-0 bg-black/80 z-[60] flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto">
-      <div className="bg-zinc-950 border-2 border-red-600 rounded-card w-full max-w-3xl my-4">
-        <div className="flex items-center justify-between p-4 border-b border-zinc-800 sticky top-0 bg-zinc-950 z-10 rounded-t-card">
+    <div className="fixed inset-0 bg-black/80 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4">
+      {/* v8.25.18: columna flex con altura de viewport dinámico (dvh) y scroll solo en el
+          cuerpo → friendly en iPad y con el teclado abierto (header/footer siempre visibles). */}
+      <div className="bg-zinc-950 border-2 border-red-600 rounded-t-2xl sm:rounded-card w-full max-w-3xl flex flex-col max-h-[100dvh] sm:max-h-[90dvh]">
+        <div className="flex items-center justify-between p-4 border-b border-zinc-800 bg-zinc-950 rounded-t-2xl sm:rounded-t-card shrink-0">
           <div>
             <div className="text-xs tracking-widest uppercase text-red-500 font-bold">Nuevo levantamiento</div>
             <div className="text-sm font-bold mt-0.5">Un techo / un sitio</div>
@@ -433,7 +456,8 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
           <button onClick={onCerrar} className="text-zinc-500 hover:text-white"><X className="w-4 h-4" /></button>
         </div>
 
-        <div className="p-4 space-y-4">
+        <div className="p-4 space-y-4 overflow-y-auto flex-1 overscroll-contain"
+          onFocus={e => { const t = e.target; if (t && t.matches && t.matches('input,textarea,select')) setTimeout(() => { try { t.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch {} }, 280); }}>
           {/* Tipo de servicio — por familia (opcional; se puede definir después) */}
           <div>
             <div className="flex items-center justify-between">
@@ -527,6 +551,27 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
             )}
           </div>
 
+          {/* v8.25.17: datos del cliente nuevo (manual) — empresa o persona */}
+          {!clienteId && clienteNombreFinal && (
+            <div className="border border-red-800/40 bg-red-900/10 rounded-card p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[11px] text-red-300 font-bold">Nuevo cliente «{clienteNombreFinal}»</div>
+                <div className="flex gap-1">
+                  {[['empresa', 'Empresa'], ['persona', 'Persona']].map(([k, l]) => (
+                    <button key={k} onClick={() => setTipoClienteNuevo(k)} className={`px-2.5 py-0.5 rounded-card text-[10px] font-bold uppercase border ${tipoClienteNuevo === k ? 'border-red-600 bg-red-900/20 text-white' : 'border-zinc-700 text-zinc-400'}`}>{l}</button>
+                  ))}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <input value={nuevoClienteTel} onChange={e => setNuevoClienteTel(e.target.value)} placeholder="Teléfono" inputMode="tel" className={inpCls} />
+                <input value={nuevoClienteCedula} onChange={e => setNuevoClienteCedula(e.target.value)} placeholder={tipoClienteNuevo === 'persona' ? 'Cédula' : 'RNC'} inputMode="numeric" className={inpCls} />
+              </div>
+              {tipoClienteNuevo === 'persona' && (
+                <div className="text-[10px] text-zinc-400">El contacto de la obra es <b>{clienteNombreFinal}</b> por defecto. Si recibe otra persona, ponla en <b>"Contacto en sitio → Otro"</b>.</div>
+              )}
+            </div>
+          )}
+
           {/* Locación del cliente */}
           <div className="border border-zinc-800 rounded-card p-3 space-y-3 bg-zinc-900/40">
             <div className="flex items-center justify-between">
@@ -545,21 +590,38 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
               <div className="text-xs text-zinc-500">Elige primero un cliente.</div>
             )}
 
-            {/* Modo: locación existente */}
+            {/* Modo: locación existente — combobox (escribe y filtra la lista en vivo) */}
             {!loadingUbic && ubicMode === 'existente' && ubicaciones.length > 0 && (
               <div className="space-y-2">
-                {ubicaciones.length > 6 && (
+                <div className="relative">
                   <div className="relative">
-                    <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                    <input value={buscarUbic} onChange={e => setBuscarUbic(e.target.value)} placeholder={`Buscar entre ${ubicaciones.length} locaciones…`} className={inpCls + ' pl-8'} />
+                    <input
+                      value={buscarUbic}
+                      onChange={e => { setBuscarUbic(e.target.value); setUbicAbierto(true); }}
+                      onFocus={() => setUbicAbierto(true)}
+                      onBlur={() => setTimeout(() => setUbicAbierto(false), 150)}
+                      placeholder={`Busca entre ${ubicaciones.length} locaciones…`}
+                      className={inpCls + ' pr-8'}
+                    />
+                    <ChevronDown className="w-4 h-4 text-zinc-500 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                   </div>
-                )}
-                <select value={ubicSelId} onChange={e => { const ub = ubicaciones.find(u => u.id === e.target.value); if (ub) seleccionarUbicacion(ub); }} className={inpCls} size={ubicaciones.length > 6 ? Math.min(8, ubicacionesFiltradas.length || 1) : undefined}>
-                  {ubicacionesFiltradas.map(u => (
-                    <option key={u.id} value={u.id}>{u.nombre}{u.ciudad ? ` · ${u.ciudad}` : ''}</option>
-                  ))}
-                  {ubicacionesFiltradas.length === 0 && <option value="" disabled>Sin coincidencias</option>}
-                </select>
+                  {ubicSelId && !ubicAbierto && (
+                    <div className="mt-1 text-[11px] text-green-400 flex items-center gap-1"><Check className="w-3 h-3" /> Locación: <b>{ubicacionActual?.nombre}</b></div>
+                  )}
+                  {ubicAbierto && (
+                    <div className="absolute z-20 left-0 right-0 mt-1 bg-zinc-900 border-2 border-zinc-700 rounded-card max-h-56 overflow-y-auto shadow-xl">
+                      {ubicacionesFiltradas.map(u => (
+                        <button key={u.id} onMouseDown={e => e.preventDefault()} onClick={() => { seleccionarUbicacion(u); setBuscarUbic(u.nombre || ''); setUbicAbierto(false); }}
+                          className={`w-full text-left px-3 py-2 text-sm hover:bg-zinc-800 flex items-center gap-2 border-b border-zinc-800/60 ${u.id === ubicSelId ? 'bg-red-900/15' : ''}`}>
+                          <MapPin className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+                          <span className="truncate">{u.nombre}</span>
+                          {u.ciudad ? <span className="text-[10px] text-zinc-500 ml-auto shrink-0">{u.ciudad}</span> : null}
+                        </button>
+                      ))}
+                      {ubicacionesFiltradas.length === 0 && <div className="px-3 py-2 text-xs text-zinc-500">Sin locaciones que coincidan.</div>}
+                    </div>
+                  )}
+                </div>
                 {ubicacionActual && (
                   <div className="text-[11px] text-zinc-400 flex items-start gap-1">
                     <MapPin className="w-3 h-3 mt-0.5 shrink-0 text-zinc-500" />
@@ -623,7 +685,14 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
                       <button onClick={() => { setLat(null); setLng(null); setOrigenUbicacion(null); }} className="text-zinc-500 hover:text-red-400"><X className="w-3 h-3" /></button>
                     </div>
                   )}
-                  <div className="mt-1 flex items-center gap-3">
+                  {/* v8.25.15: buscar el lugar en Google Maps (mejor búsqueda de POIs) y pegar el link */}
+                  <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([locNombre, address, city].filter(s => s && s.trim()).join(' ').trim() || clienteNombreFinal)}`}
+                    target="_blank" rel="noreferrer"
+                    className="mt-1.5 w-full bg-zinc-900 border border-zinc-700 hover:border-blue-500 text-zinc-200 text-[11px] font-bold rounded-card px-3 py-2 flex items-center justify-center gap-1.5">
+                    <Search className="w-3.5 h-3.5 text-blue-400" /> Buscar el lugar en Google Maps
+                  </a>
+                  <div className="text-[10px] text-zinc-500 mt-1">Encuentra el sitio en Google, toca <b>Compartir → Copiar vínculo</b> y pégalo arriba.</div>
+                  <div className="mt-1.5 flex items-center gap-3">
                     <button onClick={() => setMapaAbierto(true)} className="text-[10px] text-red-400 hover:text-red-300 font-bold flex items-center gap-1">
                       <MapPin className="w-3 h-3" /> Elegir en el mapa
                     </button>
@@ -679,7 +748,7 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
                 <div className="grid grid-cols-2 gap-2">
                   <input value={nuevoCt.nombre} onChange={e => setNuevoCt({ ...nuevoCt, nombre: e.target.value })} placeholder="Nombre *" className={inpCls} />
                   <input value={nuevoCt.cargo} onChange={e => setNuevoCt({ ...nuevoCt, cargo: e.target.value })} placeholder="Cargo (opcional)" className={inpCls} />
-                  <input value={nuevoCt.telefono} onChange={e => setNuevoCt({ ...nuevoCt, telefono: e.target.value })} placeholder="Teléfono / WhatsApp" className={inpCls} />
+                  <input value={nuevoCt.telefono} onChange={e => setNuevoCt({ ...nuevoCt, telefono: e.target.value })} placeholder="Teléfono / WhatsApp" inputMode="tel" className={inpCls} />
                   <input value={nuevoCt.email} onChange={e => setNuevoCt({ ...nuevoCt, email: e.target.value })} placeholder="Email (opcional)" className={inpCls} />
                 </div>
                 <button onClick={guardarNuevoContacto} disabled={guardandoCt || !nuevoCt.nombre.trim()} className="w-full bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-[11px] font-bold uppercase py-2 rounded-card flex items-center justify-center gap-1.5">
@@ -687,26 +756,38 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
                 </button>
               </div>
             ) : contactoMode === 'cliente' && contactosCliente.length > 0 ? (
-              <div className="space-y-2">
-                {contactosCliente.length > 6 && (
-                  <div className="relative">
-                    <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                    <input value={buscarContacto} onChange={e => setBuscarContacto(e.target.value)} placeholder={`Buscar entre ${contactosCliente.length} contactos…`} className={inpCls + ' pl-8'} />
+              <div className="relative">
+                <div className="relative">
+                  <input
+                    value={buscarContacto}
+                    onChange={e => { setBuscarContacto(e.target.value); setContactoAbierto(true); }}
+                    onFocus={() => setContactoAbierto(true)}
+                    onBlur={() => setTimeout(() => setContactoAbierto(false), 150)}
+                    placeholder={`Busca entre ${contactosCliente.length} contactos…`}
+                    className={inpCls + ' pr-8'}
+                  />
+                  <ChevronDown className="w-4 h-4 text-zinc-500 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
+                {contactoSelId && !contactoAbierto && (
+                  <div className="mt-1 text-[11px] text-green-400 flex items-center gap-1"><Check className="w-3 h-3" /> Contacto: <b>{contactosCliente.find(c => c.id === contactoSelId)?.nombre}</b></div>
+                )}
+                {contactoAbierto && (
+                  <div className="absolute z-20 left-0 right-0 mt-1 bg-zinc-900 border-2 border-zinc-700 rounded-card max-h-56 overflow-y-auto shadow-xl">
+                    {contactosFiltrados.map(c => (
+                      <button key={c.id} onMouseDown={e => e.preventDefault()} onClick={() => { elegirContacto(c.id); setBuscarContacto(c.nombre || ''); setContactoAbierto(false); }}
+                        className={`w-full text-left px-3 py-2 text-sm hover:bg-zinc-800 flex flex-col border-b border-zinc-800/60 ${c.id === contactoSelId ? 'bg-red-900/15' : ''}`}>
+                        <span className="truncate font-medium">{c.nombre}{c.esPrincipal ? ' ★' : ''}</span>
+                        <span className="text-[10px] text-zinc-500 truncate">{[c.cargo, c.telefono].filter(Boolean).join(' · ') || '—'}</span>
+                      </button>
+                    ))}
+                    {contactosFiltrados.length === 0 && <div className="px-3 py-2 text-xs text-zinc-500">Sin contactos que coincidan.</div>}
                   </div>
                 )}
-                <select value={contactoSelId} onChange={e => elegirContacto(e.target.value)} className={inpCls} size={contactosCliente.length > 6 ? Math.min(8, (contactosFiltrados.length || 0) + 1) : undefined}>
-                  <option value="">— Selecciona un contacto del cliente —</option>
-                  {contactosFiltrados.map(c => (
-                    <option key={c.id} value={c.id}>
-                      {c.nombre}{c.cargo ? ` · ${c.cargo}` : ''}{c.telefono ? ` · ${c.telefono}` : ''}{c.esPrincipal ? ' ★' : ''}
-                    </option>
-                  ))}
-                </select>
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-2">
                 <input value={contactName} onChange={e => setContactName(e.target.value)} placeholder="Nombre de quien recibe" className={inpCls} />
-                <input value={mobilePhone} onChange={e => setMobilePhone(e.target.value)} placeholder="809-…" className={inpCls} />
+                <input value={mobilePhone} onChange={e => setMobilePhone(e.target.value)} placeholder="809-…" inputMode="tel" className={inpCls} />
               </div>
             )}
           </div>
@@ -714,16 +795,16 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
           {errorMsg && <div className="bg-red-900/20 border border-red-700 rounded-card text-red-300 p-2 text-xs">{errorMsg}</div>}
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-2 p-4 border-t border-zinc-800 sticky bottom-0 bg-zinc-950 rounded-b-card">
+        <div className="flex flex-col sm:flex-row gap-2 p-4 border-t border-zinc-800 bg-zinc-950 sm:rounded-b-card shrink-0">
           <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-sm font-bold uppercase py-3 rounded-card sm:w-auto">Cancelar</button>
-          {/* v8.25.13: crear sin iniciar la captura (para asignar/capturar después) */}
-          <button onClick={() => guardar(false)} disabled={!puedeGuardar} className="flex-1 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 border border-zinc-600 text-white text-sm font-bold uppercase py-3 rounded-card flex items-center justify-center gap-2">
-            {guardando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-            Solo crear
-          </button>
-          <button onClick={() => guardar(true)} disabled={!puedeGuardar} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-sm font-black uppercase py-3 rounded-card flex items-center justify-center gap-2">
+          {/* v8.25.19: "Crear y capturar" es secundario (no rojo) para no empujar a capturar; lo principal es CREAR */}
+          <button onClick={() => guardar(true)} disabled={!puedeGuardar} className="flex-1 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 border border-zinc-600 text-zinc-200 text-sm font-bold uppercase py-3 rounded-card flex items-center justify-center gap-2">
             {guardando ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
-            {guardando ? 'Creando…' : 'Crear y capturar'}
+            Crear y capturar
+          </button>
+          <button onClick={() => guardar(false)} disabled={!puedeGuardar} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-sm font-black uppercase py-3 rounded-card flex items-center justify-center gap-2">
+            {guardando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+            {guardando ? 'Creando…' : 'Crear levantamiento'}
           </button>
         </div>
       </div>

@@ -14,7 +14,7 @@ import { ArrowLeft, Building, MapPin, Calendar, Clock, FileText, AlertTriangle, 
 import QuickActions from './QuickActions';
 import DynamicSurveyForm from './DynamicSurveyForm';
 import SatelitalAreas from './SatelitalAreas';
-import { SITE_STATUS, listarVisitasDeSite, listarAreasDeVisita, obtenerTemplateSurvey, asignarPersonaSurvey, ESCALERA, setRequiereEscaleraSurvey, eliminarProyectoSurvey, solicitarEliminacionSurvey, cancelarSolicitudEliminacionSurvey, listarTemplatesSurveys, actualizarTipoProyectoSurvey, eliminarVisita, listarFotosVisita, getSignedUrlFotoSurvey, finalizarLevantamientoSurvey, reabrirLevantamientoSurvey, SERVICE_LINES, FAMILIAS_SERVICIO, familiaDeServiceLine } from '../../lib/surveys';
+import { SITE_STATUS, listarVisitasDeSite, listarAreasDeVisita, obtenerTemplateSurvey, asignarPersonaSurvey, ESCALERA, setRequiereEscaleraSurvey, eliminarProyectoSurvey, solicitarEliminacionSurvey, cancelarSolicitudEliminacionSurvey, listarTemplatesSurveys, actualizarTipoProyectoSurvey, eliminarVisita, listarFotosVisita, getSignedUrlFotoSurvey, finalizarLevantamientoSurvey, reabrirLevantamientoSurvey, setEtapaSurvey, ETAPAS_LEVANTAMIENTO, SERVICE_LINES, FAMILIAS_SERVICIO, familiaDeServiceLine } from '../../lib/surveys';
 import { imprimirLevantamiento } from './imprimirLevantamiento';
 import { imprimirInformeFotografico } from './imprimirInformeFotografico';
 import ChatterPanel from '../common/ChatterPanel';
@@ -114,6 +114,19 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
     try { await reabrirLevantamientoSurvey(proyecto.id); setStatusProy('survey_in_progress'); try { await chatterEventoSurvey('levantamiento', proyecto.id, 'Levantamiento reabierto', usuario); } catch {} }
     catch (e) { alert('Error: ' + (e?.message || e)); }
     setFinalizando(false);
+  };
+  // v8.25.16: cambiar la etapa del levantamiento desde aquí (además del Kanban).
+  const MAP_ETAPA = { planning: 'New', survey_in_progress: 'Asignado', survey_completed: 'Realizado', quoted: 'Cotizacion Realizada' };
+  const [etapaProy, setEtapaProy] = useState(proyecto?.odoo_stage || MAP_ETAPA[proyecto?.status] || 'New');
+  const [cambiandoEtapa, setCambiandoEtapa] = useState(false);
+  const etapasDisponibles = esAdmin ? ETAPAS_LEVANTAMIENTO : ETAPAS_LEVANTAMIENTO.slice(0, 5); // supervisor: hasta "Realizado"
+  const cambiarEtapaProy = async (etapa) => {
+    if (!etapa || etapa === etapaProy) return;
+    const prev = etapaProy;
+    setEtapaProy(etapa); setCambiandoEtapa(true);
+    try { await setEtapaSurvey(proyecto.id, etapa); try { await chatterEventoSurvey('levantamiento', proyecto.id, `Etapa → ${etapa}`, usuario); } catch {} }
+    catch (e) { alert('No se pudo cambiar la etapa: ' + (e?.message || e)); setEtapaProy(prev); }
+    setCambiandoEtapa(false);
   };
 
   const status = SITE_STATUS[site.survey_status] || SITE_STATUS.pending;
@@ -263,6 +276,18 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
           <div className="text-sm whitespace-pre-wrap text-zinc-300">{site.notes}</div>
         </div>
       )}
+
+      {/* v8.25.16: Etapa del levantamiento — editable desde aquí (además del Kanban) */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
+        <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1.5 flex items-center gap-1">
+          <Layers className="w-3.5 h-3.5 text-red-500" /> Etapa
+          {cambiandoEtapa && <Loader2 className="w-3 h-3 animate-spin text-zinc-500" />}
+        </div>
+        <select value={etapaProy} onChange={e => cambiarEtapaProy(e.target.value)} disabled={cambiandoEtapa} className="w-full bg-zinc-950 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2.5 text-white text-sm">
+          {!etapasDisponibles.includes(etapaProy) && <option value={etapaProy}>{etapaProy}</option>}
+          {etapasDisponibles.map(et => <option key={et} value={et}>{et}</option>)}
+        </select>
+      </div>
 
       {/* Levantamiento(s) ya capturado(s) — solo lectura */}
       {/* v8.22.3: Tipo de levantamiento — editable (se puede crear sin tipo y definirlo aquí) */}

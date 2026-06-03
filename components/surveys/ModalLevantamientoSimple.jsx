@@ -12,7 +12,7 @@ import React, { useEffect, useState } from 'react';
 import { X, Loader2, MapPin, Check, Crosshair, Plus, Trash2, Building2, ChevronDown } from 'lucide-react';
 import { listarTemplatesSurveys, crearProyectoSurvey, crearSiteSurvey, SERVICE_LINES, COMPANIES, FAMILIAS_SERVICIO, familiaDeServiceLine } from '../../lib/surveys';
 import { listarUbicacionesCliente, crearUbicacionCliente, setAreasUbicacionCliente, crearCliente } from '../../lib/db';
-import { obtenerUbicacion } from '../../lib/geo';
+import { obtenerUbicacion, geocodificarInverso } from '../../lib/geo';
 import { expandirYExtraer } from '../../lib/geoutils';
 import ServiceLineBadge from './ServiceLineBadge';
 import MapaPickerModal from '../common/MapaPickerModal';
@@ -58,6 +58,10 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
   // Datos del sitio / locación
   const [address, setAddress] = useState('');
   const [city, setCity] = useState('');
+  const [sector, setSector] = useState('');
+  const [provincia, setProvincia] = useState('');
+  const [pais, setPais] = useState('');
+  const [sugiriendo, setSugiriendo] = useState(false);
   const [lat, setLat] = useState(null);
   const [lng, setLng] = useState(null);
   const [contactName, setContactName] = useState('');
@@ -79,6 +83,27 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
 
   const sistemasList = Object.entries(sistemas || {}).map(([id, s]) => ({ id, nombre: s?.nombre || id }));
 
+  // v8.20.9: al fijar coordenadas, sugiere sector/ciudad/provincia/país (solo rellena
+  // los campos vacíos — no pisa lo que el usuario ya escribió).
+  const sugerirDesdeCoords = async (la, ln) => {
+    setSugiriendo(true);
+    try {
+      const g = await geocodificarInverso(la, ln);
+      if (g) {
+        setSector(s => s || g.sector || '');
+        setCity(c => c || g.ciudad || '');
+        setProvincia(p => p || g.provincia || '');
+        setPais(p => p || g.pais || '');
+      }
+    } catch { /* ignore */ }
+    finally { setSugiriendo(false); }
+  };
+
+  const aplicarCoords = (la, ln, origen) => {
+    setLat(la); setLng(ln); setOrigenUbicacion(origen);
+    if (ubicMode === 'nueva') sugerirDesdeCoords(la, ln);
+  };
+
   // Método principal: el cliente manda su ubicación por WhatsApp o Google Maps.
   const extraerDelLink = async (raw) => {
     const link = (raw ?? locationLink).trim();
@@ -90,9 +115,7 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
       if (!coords || coords.lat == null) {
         setErrorMsg('No pude leer coordenadas de ese link. Pega un link de Google Maps, una ubicación de WhatsApp, o las coordenadas (lat, lng).');
       } else {
-        setLat(coords.lat);
-        setLng(coords.lng);
-        setOrigenUbicacion('link');
+        aplicarCoords(coords.lat, coords.lng, 'link');
       }
     } catch (e) {
       setErrorMsg('No se pudo extraer la ubicación: ' + (e?.message || e));
@@ -178,6 +201,9 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
     setLocNombre(ub.nombre || '');
     setAddress(ub.direccion || '');
     setCity(ub.ciudad || '');
+    setSector(ub.sector || '');
+    setProvincia(ub.provincia || '');
+    setPais(ub.pais || '');
     setLat(ub.latitud ?? null);
     setLng(ub.longitud ?? null);
     setOrigenUbicacion(ub.latitud != null ? 'guardada' : null);
@@ -193,7 +219,7 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
     setUbicMode('nueva');
     setUbicSelId('');
     setLocNombre('');
-    setAddress(''); setCity('');
+    setAddress(''); setCity(''); setSector(''); setProvincia(''); setPais('');
     setLat(null); setLng(null); setOrigenUbicacion(null);
     setContactName(''); setMobilePhone('');
     setAreas([]);
@@ -212,9 +238,7 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
       if (!u || u.lat == null) {
         setErrorMsg('No se pudo obtener la ubicación (permiso denegado o sin señal). Puedes continuar sin GPS.');
       } else {
-        setLat(u.lat);
-        setLng(u.lng);
-        setOrigenUbicacion('gps');
+        aplicarCoords(u.lat, u.lng, 'gps');
       }
     } catch (e) {
       setErrorMsg('No se pudo capturar la ubicación: ' + (e?.message || e));
@@ -262,7 +286,10 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
           clienteId: cid,
           nombre: nom,
           direccion: address.trim() || null,
+          sector: sector.trim() || null,
           ciudad: city.trim() || null,
+          provincia: provincia.trim() || null,
+          pais: pais.trim() || null,
           latitud: lat,
           longitud: lng,
           contactoNombre: contactName.trim() || null,
@@ -452,16 +479,32 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
                   <div className={labCls}>Nombre de la locación</div>
                   <input value={locNombre} onChange={e => setLocNombre(e.target.value)} placeholder={`Ej: Sucursal Naco · ${clienteNombreFinal}`} className={inpCls} />
                 </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="col-span-2">
-                    <div className={labCls}>Dirección</div>
-                    <input value={address} onChange={e => setAddress(e.target.value)} placeholder="Dirección del sitio" className={inpCls} />
+                <div>
+                  <div className={labCls}>Dirección</div>
+                  <input value={address} onChange={e => setAddress(e.target.value)} placeholder="Dirección del sitio" className={inpCls} />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <span className={labCls + ' mb-0'}>Sector</span>
+                      {sugiriendo && <Loader2 className="w-3 h-3 animate-spin text-zinc-500" />}
+                    </div>
+                    <input value={sector} onChange={e => setSector(e.target.value)} placeholder="Sector / barrio" className={inpCls} />
                   </div>
                   <div>
                     <div className={labCls}>Ciudad</div>
                     <input value={city} onChange={e => setCity(e.target.value)} placeholder="Ciudad" className={inpCls} />
                   </div>
+                  <div>
+                    <div className={labCls}>Provincia</div>
+                    <input value={provincia} onChange={e => setProvincia(e.target.value)} placeholder="Provincia" className={inpCls} />
+                  </div>
+                  <div>
+                    <div className={labCls}>País</div>
+                    <input value={pais} onChange={e => setPais(e.target.value)} placeholder="País" className={inpCls} />
+                  </div>
                 </div>
+                <div className="text-[10px] text-zinc-500 -mt-1">Sector, provincia y país se sugieren al fijar la ubicación; puedes editarlos.</div>
                 {/* Ubicación — link de Maps / WhatsApp */}
                 <div>
                   <div className={labCls}>Ubicación (GPS)</div>
@@ -566,7 +609,7 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
           initialLat={lat}
           initialLng={lng}
           onCerrar={() => setMapaAbierto(false)}
-          onSelect={(la, ln) => { setLat(la); setLng(ln); setOrigenUbicacion('mapa'); setMapaAbierto(false); }}
+          onSelect={(la, ln) => { aplicarCoords(la, ln, 'mapa'); setMapaAbierto(false); }}
         />
       )}
     </div>

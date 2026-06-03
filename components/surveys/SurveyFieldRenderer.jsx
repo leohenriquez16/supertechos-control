@@ -277,6 +277,9 @@ export default function SurveyFieldRenderer({ field, value, onChange, allValues 
     case 'map_polygon':
       return <MapPolygonField field={field} value={value} onChange={onChange} context={context} />;
 
+    case 'fotos_previas':
+      return <FotosPreviasField field={field} value={value} onChange={onChange} context={context} />;
+
     case 'measurement_table':
       return <MeasurementTableField field={field} value={value} onChange={onChange} />;
 
@@ -303,6 +306,53 @@ export default function SurveyFieldRenderer({ field, value, onChange, allValues 
         </div>
       );
   }
+}
+
+// ============================================================
+// FotosPrevias — fotos tomadas antes de subir al techo (interiores). Al terminar,
+// se clasifica cada foto a una sección y se puede marcar un punto estimado.
+// Valor: array de fotos (PhotoCapture) + { areaId, areaNombre, punto } por foto.
+// ============================================================
+function FotosPreviasField({ field, value, onChange, context }) {
+  const fotos = Array.isArray(value) ? value : [];
+  const areas = context?.areas || [];
+  const [mapaDe, setMapaDe] = useState(null);
+  const setMeta = (id, patch) => onChange(fotos.map(f => (f.id === id ? { ...f, ...patch } : f)));
+  const nombreArea = (a) => a?.name || a?.nombre || `Área ${a?.area_number ?? ''}`;
+  const fotoMapa = fotos.find(f => f.id === mapaDe);
+  return (
+    <div>
+      <div className="flex items-center gap-1 mb-1">
+        <span className="text-[11px] uppercase tracking-wider text-zinc-400 font-bold">{field.label || 'Fotos previas / interiores'}</span>
+      </div>
+      <PhotoCapture visitId={context?.visitId} areaId={null} field={field} value={value} onChange={onChange} />
+      {fotos.length > 0 && (
+        <div className="mt-2 space-y-1.5">
+          <div className="text-[10px] uppercase tracking-wide text-zinc-500 font-bold">Clasifica cada foto (al terminar el levantamiento)</div>
+          {fotos.map(f => (
+            <div key={f.id} className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-card p-1.5">
+              {f.signedUrl ? <img src={f.signedUrl} alt="" className="w-10 h-10 object-cover rounded shrink-0" /> : <div className="w-10 h-10 bg-zinc-800 rounded shrink-0" />}
+              <select value={f.areaId || ''} onChange={e => { const a = areas.find(x => x.id === e.target.value); setMeta(f.id, { areaId: e.target.value || null, areaNombre: a ? nombreArea(a) : null }); }} className="flex-1 min-w-0 bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1 text-xs text-white">
+                <option value="">— ¿A qué sección? —</option>
+                {areas.map(a => <option key={a.id} value={a.id}>{nombreArea(a)}</option>)}
+              </select>
+              <button type="button" onClick={() => setMapaDe(f.id)} className={`px-2 py-1 rounded-card border text-[10px] font-bold whitespace-nowrap ${f.punto ? 'border-green-600 text-green-300' : 'border-zinc-700 text-zinc-400'}`}>
+                <MapPin className="w-3.5 h-3.5 inline" /> {f.punto ? 'punto ✓' : 'marcar'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {fotoMapa && (
+        <MapaPickerModal
+          initialLat={fotoMapa.punto?.lat ?? context?.siteLat}
+          initialLng={fotoMapa.punto?.lng ?? context?.siteLng}
+          onSelect={(la, ln) => { setMeta(mapaDe, { punto: { lat: la, lng: ln } }); setMapaDe(null); }}
+          onCerrar={() => setMapaDe(null)}
+        />
+      )}
+    </div>
+  );
 }
 
 // ============================================================

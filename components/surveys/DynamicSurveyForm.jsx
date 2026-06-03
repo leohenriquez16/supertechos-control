@@ -378,6 +378,9 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
               onChange={guardarGeneralData}
               visitId={visit?.id}
               excluirIds={fotoFachadaField ? ['foto_frontal'] : []}
+              areas={areas}
+              siteLat={site?.latitude != null ? Number(site.latitude) : null}
+              siteLng={site?.longitude != null ? Number(site.longitude) : null}
             />
           )}
 
@@ -438,7 +441,7 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
 // ============================================================
 // Sección general (no repetible)
 // ============================================================
-function SeccionGeneral({ seccion, values, onChange, visitId, excluirIds = [] }) {
+function SeccionGeneral({ seccion, values, onChange, visitId, excluirIds = [], areas = [], siteLat = null, siteLng = null }) {
   const setField = (id, val) => {
     onChange({ ...values, [id]: val });
   };
@@ -456,7 +459,7 @@ function SeccionGeneral({ seccion, values, onChange, visitId, excluirIds = [] })
             value={values[f.id]}
             onChange={(v) => setField(f.id, v)}
             allValues={values}
-            context={{ visitId, areaId: null }}
+            context={{ visitId, areaId: null, areas, siteLat, siteLng }}
           />
         ))}
       </div>

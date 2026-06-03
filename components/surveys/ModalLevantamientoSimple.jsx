@@ -10,7 +10,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { X, Loader2, MapPin, Check, Crosshair, Plus, Trash2, Building2, ChevronDown } from 'lucide-react';
-import { listarTemplatesSurveys, crearProyectoSurvey, crearSiteSurvey, SERVICE_LINES, COMPANIES } from '../../lib/surveys';
+import { listarTemplatesSurveys, crearProyectoSurvey, crearSiteSurvey, SERVICE_LINES, COMPANIES, FAMILIAS_SERVICIO, familiaDeServiceLine } from '../../lib/surveys';
 import { listarUbicacionesCliente, crearUbicacionCliente, setAreasUbicacionCliente, crearCliente } from '../../lib/db';
 import { obtenerUbicacion } from '../../lib/geo';
 import { expandirYExtraer } from '../../lib/geoutils';
@@ -29,14 +29,10 @@ async function obtenerAuthUserIdActual() {
 
 const nuevaAreaVacia = () => ({ id: 'ar_' + Date.now() + Math.random().toString(36).slice(2, 5), nombre: '', m2: '', sistemaId: '' });
 
-// v8.20.4: familias de servicio — para elegir por categoría cuando no se conoce
-// el servicio exacto. Cada familia agrupa varios service_line (templates).
-const FAMILIAS = [
-  { key: 'pisos',       label: 'Pisos',                      lines: ['epoxy_floor', 'urethane_cement', 'concrete_polishing', 'concrete_repair'] },
-  { key: 'pintura',     label: 'Pintura',                    lines: ['paint'] },
-  { key: 'impermeable', label: 'Impermeabilizante / Aislante', lines: ['waterproofing', 'thermal_insulation'] },
-];
-const familiaDeLine = (line) => FAMILIAS.find(f => f.lines.includes(line))?.key || null;
+// Familias de servicio compartidas (lib/surveys): Pisos / Pintura /
+// Impermeabilizante-Aislante / Genérico-Otro. El específico se elige por área.
+const FAMILIAS = FAMILIAS_SERVICIO;
+const familiaDeLine = familiaDeServiceLine;
 
 export default function ModalLevantamientoSimple({ usuario, clientes = [], sistemas = {}, onCerrar, onCreado }) {
   const [templates, setTemplates] = useState([]);
@@ -314,7 +310,7 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], siste
             ) : (
               <>
                 {/* Familia */}
-                <div className="grid grid-cols-3 gap-1.5">
+                <div className="grid grid-cols-2 gap-1.5">
                   {FAMILIAS.map(f => {
                     const activo = familiaKey === f.key;
                     const disponibles = templates.some(t => familiaDeLine(t.service_line) === f.key);
@@ -332,13 +328,12 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], siste
                   })}
                 </div>
                 {/* El tipo específico (techo/piso) se elige POR ÁREA dentro del levantamiento. */}
-                {familiaKey && templatesFamilia.length > 1 && (
+                {familiaKey === 'generico' ? (
+                  <div className="mt-1.5 text-[11px] text-zinc-500">Captura manual: tú describes cada superficie. Útil para algo no convencional o sin template.</div>
+                ) : familiaKey && templatesFamilia.length >= 1 && (
                   <div className="mt-1.5 text-[11px] text-zinc-500">
                     El tipo específico ({familiaKey === 'pisos' ? 'tipo de piso' : familiaKey === 'impermeable' ? 'tipo de techo' : 'tipo'}) se elige por área al capturar.
                   </div>
-                )}
-                {familiaKey && templatesFamilia.length === 1 && (
-                  <div className="mt-1.5 text-[11px] text-zinc-500">{templatesFamilia[0]?.name}</div>
                 )}
               </>
             )}

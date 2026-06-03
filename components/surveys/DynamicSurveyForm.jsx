@@ -141,7 +141,10 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
     // (editable). Cumple "si se agregan varias áreas, dejar las opciones de la anterior".
     const prev = delBloque[delBloque.length - 1];
     const dataInicial = {};
-    if (prev?.data?._tipo) dataInicial._tipo = prev.data._tipo;
+    if (prev?.data?._tipo) {
+      dataInicial._tipo = prev.data._tipo;
+      if (prev.data._tipo === 'other' && prev.data._tipo_otro) dataInicial._tipo_otro = prev.data._tipo_otro;
+    }
     try {
       const a = await crearArea({
         visitId: visit.id,
@@ -469,7 +472,9 @@ function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, suppor
   const areaOrigen = esSimilar
     ? areasAnteriores.find(a => a.id === area.similar_to_area_id)
     : null;
-  const tipoActualLabel = tiposArea.find(t => t.line === area.data?._tipo)?.label || null;
+  const tipoActualLabel = area.data?._tipo === 'other'
+    ? (area.data?._tipo_otro?.trim() || 'Otro')
+    : (tiposArea.find(t => t.line === area.data?._tipo)?.label || null);
 
   // Autofoco en el input de nombre cuando el área se crea sin nombre.
   useEffect(() => {
@@ -568,6 +573,14 @@ function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, suppor
                   );
                 })}
               </div>
+              {area.data?._tipo === 'other' && (
+                <input
+                  value={area.data?._tipo_otro || ''}
+                  onChange={e => onCambioCampo('_tipo_otro', e.target.value)}
+                  placeholder="Describe el tipo / superficie (no convencional)"
+                  className="mt-2 w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-2 py-1.5 text-xs text-white"
+                />
+              )}
               {!area.data?._tipo && <div className="text-[10px] text-amber-400 mt-1.5">Elige el {tipoLabel.toLowerCase()} de esta área.</div>}
             </div>
           )}

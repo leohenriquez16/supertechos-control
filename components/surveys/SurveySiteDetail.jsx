@@ -10,12 +10,13 @@
 //  - Botón "Iniciar levantamiento" (placeholder — se conecta en PR 3B.4)
 
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Building, MapPin, Calendar, Clock, FileText, AlertTriangle, Play, ClipboardList, Layers, ChevronDown, Loader2, Trash2, Check } from 'lucide-react';
+import { ArrowLeft, Building, MapPin, Calendar, Clock, FileText, AlertTriangle, Play, ClipboardList, Layers, ChevronDown, Loader2, Trash2, Check, Image as ImageIcon } from 'lucide-react';
 import QuickActions from './QuickActions';
 import DynamicSurveyForm from './DynamicSurveyForm';
 import SatelitalAreas from './SatelitalAreas';
 import { SITE_STATUS, listarVisitasDeSite, listarAreasDeVisita, obtenerTemplateSurvey, asignarPersonaSurvey, ESCALERA, setRequiereEscaleraSurvey, eliminarProyectoSurvey, solicitarEliminacionSurvey, cancelarSolicitudEliminacionSurvey, listarTemplatesSurveys, actualizarTipoProyectoSurvey, eliminarVisita, listarFotosVisita, getSignedUrlFotoSurvey, finalizarLevantamientoSurvey, reabrirLevantamientoSurvey, SERVICE_LINES, FAMILIAS_SERVICIO, familiaDeServiceLine } from '../../lib/surveys';
 import { imprimirLevantamiento } from './imprimirLevantamiento';
+import { imprimirInformeFotografico } from './imprimirInformeFotografico';
 import ChatterPanel from '../common/ChatterPanel';
 import Lightbox from '../common/Lightbox';
 import { registrarEvento as chatterEventoSurvey } from '../../lib/chatter';
@@ -350,6 +351,8 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
 
       <LevantamientosRealizados site={site} proyecto={proyecto} />
 
+      <FotosDelLevantamiento site={site} proyecto={proyecto} usuario={usuario} />
+
       {/* Chatter tipo Odoo: quién creó, cambios de estado y notas */}
       <ChatterPanel entityType="levantamiento" entityId={proyecto?.id} usuario={usuario} />
 
@@ -476,6 +479,70 @@ function FachadaHero({ site }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// v8.25.1: todas las fotos del levantamiento + carrete + exportar informe fotográfico.
+function FotosDelLevantamiento({ site, proyecto, usuario }) {
+  const [todas, setTodas] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [visor, setVisor] = useState(null);
+  const [exportando, setExportando] = useState(false);
+  useEffect(() => {
+    let cancel = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const vs = await listarVisitasDeSite(site.id);
+        const items = [];
+        for (const v of vs) {
+          const fs = await listarFotosVisita(v.id);
+          for (const f of (fs || [])) {
+            let url = ''; try { url = await getSignedUrlFotoSurvey(f.storage_path, 3600); } catch {}
+            if (url) items.push({ url, caption: f.caption || '' });
+          }
+        }
+        if (!cancel) setTodas(items);
+      } catch {}
+      if (!cancel) setLoading(false);
+    })();
+    return () => { cancel = true; };
+  }, [site.id]);
+
+  const exportar = async () => {
+    setExportando(true);
+    try { await imprimirInformeFotografico({ proyecto, site, usuario }); }
+    catch (e) { alert('Error: ' + (e?.message || e)); }
+    setExportando(false);
+  };
+
+  return (
+    <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold flex items-center gap-1">
+          <ImageIcon className="w-3 h-3 text-red-500" /> Fotos del levantamiento {todas.length > 0 && <span className="text-zinc-600">({todas.length})</span>}
+        </div>
+        {todas.length > 0 && (
+          <button onClick={exportar} disabled={exportando} className="bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-[10px] font-bold uppercase tracking-wider px-2.5 py-1.5 rounded-card flex items-center gap-1">
+            {exportando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />} Informe fotográfico
+          </button>
+        )}
+      </div>
+      {loading ? (
+        <div className="flex items-center gap-2 text-zinc-500 text-xs py-2"><Loader2 className="w-4 h-4 animate-spin" /> Cargando fotos…</div>
+      ) : todas.length === 0 ? (
+        <div className="text-xs text-zinc-500">Aún no hay fotos en este levantamiento.</div>
+      ) : (
+        <div className="grid grid-cols-4 sm:grid-cols-8 gap-1.5">
+          {todas.map((f, i) => (
+            <button key={i} onClick={() => setVisor(i)} title={f.caption}>
+              <img src={f.url} alt="" className="w-full h-16 object-cover rounded border border-zinc-800 hover:border-red-600" />
+            </button>
+          ))}
+        </div>
+      )}
+      {visor != null && <Lightbox fotos={todas} inicial={visor} onCerrar={() => setVisor(null)} />}
     </div>
   );
 }

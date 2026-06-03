@@ -249,8 +249,27 @@ export default function SurveyFieldRenderer({ field, value, onChange, allValues 
         />
       );
 
+    case 'counter': {
+      const n = Math.max(0, Number(value) || 0);
+      const set = (v) => onChange(Math.max(0, Math.round(v)));
+      return (
+        <div>
+          {label}
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => set(n - 1)} className="w-9 h-9 rounded-card bg-zinc-800 hover:bg-zinc-700 text-white text-lg font-bold flex items-center justify-center">−</button>
+            <input type="number" inputMode="numeric" value={n} onChange={e => set(Number(e.target.value) || 0)} className="w-16 text-center bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none py-2 text-sm text-white" />
+            <button type="button" onClick={() => set(n + 1)} className="w-9 h-9 rounded-card bg-red-600 hover:bg-red-700 text-white text-lg font-bold flex items-center justify-center">+</button>
+            {field.unidad && <span className="text-xs text-zinc-500">{field.unidad}</span>}
+          </div>
+        </div>
+      );
+    }
+
     case 'measurement_table':
       return <MeasurementTableField field={field} value={value} onChange={onChange} />;
+
+    case 'ductos_table':
+      return <DuctosTableField field={field} value={value} onChange={onChange} />;
 
     case 'openings_table':
       return <OpeningsTableField field={field} value={value} onChange={onChange} />;
@@ -272,6 +291,60 @@ export default function SurveyFieldRenderer({ field, value, onChange, allValues 
         </div>
       );
   }
+}
+
+// ============================================================
+// DuctosTable — ductos de A/C (forma de cubo). Se recubren 3 caras:
+// tapa superior + 2 lados a lo largo = Largo × (Ancho + 2×Alto).
+// ============================================================
+function DuctosTableField({ field, value, onChange }) {
+  const filas = Array.isArray(value) ? value : [];
+  const agregar = () => onChange([...filas, { id: 'd_' + Date.now() + Math.random().toString(36).slice(2, 5) }]);
+  const eliminar = (idx) => onChange(filas.filter((_, i) => i !== idx));
+  const setCampo = (idx, k, v) => {
+    const nuevo = [...filas];
+    nuevo[idx] = { ...nuevo[idx], [k]: v };
+    const L = Number(nuevo[idx].largo) || 0, W = Number(nuevo[idx].ancho) || 0, H = Number(nuevo[idx].alto) || 0;
+    nuevo[idx].area_m2 = (L && (W || H)) ? Number((L * (W + 2 * H)).toFixed(2)) : null;
+    onChange(nuevo);
+  };
+  const total = filas.reduce((a, f) => a + (Number(f.area_m2) || 0), 0);
+  const cols = [['identificacion', 'Identificación'], ['largo', 'Largo (m)'], ['ancho', 'Ancho (m)'], ['alto', 'Alto (m)']];
+  return (
+    <div>
+      <div className="flex items-center gap-1 mb-1">
+        <span className="text-[11px] uppercase tracking-wider text-zinc-400 font-bold">{field.label || 'Ductos de A/C'}</span>
+      </div>
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead className="bg-zinc-950 border-b border-zinc-800">
+            <tr>
+              {cols.map(([k, l]) => <th key={k} className="px-2 py-1.5 text-left text-[10px] uppercase tracking-wider text-zinc-500">{l}</th>)}
+              <th className="px-2 py-1.5 text-right text-[10px] uppercase tracking-wider text-red-400">m² (3 caras)</th>
+              <th className="w-8"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {filas.length === 0 && <tr><td colSpan={6} className="px-2 py-3 text-center text-zinc-600">Sin ductos. Agrega uno abajo.</td></tr>}
+            {filas.map((f, idx) => (
+              <tr key={f.id || idx} className="border-b border-zinc-800/60">
+                <td className="px-1 py-1"><input value={f.identificacion || ''} onChange={e => setCampo(idx, 'identificacion', e.target.value)} placeholder="Ducto 1" className="w-full bg-zinc-950 border border-zinc-800 focus:border-red-600 outline-none px-1.5 py-1 text-white" /></td>
+                {['largo', 'ancho', 'alto'].map(k => (
+                  <td key={k} className="px-1 py-1"><input type="number" inputMode="decimal" value={f[k] ?? ''} onChange={e => setCampo(idx, k, e.target.value)} className="w-16 bg-zinc-950 border border-zinc-800 focus:border-red-600 outline-none px-1.5 py-1 text-white" /></td>
+                ))}
+                <td className="px-2 py-1 text-right font-bold text-red-300">{f.area_m2 != null ? f.area_m2 : '—'}</td>
+                <td className="px-1 py-1 text-center"><button type="button" onClick={() => eliminar(idx)} className="text-zinc-600 hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button></td>
+              </tr>
+            ))}
+          </tbody>
+          {filas.length > 0 && (
+            <tfoot><tr className="border-t border-zinc-700"><td colSpan={4} className="px-2 py-1.5 text-right uppercase text-[10px] text-zinc-400 font-bold">Total a recubrir</td><td className="px-2 py-1.5 text-right font-black text-red-300">{total.toFixed(2)}</td><td></td></tr></tfoot>
+          )}
+        </table>
+      </div>
+      <button type="button" onClick={agregar} className="mt-1 text-[11px] text-red-400 hover:text-red-300 font-bold flex items-center gap-1"><Plus className="w-3.5 h-3.5" /> Agregar ducto</button>
+    </div>
+  );
 }
 
 // ============================================================

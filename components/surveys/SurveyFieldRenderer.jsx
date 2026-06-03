@@ -19,8 +19,8 @@
 //   - onChange(nuevoValor): callback
 //   - allValues: objeto con todos los valores del bloque/sección (para show_if y computed)
 
-import React, { useState } from 'react';
-import { Star, Camera, Plus, Trash2, Calculator, X } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Star, Camera, Plus, Trash2, Calculator, X, Mic, Square } from 'lucide-react';
 import PhotoCapture from './PhotoCapture';
 
 export default function SurveyFieldRenderer({ field, value, onChange, allValues = {}, context = {} }) {
@@ -266,6 +266,9 @@ export default function SurveyFieldRenderer({ field, value, onChange, allValues 
       );
     }
 
+    case 'voice_note':
+      return <VoiceNoteField field={field} value={value} onChange={onChange} />;
+
     case 'measurement_table':
       return <MeasurementTableField field={field} value={value} onChange={onChange} />;
 
@@ -292,6 +295,71 @@ export default function SurveyFieldRenderer({ field, value, onChange, allValues 
         </div>
       );
   }
+}
+
+// ============================================================
+// VoiceNote — nota escrita o de voz (dictado con Web Speech API, transcribe en vivo).
+// El valor guardado es el texto (transcrito + editable).
+// ============================================================
+function VoiceNoteField({ field, value, onChange }) {
+  const [grabando, setGrabando] = useState(false);
+  const [interim, setInterim] = useState('');
+  const recRef = useRef(null);
+  const valueRef = useRef(value || '');
+  valueRef.current = value || '';
+  const soportado = typeof window !== 'undefined' && !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+
+  const toggle = () => {
+    if (grabando) { try { recRef.current?.stop(); } catch {} setGrabando(false); return; }
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return;
+    const rec = new SR();
+    rec.lang = 'es-DO'; rec.continuous = true; rec.interimResults = true;
+    rec.onresult = (e) => {
+      let intp = '', fin = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) fin += t + ' '; else intp += t;
+      }
+      if (fin) {
+        const base = valueRef.current ? valueRef.current.trimEnd() + ' ' : '';
+        const nuevo = (base + fin).trimStart();
+        valueRef.current = nuevo;
+        onChange(nuevo);
+      }
+      setInterim(intp);
+    };
+    rec.onend = () => { setGrabando(false); setInterim(''); };
+    rec.onerror = (ev) => { if (ev.error === 'not-allowed') setGrabando(false); };
+    recRef.current = rec;
+    try { rec.start(); setGrabando(true); } catch { setGrabando(false); }
+  };
+
+  return (
+    <div>
+      <div className="flex items-center gap-1 mb-1">
+        <span className="text-[11px] uppercase tracking-wider text-zinc-400 font-bold">{field.label || 'Nota'}</span>
+        {field.required && <span className="text-red-500 text-[11px]">*</span>}
+      </div>
+      <textarea
+        value={value || ''}
+        onChange={e => onChange(e.target.value)}
+        rows={3}
+        placeholder="Escribe la nota… o usa el micrófono para dictarla."
+        className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-sm text-white resize-y"
+      />
+      <div className="flex items-center gap-2 mt-1">
+        {soportado ? (
+          <button type="button" onClick={toggle} className={`flex items-center gap-1 px-3 py-1.5 rounded-card text-xs font-bold ${grabando ? 'bg-red-600 text-white animate-pulse' : 'bg-zinc-800 text-zinc-200 hover:bg-zinc-700'}`}>
+            {grabando ? <><Square className="w-3.5 h-3.5" /> Detener</> : <><Mic className="w-3.5 h-3.5" /> Dictar nota de voz</>}
+          </button>
+        ) : (
+          <span className="text-[10px] text-zinc-500">Dictado no disponible en este navegador (usa Chrome/Edge). Puedes escribir la nota.</span>
+        )}
+        {grabando && <span className="text-[11px] text-red-400 italic truncate">{interim || 'escuchando…'}</span>}
+      </div>
+    </div>
+  );
 }
 
 // ============================================================

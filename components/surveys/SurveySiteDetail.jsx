@@ -385,6 +385,44 @@ function Field({ label, value }) {
   );
 }
 
+// v8.24.9: detalle de una sección/área (campos capturados, no vacíos).
+function fmtCampoApp(field, v) {
+  if (v == null || v === '' || (Array.isArray(v) && v.length === 0)) return null;
+  switch (field.type) {
+    case 'boolean': return v ? 'Sí' : 'No';
+    case 'multi_select': return Array.isArray(v) ? v.join(', ') : String(v);
+    case 'rating_1_5': return `${v} / 5`;
+    case 'counter': case 'number': return String(v);
+    case 'measurement_table': { const f = Array.isArray(v) ? v : []; const t = f.reduce((s, x) => s + (Number(x.area_m2) || 0), 0); return `${f.length} medida(s) · ${t.toFixed(2)} m²`; }
+    case 'ductos_table': { const f = Array.isArray(v) ? v : []; const t = f.reduce((s, x) => s + (Number(x.area_m2) || 0), 0); return `${f.length} ducto(s) · ${t.toFixed(2)} m²`; }
+    case 'photos': case 'fotos_previas': return Array.isArray(v) ? `${v.length} foto(s)` : null;
+    case 'map_point': return v?.lat != null ? 'punto marcado' : null;
+    case 'map_polygon': return v?.areaM2 != null ? `${v.areaM2} m² (polígono)` : (Array.isArray(v?.vertices) && v.vertices.length ? `${v.vertices.length} pts` : null);
+    case 'voice_note': case 'text': case 'textarea': return String(v);
+    default: return typeof v === 'object' ? null : String(v);
+  }
+}
+
+function DetalleArea({ area, fields }) {
+  const data = area.data || {};
+  const items = (fields || [])
+    .filter(f => f.type !== 'map_point' && f.type !== 'map_polygon' && f.id !== 'measurements')
+    .map(f => ({ label: f.label, valor: fmtCampoApp(f, data[f.id]) }))
+    .filter(x => x.valor != null);
+  return (
+    <div className="border-t border-zinc-800 px-3 py-2 space-y-1">
+      {items.length === 0 ? (
+        <div className="text-[10px] text-zinc-600">Sin datos adicionales capturados.</div>
+      ) : items.map((x, i) => (
+        <div key={i} className="flex items-start justify-between gap-3 text-[11px]">
+          <span className="text-zinc-500">{x.label}</span>
+          <span className="text-zinc-200 font-semibold text-right">{x.valor}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // v8.19.14: formato de m² es-DO con 2 decimales.
 function fmtM2(n) {
   const x = Number(n) || 0;
@@ -415,8 +453,12 @@ function LevantamientosRealizados({ site, proyecto }) {
   const [visitas, setVisitas] = useState([]);
   const [areasPorVisita, setAreasPorVisita] = useState({});
   const [expandida, setExpandida] = useState(null);
+  const [areaExp, setAreaExp] = useState(null); // v8.24.9: área (sección) expandida para ver su detalle
   const [template, setTemplate] = useState(null);
   const [generandoPdf, setGenerandoPdf] = useState(null); // id de visita en proceso
+
+  const tituloBloque = (bid) => (template?.schema?.sections || []).find(s => s.id === bid)?.title || bid;
+  const camposBloque = (bid) => (template?.schema?.sections || []).find(s => s.id === bid)?.fields || [];
 
   // v8.19.48: cargar el template del proyecto (para el PDF autocontenido).
   useEffect(() => {
@@ -520,33 +562,29 @@ function LevantamientosRealizados({ site, proyecto }) {
                 {grupos.map(({ piso, items, subPared, subTecho }) => (
                   <div key={piso}>
                     <div className="flex items-center justify-between text-[11px] font-black uppercase tracking-wider text-zinc-300 mb-1">
-                      <span className="flex items-center gap-1"><Layers className="w-3 h-3 text-red-500" /> {piso}</span>
+                      <span className="flex items-center gap-1"><Layers className="w-3 h-3 text-red-500" /> {tituloBloque(piso)} <span className="text-zinc-600">({items.length})</span></span>
                       <span className="text-zinc-500">{fmtM2(subPared)} m²{subTecho > 0 ? ` + ${fmtM2(subTecho)} techo` : ''}</span>
                     </div>
                     <div className="space-y-1">
-                      {items.map(a => (
-                        <div key={a.id} className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1.5 text-xs flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="font-bold truncate">
-                              {a.name}
-                              {a.data?.acabado ? <span className="text-zinc-500 font-normal"> · {a.data.acabado}</span> : ''}
-                            </div>
-                            {a.data?.expresion_perimetro && (
-                              <div className="text-[10px] text-zinc-500 truncate">
-                                {a.data.expresion_perimetro}
-                                {a.data.altura_m ? ` × ${a.data.altura_m} m` : ''}
-                                {a.data.reps > 1 ? ` ×${a.data.reps}` : ''}
+                      {items.map(a => {
+                        const abiertaA = areaExp === a.id;
+                        return (
+                          <div key={a.id} className="bg-zinc-950 border border-zinc-800 rounded-card">
+                            <button onClick={() => setAreaExp(abiertaA ? null : a.id)} className="w-full px-2 py-1.5 text-xs flex items-start justify-between gap-2 text-left hover:bg-zinc-900/60">
+                              <div className="min-w-0 flex items-center gap-1.5">
+                                <ChevronDown className={`w-3 h-3 text-zinc-600 transition-transform ${abiertaA ? 'rotate-180' : ''}`} />
+                                <span className="font-bold truncate">{a.name || `Sección ${a.area_number}`}</span>
+                                {a.data?.section_surface_type && <span className="text-[9px] uppercase text-zinc-500 border border-zinc-700 rounded px-1">{a.data.section_surface_type}</span>}
                               </div>
-                            )}
-                            {a.notes && <div className="text-[10px] text-amber-400/80 truncate" title={a.notes}>{a.notes}</div>}
+                              <div className="text-right flex-shrink-0">
+                                <div className="font-bold">{a.gross_area_m2 != null ? `${fmtM2(a.gross_area_m2)} m²` : '—'}</div>
+                                {Number(a.secondary_area_m2) > 0 && <div className="text-[9px] text-zinc-500">+{fmtM2(a.secondary_area_m2)} techo</div>}
+                              </div>
+                            </button>
+                            {abiertaA && <DetalleArea area={a} fields={camposBloque(a.block_id)} />}
                           </div>
-                          <div className="text-right flex-shrink-0">
-                            <div className="font-bold">{a.gross_area_m2 != null ? `${fmtM2(a.gross_area_m2)} m²` : '—'}</div>
-                            {Number(a.secondary_area_m2) > 0 && <div className="text-[9px] text-zinc-500">+{fmtM2(a.secondary_area_m2)} techo</div>}
-                            {a.data?.por_verificar && <div className="text-[8px] text-amber-400 font-bold uppercase">⚠ verificar</div>}
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 ))}

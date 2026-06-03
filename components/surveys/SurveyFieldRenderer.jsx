@@ -19,8 +19,8 @@
 //   - onChange(nuevoValor): callback
 //   - allValues: objeto con todos los valores del bloque/sección (para show_if y computed)
 
-import React from 'react';
-import { Star, Camera, Plus, Trash2, Calculator } from 'lucide-react';
+import React, { useState } from 'react';
+import { Star, Camera, Plus, Trash2, Calculator, X } from 'lucide-react';
 import PhotoCapture from './PhotoCapture';
 
 export default function SurveyFieldRenderer({ field, value, onChange, allValues = {}, context = {} }) {
@@ -299,6 +299,7 @@ export default function SurveyFieldRenderer({ field, value, onChange, allValues 
 // tapa superior + 2 lados a lo largo = Largo × (Ancho + 2×Alto).
 // ============================================================
 function DuctosTableField({ field, value, onChange }) {
+  const [abierto, setAbierto] = useState(false);
   const filas = Array.isArray(value) ? value : [];
   const agregar = () => onChange([...filas, { id: 'd_' + Date.now() + Math.random().toString(36).slice(2, 5) }]);
   const eliminar = (idx) => onChange(filas.filter((_, i) => i !== idx));
@@ -316,34 +317,55 @@ function DuctosTableField({ field, value, onChange }) {
       <div className="flex items-center gap-1 mb-1">
         <span className="text-[11px] uppercase tracking-wider text-zinc-400 font-bold">{field.label || 'Ductos de A/C'}</span>
       </div>
-      <div className="bg-zinc-900 border border-zinc-800 rounded-card overflow-x-auto">
-        <table className="w-full text-xs">
-          <thead className="bg-zinc-950 border-b border-zinc-800">
-            <tr>
-              {cols.map(([k, l]) => <th key={k} className="px-2 py-1.5 text-left text-[10px] uppercase tracking-wider text-zinc-500">{l}</th>)}
-              <th className="px-2 py-1.5 text-right text-[10px] uppercase tracking-wider text-red-400">m² (3 caras)</th>
-              <th className="w-8"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {filas.length === 0 && <tr><td colSpan={6} className="px-2 py-3 text-center text-zinc-600">Sin ductos. Agrega uno abajo.</td></tr>}
-            {filas.map((f, idx) => (
-              <tr key={f.id || idx} className="border-b border-zinc-800/60">
-                <td className="px-1 py-1"><input value={f.identificacion || ''} onChange={e => setCampo(idx, 'identificacion', e.target.value)} placeholder="Ducto 1" className="w-full bg-zinc-950 border border-zinc-800 focus:border-red-600 outline-none px-1.5 py-1 text-white" /></td>
-                {['largo', 'ancho', 'alto'].map(k => (
-                  <td key={k} className="px-1 py-1"><input type="number" inputMode="decimal" value={f[k] ?? ''} onChange={e => setCampo(idx, k, e.target.value)} className="w-16 bg-zinc-950 border border-zinc-800 focus:border-red-600 outline-none px-1.5 py-1 text-white" /></td>
-                ))}
-                <td className="px-2 py-1 text-right font-bold text-red-300">{f.area_m2 != null ? f.area_m2 : '—'}</td>
-                <td className="px-1 py-1 text-center"><button type="button" onClick={() => eliminar(idx)} className="text-zinc-600 hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button></td>
-              </tr>
-            ))}
-          </tbody>
-          {filas.length > 0 && (
-            <tfoot><tr className="border-t border-zinc-700"><td colSpan={4} className="px-2 py-1.5 text-right uppercase text-[10px] text-zinc-400 font-bold">Total a recubrir</td><td className="px-2 py-1.5 text-right font-black text-red-300">{total.toFixed(2)}</td><td></td></tr></tfoot>
-          )}
-        </table>
-      </div>
-      <button type="button" onClick={agregar} className="mt-1 text-[11px] text-red-400 hover:text-red-300 font-bold flex items-center gap-1"><Plus className="w-3.5 h-3.5" /> Agregar ducto</button>
+      {/* Botón que abre el modal */}
+      <button type="button" onClick={() => setAbierto(true)} className="w-full bg-zinc-900 border-2 border-zinc-800 hover:border-red-600 rounded-card px-3 py-2.5 text-sm text-left flex items-center justify-between">
+        <span className="text-zinc-300">{filas.length ? `${filas.length} ducto(s) capturado(s)` : 'Agregar ductos…'}</span>
+        <span className="text-[11px] font-bold text-red-300">{filas.length ? `${total.toFixed(2)} m²` : ''} <Plus className="w-3.5 h-3.5 inline ml-1" /></span>
+      </button>
+
+      {abierto && (
+        <div className="fixed inset-0 bg-black/80 z-[70] flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto" onClick={() => setAbierto(false)}>
+          <div className="bg-zinc-950 border-2 border-red-600 rounded-card w-full max-w-2xl my-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-3 border-b border-zinc-800">
+              <div className="text-sm font-bold">Ductos de A/C — se recubren 3 caras = Largo × (Ancho + 2×Alto)</div>
+              <button type="button" onClick={() => setAbierto(false)} className="text-zinc-500 hover:text-white"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="p-3">
+              <div className="bg-zinc-900 border border-zinc-800 rounded-card overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-zinc-950 border-b border-zinc-800">
+                    <tr>
+                      {cols.map(([k, l]) => <th key={k} className="px-2 py-1.5 text-left text-[10px] uppercase tracking-wider text-zinc-500">{l}</th>)}
+                      <th className="px-2 py-1.5 text-right text-[10px] uppercase tracking-wider text-red-400">m² (3 caras)</th>
+                      <th className="w-8"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filas.length === 0 && <tr><td colSpan={6} className="px-2 py-3 text-center text-zinc-600">Sin ductos. Agrega uno abajo.</td></tr>}
+                    {filas.map((f, idx) => (
+                      <tr key={f.id || idx} className="border-b border-zinc-800/60">
+                        <td className="px-1 py-1"><input value={f.identificacion || ''} onChange={e => setCampo(idx, 'identificacion', e.target.value)} placeholder="Ducto 1" className="w-full bg-zinc-950 border border-zinc-800 focus:border-red-600 outline-none px-1.5 py-1 text-white" /></td>
+                        {['largo', 'ancho', 'alto'].map(k => (
+                          <td key={k} className="px-1 py-1"><input type="number" inputMode="decimal" value={f[k] ?? ''} onChange={e => setCampo(idx, k, e.target.value)} className="w-16 bg-zinc-950 border border-zinc-800 focus:border-red-600 outline-none px-1.5 py-1 text-white" /></td>
+                        ))}
+                        <td className="px-2 py-1 text-right font-bold text-red-300">{f.area_m2 != null ? f.area_m2 : '—'}</td>
+                        <td className="px-1 py-1 text-center"><button type="button" onClick={() => eliminar(idx)} className="text-zinc-600 hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  {filas.length > 0 && (
+                    <tfoot><tr className="border-t border-zinc-700"><td colSpan={4} className="px-2 py-1.5 text-right uppercase text-[10px] text-zinc-400 font-bold">Total a recubrir</td><td className="px-2 py-1.5 text-right font-black text-red-300">{total.toFixed(2)}</td><td></td></tr></tfoot>
+                  )}
+                </table>
+              </div>
+              <button type="button" onClick={agregar} className="mt-2 text-[11px] text-red-400 hover:text-red-300 font-bold flex items-center gap-1"><Plus className="w-3.5 h-3.5" /> Agregar ducto</button>
+            </div>
+            <div className="p-3 border-t border-zinc-800 flex justify-end">
+              <button type="button" onClick={() => setAbierto(false)} className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold uppercase px-4 py-2 rounded-card">Listo</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

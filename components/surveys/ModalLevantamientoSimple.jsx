@@ -203,8 +203,12 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
   const templatesFamilia = familiaKey ? templates.filter(t => familiaDeLine(t.service_line) === familiaKey) : [];
   const seleccionarFamilia = (key) => {
     setFamiliaKey(key);
+    const fam = FAMILIAS.find(f => f.key === key);
     const tpls = templates.filter(t => familiaDeLine(t.service_line) === key);
-    setTemplateId(tpls[0]?.id || ''); // por defecto el primero de la familia (si no conoce el específico)
+    // v8.25.16: por defecto el template del PRIMER service_line de la familia
+    // (ej. Impermeabilizante/Aislante → Impermeabilización, no Aislante).
+    const preferido = (fam?.lines || []).map(line => tpls.find(t => t.service_line === line)).find(Boolean);
+    setTemplateId((preferido || tpls[0])?.id || '');
   };
   const clienteNombreFinal = (clienteNombre || clienteQuery).trim();
   // v8.22.3: el tipo es OPCIONAL. Sin familia se crea genérico (template generic-v1)
@@ -725,7 +729,7 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
                 <div className="grid grid-cols-2 gap-2">
                   <input value={nuevoCt.nombre} onChange={e => setNuevoCt({ ...nuevoCt, nombre: e.target.value })} placeholder="Nombre *" className={inpCls} />
                   <input value={nuevoCt.cargo} onChange={e => setNuevoCt({ ...nuevoCt, cargo: e.target.value })} placeholder="Cargo (opcional)" className={inpCls} />
-                  <input value={nuevoCt.telefono} onChange={e => setNuevoCt({ ...nuevoCt, telefono: e.target.value })} placeholder="Teléfono / WhatsApp" className={inpCls} />
+                  <input value={nuevoCt.telefono} onChange={e => setNuevoCt({ ...nuevoCt, telefono: e.target.value })} placeholder="Teléfono / WhatsApp" inputMode="tel" className={inpCls} />
                   <input value={nuevoCt.email} onChange={e => setNuevoCt({ ...nuevoCt, email: e.target.value })} placeholder="Email (opcional)" className={inpCls} />
                 </div>
                 <button onClick={guardarNuevoContacto} disabled={guardandoCt || !nuevoCt.nombre.trim()} className="w-full bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-[11px] font-bold uppercase py-2 rounded-card flex items-center justify-center gap-1.5">
@@ -764,7 +768,7 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
             ) : (
               <div className="grid grid-cols-2 gap-2">
                 <input value={contactName} onChange={e => setContactName(e.target.value)} placeholder="Nombre de quien recibe" className={inpCls} />
-                <input value={mobilePhone} onChange={e => setMobilePhone(e.target.value)} placeholder="809-…" className={inpCls} />
+                <input value={mobilePhone} onChange={e => setMobilePhone(e.target.value)} placeholder="809-…" inputMode="tel" className={inpCls} />
               </div>
             )}
           </div>

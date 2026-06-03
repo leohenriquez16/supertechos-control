@@ -876,7 +876,7 @@ export default function App() {
         {vista === 'planificacion' && puede(usuario, data.permisos, 'planificacion', 'ver') && <VistaPlanificacion usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'miProduccion' && tieneRol(usuario, 'maestro') && <VistaMiProduccion usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'miCajaChica' && (tieneRol(usuario, 'maestro') || tieneRol(usuario, 'supervisor')) && usuario.cajaChicaHabilitada && <VistaMiCajaChica usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} />}
-        {vista === 'surveys' && (esAdmin || tieneRol(usuario, 'supervisor')) && <ModuloSurveys usuario={usuario} data={data} />}
+        {vista === 'surveys' && (esAdmin || tieneRol(usuario, 'supervisor')) && <ModuloSurveys usuario={usuario} data={data} onRecargar={recargar} />}
         {vista === 'cajaChica' && esAdmin && <VistaCajaChicaAdmin usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onIrAProveedores={() => setVista('proveedoresCajaChica')} onIrACategorias={() => setVista('categoriasCajaChica')} />}
         {vista === 'proveedoresCajaChica' && esAdmin && <VistaProveedoresCajaChica usuario={usuario} data={data} onVolver={() => setVista('cajaChica')} />}
         {vista === 'categoriasCajaChica' && esAdmin && <VistaCategoriasCajaChica usuario={usuario} onVolver={() => setVista('cajaChica')} onCambio={() => recargar()} />}

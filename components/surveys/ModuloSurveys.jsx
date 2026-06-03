@@ -9,7 +9,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Loader2, Plus, MapPin, Building, ChevronRight, ArrowLeft, List, Map as MapIcon, LayoutGrid, Search, User as UserIcon, Calendar, Mail, MessageCircle, Clock, ArrowLeftRight } from 'lucide-react';
-import { listarProyectosSurveys, listarSitesProyectoSurvey, listarTodosLosSitesSurvey, crearSiteSurvey, COMPANIES, PROJECT_STATUS, SITE_STATUS, SERVICE_LINES, ESCALERA } from '../../lib/surveys';
+import { listarProyectosSurveys, listarSitesProyectoSurvey, listarTodosLosSitesSurvey, crearSiteSurvey, COMPANIES, PROJECT_STATUS, SITE_STATUS, SERVICE_LINES, ESCALERA, setEtapaSurvey } from '../../lib/surveys';
 import * as db from '../../lib/db';
 import MapaLeaflet from '../common/MapaLeaflet';
 import MapaPickerModal from '../common/MapaPickerModal';
@@ -20,7 +20,7 @@ import ModalNuevoProyecto from './ModalNuevoProyecto';
 import ModalLevantamientoSimple from './ModalLevantamientoSimple';
 import CalendarioLevantamientos from './CalendarioLevantamientos';
 
-export default function ModuloSurveys({ usuario, data }) {
+export default function ModuloSurveys({ usuario, data, onRecargar }) {
   // Subvistas: 'lista' (default) | 'proyecto' | 'site'
   const [subvista, setSubvista] = useState('lista');
   const [proyectoActivo, setProyectoActivo] = useState(null);
@@ -46,6 +46,7 @@ export default function ModuloSurveys({ usuario, data }) {
         <SurveysList
           usuario={usuario}
           data={data}
+          onRecargar={onRecargar}
           onAbrirProyecto={abrirProyecto}
           onAbrirSiteDirecto={(p, s) => { setProyectoActivo(p); setSiteActivo(s); setSiteDirecto(true); setSubvista('site'); }}
         />
@@ -77,7 +78,7 @@ export default function ModuloSurveys({ usuario, data }) {
 // ============================================================
 // LISTA DE PROYECTOS
 // ============================================================
-function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto }) {
+function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto, onRecargar }) {
   const [loading, setLoading] = useState(true);
   const [proyectos, setProyectos] = useState([]);
   const [errorMsg, setErrorMsg] = useState(null);
@@ -96,6 +97,14 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto }) {
   const [fEstado, setFEstado] = useState('');
   const [fLevantador, setFLevantador] = useState('');
   const [recs, setRecs] = useState([]); // v8.19.85: reclamaciones para el calendario
+  // v8.25.16: arrastrar tarjetas entre etapas del Kanban.
+  const [dragId, setDragId] = useState(null);
+  const cambiarEtapa = async (projectId, etapa) => {
+    const p = proyectos.find(x => x.id === projectId);
+    if (!p || estadoDe(p) === etapa) return;
+    setProyectos(prev => prev.map(x => x.id === projectId ? { ...x, odoo_stage: etapa, stage_changed_at: new Date().toISOString() } : x));
+    try { await setEtapaSurvey(projectId, etapa); } catch (err) { alert('No se pudo cambiar la etapa: ' + (err?.message || err)); setReloadKey(k => k + 1); }
+  };
   const esAdmin = (usuario?.roles || []).includes('admin') || (usuario?.roles || []).includes('owner');
   // v8.25.9: el supervisor solo ve etapas operativas (hasta "Realizado"); no las comerciales.
   const esSup = !esAdmin && (usuario?.roles || []).includes('supervisor');
@@ -265,6 +274,7 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto }) {
           onCreado={({ proyecto, site, iniciar = true }) => {
             setModalSimpleAbierto(false);
             setReloadKey(k => k + 1);
+            onRecargar?.(); // v8.25.16: refresca clientes/contactos del app (cliente nuevo aparece en la lista)
             if (iniciar) onAbrirSiteDirecto?.(proyecto, site); // "Solo crear" se queda en la lista
           }}
         />
@@ -359,7 +369,10 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto }) {
               {columnasKanban.map(e => {
                 const items = proyFiltrados.filter(p => estadoDe(p) === e);
                 return (
-                  <div key={e} className="w-60 flex-shrink-0 bg-zinc-950 border border-zinc-800 rounded-card">
+                  <div key={e}
+                    onDragOver={ev => { if (dragId) ev.preventDefault(); }}
+                    onDrop={() => { if (dragId) cambiarEtapa(dragId, e); setDragId(null); }}
+                    className={`w-60 flex-shrink-0 bg-zinc-950 border rounded-card transition-colors ${dragId ? 'border-dashed border-red-600/60' : 'border-zinc-800'}`}>
                     <div className="px-3 py-2 flex items-center justify-between border-b border-zinc-800 gap-1">
                       {editandoEtapas && esAdmin && (
                         <button onClick={() => moverCol(e, -1)} className="text-zinc-500 hover:text-white shrink-0" title="Mover a la izquierda"><ChevronRight className="w-3.5 h-3.5 rotate-180" /></button>
@@ -375,7 +388,13 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto }) {
                       {items.map(p => {
                         const info = infoTarjeta(p);
                         return (
-                          <button key={p.id} onClick={() => onAbrirProyecto(p)} style={{ borderLeftColor: SERVICE_LINES[p.service_line]?.color || '#666', borderLeftWidth: '4px' }} className="w-full text-left bg-zinc-900 border border-zinc-800 rounded-card p-2.5 hover:border-red-600">
+                          <div key={p.id} role="button" tabIndex={0}
+                            draggable
+                            onDragStart={() => setDragId(p.id)}
+                            onDragEnd={() => setDragId(null)}
+                            onClick={() => { if (!dragId) onAbrirProyecto(p); }}
+                            style={{ borderLeftColor: SERVICE_LINES[p.service_line]?.color || '#666', borderLeftWidth: '4px' }}
+                            className={`w-full text-left bg-zinc-900 border border-zinc-800 rounded-card p-2.5 hover:border-red-600 cursor-grab active:cursor-grabbing ${dragId === p.id ? 'opacity-40' : ''}`}>
                             <div className="flex items-start justify-between gap-1.5">
                               <div className="min-w-0">
                                 <div className="font-bold text-xs truncate text-white">{info.cliente}</div>
@@ -388,7 +407,7 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto }) {
                               {p.requiere_escalera && <EscaleraBadge valor={p.requiere_escalera} />}
                               <span className="text-[9px] text-zinc-500 flex items-center gap-0.5 ml-auto" title="Tiempo en esta etapa"><Clock className="w-2.5 h-2.5" /> {tiempoEnEtapa(p)}</span>
                             </div>
-                          </button>
+                          </div>
                         );
                       })}
                     </div>

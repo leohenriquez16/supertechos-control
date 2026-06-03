@@ -90,10 +90,13 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
     try {
       const g = await geocodificarInverso(la, ln);
       if (g) {
+        setAddress(d => d || g.direccion || g.calle || '');
         setSector(s => s || g.sector || '');
         setCity(c => c || g.ciudad || '');
         setProvincia(p => p || g.provincia || '');
         setPais(p => p || g.pais || '');
+        // Si el lugar tiene nombre (POI) y aún no hay nombre de locación, sugerirlo.
+        if (g.nombre) setLocNombre(n => n || g.nombre);
       }
     } catch { /* ignore */ }
     finally { setSugiriendo(false); }
@@ -504,7 +507,7 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
                     <input value={pais} onChange={e => setPais(e.target.value)} placeholder="País" className={inpCls} />
                   </div>
                 </div>
-                <div className="text-[10px] text-zinc-500 -mt-1">Sector, provincia y país se sugieren al fijar la ubicación; puedes editarlos.</div>
+                <div className="text-[10px] text-zinc-500 -mt-1">Al fijar la ubicación se sugieren dirección, sector, ciudad, provincia y país (y el nombre del lugar si lo tiene); puedes editarlos.</div>
                 {/* Ubicación — link de Maps / WhatsApp */}
                 <div>
                   <div className={labCls}>Ubicación (GPS)</div>

@@ -336,7 +336,12 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
       </button>
       {satelitalAbierta && <SatelitalAreas site={site} proyecto={proyecto} onCerrar={() => setSatelitalAbierta(false)} />}
 
-      {/* v8.19.90: eliminación con autorización del owner */}
+      <LevantamientosRealizados site={site} proyecto={proyecto} />
+
+      {/* Chatter tipo Odoo: quién creó, cambios de estado y notas */}
+      <ChatterPanel entityType="levantamiento" entityId={proyecto?.id} usuario={usuario} />
+
+      {/* v8.22.6: eliminación con autorización del owner — al final, debajo del chatter */}
       {(esOwner || esAdmin) && (
         <div className="bg-zinc-950 border border-red-900/50 rounded-card p-3 space-y-2">
           <div className="text-[10px] uppercase tracking-widest text-red-400 font-bold flex items-center gap-1"><Trash2 className="w-3 h-3" /> Eliminar levantamiento</div>
@@ -363,11 +368,6 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
           )}
         </div>
       )}
-
-      <LevantamientosRealizados site={site} proyecto={proyecto} />
-
-      {/* Chatter tipo Odoo: quién creó, cambios de estado y notas */}
-      <ChatterPanel entityType="levantamiento" entityId={proyecto?.id} usuario={usuario} />
 
       {formAbierto && (
         <DynamicSurveyForm

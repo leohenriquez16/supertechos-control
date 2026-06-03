@@ -17,7 +17,7 @@
 //   - Sync offline (PWA / IndexedDB)
 
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import { Loader2, X, Save, Check, Plus, Copy, Trash2, ChevronDown, ChevronUp, Zap } from 'lucide-react';
+import { Loader2, X, Save, Check, Plus, Copy, Trash2, ChevronDown, ChevronUp, Zap, Sun, Moon } from 'lucide-react';
 import { obtenerTemplateSurvey, crearVisita, actualizarVisita, cerrarVisita, listarAreasDeVisita, crearArea, actualizarArea, eliminarArea, calcularCompletitud, setCompletitudProyecto, familiaDeServiceLine, tiposDeFamilia, familiaPorKey } from '../../lib/surveys';
 import { obtenerUbicacion, distanciaMetros } from '../../lib/geo';
 import SurveyFieldRenderer from './SurveyFieldRenderer';
@@ -51,6 +51,7 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
   // v8.19.53: check-in pide la foto de fachada de una vez (con opción de diferir).
   const [fachadaDiferida, setFachadaDiferida] = useState(false);
   const [cerrando, setCerrando] = useState(false);
+  const [modoCampo, setModoCampo] = useState(false); // v8.24.3: fondo claro para uso bajo el sol
 
   // 1. Cargar template + crear/recuperar visita
   useEffect(() => {
@@ -253,9 +254,19 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
   }
 
   return (
-    <div className="fixed inset-0 bg-black/85 z-[60] overflow-y-auto">
+    <div className={`fixed inset-0 bg-black/85 z-[60] overflow-y-auto ${modoCampo ? 'modo-campo' : ''}`}>
+      <style>{`
+        .modo-campo .bg-zinc-950, .modo-campo .bg-zinc-900, .modo-campo .bg-zinc-900\\/60, .modo-campo .bg-zinc-900\\/50, .modo-campo .bg-zinc-900\\/40 { background-color:#ffffff !important; }
+        .modo-campo .bg-zinc-800 { background-color:#e4e4e7 !important; }
+        .modo-campo .text-white, .modo-campo .text-zinc-100, .modo-campo .text-zinc-200, .modo-campo .text-zinc-300 { color:#18181b !important; }
+        .modo-campo .text-zinc-400, .modo-campo .text-zinc-500, .modo-campo .text-zinc-600 { color:#3f3f46 !important; }
+        .modo-campo .border-zinc-800, .modo-campo .border-zinc-700, .modo-campo .border-zinc-800\\/50, .modo-campo .border-zinc-800\\/60 { border-color:#a1a1aa !important; }
+        .modo-campo input, .modo-campo textarea, .modo-campo select { background-color:#ffffff !important; color:#111 !important; border-color:#71717a !important; }
+        .modo-campo input::placeholder, .modo-campo textarea::placeholder { color:#71717a !important; }
+        .modo-campo .border-2 { border-color:#a1a1aa !important; }
+      `}</style>
       <div className="min-h-full p-2 sm:p-4">
-        <div className="bg-zinc-950 border-2 border-zinc-800 max-w-3xl mx-auto">
+        <div className={`bg-zinc-950 border-2 ${modoCampo ? 'border-zinc-400' : 'border-zinc-800'} max-w-3xl mx-auto`}>
           {/* Header sticky */}
           <div className="sticky top-0 bg-zinc-950 border-b-2 border-red-600 px-4 py-3 flex items-center justify-between z-10">
             <div className="min-w-0">
@@ -276,6 +287,13 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
                 </div>
                 <span className="text-[11px] font-bold tabular-nums" style={{ color: completitud.pct >= 100 ? '#22c55e' : '#a1a1aa' }}>{completitud.pct}%</span>
               </div>
+              <button
+                onClick={() => setModoCampo(v => !v)}
+                className={`p-1.5 rounded-card border ${modoCampo ? 'border-amber-500 text-amber-600 bg-amber-50' : 'border-zinc-700 text-zinc-400 hover:text-white'}`}
+                title={modoCampo ? 'Modo campo (claro) activo — tocar para oscuro' : 'Modo campo (fondo claro para el sol)'}
+              >
+                {modoCampo ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+              </button>
               <button
                 onClick={onCerrar}
                 className="text-zinc-400 hover:text-white p-1"
@@ -479,6 +497,7 @@ function BloqueRepetible({ bloque, areas, onAgregar, onCambioCampo, onRenombrar,
 
 function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, supportsSimilar, visitId, areasAnteriores = [], tiposArea = [], tipoLabel = 'Tipo', onAgregarSiguiente, siteLat = null, siteLng = null }) {
   const [colapsado, setColapsado] = useState(false);
+  const [verDetalles, setVerDetalles] = useState(false); // v8.24.2: acordeón "Más detalles"
   const nombreInputRef = useRef(null);
   const esSimilar = !!area.similar_to_area_id;
   const sinNombre = !(area.name && area.name.trim());
@@ -645,16 +664,34 @@ function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, suppor
             </div>
           )}
 
-          {camposVisibles.map(f => (
-            <SurveyFieldRenderer
-              key={f.id}
-              field={f}
-              value={(area.data || {})[f.id]}
-              onChange={(v) => onCambioCampo(f.id, v)}
-              allValues={area.data || {}}
-              context={{ visitId, areaId: area.id, siteLat, siteLng }}
-            />
-          ))}
+          {(() => {
+            const renderCampo = (f) => (
+              <SurveyFieldRenderer
+                key={f.id}
+                field={f}
+                value={(area.data || {})[f.id]}
+                onChange={(v) => onCambioCampo(f.id, v)}
+                allValues={area.data || {}}
+                context={{ visitId, areaId: area.id, siteLat, siteLng }}
+              />
+            );
+            const esenciales = camposVisibles.filter(f => !f.avanzado);
+            const avanzados = camposVisibles.filter(f => f.avanzado);
+            return (
+              <>
+                {esenciales.map(renderCampo)}
+                {avanzados.length > 0 && (
+                  <div className="border-2 border-zinc-800 rounded-card">
+                    <button type="button" onClick={() => setVerDetalles(v => !v)} className="w-full flex items-center justify-between px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-zinc-300 hover:text-white">
+                      <span>{verDetalles ? 'Ocultar detalles' : 'Más detalles'} ({avanzados.length})</span>
+                      {verDetalles ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    </button>
+                    {verDetalles && <div className="px-3 pb-3 space-y-3 border-t border-zinc-800">{avanzados.map(renderCampo)}</div>}
+                  </div>
+                )}
+              </>
+            );
+          })()}
 
           {/* v8.23.1/8.23.5: guardar y colapsar el área; o guardar y agregar otra (datos ya autoguardados) */}
           <div className="pt-1 flex gap-2">

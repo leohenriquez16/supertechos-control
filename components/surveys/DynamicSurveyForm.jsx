@@ -375,7 +375,7 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
                   Pausar (guardar y salir)
                 </button>
                 {completitud.faltantes.length > 0 && (
-                  <button onClick={() => cerrarVisitaCompleta(true)} disabled={cerrando} className="text-[10px] text-zinc-500 hover:text-amber-400 underline disabled:opacity-50">Cerrar igual</button>
+                  <button onClick={() => cerrarVisitaCompleta(true)} disabled={cerrando} className="bg-amber-700/30 border border-amber-700 text-amber-300 hover:bg-amber-700/50 px-3 py-2 text-[11px] font-bold uppercase rounded-card disabled:opacity-50">Cerrar sin completar</button>
                 )}
                 <button
                   onClick={() => cerrarVisitaCompleta(false)}
@@ -639,6 +639,13 @@ function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, suppor
               context={{ visitId, areaId: area.id }}
             />
           ))}
+
+          {/* v8.23.1: guardar y colapsar el área (los datos ya se autoguardan) */}
+          <div className="pt-1">
+            <button type="button" onClick={() => setColapsado(true)} className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-xs font-bold uppercase py-2.5 rounded-card flex items-center justify-center gap-1">
+              <Check className="w-3.5 h-3.5" /> Guardar y cerrar área
+            </button>
+          </div>
         </div>
       )}
     </div>

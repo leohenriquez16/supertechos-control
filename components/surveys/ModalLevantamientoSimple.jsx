@@ -331,25 +331,10 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], siste
                     );
                   })}
                 </div>
-                {/* Refinamiento dentro de la familia (opcional) */}
+                {/* El tipo específico (techo/piso) se elige POR ÁREA dentro del levantamiento. */}
                 {familiaKey && templatesFamilia.length > 1 && (
-                  <div className="mt-2">
-                    <div className="text-[10px] text-zinc-500 mb-1">¿Sabes el específico? (opcional — si no, usamos el general)</div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {templatesFamilia.map(t => {
-                        const activo = templateId === t.id;
-                        return (
-                          <button
-                            key={t.id}
-                            onClick={() => setTemplateId(t.id)}
-                            className={`px-2.5 py-1.5 rounded-card border text-[11px] flex items-center gap-1 ${activo ? 'border-red-600 bg-red-900/20 text-white' : 'border-zinc-800 bg-zinc-900 text-zinc-400 hover:border-zinc-700'}`}
-                          >
-                            <ServiceLineBadge serviceLine={t.service_line} />
-                            {activo && <Check className="w-3 h-3 text-red-400" />}
-                          </button>
-                        );
-                      })}
-                    </div>
+                  <div className="mt-1.5 text-[11px] text-zinc-500">
+                    El tipo específico ({familiaKey === 'pisos' ? 'tipo de piso' : familiaKey === 'impermeable' ? 'tipo de techo' : 'tipo'}) se elige por área al capturar.
                   </div>
                 )}
                 {familiaKey && templatesFamilia.length === 1 && (

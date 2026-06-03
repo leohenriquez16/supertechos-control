@@ -18,7 +18,7 @@
 
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { Loader2, X, Save, Check, Plus, Copy, Trash2, ChevronDown, ChevronUp, Zap } from 'lucide-react';
-import { obtenerTemplateSurvey, crearVisita, actualizarVisita, cerrarVisita, listarAreasDeVisita, crearArea, actualizarArea, eliminarArea, calcularCompletitud, setCompletitudProyecto } from '../../lib/surveys';
+import { obtenerTemplateSurvey, crearVisita, actualizarVisita, cerrarVisita, listarAreasDeVisita, crearArea, actualizarArea, eliminarArea, calcularCompletitud, setCompletitudProyecto, familiaDeServiceLine, tiposDeFamilia, familiaPorKey } from '../../lib/surveys';
 import { obtenerUbicacion, distanciaMetros } from '../../lib/geo';
 import SurveyFieldRenderer from './SurveyFieldRenderer';
 
@@ -107,6 +107,12 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
   const fachadaLista = Array.isArray(generalData.foto_frontal) && generalData.foto_frontal.length > 0;
   const bloquesRepetibles = secciones.filter(s => s.type === 'repeating_block');
 
+  // v8.20.5: tipo de techo/piso POR ÁREA. La familia sale del service_line del
+  // levantamiento; los tipos son los service_line de esa familia.
+  const familiaKey = familiaDeServiceLine(template?.service_line || proyecto?.service_line);
+  const tiposArea = familiaKey ? tiposDeFamilia(familiaKey) : [];
+  const tipoLabel = familiaPorKey(familiaKey)?.tipoLabel || 'Tipo';
+
   // v8.19.81: [Fase 2] completitud en vivo (campos obligatorios + mínimos de fotos).
   const completitud = useMemo(() => template ? calcularCompletitud(template, generalData, areas) : { pct: 0, req: 0, ok: 0, faltantes: [] }, [template, generalData, areas]);
 
@@ -129,14 +135,20 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
   // El AreaCard autoenfoca el input cuando name está vacío.
   const agregarArea = async (bloque) => {
     if (!visit) return;
-    const nextNum = areas.filter(a => a.block_id === bloque.id).length + 1;
+    const delBloque = areas.filter(a => a.block_id === bloque.id);
+    const nextNum = delBloque.length + 1;
+    // v8.20.5: hereda el tipo de techo/piso del área anterior del mismo bloque
+    // (editable). Cumple "si se agregan varias áreas, dejar las opciones de la anterior".
+    const prev = delBloque[delBloque.length - 1];
+    const dataInicial = {};
+    if (prev?.data?._tipo) dataInicial._tipo = prev.data._tipo;
     try {
       const a = await crearArea({
         visitId: visit.id,
         blockId: bloque.id,
         areaNumber: nextNum,
         name: '', // vacío — el levantador lo escribe
-        data: {},
+        data: dataInicial,
       });
       setAreas(prev => [...prev, a]);
     } catch (e) {
@@ -339,6 +351,8 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
               onEliminar={eliminarAreaLocal}
               supportsSimilar={template.schema?.supports_similar_shortcut}
               visitId={visit?.id}
+              tiposArea={tiposArea}
+              tipoLabel={tipoLabel}
             />
           ))}
 
@@ -409,7 +423,7 @@ function SeccionGeneral({ seccion, values, onChange, visitId, excluirIds = [] })
 // ============================================================
 // Bloque repetible (N areas)
 // ============================================================
-function BloqueRepetible({ bloque, areas, onAgregar, onCambioCampo, onRenombrar, onEliminar, supportsSimilar, visitId }) {
+function BloqueRepetible({ bloque, areas, onAgregar, onCambioCampo, onRenombrar, onEliminar, supportsSimilar, visitId, tiposArea = [], tipoLabel = 'Tipo' }) {
   return (
     <div className="border-b border-zinc-800">
       <div className="bg-zinc-900 px-4 py-2 flex items-center justify-between">
@@ -439,13 +453,15 @@ function BloqueRepetible({ bloque, areas, onAgregar, onCambioCampo, onRenombrar,
           supportsSimilar={supportsSimilar}
           visitId={visitId}
           areasAnteriores={areas.slice(0, idx)}
+          tiposArea={tiposArea}
+          tipoLabel={tipoLabel}
         />
       ))}
     </div>
   );
 }
 
-function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, supportsSimilar, visitId, areasAnteriores = [] }) {
+function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, supportsSimilar, visitId, areasAnteriores = [], tiposArea = [], tipoLabel = 'Tipo' }) {
   const [colapsado, setColapsado] = useState(false);
   const nombreInputRef = useRef(null);
   const esSimilar = !!area.similar_to_area_id;
@@ -453,6 +469,7 @@ function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, suppor
   const areaOrigen = esSimilar
     ? areasAnteriores.find(a => a.id === area.similar_to_area_id)
     : null;
+  const tipoActualLabel = tiposArea.find(t => t.line === area.data?._tipo)?.label || null;
 
   // Autofoco en el input de nombre cuando el área se crea sin nombre.
   useEffect(() => {
@@ -505,6 +522,11 @@ function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, suppor
             sinNombre ? 'border-amber-600' : 'border-zinc-800'
           } focus:border-red-600 outline-none px-2 py-1 text-sm font-bold text-white placeholder:text-zinc-600 placeholder:font-normal placeholder:italic`}
         />
+        {tipoActualLabel && (
+          <span className="text-[9px] uppercase tracking-wider font-bold text-red-300 bg-red-900/30 px-1.5 py-0.5 border border-red-800/50 flex-shrink-0">
+            {tipoActualLabel}
+          </span>
+        )}
         {esSimilar && (
           <span className="text-[9px] uppercase tracking-wider font-bold text-amber-400 bg-amber-900/40 px-1.5 py-0.5 border border-amber-700/50 flex-shrink-0">
             ⚡ Igual a {areaOrigen?.name || '#?'}
@@ -526,6 +548,30 @@ function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, suppor
 
       {!colapsado && (
         <div className="px-4 py-3 space-y-3">
+          {/* v8.20.5: tipo de techo/piso de ESTA área (por área). Se hereda del área
+              anterior al agregar, pero es editable aquí. */}
+          {tiposArea.length > 1 && (
+            <div className="border-2 border-zinc-800 bg-zinc-900/50 p-3">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-300 mb-1.5">{tipoLabel} <span className="text-red-500">*</span></div>
+              <div className="flex flex-wrap gap-1.5">
+                {tiposArea.map(t => {
+                  const activo = (area.data?._tipo || '') === t.line;
+                  return (
+                    <button
+                      key={t.line}
+                      onClick={() => onCambioCampo('_tipo', t.line)}
+                      className={`px-2.5 py-1.5 rounded text-[11px] font-bold border ${activo ? 'border-red-600 bg-red-900/30 text-white' : 'border-zinc-700 bg-zinc-900 text-zinc-400 hover:border-zinc-600'}`}
+                    >
+                      {t.label}
+                      {activo && <Check className="w-3 h-3 inline ml-1 -mt-0.5 text-red-400" />}
+                    </button>
+                  );
+                })}
+              </div>
+              {!area.data?._tipo && <div className="text-[10px] text-amber-400 mt-1.5">Elige el {tipoLabel.toLowerCase()} de esta área.</div>}
+            </div>
+          )}
+
           {/* Toggle "área similar" si el template lo soporta y hay areas anteriores */}
           {supportsSimilar && areasAnteriores.length > 0 && (
             <div className={`border-2 ${esSimilar ? 'border-amber-700/60 bg-amber-900/10' : 'border-zinc-800 bg-zinc-900/50'} p-3`}>

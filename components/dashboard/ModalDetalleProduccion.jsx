@@ -3,7 +3,7 @@
 import React from 'react';
 import { X } from 'lucide-react';
 import { formatRD, formatFecha, formatNum } from '../../lib/helpers/formato';
-import { getM2Reporte, getPrecioVentaArea } from '../../lib/helpers/calculos';
+import { getM2Reporte, getPrecioVentaArea, getFactorCotizacion } from '../../lib/helpers/calculos';
 
 export default function ModalDetalleProduccion({ data, rango, prodPeriodo, onCerrar, onVerProyecto }) {
   // v8.10.16: usa la MISMA fórmula que el card del dashboard
@@ -11,6 +11,16 @@ export default function ModalDetalleProduccion({ data, rango, prodPeriodo, onCer
 
   const porProyecto = {};
   const porMaestro = {};
+
+  // v8.x: factor de cotización por proyecto, memoizado — valora la producción diaria
+  // al precio cotizado real (cuadra con el detalle y con el KPI del dashboard).
+  const factorCotizacionCache = {};
+  const factorDe = (proy, sistema) => {
+    if (!(proy.id in factorCotizacionCache)) {
+      factorCotizacionCache[proy.id] = getFactorCotizacion(proy, sistema, data.sistemas);
+    }
+    return factorCotizacionCache[proy.id];
+  };
 
   reportesRango.forEach(r => {
     const proy = (data.proyectos || []).find(p => p.id === r.proyectoId);
@@ -25,12 +35,12 @@ export default function ModalDetalleProduccion({ data, rango, prodPeriodo, onCer
     // m² del reporte (usa función centralizada)
     const m2 = getM2Reporte(r, sistema);
 
-    // Precio de venta del área (incluye suplementos) × peso de la tarea
+    // Precio de venta del área × peso de la tarea × factor de cotización
     const tarea = sistema.tareas.find(t => t.id === r.tareaId);
     if (!tarea) return;
 
     const precioM2 = getPrecioVentaArea(area, sistema);
-    const monto = m2 * precioM2 * (tarea.peso / 100);
+    const monto = m2 * precioM2 * (tarea.peso / 100) * factorDe(proy, sistema);
 
     // Por proyecto
     if (!porProyecto[proy.id]) {

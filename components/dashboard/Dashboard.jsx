@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, AlertTriangle, CircleDashed, Download } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatRD, formatFechaCorta } from '../../lib/helpers/formato';
-import { getM2Reporte, getPrecioVentaArea, getPrecioTotalM2Area } from '../../lib/helpers/calculos';
+import { getM2Reporte, getPrecioVentaArea, getPrecioTotalM2Area, getFactorCotizacion } from '../../lib/helpers/calculos';
 import ModalDetalleEnEjecucion from './ModalDetalleEnEjecucion';
 import ModalDetallePersonalAhora from './ModalDetallePersonalAhora';
 import ModalDetalleProduccion from './ModalDetalleProduccion';
@@ -72,6 +72,16 @@ export default function Dashboard({ usuario, data, onVerProyecto, onNuevoProyect
     return { desde: ini.toISOString().split('T')[0], hasta: fin.toISOString().split('T')[0] };
   })();
 
+  // v8.x: factor de cotización por proyecto, memoizado (la producción diaria se
+  // valora al precio cotizado real, no al teórico del sistema). Cuadra con el detalle.
+  const factorCotizacionCache = {};
+  const factorDe = (proy, sistema) => {
+    if (!(proy.id in factorCotizacionCache)) {
+      factorCotizacionCache[proy.id] = getFactorCotizacion(proy, sistema, data.sistemas);
+    }
+    return factorCotizacionCache[proy.id];
+  };
+
   // Producción en un rango
   const prodEnRango = (desde, hasta) => {
     let total = 0;
@@ -86,7 +96,7 @@ export default function Dashboard({ usuario, data, onVerProyecto, onNuevoProyect
       if (!sistema) return;
       const m2 = getM2Reporte(r, sistema);
       const tarea = sistema.tareas.find(t => t.id === r.tareaId);
-      if (tarea) total += m2 * getPrecioVentaArea(area, sistema) * (tarea.peso / 100);
+      if (tarea) total += m2 * getPrecioVentaArea(area, sistema) * (tarea.peso / 100) * factorDe(proy, sistema);
     });
     return total;
   };

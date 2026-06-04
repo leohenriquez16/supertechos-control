@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed, Building2, Star, MessageCircle, Send, Search, Filter } from 'lucide-react';
+import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed, Building2, Star, MessageCircle, Send, Search, Filter, CloudRain } from 'lucide-react';
 import * as db from '../lib/db';
 import { leerArchivo, parseMateriales, parseSistemas, descargarPlantilla, comprimirImagen } from '../lib/imports';
 import { obtenerUbicacion, distanciaMetros, formatDistancia, abrirEnMapa } from '../lib/geo';
@@ -84,6 +84,9 @@ import ModuloSurveys from '../components/surveys/ModuloSurveys';
 import VistaGarantias from '../components/garantias/VistaGarantias';
 import ModuloReclamaciones from '../components/reclamaciones/ModuloReclamaciones';
 import VistaMisAsignaciones from '../components/maestro/VistaMisAsignaciones';
+import InicioSupervisor from '../components/maestro/InicioSupervisor';
+import ClimaWidget from '../components/maestro/ClimaWidget';
+import VistaCitas from '../components/surveys/VistaCitas';
 import VistaUbicaciones from '../components/ubicaciones/VistaUbicaciones';
 import CubicacionesProyecto from '../components/proyecto/CubicacionesProyecto';
 // v8.12: Caja Chica + Dieta
@@ -595,6 +598,7 @@ export default function App() {
   };
   const [proyectosExpandidos, setProyectosExpandidos] = useState(true);
   const [modoReporte, setModoReporte] = useState(null); // v8.9.11: 'rapido' | 'manual' | null (chooser)
+  const [modoManual, setModoManual] = useState('simple'); // v8.25.22: 'simple' (wizard 1-a-1) | 'lote' (varias áreas/pasos)
 
   const recargar = async () => {
     try {
@@ -651,7 +655,7 @@ export default function App() {
             if (u) {
               setUsuario(u);
               db.setAuditContext({ usuarioId: u.id, usuarioNombre: u.nombre });
-              setVista(tieneRol(u, 'admin') ? 'dashboard' : 'misProyectos');
+              setVista(tieneRol(u, 'admin') ? 'dashboard' : tieneRol(u, 'supervisor') ? 'inicio' : 'misProyectos');
             }
           }
         } catch {}
@@ -700,7 +704,7 @@ export default function App() {
       db.registrarAcceso({ personaId: u.id, tipo: 'login.exitoso', geoDenegada: true, geoError: String(e?.message || e) });
     }
     if (!u.pinTemporal && u.onboardingCompletado) {
-      setVista(tieneRol(u, 'admin') ? 'dashboard' : 'misProyectos');
+      setVista(tieneRol(u, 'admin') ? 'dashboard' : tieneRol(u, 'supervisor') ? 'inicio' : 'misProyectos');
     }
     try { localStorage.setItem('supertechos_usuario_id', u.id); } catch {}
   }} />;
@@ -710,7 +714,7 @@ export default function App() {
   if (!usuario.onboardingCompletado) return <WizardOnboarding usuario={usuario} onListo={async (uActualizado) => {
     setUsuario(uActualizado);
     await recargar();
-    setVista(tieneRol(uActualizado, 'admin') ? 'dashboard' : 'misProyectos');
+    setVista(tieneRol(uActualizado, 'admin') ? 'dashboard' : tieneRol(uActualizado, 'supervisor') ? 'inicio' : 'misProyectos');
   }} />;
 
   const esAdmin = tieneRol(usuario, 'admin');
@@ -720,6 +724,7 @@ export default function App() {
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, vista: 'dashboard' },
       { id: 'proyectos', label: 'Proyectos', icon: Briefcase, vista: 'proyectos', esProyectos: true },
       { id: 'surveys', label: 'Levantamientos', icon: MapPin, vista: 'surveys' },
+      { id: 'citas', label: 'Citas', icon: Calendar, vista: 'citas' },
       { id: 'reclamaciones', label: 'Reclamaciones', icon: AlertTriangle, vista: 'reclamaciones' },
       { id: 'planificacion', label: 'Planificación', icon: Calendar, vista: 'planificacion' },
       { id: 'tareas', label: 'Tareas', icon: ClipboardList, vista: 'tareas', badge: tareas.length },
@@ -755,12 +760,16 @@ export default function App() {
     ]},
   ] : [
     { seccion: 'MIS PROYECTOS', items: [
+      // v8.25.23: el supervisor inicia en el Home (resumen del día); los demás en Proyectos.
+      ...(tieneRol(usuario, 'supervisor') ? [{ id: 'inicio', label: 'Inicio', icon: LayoutDashboard, vista: 'inicio' }] : []),
       { id: 'misProyectos', label: 'Proyectos', icon: Briefcase, vista: 'misProyectos' },
+      { id: 'clima', label: 'Clima', icon: CloudRain, vista: 'clima' },
       // v8.19.72: vista unificada del maestro (proyectos + levantamientos + reclamaciones + mapa)
       ...((tieneRol(usuario, 'maestro') || tieneRol(usuario, 'supervisor')) ? [{ id: 'misAsignaciones', label: 'Mis asignaciones', icon: MapPin, vista: 'misAsignaciones' }] : []),
       // v8.25.7: el supervisor accede a los módulos completos de Levantamientos y Reclamaciones (como el admin)
       ...(tieneRol(usuario, 'supervisor') ? [
         { id: 'surveys', label: 'Levantamientos', icon: MapPin, vista: 'surveys' },
+        { id: 'citas', label: 'Citas', icon: Calendar, vista: 'citas' },
         { id: 'reclamaciones', label: 'Reclamaciones', icon: AlertTriangle, vista: 'reclamaciones' },
       ] : []),
       ...(puede(usuario, data.permisos, 'planificacion', 'ver') ? [{ id: 'planificacion', label: 'Planificación', icon: Calendar, vista: 'planificacion' }] : []),
@@ -1037,7 +1046,7 @@ export default function App() {
         })} />}
         {vista === 'proyecto' && proyectoActivo && (
           <DetalleProyecto usuario={usuario} proyecto={data.proyectos.find(p => p.id === proyectoActivo.id) || proyectoActivo} data={data} tab={tab} setTab={setTab}
-            onVolver={() => { if (pilaNav.length > 0) volverAtras(); else { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); } }}
+            onVolver={() => { setPilaNav([]); setVista(esAdmin ? 'proyectos' : 'misProyectos'); }}
             onActualizarProyecto={(pa) => withSync(() => db.actualizarProyecto(pa))}
             onRegistrarEnvio={(e) => withSync(() => db.crearEnvio({ ...e, id: 'e_' + Date.now() + Math.random() }))}
             onRegistrarEnviosLote={(es) => withSync(() => db.crearEnviosLote(es.map(e => ({ ...e, id: 'e_' + Date.now() + Math.random() }))))}
@@ -1160,13 +1169,16 @@ export default function App() {
           />
         )}
         {!esAdmin && vista === 'misProyectos' && <MisProyectos usuario={usuario} data={data} onIrAReportar={(p) => { setProyectoActivo(p); setVista('reportar'); }} onVerDetalle={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
-        {!esAdmin && vista === 'misAsignaciones' && <VistaMisAsignaciones usuario={usuario} data={data} onRecargar={recargar} onVolver={() => setVista('misProyectos')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
+        {!esAdmin && vista === 'inicio' && <InicioSupervisor usuario={usuario} data={data} onRecargar={recargar} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} onIrAReportar={(p) => { setProyectoActivo(p); setVista('reportar'); }} onIrAAsignaciones={() => setVista('misAsignaciones')} onIrAProyectos={() => setVista('misProyectos')} />}
+        {!esAdmin && vista === 'clima' && <div className="max-w-md mx-auto space-y-4"><button onClick={() => setVista(tieneRol(usuario, 'supervisor') ? 'inicio' : 'misProyectos')} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button><h1 className="text-2xl font-black tracking-tight">Clima</h1><ClimaWidget /></div>}
+        {vista === 'citas' && <VistaCitas usuario={usuario} onVolver={() => setVista(esAdmin ? 'dashboard' : tieneRol(usuario, 'supervisor') ? 'inicio' : 'misProyectos')} onRecargar={recargar} />}
+        {!esAdmin && vista === 'misAsignaciones' && <VistaMisAsignaciones usuario={usuario} data={data} onRecargar={recargar} onVolver={() => setVista('inicio')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'reportar' && proyectoActivo && (() => {
           // v8.9.11: Bifurcación rápido vs manual según flag de persona
           const audioHabilitado = !!usuario?.reporteAudioHabilitado;
           const showChooser = audioHabilitado && !modoReporte;
           const useRapido = audioHabilitado && modoReporte === 'rapido';
-          const salir = () => { setModoReporte(null); if (esAdmin) { setVista('proyecto'); setTab('avance'); } else setVista('misProyectos'); };
+          const salir = () => { setModoReporte(null); setModoManual('simple'); if (esAdmin) { setVista('proyecto'); setTab('avance'); } else setVista(tieneRol(usuario, 'supervisor') ? 'inicio' : 'misProyectos'); };
 
           if (showChooser) {
             return (
@@ -1228,8 +1240,86 @@ export default function App() {
             />;
           }
 
-          // Modo manual (flujo original)
-          return <FormReporte usuario={usuario} proyecto={proyectoActivo} reportes={data.reportes} sistema={data.sistemas[proyectoActivo.sistema]} sistemas={data.sistemas} estadosArea={data.estadosArea} onCancelar={salir} onTerminar={salir} onGuardar={async (r, fotos) => withSync(async () => {
+          // v8.25.22: toggle Simple (wizard 1-a-1) vs En lote (varias áreas/pasos de una)
+          const toggleManual = (
+            <div className="max-w-md mx-auto flex gap-1 bg-zinc-900 border border-zinc-800 rounded-card p-1">
+              <button onClick={() => setModoManual('simple')} className={`flex-1 py-2 text-xs font-black uppercase tracking-wide rounded-card transition-colors ${modoManual === 'simple' ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>📝 Simple</button>
+              <button onClick={() => setModoManual('lote')} className={`flex-1 py-2 text-xs font-black uppercase tracking-wide rounded-card transition-colors ${modoManual === 'lote' ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>📋 En lote</button>
+            </div>
+          );
+
+          // Guardado en lote: varias líneas (área+paso) + fotos compartidas + UN correo resumen.
+          const guardarLote = async (lineas, fotos, meta) => withSync(async () => {
+            const proy = proyectoActivo;
+            const sistema = data.sistemas[proy.sistema];
+            const ids = [];
+            for (const ln of lineas) {
+              const reporteId = 'r_' + Date.now() + Math.random();
+              ids.push({ id: reporteId, ln });
+              await db.crearReporte({
+                proyectoId: proy.id, areaId: ln.areaId, tareaId: ln.tareaId,
+                fecha: meta.fecha, nota: meta.nota || null,
+                supervisor: usuario.nombre, supervisorId: usuario.id,
+                ...(ln.rollos != null ? { rollos: ln.rollos } : {}),
+                ...(ln.m2 != null ? { m2: ln.m2 } : {}),
+                ...(ln.cubetas != null ? { cubetas: ln.cubetas } : {}),
+                id: reporteId,
+              });
+            }
+            if (proy.estado === 'aprobado') {
+              try { await db.cambiarEstadoProyecto(proy.id, 'en_ejecucion', usuario, 'Auto: primer reporte de avance (lote)'); } catch (e) { console.warn('No se pudo auto-cambiar estado:', e); }
+            }
+            // Fotos compartidas → asociadas al primer reporte/área del lote.
+            if (fotos && fotos.length && ids.length) {
+              const first = ids[0];
+              const fotosData = fotos.map(dataUrl => ({
+                id: 'f_' + Date.now() + Math.random(),
+                proyectoId: proy.id, fecha: meta.fecha, areaId: first.ln.areaId,
+                data: dataUrl, subidaPor: usuario.nombre, subidaPorId: usuario.id,
+                reporteId: first.id, sistemaId: proy.sistema,
+              }));
+              await db.subirFotosLote(fotosData);
+            }
+            // UN correo resumen con todas las líneas.
+            try {
+              const admins = data.personal.filter(p => tieneRol(p, 'admin') && p.email);
+              const sup = getPersona(data.personal, proy.supervisorId);
+              const mae = getPersona(data.personal, proy.maestroId);
+              const destinos = [...admins.map(a => a.email)];
+              if (sup?.email && sup.id !== usuario.id) destinos.push(sup.email);
+              if (mae?.email && mae.id !== usuario.id) destinos.push(mae.email);
+              const dedup = [...new Set(destinos)];
+              if (dedup.length) {
+                const filas = lineas.map(ln => {
+                  const area = proy.areas.find(a => a.id === ln.areaId);
+                  const sisA = (data.sistemas && data.sistemas[area?.sistemaId || proy.sistema]) || sistema;
+                  const tareaL = sisA?.tareas.find(t => t.id === ln.tareaId);
+                  const det = ln.rollos != null ? `${formatNum(ln.rollos)} rollos` : ln.m2 != null ? `${formatNum(ln.m2)} m²` : '';
+                  return `<tr><td style="padding:4px 8px;">📍 ${area?.nombre || '?'}</td><td style="padding:4px 8px;">🔨 ${tareaL?.nombre || '?'}</td><td style="padding:4px 8px;text-align:right;"><strong>${det}</strong></td></tr>`;
+                }).join('');
+                const fotosTxt = fotos?.length ? `<p><strong>📷 ${fotos.length} foto${fotos.length !== 1 ? 's' : ''}</strong></p>` : '';
+                const nota = meta.nota ? `<p style="font-style:italic;color:#666;">"${meta.nota}"</p>` : '';
+                const html = `<div style="font-family:sans-serif;max-width:540px;">
+                    <h2 style="color:#CC0000;">${proy.referenciaOdoo || ''} · ${proy.cliente || proy.nombre}</h2>
+                    <div style="background:#f5f5f5;padding:15px;border-left:4px solid #CC0000;">
+                      <p><strong>${usuario.nombre}</strong> reportó ${lineas.length} avance${lineas.length !== 1 ? 's' : ''} · ${formatFecha(meta.fecha)}</p>
+                      <table style="width:100%;border-collapse:collapse;font-size:13px;">${filas}</table>
+                      ${nota}${fotosTxt}
+                    </div>
+                    <p style="font-size:10px;color:#999;text-align:center;">Super Techos SRL · Control de Obras</p>
+                  </div>`;
+                db.enviarCorreoReporte(dedup, `[${proy.referenciaOdoo || proy.cliente}] ${lineas.length} avances de ${usuario.nombre.split(' ')[0]}`, html);
+              }
+            } catch (err) { console.warn('Email lote fallo:', err); }
+            return true;
+          });
+
+          if (modoManual === 'lote') {
+            return <div className="space-y-3">{toggleManual}<FormReporteLote usuario={usuario} proyecto={proyectoActivo} reportes={data.reportes} sistema={data.sistemas[proyectoActivo.sistema]} sistemas={data.sistemas} estadosArea={data.estadosArea} onCancelar={salir} onGuardarLote={async (lineas, fotos, meta) => (await guardarLote(lineas, fotos, meta)) === true} /></div>;
+          }
+
+          // Modo manual simple (wizard original)
+          return <div className="space-y-3">{toggleManual}<FormReporte usuario={usuario} proyecto={proyectoActivo} reportes={data.reportes} sistema={data.sistemas[proyectoActivo.sistema]} sistemas={data.sistemas} estadosArea={data.estadosArea} onCancelar={salir} onTerminar={salir} onGuardar={async (r, fotos) => withSync(async () => {
           const reporteId = 'r_' + Date.now() + Math.random();
           await db.crearReporte({ ...r, id: reporteId });
           // v8.9.14: auto-mover a 'en_ejecucion' si está en 'aprobado'
@@ -1280,7 +1370,7 @@ export default function App() {
               db.enviarCorreoReporte(dedup, `[${proy.referenciaOdoo || proy.cliente}] Reporte de ${usuario.nombre.split(' ')[0]}`, html);
             }
           } catch (err) { console.warn('Email fallo:', err); }
-        })} />;
+        })} /></div>;
         })()}
 
         {/* v8.9.20: Asistente IA para admin */}
@@ -9905,6 +9995,286 @@ function FormReporte({ usuario, proyecto, reportes, sistema, sistemas, estadosAr
 
         <div className="flex gap-2"><BotonSecundario onClick={() => setPaso(2)}>← Atrás</BotonSecundario><BotonPrincipal disabled={(tarea.reporta === 'rollos' ? !form.rollos : !form.m2) || guardando} onClick={submit}>{guardando ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Guardar'}</BotonPrincipal></div>
       </div>}
+    </div>
+  );
+}
+
+// v8.25.22: Reporte EN LOTE — varias áreas y pasos en una sola pasada (carrito).
+// Modo adicional al wizard simple; fotos compartidas para todo el lote.
+function FormReporteLote({ usuario, proyecto, reportes, sistema, sistemas, estadosArea, onCancelar, onGuardarLote }) {
+  const areasBloqueadasRep = new Set((estadosArea || []).filter(e => e.proyectoId === proyecto.id && e.estado === 'bloqueada').map(e => e.areaId));
+  const areasReportables = (proyecto.areas || []).filter(a => !areasBloqueadasRep.has(a.id));
+  const esAdmin = tieneRol(usuario, 'admin');
+
+  const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
+  const [nota, setNota] = useState('');
+  const [lineas, setLineas] = useState([]); // { areaId, tareaId, m2?|rollos?|cubetas? }
+  const [fotos, setFotos] = useState([]);
+  const [comprimiendo, setComprimiendo] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+  const [enviado, setEnviado] = useState(false);
+  const [resumen, setResumen] = useState(null);
+
+  // Mini-formulario para capturar UNA línea.
+  const [areaId, setAreaId] = useState('');
+  const [tareaId, setTareaId] = useState('');
+  const [cant, setCant] = useState('');
+  const [cubetas, setCubetas] = useState('');
+  const [captura, setCaptura] = useState('lista'); // 'lista' (carrito) | 'area' (acordeón por área) | 'matriz' (grilla)
+  const [celdas, setCeldas] = useState({}); // celdas { 'areaId|tareaId': valor } — compartido por 'area' y 'matriz'
+  const [areaAbierta, setAreaAbierta] = useState(''); // acordeón en modo 'area'
+  // Recordar la forma de captura preferida del supervisor (por usuario, en este dispositivo).
+  const prefKey = 'reporteLoteCaptura_' + usuario.id;
+  useEffect(() => { try { const v = localStorage.getItem(prefKey); if (v) setCaptura(v); } catch (e) {} }, []);
+  const elegirCaptura = (m) => { setCaptura(m); try { localStorage.setItem(prefKey, m); } catch (e) {} };
+
+  const area = proyecto.areas.find(a => a.id === areaId);
+  const sistemaArea = area ? ((sistemas && sistemas[area.sistemaId || proyecto.sistema]) || sistema) : sistema;
+  const tarea = sistemaArea?.tareas.find(t => t.id === tareaId);
+
+  const sisDe = (aId) => { const a = proyecto.areas.find(x => x.id === aId); return (sistemas && sistemas[a?.sistemaId || proyecto.sistema]) || sistema; };
+  const tareaDe = (aId, tId) => sisDe(aId)?.tareas.find(t => t.id === tId);
+  const m2DeLinea = (ln) => ln.rollos != null ? ln.rollos * 8.5 : (ln.m2 || 0);
+  // m² ya reportado (guardado) + lo ya puesto en el carrito, para no pasarnos del área.
+  const m2Guardado = (aId, tId) => reportes.filter(r => r.proyectoId === proyecto.id && r.areaId === aId && r.tareaId === tId).reduce((acc, r) => acc + getM2Reporte(r, sisDe(aId)), 0);
+  const m2Carrito = (aId, tId) => lineas.filter(l => l.areaId === aId && l.tareaId === tId).reduce((acc, l) => acc + m2DeLinea(l), 0);
+  const m2Ac = (area && tarea) ? m2Guardado(area.id, tarea.id) + m2Carrito(area.id, tarea.id) : 0;
+  const m2Rest = (area && tarea) ? Math.max(0, area.m2 - m2Ac) : 0;
+  const m2Cant = !tarea ? 0 : (tarea.reporta === 'rollos' ? (parseFloat(cant) || 0) * 8.5 : parseFloat(cant) || 0);
+
+  const estimadoDe = (ln) => {
+    const a = proyecto.areas.find(x => x.id === ln.areaId);
+    const t = tareaDe(ln.areaId, ln.tareaId);
+    if (!a || !t) return 0;
+    return m2DeLinea(ln) * getPrecioVentaArea(a, sisDe(ln.areaId)) * (t.peso / 100);
+  };
+  const totalEstimado = lineas.reduce((acc, ln) => acc + estimadoDe(ln), 0);
+
+  const resetMini = () => { setTareaId(''); setCant(''); setCubetas(''); };
+
+  // Matriz: áreas agrupadas por su sistema (solo reportables), para armar la grilla área×pasos.
+  const gruposReportables = agruparAreasPorSistema(proyecto, sistemas)
+    .map(g => ({ ...g, areas: g.areas.filter(a => !areasBloqueadasRep.has(a.id)) }))
+    .filter(g => g.areas.length && g.sistema);
+  const agregarMatriz = () => {
+    const nuevas = [];
+    Object.entries(celdas).forEach(([key, raw]) => {
+      const val = parseFloat(raw);
+      if (!val || val <= 0) return;
+      const [aId, tId] = key.split('|');
+      const t = tareaDe(aId, tId);
+      if (!t) return;
+      nuevas.push(t.reporta === 'rollos' ? { areaId: aId, tareaId: tId, rollos: val } : { areaId: aId, tareaId: tId, m2: val });
+    });
+    if (!nuevas.length) return;
+    setLineas([...lineas, ...nuevas]);
+    setCeldas({});
+    setAreaAbierta('');
+  };
+  const celdasLlenas = Object.values(celdas).filter(v => parseFloat(v) > 0).length;
+  // resto pendiente de un paso en su unidad de captura (rollos o m²)
+  const restoDe = (a, t) => {
+    const rest = Math.max(0, a.m2 - m2Guardado(a.id, t.id));
+    return t.reporta === 'rollos' ? rest / 8.5 : rest;
+  };
+
+  const pushLinea = (vals) => {
+    setLineas([...lineas, { areaId: area.id, tareaId: tarea.id, ...vals }]);
+    resetMini(); // mantiene el área seleccionada para seguir agregando pasos de la misma área
+  };
+  const agregarLinea = () => {
+    if (!area || !tarea || m2Cant <= 0) return;
+    if (tarea.reporta === 'rollos') pushLinea({ rollos: parseFloat(cant) });
+    else { const v = { m2: parseFloat(cant) }; if (tarea.reporta === 'm2_y_cubetas' && cubetas) v.cubetas = parseFloat(cubetas); pushLinea(v); }
+  };
+  const completarRestante = () => {
+    if (!area || !tarea || m2Rest <= 0) return;
+    if (tarea.reporta === 'rollos') pushLinea({ rollos: m2Rest / 8.5 }); else pushLinea({ m2: m2Rest });
+  };
+  const quitarLinea = (i) => setLineas(lineas.filter((_, x) => x !== i));
+
+  const agregarFotos = async (files) => {
+    if (!files?.length) return;
+    setComprimiendo(true);
+    try { const nuevas = []; for (const f of files) { nuevas.push(await comprimirImagen(f, 1600, 0.75)); } setFotos([...fotos, ...nuevas]); }
+    catch (e) { alert('Error con foto: ' + e.message); }
+    setComprimiendo(false);
+  };
+
+  const guardar = async () => {
+    if (!lineas.length || guardando) return;
+    setGuardando(true);
+    const ok = await onGuardarLote(lineas, fotos, { fecha, nota });
+    if (ok) { setResumen({ n: lineas.length, fotos: fotos.length, total: totalEstimado }); setEnviado(true); }
+    setGuardando(false);
+  };
+  const nuevoLote = () => { setLineas([]); setFotos([]); setNota(''); resetMini(); setAreaId(''); setEnviado(false); setResumen(null); };
+
+  if (enviado && resumen) return (
+    <div className="max-w-md mx-auto flex flex-col items-center py-12 text-center space-y-4">
+      <CheckCircle2 className="w-20 h-20 text-green-500" />
+      <div className="text-2xl font-black">Lote guardado</div>
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 w-full text-left">
+        <div className="font-bold">{resumen.n} avance{resumen.n !== 1 ? 's' : ''} registrado{resumen.n !== 1 ? 's' : ''}</div>
+        {resumen.fotos > 0 && <div className="text-xs text-blue-400 mt-1">📷 {resumen.fotos} foto{resumen.fotos !== 1 ? 's' : ''}</div>}
+        {esAdmin && resumen.total > 0 && <div className="text-sm text-green-400 font-black mt-1">{formatRD(resumen.total)}</div>}
+      </div>
+      <div className="flex gap-2 w-full"><button onClick={onCancelar} className="flex-1 bg-zinc-800 text-zinc-300 font-bold uppercase py-3 text-sm">Terminar</button><button onClick={nuevoLote} className="flex-1 bg-red-600 text-white font-black uppercase py-3 text-sm">+ Otro lote</button></div>
+    </div>
+  );
+
+  const reportaLabel = tarea?.reporta === 'rollos' ? '🧻 Rollos' : tarea?.reporta === 'unidades' ? 'Unidades' : '📐 m²';
+
+  return (
+    <div className="max-w-2xl mx-auto space-y-4">
+      <button onClick={onCancelar} className="flex items-center gap-2 text-zinc-400 text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button>
+      <div className="text-center"><div className="text-xs tracking-widest uppercase text-red-500 font-bold">Reportar en lote</div><div className="text-[10px] font-mono text-zinc-500">{proyecto.referenciaOdoo}</div><div className="text-base font-black truncate">{proyecto.cliente}</div></div>
+
+      {areasReportables.length === 0 && <div className="text-xs text-amber-300 bg-amber-900/15 border border-amber-800/40 rounded-card p-3">No hay áreas disponibles para reportar. Marca alguna como "Disponible" en la pestaña Áreas.</div>}
+
+      {/* Fecha (compartida) + selector de modo de captura */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 space-y-3">
+        <div><Label>Fecha</Label><Input type="date" value={fecha} onChange={v => setFecha(v)} /></div>
+
+        <div className="flex gap-1 bg-zinc-950 border border-zinc-800 rounded-card p-1">
+          <button onClick={() => elegirCaptura('lista')} className={`flex-1 py-1.5 text-[11px] font-bold uppercase tracking-wide rounded-card ${captura === 'lista' ? 'bg-zinc-700 text-white' : 'text-zinc-500'}`}>Lista</button>
+          <button onClick={() => elegirCaptura('area')} className={`flex-1 py-1.5 text-[11px] font-bold uppercase tracking-wide rounded-card ${captura === 'area' ? 'bg-zinc-700 text-white' : 'text-zinc-500'}`}>Por área</button>
+          <button onClick={() => elegirCaptura('matriz')} className={`flex-1 py-1.5 text-[11px] font-bold uppercase tracking-wide rounded-card ${captura === 'matriz' ? 'bg-zinc-700 text-white' : 'text-zinc-500'}`}>▦ Matriz</button>
+        </div>
+
+        {/* MODO LISTA: área → paso → cantidad → agregar */}
+        {captura === 'lista' && <>
+          <div>
+            <Label>Área</Label>
+            <div className="flex flex-wrap gap-2 mt-1">
+              {areasReportables.map(a => {
+                const sisA = (sistemas && sistemas[a.sistemaId || proyecto.sistema]) || sistema;
+                const { porcentaje } = calcAvanceArea(proyecto, a.id, reportes, sisA);
+                return <button key={a.id} onClick={() => { setAreaId(a.id); resetMini(); }} className={`px-3 py-2 border-2 text-left text-sm ${areaId === a.id ? 'border-red-600 bg-red-600/10' : 'border-zinc-800 bg-zinc-950'}`}><span className="font-bold">{a.nombre}</span> <span className="text-[10px] text-zinc-500">{a.m2}m² · {porcentaje.toFixed(0)}%</span></button>;
+              })}
+            </div>
+          </div>
+
+          {area && <div>
+            <Label>Paso / tarea</Label>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-1">
+              {(sistemaArea?.tareas || []).map(t => {
+                const ac = m2Guardado(area.id, t.id) + m2Carrito(area.id, t.id);
+                const comp = ac >= area.m2;
+                return <button key={t.id} onClick={() => { setTareaId(t.id); setCant(''); setCubetas(''); }} disabled={comp} className={`p-2 border-2 text-left relative ${comp ? 'border-green-700 bg-green-900/20 opacity-60' : tareaId === t.id ? 'border-red-600 bg-red-600/10' : 'border-zinc-800 bg-zinc-950'}`}>{comp && <CheckCircle2 className="w-4 h-4 text-green-500 absolute top-1 right-1" />}<div className="font-bold text-xs">{t.nombre}</div><div className="text-[10px] text-zinc-500">{t.peso}% · {ac.toFixed(0)}/{area.m2}m²</div></button>;
+              })}
+            </div>
+          </div>}
+
+          {area && tarea && <div className="space-y-2">
+            <div className="text-xs text-zinc-400">Faltan <span className="text-white font-bold">{formatNum(m2Rest)} m²</span>{tarea.reporta === 'rollos' && <> ({formatNum(m2Rest / 8.5)} rollos)</>}</div>
+            {m2Rest > 0 && <button onClick={completarRestante} className="w-full bg-green-600/90 text-white font-black uppercase py-2.5 text-sm flex items-center justify-center gap-2 border-2 border-green-500"><Zap className="w-4 h-4" /> Agregar restante ({formatNum(tarea.reporta === 'rollos' ? m2Rest / 8.5 : m2Rest)})</button>}
+            <div className="flex items-end gap-2">
+              <div className="flex-1"><Label>{reportaLabel}</Label><Input type="number" value={cant} onChange={v => setCant(v)} /></div>
+              {tarea.reporta === 'm2_y_cubetas' && <div className="flex-1"><Label>🪣 Cubetas</Label><Input type="number" value={cubetas} onChange={v => setCubetas(v)} step="0.1" /></div>}
+              <button onClick={agregarLinea} disabled={m2Cant <= 0} className="bg-red-600 disabled:opacity-40 text-white font-black uppercase px-4 py-3 text-sm flex items-center gap-1"><Plus className="w-4 h-4" /> Agregar</button>
+            </div>
+            {tarea.reporta === 'rollos' && cant && <div className="text-[11px] text-zinc-400">{cant} × 8.5 = <span className="text-white font-bold">{formatNum(m2Cant)} m²</span></div>}
+          </div>}
+        </>}
+
+        {/* MODO POR ÁREA: acordeón — abre un área y captura todos sus pasos */}
+        {captura === 'area' && <>
+          <div className="text-[11px] text-zinc-500">Toca un área para abrir sus pasos y escribe lo avanzado en cada uno.</div>
+          {areasReportables.map(a => {
+            const sisA = (sistemas && sistemas[a.sistemaId || proyecto.sistema]) || sistema;
+            const { porcentaje } = calcAvanceArea(proyecto, a.id, reportes, sisA);
+            const abierta = areaAbierta === a.id;
+            const llenasArea = (sisA?.tareas || []).filter(t => parseFloat(celdas[a.id + '|' + t.id]) > 0).length;
+            return <div key={a.id} className="border border-zinc-800 rounded-card overflow-hidden">
+              <button onClick={() => setAreaAbierta(abierta ? '' : a.id)} className={`w-full flex items-center justify-between p-3 text-left ${abierta ? 'bg-red-600/10' : 'bg-zinc-950'}`}>
+                <div><div className="font-bold text-sm">{a.nombre}</div><div className="text-[10px] text-zinc-500">{a.m2} m² · {porcentaje.toFixed(0)}%{llenasArea > 0 && <span className="text-red-400"> · {llenasArea} paso{llenasArea !== 1 ? 's' : ''} cargado{llenasArea !== 1 ? 's' : ''}</span>}</div></div>
+                {abierta ? <ChevronUp className="w-4 h-4 text-zinc-400" /> : <ChevronDown className="w-4 h-4 text-zinc-400" />}
+              </button>
+              {abierta && <div className="p-3 pt-0 space-y-2 bg-zinc-950">
+                {(sisA?.tareas || []).map(t => {
+                  const done = m2Guardado(a.id, t.id);
+                  const comp = done >= a.m2;
+                  const key = a.id + '|' + t.id;
+                  const resto = restoDe(a, t);
+                  return <div key={t.id} className="flex items-center gap-2">
+                    <div className="flex-1 min-w-0"><div className="text-xs font-bold truncate">{t.nombre} {comp && <CheckCircle2 className="w-3 h-3 text-green-500 inline" />}</div><div className="text-[10px] text-zinc-600">{t.peso}% · {done.toFixed(0)}/{a.m2}{t.reporta === 'rollos' ? ' (🧻)' : ' m²'}</div></div>
+                    {!comp && resto > 0 && <button onClick={() => setCeldas({ ...celdas, [key]: String(Math.round(resto * 100) / 100) })} className="text-[10px] text-green-400 border border-green-800 rounded-card px-2 py-2 flex-shrink-0">resto</button>}
+                    <input type="number" inputMode="decimal" disabled={comp} value={celdas[key] || ''} onChange={e => setCeldas({ ...celdas, [key]: e.target.value })} placeholder={comp ? '✓' : '0'} className={`w-20 text-center bg-zinc-900 border rounded-card px-2 py-2.5 outline-none focus:border-red-600 ${comp ? 'border-green-800 text-green-600' : 'border-zinc-700 text-white'}`} />
+                  </div>;
+                })}
+              </div>}
+            </div>;
+          })}
+          <button onClick={agregarMatriz} disabled={celdasLlenas === 0} className="w-full bg-red-600 disabled:opacity-40 text-white font-black uppercase py-2.5 text-sm flex items-center justify-center gap-1"><Plus className="w-4 h-4" /> Agregar al lote{celdasLlenas > 0 ? ` (${celdasLlenas})` : ''}</button>
+        </>}
+
+        {/* MODO MATRIZ: grilla área × pasos, una celda por combinación */}
+        {captura === 'matriz' && <>
+          <div className="text-[11px] text-zinc-500">Escribe la cantidad en cada celda (m², o rollos 🧻) y agrégalas todas al lote de una vez.</div>
+          {gruposReportables.map(g => (
+            <div key={g.sistemaId} className="space-y-1">
+              {gruposReportables.length > 1 && <div className="text-xs font-bold text-red-400">{g.sistema?.nombre || '(sin sistema)'}</div>}
+              <div className="overflow-x-auto -mx-1 px-1">
+                <table className="text-xs border-separate" style={{ borderSpacing: '2px' }}>
+                  <thead><tr>
+                    <th className="sticky left-0 z-10 bg-zinc-900 text-left p-1 text-zinc-500 font-bold">Área</th>
+                    {(g.sistema?.tareas || []).map(t => <th key={t.id} className="p-1 text-zinc-300 font-bold align-bottom min-w-[64px]">{t.nombre}<div className="text-[9px] text-zinc-600 font-normal">{t.peso}%{t.reporta === 'rollos' ? ' 🧻' : ''}</div></th>)}
+                  </tr></thead>
+                  <tbody>
+                    {g.areas.map(a => (
+                      <tr key={a.id}>
+                        <td className="sticky left-0 z-10 bg-zinc-900 p-1 font-bold whitespace-nowrap">{a.nombre}<div className="text-[9px] text-zinc-600 font-normal">{a.m2} m²</div></td>
+                        {(g.sistema?.tareas || []).map(t => {
+                          const done = m2Guardado(a.id, t.id);
+                          const comp = done >= a.m2;
+                          const key = a.id + '|' + t.id;
+                          return <td key={t.id} className="p-0">
+                            <input type="number" inputMode="decimal" disabled={comp} value={celdas[key] || ''} onChange={e => setCeldas({ ...celdas, [key]: e.target.value })} placeholder={comp ? '✓' : ''} className={`w-16 text-center bg-zinc-950 border rounded-card px-1 py-2.5 outline-none focus:border-red-600 ${comp ? 'border-green-800 text-green-600 placeholder-green-600' : 'border-zinc-700 text-white'}`} />
+                            <div className="text-[8px] text-zinc-600 text-center leading-tight">{done.toFixed(0)}/{a.m2}</div>
+                          </td>;
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
+          <button onClick={agregarMatriz} disabled={!Object.values(celdas).some(v => parseFloat(v) > 0)} className="w-full bg-red-600 disabled:opacity-40 text-white font-black uppercase py-2.5 text-sm flex items-center justify-center gap-1"><Plus className="w-4 h-4" /> Agregar llenas al lote</button>
+        </>}
+      </div>
+
+      {/* Carrito acumulado */}
+      <div>
+        <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2 flex items-center justify-between"><span>📋 Líneas del lote {lineas.length > 0 && <span className="text-red-500">· {lineas.length}</span>}</span>{esAdmin && totalEstimado > 0 && <span className="text-green-400 font-black normal-case tracking-normal text-sm">{formatRD(totalEstimado)}</span>}</div>
+        {lineas.length === 0 && <div className="bg-zinc-950 border border-dashed border-zinc-800 rounded-card p-4 text-center text-xs text-zinc-500">Aún no agregas avances. Elige área → paso → cantidad → Agregar.</div>}
+        <div className="space-y-1">
+          {lineas.map((ln, i) => {
+            const a = proyecto.areas.find(x => x.id === ln.areaId);
+            const t = tareaDe(ln.areaId, ln.tareaId);
+            const det = ln.rollos != null ? `${formatNum(ln.rollos)} rollos (${formatNum(ln.rollos * 8.5)} m²)` : `${formatNum(ln.m2)} m²${ln.cubetas != null ? ` · ${formatNum(ln.cubetas)} cubetas` : ''}`;
+            return <div key={i} className="bg-zinc-950 border border-zinc-800 rounded-card p-2 flex items-center justify-between gap-2">
+              <div className="min-w-0"><div className="text-sm font-bold truncate">{a?.nombre} · <span className="text-zinc-400">{t?.nombre}</span></div><div className="text-[11px] text-zinc-500">{det}{esAdmin && <span className="text-green-500"> · {formatRD(estimadoDe(ln))}</span>}</div></div>
+              <button onClick={() => quitarLinea(i)} className="text-zinc-500 hover:text-red-400 flex-shrink-0"><X className="w-4 h-4" /></button>
+            </div>;
+          })}
+        </div>
+      </div>
+
+      {/* Fotos compartidas del lote */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 space-y-2">
+        <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold flex items-center gap-1"><Camera className="w-3 h-3" /> Fotos del lote (opcional) {fotos.length > 0 && <span className="text-red-500">· {fotos.length}</span>}</div>
+        {fotos.length > 0 && <div className="grid grid-cols-4 sm:grid-cols-6 gap-1">{fotos.map((f, i) => <div key={i} className="relative aspect-square bg-zinc-950"><img src={f} className="w-full h-full object-cover" alt="" /><button onClick={() => setFotos(fotos.filter((_, x) => x !== i))} className="absolute top-0 right-0 bg-black/80 p-0.5"><X className="w-3 h-3 text-white" /></button></div>)}</div>}
+        <div className="relative">
+          <input type="file" accept="image/*" multiple onChange={e => agregarFotos(Array.from(e.target.files))} disabled={comprimiendo} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
+          <div className={`border border-dashed text-center py-3 text-xs ${comprimiendo ? 'border-red-600 bg-red-600/10' : 'border-zinc-700'}`}>{comprimiendo ? <Loader2 className="w-4 h-4 text-red-500 animate-spin mx-auto" /> : <><Plus className="w-4 h-4 inline mr-1" /> Agregar foto</>}</div>
+        </div>
+      </div>
+
+      <div><Label>Nota (opcional)</Label><Input value={nota} onChange={v => setNota(v)} placeholder="Aplica a todo el lote" /></div>
+
+      <BotonPrincipal disabled={!lineas.length || guardando} onClick={guardar}>{guardando ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : `Guardar lote (${lineas.length})`}</BotonPrincipal>
     </div>
   );
 }

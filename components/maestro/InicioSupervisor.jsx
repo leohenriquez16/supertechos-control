@@ -51,7 +51,8 @@ export default function InicioSupervisor({ usuario, data, onIrAReportar, onVerPr
   const refrescar = async () => { await Promise.all([cargar({ silent: true }), onRecargar?.()]); };
 
   const hoyLocal = (() => { const d = new Date(); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; })();
-  const citasHoy = useMemo(() => levs.filter(l => (l.fecha_visita_programada || '').slice(0, 10) === hoyLocal), [levs, hoyLocal]);
+  // "Cualquier día (hora laboral)" siempre disponible; el resto, si su fecha es hoy.
+  const citasHoy = useMemo(() => levs.filter(l => l.tipo_cita === 'cualquier_dia' || (l.fecha_visita_programada || '').slice(0, 10) === hoyLocal), [levs, hoyLocal]);
 
   // Clima: se abre automático cada día desde las 7am; si lo cierras, no reaparece hasta el día siguiente.
   const [climaVisible, setClimaVisible] = useState(false);

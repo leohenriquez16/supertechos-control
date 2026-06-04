@@ -46,6 +46,8 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
   const [generalData, setGeneralData] = useState({});
   const [errorMsg, setErrorMsg] = useState(null);
   const [guardando, setGuardando] = useState(false);
+  // v8.25.30: estado de guardado para el indicador + respaldo local (A+B).
+  const [estadoGuardado, setEstadoGuardado] = useState('guardado'); // 'guardado' | 'guardando' | 'local'
   // v8.19.52: validación de ubicación en sitio al abrir el levantamiento.
   const [gps, setGps] = useState({ estado: 'idle' }); // idle|cargando|ok|sin_referencia|lejos|error
   // v8.19.53: check-in pide la foto de fachada de una vez (con opción de diferir).
@@ -65,6 +67,21 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
     document.addEventListener('visibilitychange', onVis);
     return () => { document.removeEventListener('visibilitychange', onVis); try { lock?.release?.(); } catch {} };
   }, []);
+
+  // v8.25.30: al volver la conexión, re-sincroniza al servidor lo que quedó guardado en el equipo.
+  useEffect(() => {
+    const onOnline = async () => {
+      if (!visit) return;
+      setEstadoGuardado('guardando');
+      try {
+        await actualizarVisita(visit.id, { general_data: generalData });
+        for (const a of areas) { try { await actualizarArea(a.id, { data: a.data, gross_area_m2: a.gross_area_m2 }); } catch (e) {} }
+        setEstadoGuardado('guardado');
+      } catch (e) { setEstadoGuardado('local'); }
+    };
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, [visit, generalData, areas]);
 
   // 1. Cargar template + crear/recuperar visita
   useEffect(() => {
@@ -89,9 +106,34 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
         }
         if (cancelado) return;
         setVisit(v);
-        setGeneralData(v.general_data || {});
-        setAreas(areasExistentes);
+        // v8.25.30: recuperar respaldo local si existe (lo que no alcanzó a guardarse por
+        // batería/cierre/sin señal). El draft local es siempre >= servidor, así que prevalece.
+        let gdInicial = v.general_data || {};
+        let areasIniciales = areasExistentes;
+        let huboDraft = false;
+        try {
+          const raw = localStorage.getItem('survey_draft_' + v.id);
+          if (raw) {
+            const d = JSON.parse(raw);
+            gdInicial = { ...gdInicial, ...(d.general_data || {}) };
+            const draftAreas = d.areas || [];
+            areasIniciales = areasExistentes.map(a => {
+              const da = draftAreas.find(x => x.id === a.id);
+              return da ? { ...a, name: da.name || a.name, data: { ...(a.data || {}), ...(da.data || {}) }, gross_area_m2: da.gross_area_m2 ?? a.gross_area_m2 } : a;
+            });
+            huboDraft = true;
+          }
+        } catch (e) {}
+        setGeneralData(gdInicial);
+        setAreas(areasIniciales);
         setErrorMsg(null);
+        // Re-sincronizar al servidor lo recuperado del respaldo (best-effort).
+        if (huboDraft) {
+          (async () => {
+            try { await actualizarVisita(v.id, { general_data: gdInicial }); } catch (e) {}
+            for (const a of areasIniciales) { try { await actualizarArea(a.id, { data: a.data, gross_area_m2: a.gross_area_m2 }); } catch (e) {} }
+          })();
+        }
 
         // v8.19.52: validar ubicación EN SITIO al abrir (no bloquea el form).
         // Captura el GPS del técnico, lo guarda en la visita y lo compara con la
@@ -133,19 +175,34 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
   // v8.19.81: [Fase 2] completitud en vivo (campos obligatorios + mínimos de fotos).
   const completitud = useMemo(() => template ? calcularCompletitud(template, generalData, areas) : { pct: 0, req: 0, ok: 0, faltantes: [] }, [template, generalData, areas]);
 
+  // v8.25.30: respaldo local INMEDIATO (sobrevive cierre de ventana / batería / sin señal).
+  const escribirDraft = (gd, ars) => {
+    if (!visit) return;
+    try {
+      localStorage.setItem('survey_draft_' + visit.id, JSON.stringify({
+        general_data: gd,
+        areas: (ars || []).map(a => ({ id: a.id, block_id: a.block_id, name: a.name, data: a.data, gross_area_m2: a.gross_area_m2, similar_to_area_id: a.similar_to_area_id })),
+      }));
+    } catch (e) {}
+  };
+  const borrarDraft = () => { if (visit) { try { localStorage.removeItem('survey_draft_' + visit.id); } catch (e) {} } };
+
   // Guardado de general_data (al cambiar)
   const guardarGeneralData = useCallback(async (nuevo) => {
     if (!visit) return;
     setGeneralData(nuevo);
+    escribirDraft(nuevo, areas);       // respaldo local primero (nunca falla)
     setGuardando(true);
+    setEstadoGuardado('guardando');
     try {
       await actualizarVisita(visit.id, { general_data: nuevo });
+      setEstadoGuardado('guardado');
     } catch (e) {
-      setErrorMsg(e?.message || String(e));
+      setEstadoGuardado('local');      // quedó a salvo en el equipo; se re-sincroniza al volver la señal
     } finally {
       setGuardando(false);
     }
-  }, [visit]);
+  }, [visit, areas]);
 
   // Agregar nueva área a un bloque repetible. El nombre queda vacío
   // para que el levantador lo escriba (ej. "Fachada norte", "Cubierta principal").
@@ -194,11 +251,16 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
     // v8.24.15: calcular el m² del área desde las tablas de medidas y guardarlo en
     // la columna gross_area_m2 (antes solo quedaba en data → el resumen mostraba 0).
     const gross = calcularGrossArea(area, data);
-    setAreas(prev => prev.map(a => (a.id === areaId ? { ...a, data, gross_area_m2: gross } : a)));
+    const nuevasAreas = areas.map(a => (a.id === areaId ? { ...a, data, gross_area_m2: gross } : a));
+    setAreas(nuevasAreas);
+    escribirDraft(generalData, nuevasAreas);   // respaldo local primero (nunca falla)
+    setEstadoGuardado('guardando');
     try {
       await actualizarArea(areaId, gross != null ? { data, gross_area_m2: gross } : { data });
+      setEstadoGuardado('guardado');
     } catch (e) {
       console.warn('No se pudo guardar campo de area:', e?.message);
+      setEstadoGuardado('local');
     }
   };
 
@@ -251,6 +313,7 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
       try { await setCompletitudProyecto(proyecto?.id, completitud.pct); } catch {}
       // v8.24.18: si se cierra completo (no forzado), el levantamiento pasa a "Realizado".
       if (!forzar) { try { await finalizarLevantamientoSurvey(proyecto?.id); } catch {} }
+      borrarDraft(); // v8.25.30: ya quedó en el servidor; limpiamos el respaldo local
       onCompletado?.(forzar ? 'cerrado' : 'finalizado');
     } catch (e) {
       setErrorMsg(e?.message || String(e));
@@ -316,10 +379,13 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
               <div className="font-black text-sm truncate">{site.name}</div>
             </div>
             <div className="flex items-center gap-2">
-              {guardando && (
-                <span className="text-[10px] text-zinc-500 flex items-center gap-1">
-                  <Loader2 className="w-3 h-3 animate-spin" /> guardando
-                </span>
+              {/* v8.25.30: indicador de guardado (A+B) */}
+              {estadoGuardado === 'guardando' ? (
+                <span className="text-[10px] font-bold text-zinc-400 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Guardando…</span>
+              ) : estadoGuardado === 'local' ? (
+                <span className="text-[10px] font-bold text-amber-400 flex items-center gap-1" title="Sin conexión: tus datos están guardados en este equipo y se subirán al volver la señal.">⚠ Guardado en el equipo</span>
+              ) : (
+                <span className="text-[10px] font-bold text-green-400 flex items-center gap-1"><Check className="w-3 h-3" /> Guardado</span>
               )}
               <div className="hidden sm:flex items-center gap-2" title={`${completitud.ok}/${completitud.req} obligatorios`}>
                 <div className="w-24 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
@@ -644,9 +710,11 @@ function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, suppor
       {sinNombre && (
         <div className="px-3 py-1.5 bg-amber-900/10 border-l-2 border-amber-600 space-y-1.5">
           <div className="text-[10px] text-amber-400">Escribe un nombre o elige uno rápido:</div>
-          {(bloque.name_presets?.length ? [...bloque.name_presets, `Sección ${area.area_number}`] : [`Sección ${area.area_number}`]).map(p => (
-            <button key={p} type="button" onClick={() => onRenombrar(p)} className="mr-1.5 mb-1 px-2 py-0.5 rounded-card text-[11px] font-bold border border-zinc-700 bg-zinc-900 text-zinc-200 hover:border-red-600">{p}</button>
-          ))}
+          <div className="flex flex-wrap gap-2">
+            {(bloque.name_presets?.length ? [...bloque.name_presets, `Sección ${area.area_number}`] : [`Sección ${area.area_number}`]).map(p => (
+              <button key={p} type="button" onClick={() => onRenombrar(p)} className="px-4 py-2.5 rounded-card text-sm font-bold border-2 border-zinc-700 bg-zinc-900 text-zinc-200 hover:border-red-600">{p}</button>
+            ))}
+          </div>
         </div>
       )}
 
@@ -657,27 +725,37 @@ function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, suppor
           {tiposArea.length > 1 && (
             <div className="border-2 border-zinc-800 bg-zinc-900/50 p-3">
               <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-300 mb-1.5">{tipoLabel} <span className="text-red-500">*</span></div>
-              <div className="flex flex-wrap gap-1.5">
+              <div className="flex flex-wrap gap-2">
                 {tiposArea.map(t => {
                   const activo = (area.data?._tipo || '') === t.line;
                   return (
                     <button
                       key={t.line}
                       onClick={() => onCambioCampo('_tipo', t.line)}
-                      className={`px-2.5 py-1.5 rounded text-[11px] font-bold border ${activo ? 'border-red-600 bg-red-900/30 text-white' : 'border-zinc-700 bg-zinc-900 text-zinc-400 hover:border-zinc-600'}`}
+                      className={`px-4 py-2.5 rounded-card text-sm font-bold border-2 ${activo ? 'border-red-600 bg-red-900/30 text-white' : 'border-zinc-700 bg-zinc-900 text-zinc-300 hover:border-red-600'}`}
                     >
                       {t.label}
-                      {activo && <Check className="w-3 h-3 inline ml-1 -mt-0.5 text-red-400" />}
+                      {activo && <Check className="w-3.5 h-3.5 inline ml-1 -mt-0.5 text-red-400" />}
                     </button>
                   );
                 })}
+                {/* v8.25.27: opción "Otro" con teclado */}
+                {!tiposArea.some(t => t.line === 'other') && (
+                  <button
+                    onClick={() => onCambioCampo('_tipo', 'other')}
+                    className={`px-4 py-2.5 rounded-card text-sm font-bold border-2 ${area.data?._tipo === 'other' ? 'border-red-600 bg-red-900/30 text-white' : 'border-zinc-700 bg-zinc-900 text-zinc-300 hover:border-red-600'}`}
+                  >
+                    Otro…
+                  </button>
+                )}
               </div>
               {area.data?._tipo === 'other' && (
                 <input
+                  autoFocus
                   value={area.data?._tipo_otro || ''}
                   onChange={e => onCambioCampo('_tipo_otro', e.target.value)}
-                  placeholder="Describe el tipo / superficie (no convencional)"
-                  className="mt-2 w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-2 py-1.5 text-xs text-white"
+                  placeholder="Describe el tipo / superficie"
+                  className="mt-2 w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2.5 text-sm text-white"
                 />
               )}
               {!area.data?._tipo && <div className="text-[10px] text-amber-400 mt-1.5">Elige el {tipoLabel.toLowerCase()} de esta área.</div>}
@@ -739,27 +817,42 @@ function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, suppor
                 context={{ visitId, areaId: area.id, siteLat, siteLng }}
               />
             );
-            const esenciales = camposVisibles.filter(f => !f.avanzado);
-            const avanzados = camposVisibles.filter(f => f.avanzado);
+            // v8.25.27: desagües y antepechos SIEMPRE visibles (no escondidos en "Más detalles").
+            const esExtra = f => /desag[uü]e|antepecho/i.test(((f.id || '') + ' ' + (f.label || '')));
+            // v8.25.28: el mapa (marcar/dibujar área) va al final, antes de "agregar otra área".
+            const esMapa = f => f.type === 'map_point' || f.type === 'map_polygon';
+            let esenciales = camposVisibles.filter(f => (!f.avanzado || esExtra(f)) && !esMapa(f));
+            const avanzados = camposVisibles.filter(f => f.avanzado && !esExtra(f) && !esMapa(f));
+            const mapas = camposVisibles.filter(esMapa);
+            // v8.25.29: el orden de antepecho/condición se maneja en el template (quedan juntos).
+            // v8.25.31: "Más detalles" va justo debajo de penetraciones; el resto de esenciales después.
+            const idxPen = esenciales.findIndex(f => /penetra/i.test(((f.id || '') + ' ' + (f.label || ''))));
+            const esAntes = idxPen >= 0 ? esenciales.slice(0, idxPen + 1) : esenciales;
+            const esDespues = idxPen >= 0 ? esenciales.slice(idxPen + 1) : [];
+            const bloqueDetalles = avanzados.length > 0 && (
+              <div className="border-2 border-zinc-800 rounded-card">
+                <button type="button" onClick={() => setVerDetalles(v => !v)} className="w-full flex items-center justify-between px-4 py-3.5 text-sm font-bold uppercase tracking-wider text-zinc-200 hover:text-white">
+                  <span>{verDetalles ? 'Ocultar detalles' : 'Más detalles'} ({avanzados.length})</span>
+                  {verDetalles ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                </button>
+                {verDetalles && <div className="px-3 pb-3 space-y-3 border-t border-zinc-800">{avanzados.map(renderCampo)}</div>}
+              </div>
+            );
             return (
               <>
-                {esenciales.map(renderCampo)}
-                {avanzados.length > 0 && (
-                  <div className="border-2 border-zinc-800 rounded-card">
-                    <button type="button" onClick={() => setVerDetalles(v => !v)} className="w-full flex items-center justify-between px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-zinc-300 hover:text-white">
-                      <span>{verDetalles ? 'Ocultar detalles' : 'Más detalles'} ({avanzados.length})</span>
-                      {verDetalles ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                    </button>
-                    {verDetalles && <div className="px-3 pb-3 space-y-3 border-t border-zinc-800">{avanzados.map(renderCampo)}</div>}
-                  </div>
-                )}
+                {esAntes.map(renderCampo)}
+                {bloqueDetalles}
+                {esDespues.map(renderCampo)}
+                {/* v8.25.28: mapa al final (más intuitivo: marcar/dibujar justo antes de agregar otra área) */}
+                {mapas.map(renderCampo)}
               </>
             );
           })()}
 
           {/* v8.23.1/8.23.5: guardar y colapsar el área; o guardar y agregar otra (datos ya autoguardados) */}
-          <div className="pt-1 flex gap-2">
-            <button type="button" onClick={() => setColapsado(true)} className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-xs font-bold uppercase py-2.5 rounded-card flex items-center justify-center gap-1">
+          {/* v8.25.27: separado de "Más detalles" para no presionarlo por error */}
+          <div className="mt-5 pt-4 border-t border-zinc-800 flex gap-2">
+            <button type="button" onClick={() => setColapsado(true)} className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-xs font-bold uppercase py-3 rounded-card flex items-center justify-center gap-1">
               <Check className="w-3.5 h-3.5" /> Guardar y cerrar
             </button>
             {onAgregarSiguiente && (

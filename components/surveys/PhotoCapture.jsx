@@ -161,15 +161,14 @@ export default function PhotoCapture({ visitId, areaId = null, field, value, onC
           onDrop={(e) => { e.preventDefault(); setArrastrando(false); handleArchivos(e.dataTransfer.files); }}
           className={`w-full bg-zinc-900 border-2 border-dashed px-4 py-3 text-center transition-colors ${arrastrando ? 'border-red-500 bg-red-600/10' : 'border-zinc-700'} ${subiendo ? 'opacity-60' : ''}`}
         >
-          <div className="flex items-center justify-center gap-4 text-sm">
-            <label className={`flex items-center gap-1.5 font-bold text-zinc-300 hover:text-white ${subiendo ? 'cursor-wait' : 'cursor-pointer'}`}>
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            <label className={`flex flex-col items-center justify-center gap-1.5 font-bold text-zinc-200 bg-zinc-950 border-2 border-zinc-700 hover:border-red-600 rounded-card py-5 ${subiendo ? 'cursor-wait' : 'cursor-pointer'}`}>
               <input type="file" accept="image/*" capture="environment" multiple disabled={subiendo} onChange={(e) => handleArchivos(e.target.files)} className="hidden" />
-              <Camera className="w-4 h-4 text-red-500" /> Cámara
+              <Camera className="w-7 h-7 text-red-500" /> Cámara
             </label>
-            <span className="text-zinc-600">·</span>
-            <label className={`flex items-center gap-1.5 font-bold text-zinc-300 hover:text-white ${subiendo ? 'cursor-wait' : 'cursor-pointer'}`}>
+            <label className={`flex flex-col items-center justify-center gap-1.5 font-bold text-zinc-200 bg-zinc-950 border-2 border-zinc-700 hover:border-blue-500 rounded-card py-5 ${subiendo ? 'cursor-wait' : 'cursor-pointer'}`}>
               <input ref={inputRef} type="file" accept="image/*" multiple disabled={subiendo} onChange={(e) => handleArchivos(e.target.files)} className="hidden" />
-              <ImageIcon className="w-4 h-4 text-blue-400" /> Galería / archivo
+              <ImageIcon className="w-7 h-7 text-blue-400" /> Galería / archivo
             </label>
           </div>
           <div className="text-[10px] text-zinc-500 mt-1.5 flex items-center justify-center gap-1">

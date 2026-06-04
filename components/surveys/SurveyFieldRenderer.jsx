@@ -25,11 +25,19 @@ import PhotoCapture from './PhotoCapture';
 import MapaPickerModal from '../common/MapaPickerModal';
 import MapaPoligonoModal from '../common/MapaPoligonoModal';
 
+// v8.25.28: ¿una opción es "Otro/Otros/Otra/Otras"? (para unificarla con el botón "Otro…").
+const esOpcionOtro = (v) => ['otro', 'otros', 'otra', 'otras'].includes(String(v || '').trim().toLowerCase());
+
 export default function SurveyFieldRenderer({ field, value, onChange, allValues = {}, context = {} }) {
+  // v8.25.27: estado para la opción "Otro" (campo de texto libre en selects).
+  const [otroAbierto, setOtroAbierto] = useState(false);
   // Soporte de show_if simple: "field_id == valor" o "field_id == true"
   if (field.show_if && !evaluarShowIf(field.show_if, allValues)) {
     return null;
   }
+  // v8.25.27: clase compartida para botones de opción (más grandes, fáciles de tocar).
+  const btnOpt = (activo) => `text-base px-5 py-3 border-2 rounded-card font-bold transition-colors ${activo ? 'bg-red-600 border-red-600 text-white' : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-red-600'}`;
+  const inputOtro = 'mt-2 w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2.5 text-sm text-white placeholder-zinc-600 rounded-card';
 
   const label = (
     <div className="flex items-center gap-1 mb-1">
@@ -39,29 +47,47 @@ export default function SurveyFieldRenderer({ field, value, onChange, allValues 
   );
 
   switch (field.type) {
-    case 'text':
+    case 'text': {
+      const presets = Array.isArray(field.presets) ? field.presets : [];
+      // v8.25.28: campos de texto numéricos (diámetro, espesor, altura…) abren el teclado numérico del iPad.
+      const numTexto = field.numeric || /espesor|di[aá]metro|altura|cantidad|longitud|edad|pendiente|temperatura|factor|grosor|pulg|cm\b|mm\b/i.test(((field.id || '') + ' ' + (field.label || '')));
+      // v8.25.27: con sugeridos → solo botones grandes + "Otro" que abre el campo.
+      if (presets.length > 0) {
+        const esOtroT = otroAbierto || (value && !presets.includes(value));
+        return (
+          <div>
+            {label}
+            <div className="flex flex-wrap gap-2">
+              {presets.map(p => {
+                const activo = !esOtroT && value === p;
+                return (
+                  <button key={p} type="button" onClick={() => { setOtroAbierto(false); onChange(activo ? '' : p); }} className={btnOpt(activo)}>
+                    {p}{field.unit ? ` ${field.unit}` : ''}
+                  </button>
+                );
+              })}
+              <button type="button" onClick={() => { setOtroAbierto(true); if (presets.includes(value)) onChange(''); }} className={btnOpt(esOtroT)}>Otro…</button>
+            </div>
+            {esOtroT && (
+              <input autoFocus type="text" inputMode={numTexto ? 'decimal' : undefined} value={presets.includes(value) ? '' : (value || '')} onChange={e => onChange(e.target.value)} placeholder={field.placeholder || 'Escribe aquí…'} className={inputOtro} />
+            )}
+          </div>
+        );
+      }
       return (
         <div>
           {label}
           <input
             type="text"
-            inputMode={field.numeric ? 'decimal' : undefined}
+            inputMode={numTexto ? 'decimal' : undefined}
             value={value || ''}
             onChange={e => onChange(e.target.value)}
             placeholder={field.placeholder || ''}
-            className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-sm text-white"
+            className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2.5 text-sm text-white"
           />
-          {Array.isArray(field.presets) && field.presets.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mt-1.5">
-              <span className="text-[10px] text-zinc-500 uppercase tracking-wider self-center">Sugeridos:</span>
-              {field.presets.map(p => (
-                <button key={p} type="button" onClick={() => onChange(p)}
-                  className={`text-xs px-2.5 py-1.5 border-2 ${value === p ? 'bg-red-600 border-red-600 text-white' : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-red-600'}`}>{p}</button>
-              ))}
-            </div>
-          )}
         </div>
       );
+    }
 
     case 'textarea':
       return (
@@ -84,6 +110,7 @@ export default function SurveyFieldRenderer({ field, value, onChange, allValues 
           <div className="flex items-baseline gap-2">
             <input
               type="number"
+              inputMode="decimal"
               value={value ?? ''}
               onChange={e => onChange(e.target.value === '' ? null : Number(e.target.value))}
               step={field.step || 'any'}
@@ -98,87 +125,81 @@ export default function SurveyFieldRenderer({ field, value, onChange, allValues 
       );
 
     case 'single_select': {
-      const opts = field.options || [];
-      const renderAsDropdown = opts.length > 5;
-      if (renderAsDropdown) {
-        return (
-          <div>
-            {label}
-            <select
-              value={value || ''}
-              onChange={e => onChange(e.target.value || null)}
-              className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-sm text-white"
-            >
-              <option value="">— Selecciona —</option>
-              {opts.map(opt => {
-                const v = typeof opt === 'string' ? opt : opt.value;
-                const l = typeof opt === 'string' ? opt : (opt.label || opt.value);
-                return <option key={v} value={v}>{l}</option>;
-              })}
-            </select>
-          </div>
-        );
-      }
+      // v8.25.27/28: siempre botones grandes (sin dropdown) + un único "Otro" con texto libre.
+      // Si el template ya trae una opción "Otro/Otros", se unifica con el botón (no se duplica).
+      const optsRaw = field.options || [];
+      const opts = optsRaw.filter(opt => !esOpcionOtro(typeof opt === 'string' ? opt : opt.value));
+      const tieneOtroOpt = opts.length !== optsRaw.length;
+      const optVals = opts.map(opt => (typeof opt === 'string' ? opt : opt.value));
+      const permiteOtro = field.allow_other !== false || tieneOtroOpt;
+      const esOtro = permiteOtro && (otroAbierto || (value != null && value !== '' && !optVals.includes(value)));
       return (
         <div>
           {label}
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-2">
             {opts.map(opt => {
               const v = typeof opt === 'string' ? opt : opt.value;
               const l = typeof opt === 'string' ? opt : (opt.label || opt.value);
-              const activo = value === v;
+              const activo = !esOtro && value === v;
               return (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => onChange(activo ? null : v)}
-                  className={`text-xs px-3 py-1.5 border-2 transition-colors ${
-                    activo
-                      ? 'bg-red-600 border-red-600 text-white'
-                      : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-red-600'
-                  }`}
-                >
+                <button key={v} type="button" onClick={() => { setOtroAbierto(false); onChange(activo ? null : v); }} className={btnOpt(activo)}>
                   {l}
                 </button>
               );
             })}
+            {permiteOtro && (
+              <button type="button" onClick={() => { setOtroAbierto(true); if (optVals.includes(value)) onChange(''); }} className={btnOpt(esOtro)}>
+                Otro…
+              </button>
+            )}
           </div>
+          {esOtro && (
+            <input autoFocus value={optVals.includes(value) ? '' : (value || '')} onChange={e => onChange(e.target.value)} placeholder="Escribe aquí…" className={inputOtro} />
+          )}
         </div>
       );
     }
 
     case 'multi_select': {
       // v8.22.9: las opciones pueden tener show_if (ej. "Óxido" solo si metálico).
-      const opts = (field.options || []).filter(opt => typeof opt === 'string' || !opt.show_if || evaluarShowIf(opt.show_if, allValues));
+      // v8.25.28: se excluye cualquier opción "Otro/Otros" (se unifica con el botón "Otras…").
+      const optsRaw = (field.options || []).filter(opt => typeof opt === 'string' || !opt.show_if || evaluarShowIf(opt.show_if, allValues));
+      const opts = optsRaw.filter(opt => !esOpcionOtro(typeof opt === 'string' ? opt : opt.value));
+      const tieneOtroOptM = opts.length !== optsRaw.length;
       const current = Array.isArray(value) ? value : [];
       const toggle = (v) => {
         if (current.includes(v)) onChange(current.filter(x => x !== v));
         else onChange([...current, v]);
       };
+      // v8.25.27: botones grandes + "Otras…" con texto libre (ej. otras patologías).
+      const optValsM = opts.map(opt => (typeof opt === 'string' ? opt : opt.value));
+      const permiteOtroM = field.allow_other !== false || tieneOtroOptM;
+      const custom = current.filter(v => !optValsM.includes(v));
+      const otrasActivo = permiteOtroM && (otroAbierto || custom.length > 0);
+      const setCustom = (txt) => onChange([...current.filter(v => optValsM.includes(v)), ...(txt ? [txt] : [])]);
       return (
         <div>
           {label}
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-2">
             {opts.map(opt => {
               const v = typeof opt === 'string' ? opt : opt.value;
               const l = typeof opt === 'string' ? opt : (opt.label || opt.value);
               const activo = current.includes(v);
               return (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => toggle(v)}
-                  className={`text-xs px-3 py-1.5 border-2 transition-colors ${
-                    activo
-                      ? 'bg-red-600 border-red-600 text-white'
-                      : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-red-600'
-                  }`}
-                >
+                <button key={v} type="button" onClick={() => toggle(v)} className={btnOpt(activo)}>
                   {l}
                 </button>
               );
             })}
+            {permiteOtroM && (
+              <button type="button" onClick={() => { if (custom.length > 0) { setCustom(''); setOtroAbierto(false); } else { setOtroAbierto(o => !o); } }} className={btnOpt(otrasActivo)}>
+                Otras…
+              </button>
+            )}
           </div>
+          {otrasActivo && (
+            <input autoFocus value={custom[0] || ''} onChange={e => setCustom(e.target.value)} placeholder="Escribe otra(s) aquí…" className={inputOtro} />
+          )}
         </div>
       );
     }
@@ -606,8 +627,13 @@ function MeasurementTableField({ field, value, onChange }) {
     return row;
   };
   const setCampo = (idx, colId, val) => {
-    const nuevo = [...filas];
-    nuevo[idx] = recalc({ ...nuevo[idx], [colId]: val });
+    const nuevo = filas.length ? [...filas] : [];
+    nuevo[idx] = recalc({ ...(nuevo[idx] || { id: 'm_' + Date.now() + Math.random().toString(36).slice(2, 5) }), [colId]: val });
+    // v8.25.27: al escribir en la última fila se abre otra automáticamente (sin botón).
+    const llena = val != null && String(val).trim() !== '';
+    if (idx === nuevo.length - 1 && llena) {
+      nuevo.push({ id: 'm_' + Date.now() + Math.random().toString(36).slice(2, 5) + 'b' });
+    }
     onChange(nuevo);
   };
   const toggleRestar = (idx) => {
@@ -617,6 +643,8 @@ function MeasurementTableField({ field, value, onChange }) {
   };
 
   const total = filas.reduce((acc, f) => acc + (Number(f.area_m2) || 0), 0);
+  // v8.25.27: siempre mostrar al menos una fila para empezar a escribir directo.
+  const filasView = filas.length ? filas : [{ id: '_inicial' }];
 
   return (
     <div>
@@ -642,25 +670,31 @@ function MeasurementTableField({ field, value, onChange }) {
             </tr>
           </thead>
           <tbody>
-            {filas.length === 0 && (
-              <tr>
-                <td colSpan={columns.length + 2} className="text-center text-zinc-500 py-3 text-[11px]">
-                  Sin filas. Agrega una con el botón abajo.
-                </td>
-              </tr>
-            )}
-            {filas.map((f, idx) => (
+            {filasView.map((f, idx) => (
               <tr key={f.id || idx} className={`border-b border-zinc-800/50 ${f.restar ? 'bg-amber-900/10' : ''}`}>
                 {columns.map(c => (
                   <td key={c.id} className="px-1 py-1">
-                    <input
-                      type={c.type === 'number' ? 'number' : 'text'}
-                      inputMode={c.type === 'number' ? 'decimal' : undefined}
-                      step="any"
-                      value={f[c.id] ?? ''}
-                      onChange={e => setCampo(idx, c.id, c.type === 'number' ? (e.target.value === '' ? null : Number(e.target.value)) : e.target.value)}
-                      className={`w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-2.5 py-3 text-white ${c.type === 'number' ? 'text-base font-bold text-center tabular-nums' : 'text-sm'}`}
-                    />
+                    {c.type === 'number' ? (
+                      <div className="flex items-stretch gap-1">
+                        <input
+                          type="number" inputMode="decimal" step="any"
+                          value={f[c.id] ?? ''}
+                          onChange={e => setCampo(idx, c.id, e.target.value === '' ? null : Number(e.target.value))}
+                          className={`w-full bg-zinc-950 border-2 outline-none px-2 py-3 text-base font-bold text-center tabular-nums focus:border-red-600 ${Number(f[c.id]) < 0 ? 'border-amber-600 text-amber-300' : 'border-zinc-800 text-white'}`}
+                        />
+                        {/* v8.25.21: invertir signo (negativo = resta) — útil en iPad sin tecla "−" */}
+                        <button type="button" onClick={() => setCampo(idx, c.id, (f[c.id] == null || f[c.id] === '') ? null : -Number(f[c.id]))}
+                          title="Cambiar signo (negativo para restar)"
+                          className="px-2 rounded border-2 border-zinc-800 text-zinc-400 hover:text-amber-300 text-sm font-black shrink-0">±</button>
+                      </div>
+                    ) : (
+                      <input
+                        type="text"
+                        value={f[c.id] ?? ''}
+                        onChange={e => setCampo(idx, c.id, e.target.value)}
+                        className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-2.5 py-3 text-white text-sm"
+                      />
+                    )}
                   </td>
                 ))}
                 {autoCalcArea && (
@@ -782,6 +816,7 @@ function OpeningsTableField({ field, value, onChange }) {
                 <td className="px-1 py-1">
                   <input
                     type="number"
+                    inputMode="numeric"
                     value={f.cantidad ?? ''}
                     onChange={e => setCampo(idx, 'cantidad', e.target.value === '' ? null : Number(e.target.value))}
                     className="w-full bg-transparent border border-zinc-800 focus:border-red-600 outline-none px-2 py-1 text-xs text-white"
@@ -790,6 +825,7 @@ function OpeningsTableField({ field, value, onChange }) {
                 <td className="px-1 py-1">
                   <input
                     type="number"
+                    inputMode="decimal"
                     step="any"
                     value={f.ancho_m ?? ''}
                     onChange={e => setCampo(idx, 'ancho_m', e.target.value === '' ? null : Number(e.target.value))}
@@ -799,6 +835,7 @@ function OpeningsTableField({ field, value, onChange }) {
                 <td className="px-1 py-1">
                   <input
                     type="number"
+                    inputMode="decimal"
                     step="any"
                     value={f.alto_m ?? ''}
                     onChange={e => setCampo(idx, 'alto_m', e.target.value === '' ? null : Number(e.target.value))}

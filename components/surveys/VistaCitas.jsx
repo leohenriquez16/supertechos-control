@@ -32,7 +32,7 @@ function CitaCard({ l, onEditar, onConfirmarRapido }) {
       </div>
       <div className="flex flex-col gap-1 flex-shrink-0">
         <button onClick={() => onEditar(l)} className="px-3 py-1.5 rounded-card bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-black uppercase">Editar</button>
-        {!l.cita_confirmada && l.fecha_visita_programada && <button onClick={() => onConfirmarRapido(l)} className="px-3 py-1.5 rounded-card border border-green-700 text-green-300 text-[11px] font-bold uppercase">Confirmar</button>}
+        {!l.cita_confirmada && (l.fecha_visita_programada || l.tipo_cita === 'cualquier_dia') && <button onClick={() => onConfirmarRapido(l)} className="px-3 py-1.5 rounded-card border border-green-700 text-green-300 text-[11px] font-bold uppercase">Confirmar</button>}
       </div>
     </div>
   );
@@ -65,15 +65,19 @@ export default function VistaCitas({ usuario, onVolver, onRecargar }) {
   };
 
   const grupos = useMemo(() => {
-    const agendables = levs.filter(l => ETAPAS_AGENDABLES.includes(l.odoo_stage || 'New') || l.fecha_visita_programada);
-    const porConfirmar = agendables.filter(l => l.fecha_visita_programada && !l.cita_confirmada);
-    const sinAgendar = agendables.filter(l => !l.fecha_visita_programada);
-    const confirmadas = agendables.filter(l => l.fecha_visita_programada && l.cita_confirmada);
+    const agendables = levs.filter(l => ETAPAS_AGENDABLES.includes(l.odoo_stage || 'New') || l.fecha_visita_programada || l.tipo_cita === 'cualquier_dia');
+    const flexibles = agendables.filter(l => l.tipo_cita === 'cualquier_dia');
+    const resto = agendables.filter(l => l.tipo_cita !== 'cualquier_dia');
+    const porConfirmar = resto.filter(l => l.fecha_visita_programada && !l.cita_confirmada);
+    const sinAgendar = resto.filter(l => !l.fecha_visita_programada);
+    const confirmadas = resto.filter(l => l.fecha_visita_programada && l.cita_confirmada);
     const byFecha = (a, b) => (a.fecha_visita_programada || '').localeCompare(b.fecha_visita_programada || '');
+    const byNombre = (a, b) => (a.client_name || '').localeCompare(b.client_name || '');
     return {
       porConfirmar: porConfirmar.sort(byFecha),
-      sinAgendar: sinAgendar.sort((a, b) => (a.client_name || '').localeCompare(b.client_name || '')),
+      sinAgendar: sinAgendar.sort(byNombre),
       confirmadas: confirmadas.sort(byFecha),
+      flexibles: flexibles.sort(byNombre),
     };
   }, [levs]);
 
@@ -100,6 +104,7 @@ export default function VistaCitas({ usuario, onVolver, onRecargar }) {
       </div>
 
       <Seccion icon={AlertCircle} color="#f59e0b" titulo="Por confirmar" items={grupos.porConfirmar} rapido />
+      <Seccion icon={CalendarClock} color="#14b8a6" titulo="Cualquier día (siempre disponible)" items={grupos.flexibles} rapido />
       <Seccion icon={CalendarClock} color="#a1a1aa" titulo="Sin agendar" items={grupos.sinAgendar} />
       <Seccion icon={CheckCircle2} color="#22c55e" titulo="Confirmadas" items={grupos.confirmadas} />
 

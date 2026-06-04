@@ -178,10 +178,11 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto, onRec
     const cli = clientesData.find(c => c.id === site?.cliente_id) || clientesData.find(c => (c.nombre || '').trim().toLowerCase() === (p.client_name || '').trim().toLowerCase());
     const cts = contactosData.filter(c => c.clienteId === cli?.id);
     const ppal = cts.find(c => c.esPrincipal) || cts[0];
-    const contacto = ppal?.nombre || site?.contact_name || '';
-    const ws = ppal?.whatsapp || ppal?.telefono || site?.mobile_phone || '';
+    // v8.25.25: priorizar el contacto capturado EN el levantamiento (site), no el contacto por defecto del cliente.
+    const contacto = site?.contact_name || ppal?.nombre || '';
+    const ws = site?.mobile_phone || site?.office_phone || ppal?.whatsapp || ppal?.telefono || '';
     const email = ppal?.email || '';
-    const canal = ppal?.prefComunicacion || (ws ? 'ws' : email ? 'email' : null);
+    const canal = ws ? 'ws' : (ppal?.prefComunicacion || (email ? 'email' : null));
     return { cliente: p.client_name || cli?.nombre || '—', contacto, canal };
   };
   const tiempoEnEtapa = (p) => {
@@ -200,6 +201,7 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto, onRec
     const q = busqueda.toLowerCase().trim();
     return proyectos.filter(p => {
       if (esSup && !ETAPAS_SUP.includes(estadoDe(p))) return false; // supervisor: solo hasta "Realizado"
+      if (esSup && p.asignado_a_id !== usuario.id) return false; // v8.25.25: supervisor solo ve SUS levantamientos asignados
       if (q && !(
         (p.client_name || '').toLowerCase().includes(q) ||
         (p.name || '').toLowerCase().includes(q) ||

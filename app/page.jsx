@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed, Building2, Star, MessageCircle, Send, Search, Filter } from 'lucide-react';
+import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed, Building2, Star, MessageCircle, Send, Search, Filter, CloudRain } from 'lucide-react';
 import * as db from '../lib/db';
 import { leerArchivo, parseMateriales, parseSistemas, descargarPlantilla, comprimirImagen } from '../lib/imports';
 import { obtenerUbicacion, distanciaMetros, formatDistancia, abrirEnMapa } from '../lib/geo';
@@ -84,6 +84,9 @@ import ModuloSurveys from '../components/surveys/ModuloSurveys';
 import VistaGarantias from '../components/garantias/VistaGarantias';
 import ModuloReclamaciones from '../components/reclamaciones/ModuloReclamaciones';
 import VistaMisAsignaciones from '../components/maestro/VistaMisAsignaciones';
+import InicioSupervisor from '../components/maestro/InicioSupervisor';
+import ClimaWidget from '../components/maestro/ClimaWidget';
+import VistaCitas from '../components/surveys/VistaCitas';
 import VistaUbicaciones from '../components/ubicaciones/VistaUbicaciones';
 import CubicacionesProyecto from '../components/proyecto/CubicacionesProyecto';
 // v8.12: Caja Chica + Dieta
@@ -652,7 +655,7 @@ export default function App() {
             if (u) {
               setUsuario(u);
               db.setAuditContext({ usuarioId: u.id, usuarioNombre: u.nombre });
-              setVista(tieneRol(u, 'admin') ? 'dashboard' : 'misProyectos');
+              setVista(tieneRol(u, 'admin') ? 'dashboard' : tieneRol(u, 'supervisor') ? 'inicio' : 'misProyectos');
             }
           }
         } catch {}
@@ -701,7 +704,7 @@ export default function App() {
       db.registrarAcceso({ personaId: u.id, tipo: 'login.exitoso', geoDenegada: true, geoError: String(e?.message || e) });
     }
     if (!u.pinTemporal && u.onboardingCompletado) {
-      setVista(tieneRol(u, 'admin') ? 'dashboard' : 'misProyectos');
+      setVista(tieneRol(u, 'admin') ? 'dashboard' : tieneRol(u, 'supervisor') ? 'inicio' : 'misProyectos');
     }
     try { localStorage.setItem('supertechos_usuario_id', u.id); } catch {}
   }} />;
@@ -711,7 +714,7 @@ export default function App() {
   if (!usuario.onboardingCompletado) return <WizardOnboarding usuario={usuario} onListo={async (uActualizado) => {
     setUsuario(uActualizado);
     await recargar();
-    setVista(tieneRol(uActualizado, 'admin') ? 'dashboard' : 'misProyectos');
+    setVista(tieneRol(uActualizado, 'admin') ? 'dashboard' : tieneRol(uActualizado, 'supervisor') ? 'inicio' : 'misProyectos');
   }} />;
 
   const esAdmin = tieneRol(usuario, 'admin');
@@ -721,6 +724,7 @@ export default function App() {
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, vista: 'dashboard' },
       { id: 'proyectos', label: 'Proyectos', icon: Briefcase, vista: 'proyectos', esProyectos: true },
       { id: 'surveys', label: 'Levantamientos', icon: MapPin, vista: 'surveys' },
+      { id: 'citas', label: 'Citas', icon: Calendar, vista: 'citas' },
       { id: 'reclamaciones', label: 'Reclamaciones', icon: AlertTriangle, vista: 'reclamaciones' },
       { id: 'planificacion', label: 'Planificación', icon: Calendar, vista: 'planificacion' },
       { id: 'tareas', label: 'Tareas', icon: ClipboardList, vista: 'tareas', badge: tareas.length },
@@ -756,12 +760,16 @@ export default function App() {
     ]},
   ] : [
     { seccion: 'MIS PROYECTOS', items: [
+      // v8.25.23: el supervisor inicia en el Home (resumen del día); los demás en Proyectos.
+      ...(tieneRol(usuario, 'supervisor') ? [{ id: 'inicio', label: 'Inicio', icon: LayoutDashboard, vista: 'inicio' }] : []),
       { id: 'misProyectos', label: 'Proyectos', icon: Briefcase, vista: 'misProyectos' },
+      { id: 'clima', label: 'Clima', icon: CloudRain, vista: 'clima' },
       // v8.19.72: vista unificada del maestro (proyectos + levantamientos + reclamaciones + mapa)
       ...((tieneRol(usuario, 'maestro') || tieneRol(usuario, 'supervisor')) ? [{ id: 'misAsignaciones', label: 'Mis asignaciones', icon: MapPin, vista: 'misAsignaciones' }] : []),
       // v8.25.7: el supervisor accede a los módulos completos de Levantamientos y Reclamaciones (como el admin)
       ...(tieneRol(usuario, 'supervisor') ? [
         { id: 'surveys', label: 'Levantamientos', icon: MapPin, vista: 'surveys' },
+        { id: 'citas', label: 'Citas', icon: Calendar, vista: 'citas' },
         { id: 'reclamaciones', label: 'Reclamaciones', icon: AlertTriangle, vista: 'reclamaciones' },
       ] : []),
       ...(puede(usuario, data.permisos, 'planificacion', 'ver') ? [{ id: 'planificacion', label: 'Planificación', icon: Calendar, vista: 'planificacion' }] : []),
@@ -1038,7 +1046,7 @@ export default function App() {
         })} />}
         {vista === 'proyecto' && proyectoActivo && (
           <DetalleProyecto usuario={usuario} proyecto={data.proyectos.find(p => p.id === proyectoActivo.id) || proyectoActivo} data={data} tab={tab} setTab={setTab}
-            onVolver={() => { if (pilaNav.length > 0) volverAtras(); else { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); } }}
+            onVolver={() => { setPilaNav([]); setVista(esAdmin ? 'proyectos' : 'misProyectos'); }}
             onActualizarProyecto={(pa) => withSync(() => db.actualizarProyecto(pa))}
             onRegistrarEnvio={(e) => withSync(() => db.crearEnvio({ ...e, id: 'e_' + Date.now() + Math.random() }))}
             onRegistrarEnviosLote={(es) => withSync(() => db.crearEnviosLote(es.map(e => ({ ...e, id: 'e_' + Date.now() + Math.random() }))))}
@@ -1161,13 +1169,16 @@ export default function App() {
           />
         )}
         {!esAdmin && vista === 'misProyectos' && <MisProyectos usuario={usuario} data={data} onIrAReportar={(p) => { setProyectoActivo(p); setVista('reportar'); }} onVerDetalle={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
-        {!esAdmin && vista === 'misAsignaciones' && <VistaMisAsignaciones usuario={usuario} data={data} onRecargar={recargar} onVolver={() => setVista('misProyectos')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
+        {!esAdmin && vista === 'inicio' && <InicioSupervisor usuario={usuario} data={data} onRecargar={recargar} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} onIrAReportar={(p) => { setProyectoActivo(p); setVista('reportar'); }} onIrAAsignaciones={() => setVista('misAsignaciones')} onIrAProyectos={() => setVista('misProyectos')} />}
+        {!esAdmin && vista === 'clima' && <div className="max-w-md mx-auto space-y-4"><button onClick={() => setVista(tieneRol(usuario, 'supervisor') ? 'inicio' : 'misProyectos')} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button><h1 className="text-2xl font-black tracking-tight">Clima</h1><ClimaWidget /></div>}
+        {vista === 'citas' && <VistaCitas usuario={usuario} onVolver={() => setVista(esAdmin ? 'dashboard' : tieneRol(usuario, 'supervisor') ? 'inicio' : 'misProyectos')} onRecargar={recargar} />}
+        {!esAdmin && vista === 'misAsignaciones' && <VistaMisAsignaciones usuario={usuario} data={data} onRecargar={recargar} onVolver={() => setVista('inicio')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'reportar' && proyectoActivo && (() => {
           // v8.9.11: Bifurcación rápido vs manual según flag de persona
           const audioHabilitado = !!usuario?.reporteAudioHabilitado;
           const showChooser = audioHabilitado && !modoReporte;
           const useRapido = audioHabilitado && modoReporte === 'rapido';
-          const salir = () => { setModoReporte(null); setModoManual('simple'); if (esAdmin) { setVista('proyecto'); setTab('avance'); } else setVista('misProyectos'); };
+          const salir = () => { setModoReporte(null); setModoManual('simple'); if (esAdmin) { setVista('proyecto'); setTab('avance'); } else setVista(tieneRol(usuario, 'supervisor') ? 'inicio' : 'misProyectos'); };
 
           if (showChooser) {
             return (

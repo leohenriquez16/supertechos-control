@@ -14,7 +14,8 @@ import { ArrowLeft, Building, MapPin, Calendar, Clock, FileText, AlertTriangle, 
 import QuickActions from './QuickActions';
 import DynamicSurveyForm from './DynamicSurveyForm';
 import SatelitalAreas from './SatelitalAreas';
-import { SITE_STATUS, listarVisitasDeSite, listarAreasDeVisita, obtenerTemplateSurvey, asignarPersonaSurvey, ESCALERA, setRequiereEscaleraSurvey, eliminarProyectoSurvey, solicitarEliminacionSurvey, cancelarSolicitudEliminacionSurvey, listarTemplatesSurveys, actualizarTipoProyectoSurvey, eliminarVisita, listarFotosVisita, getSignedUrlFotoSurvey, finalizarLevantamientoSurvey, reabrirLevantamientoSurvey, setEtapaSurvey, ETAPAS_LEVANTAMIENTO, SERVICE_LINES, FAMILIAS_SERVICIO, familiaDeServiceLine } from '../../lib/surveys';
+import { SITE_STATUS, listarVisitasDeSite, listarAreasDeVisita, obtenerTemplateSurvey, asignarPersonaSurvey, ESCALERA, setRequiereEscaleraSurvey, eliminarProyectoSurvey, solicitarEliminacionSurvey, cancelarSolicitudEliminacionSurvey, listarTemplatesSurveys, actualizarTipoProyectoSurvey, eliminarVisita, listarFotosVisita, getSignedUrlFotoSurvey, finalizarLevantamientoSurvey, reabrirLevantamientoSurvey, setEtapaSurvey, ETAPAS_LEVANTAMIENTO, SERVICE_LINES, FAMILIAS_SERVICIO, familiaDeServiceLine, TIPO_CITA, citaTextoHora } from '../../lib/surveys';
+import EditorCita from './EditorCita';
 import { imprimirLevantamiento } from './imprimirLevantamiento';
 import { imprimirInformeFotografico } from './imprimirInformeFotografico';
 import ChatterPanel from '../common/ChatterPanel';
@@ -62,6 +63,15 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
     } catch (e) { alert('Error: ' + (e.message || e)); }
     setGuardandoAsig(false);
   };
+  // v8.25.24: cita (fecha/hora/tipo/confirmación) — editable desde el detalle.
+  const [cita, setCita] = useState({
+    fecha_visita_programada: proyecto?.fecha_visita_programada || null,
+    hora_visita: proyecto?.hora_visita || null,
+    tipo_cita: proyecto?.tipo_cita || null,
+    cita_restriccion: proyecto?.cita_restriccion || null,
+    cita_confirmada: !!proyecto?.cita_confirmada,
+  });
+  const [editarCita, setEditarCita] = useState(false);
   // v8.19.72: requerimiento de escalera (clave para el maestro).
   const [escalera, setEscalera] = useState(proyecto?.requiere_escalera || '');
   const [guardandoEsc, setGuardandoEsc] = useState(false);
@@ -364,6 +374,29 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
         </div>
         {!escalera && <div className="text-[10px] text-zinc-600 mt-1">Sin especificar. Indícalo para que el maestro lleve el equipo correcto.</div>}
       </div>
+
+      {/* v8.25.24: Cita (fecha/hora/tipo/confirmación) */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1">📅 Cita</div>
+            {cita.fecha_visita_programada ? (
+              <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
+                <span className="text-white font-bold">{cita.fecha_visita_programada}</span>
+                {citaTextoHora(cita) && <span className="text-zinc-300">· {citaTextoHora(cita)}</span>}
+                {TIPO_CITA[cita.tipo_cita] && <span style={{ color: TIPO_CITA[cita.tipo_cita].color }}>· {TIPO_CITA[cita.tipo_cita].icon} {TIPO_CITA[cita.tipo_cita].short}</span>}
+                {cita.cita_confirmada
+                  ? <span className="text-green-400 font-bold">· ✓ Confirmada</span>
+                  : <span className="text-amber-400 font-bold">· ⏳ Por confirmar</span>}
+              </div>
+            ) : (
+              <div className="text-[11px] text-zinc-500">Sin agendar</div>
+            )}
+          </div>
+          <button onClick={() => setEditarCita(true)} className="flex-shrink-0 px-3 py-2 rounded-card bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-black uppercase">{cita.fecha_visita_programada ? 'Editar' : 'Agendar'}</button>
+        </div>
+      </div>
+      {editarCita && <EditorCita levantamiento={{ ...proyecto, ...cita, requiere_escalera: escalera }} usuario={usuario} onCerrar={() => setEditarCita(false)} onGuardado={(vals) => { setCita(c => ({ ...c, ...vals })); if (vals.requiere_escalera !== undefined) setEscalera(vals.requiere_escalera || ''); }} />}
 
       {/* v8.24.6: "Puntos singulares" y "Estimación / cotización preliminar" removidos por ahora */}
 

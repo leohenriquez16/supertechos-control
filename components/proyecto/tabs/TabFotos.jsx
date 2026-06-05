@@ -188,15 +188,35 @@ export default function TabFotos({ usuario, proyecto }) {
 }
 
 function FotoThumb({ foto, onVer }) {
+  // v8.25.37: carga perezosa — solo descarga la imagen (base64 pesado) cuando la
+  // tarjeta entra en pantalla. Evita disparar N descargas full-res de golpe.
   const [src, setSrc] = useState(null);
+  const [estado, setEstado] = useState('idle'); // idle | cargando | error
+  const ref = useRef(null);
+  const [visible, setVisible] = useState(false);
   useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === 'undefined') { setVisible(true); return; }
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some(e => e.isIntersecting)) { setVisible(true); io.disconnect(); }
+    }, { rootMargin: '300px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  useEffect(() => {
+    if (!visible || src) return;
     let cancelado = false;
-    db.obtenerFoto(foto.id).then(d => { if (!cancelado) setSrc(d); }).catch(() => {});
+    setEstado('cargando');
+    db.obtenerFoto(foto.id)
+      .then(d => { if (!cancelado) { setSrc(d); setEstado('ok'); } })
+      .catch(() => { if (!cancelado) setEstado('error'); });
     return () => { cancelado = true; };
-  }, [foto.id]);
+  }, [visible, foto.id]);
   return (
-    <button onClick={onVer} className="aspect-square bg-zinc-900 border border-zinc-800 rounded-card hover:border-red-600 overflow-hidden relative">
-      {src ? <img src={src} className="w-full h-full object-cover" alt="" /> : <div className="w-full h-full flex items-center justify-center"><Loader2 className="w-4 h-4 text-zinc-600 animate-spin" /></div>}
+    <button ref={ref} onClick={onVer} className="aspect-square bg-zinc-900 border border-zinc-800 rounded-card hover:border-red-600 overflow-hidden relative">
+      {src
+        ? <img src={src} loading="lazy" decoding="async" className="w-full h-full object-cover" alt="" />
+        : <div className="w-full h-full flex items-center justify-center">{estado === 'cargando' ? <Loader2 className="w-4 h-4 text-zinc-600 animate-spin" /> : <Camera className="w-5 h-5 text-zinc-700" />}</div>}
     </button>
   );
 }

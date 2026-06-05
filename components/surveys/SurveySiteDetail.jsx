@@ -139,12 +139,28 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
     setCambiandoEtapa(false);
   };
 
+  // v8.25.34: ¿ya realizado? + fecha de realización (para mostrar quién/cuándo en vez de la cita).
+  const esRealizado = statusProy === 'survey_completed' || etapaProy === 'Realizado';
+  const [realizadoFecha, setRealizadoFecha] = useState(null);
+  useEffect(() => {
+    if (!esRealizado) { setRealizadoFecha(null); return; }
+    let cancel = false;
+    (async () => {
+      try {
+        const vs = await listarVisitasDeSite(site.id);
+        const done = (vs || []).filter(v => v.is_completed).sort((a, b) => String(b.checkout_at || b.checkin_at || '').localeCompare(String(a.checkout_at || a.checkin_at || '')))[0] || (vs || [])[0];
+        if (!cancel && done) setRealizadoFecha(done.checkout_at || done.checkin_at || done.created_at || null);
+      } catch (e) {}
+    })();
+    return () => { cancel = true; };
+  }, [esRealizado, site.id]);
+
   const status = SITE_STATUS[site.survey_status] || SITE_STATUS.pending;
   const hasGeo = site.latitude != null && site.longitude != null;
   const tieneInfoFaltante = site.survey_status === 'missing_info';
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 max-w-5xl mx-auto">
       <div className="flex items-center justify-between gap-2">
         <button onClick={onVolver} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm">
           <ArrowLeft className="w-4 h-4" /> Volver
@@ -218,14 +234,16 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
         </div>
       )}
 
-      {/* CTA: iniciar levantamiento — primero */}
-      <button
-        onClick={() => setFormAbierto(true)}
-        className="w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-wider py-4 rounded-card flex items-center justify-center gap-2"
-      >
-        <Play className="w-4 h-4" />
-        Iniciar levantamiento
-      </button>
+      {/* CTA: iniciar levantamiento — solo en etapa "Agendado" (no si ya está realizado u otra etapa) */}
+      {etapaProy === 'Agendado' && (
+        <button
+          onClick={() => setFormAbierto(true)}
+          className="w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-wider py-4 rounded-card flex items-center justify-center gap-2"
+        >
+          <Play className="w-4 h-4" />
+          Iniciar levantamiento
+        </button>
+      )}
 
       {/* v8.24.18: el estado "Realizado" se marca al finalizar DENTRO del modal de captura */}
       {statusProy === 'survey_completed' && (
@@ -243,22 +261,22 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
         <QuickActions site={site} proyecto={proyecto} surveyorNombre={usuario?.nombre} />
       </div>
 
-      {/* Contacto */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-2">
-        <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">Contacto</div>
-        <Field label="Nombre" value={site.contact_name} />
-        <Field label="Cargo" value={site.contact_role} />
-        <Field label="Móvil" value={site.mobile_phone} />
-        <Field label="Oficina" value={site.office_phone} />
-      </div>
-
-      {/* Horarios */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-2">
-        <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold flex items-center gap-1">
-          <Clock className="w-3 h-3" /> Horarios
+      {/* v8.25.33: Contacto + Horarios lado a lado en pantallas anchas (uso desde computadora) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 space-y-2">
+          <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">Contacto</div>
+          <Field label="Nombre" value={site.contact_name} />
+          <Field label="Cargo" value={site.contact_role} />
+          <Field label="Móvil" value={site.mobile_phone} />
+          <Field label="Oficina" value={site.office_phone} />
         </div>
-        <Field label="Lun-Vie" value={site.weekday_hours} />
-        <Field label="Sábado" value={site.saturday_hours} />
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 space-y-2">
+          <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold flex items-center gap-1">
+            <Clock className="w-3 h-3" /> Horarios
+          </div>
+          <Field label="Lun-Vie" value={site.weekday_hours} />
+          <Field label="Sábado" value={site.saturday_hours} />
+        </div>
       </div>
 
       {/* Scheduled / asignación */}
@@ -287,7 +305,8 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
         </div>
       )}
 
-      {/* v8.25.16: Etapa del levantamiento — editable desde aquí (además del Kanban) */}
+      {/* v8.25.33: Etapa + Tipo + Levantador + Escalera + Cita en 2-col (computadora) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
       <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
         <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1.5 flex items-center gap-1">
           <Layers className="w-3.5 h-3.5 text-red-500" /> Etapa
@@ -299,13 +318,9 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
             {etapasDisponibles.map(et => <option key={et} value={et}>{et}</option>)}
           </select>
         ) : (
-          // v8.25.31: el supervisor ve la etapa pero no la cambia (solo admin).
           <div className="text-sm font-bold text-zinc-200">{etapaProy}</div>
         )}
       </div>
-
-      {/* Levantamiento(s) ya capturado(s) — solo lectura */}
-      {/* v8.22.3: Tipo de levantamiento — editable (se puede crear sin tipo y definirlo aquí) */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
         <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1.5 flex items-center gap-1">
           <Layers className="w-3.5 h-3.5 text-red-500" /> Tipo de levantamiento
@@ -345,8 +360,6 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
             : `Actual: ${SERVICE_LINES[tipoServiceLine]?.label || tipoServiceLine}. El formulario de captura corresponde a este tipo.`}
         </div>
       </div>
-
-      {/* v8.19.65: Asignar levantador (personal habilitado) */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
         <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1.5 flex items-center gap-1">
           <ClipboardList className="w-3.5 h-3.5 text-red-500" /> Levantador asignado
@@ -364,8 +377,6 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
           </select>
         )}
       </div>
-
-      {/* v8.19.72: ¿Requiere escalera? — para que el maestro sepa qué llevar */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
         <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1.5 flex items-center gap-1">
           🪜 ¿Requiere escalera?
@@ -383,26 +394,35 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
         {!escalera && <div className="text-[10px] text-zinc-600 mt-1">Sin especificar. Indícalo para que el maestro lleve el equipo correcto.</div>}
       </div>
 
-      {/* v8.25.24: Cita (fecha/hora/tipo/confirmación) */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
-        <div className="flex items-center justify-between gap-2">
-          <div className="min-w-0">
-            <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1">📅 Cita</div>
-            {cita.fecha_visita_programada ? (
-              <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
-                <span className="text-white font-bold">{cita.fecha_visita_programada}</span>
-                {citaTextoHora(cita) && <span className="text-zinc-300">· {citaTextoHora(cita)}</span>}
-                {TIPO_CITA[cita.tipo_cita] && <span style={{ color: TIPO_CITA[cita.tipo_cita].color }}>· {TIPO_CITA[cita.tipo_cita].icon} {TIPO_CITA[cita.tipo_cita].short}</span>}
-                {cita.cita_confirmada
-                  ? <span className="text-green-400 font-bold">· ✓ Confirmada</span>
-                  : <span className="text-amber-400 font-bold">· ⏳ Por confirmar</span>}
-              </div>
-            ) : (
-              <div className="text-[11px] text-zinc-500">Sin agendar</div>
-            )}
-          </div>
-          <button onClick={() => setEditarCita(true)} className="flex-shrink-0 px-3 py-2 rounded-card bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-black uppercase">{cita.fecha_visita_programada ? 'Editar' : 'Agendar'}</button>
+      {/* v8.25.34: si ya está realizado, en vez de la Cita se muestra quién lo realizó y cuándo */}
+      {esRealizado ? (
+        <div className="bg-zinc-900 border border-green-800/40 rounded-card p-3">
+          <div className="text-[10px] tracking-widest uppercase text-green-500 font-bold mb-1 flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Realizado</div>
+          <div className="text-sm"><span className="text-zinc-500">Por: </span><span className="font-bold text-zinc-100">{proyecto?.asignado_a_nombre || '—'}</span></div>
+          {realizadoFecha && <div className="text-[11px] text-zinc-400 mt-0.5">🕐 {new Date(realizadoFecha).toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short' })}</div>}
         </div>
+      ) : (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1">📅 Cita</div>
+              {cita.fecha_visita_programada ? (
+                <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
+                  <span className="text-white font-bold">{cita.fecha_visita_programada}</span>
+                  {citaTextoHora(cita) && <span className="text-zinc-300">· {citaTextoHora(cita)}</span>}
+                  {TIPO_CITA[cita.tipo_cita] && <span style={{ color: TIPO_CITA[cita.tipo_cita].color }}>· {TIPO_CITA[cita.tipo_cita].icon} {TIPO_CITA[cita.tipo_cita].short}</span>}
+                  {cita.cita_confirmada
+                    ? <span className="text-green-400 font-bold">· ✓ Confirmada</span>
+                    : <span className="text-amber-400 font-bold">· ⏳ Por confirmar</span>}
+                </div>
+              ) : (
+                <div className="text-[11px] text-zinc-500">Sin agendar</div>
+              )}
+            </div>
+            <button onClick={() => setEditarCita(true)} className="flex-shrink-0 px-3 py-2 rounded-card bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-black uppercase">{cita.fecha_visita_programada ? 'Editar' : 'Agendar'}</button>
+          </div>
+        </div>
+      )}
       </div>
       {editarCita && <EditorCita levantamiento={{ ...proyecto, ...cita, requiere_escalera: escalera }} usuario={usuario} onCerrar={() => setEditarCita(false)} onGuardado={(vals) => { setCita(c => ({ ...c, ...vals })); if (vals.requiere_escalera !== undefined) setEscalera(vals.requiere_escalera || ''); }} />}
 
@@ -720,6 +740,26 @@ function fmtM2(n) {
   return x.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// v8.25.32: tile de KPI (estilo proyecto) para el resumen del levantamiento realizado.
+function KpiTile({ label, value }) {
+  return (
+    <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2 text-center">
+      <div className="text-base font-black leading-tight truncate">{value}</div>
+      <div className="text-[9px] uppercase tracking-wider text-zinc-500 font-bold">{label}</div>
+    </div>
+  );
+}
+
+// v8.25.32: chips de resumen de un área (lo clave, sin abrir el detalle).
+function chipsArea(a) {
+  const d = a.data || {};
+  const out = [];
+  if (Array.isArray(d.proposed_system) && d.proposed_system.length) out.push('🧱 ' + d.proposed_system.join(', '));
+  if (Array.isArray(d.patologias) && d.patologias.length) out.push(`⚠ ${d.patologias.length} patología${d.patologias.length !== 1 ? 's' : ''}`);
+  if (d.condition != null) out.push(`⭐ ${d.condition}/5`);
+  return out;
+}
+
 // Agrupa áreas por piso (block_id) preservando el orden de aparición.
 function agruparPorPiso(areas) {
   const orden = [];
@@ -743,6 +783,7 @@ function LevantamientosRealizados({ site, proyecto }) {
   const [loading, setLoading] = useState(true);
   const [visitas, setVisitas] = useState([]);
   const [areasPorVisita, setAreasPorVisita] = useState({});
+  const [fotosCount, setFotosCount] = useState({}); // v8.25.32: conteo de fotos por área (para el resumen)
   const [expandida, setExpandida] = useState(null);
   const [areaExp, setAreaExp] = useState(null); // v8.24.9: área (sección) expandida para ver su detalle
   const [template, setTemplate] = useState(null);
@@ -775,9 +816,14 @@ function LevantamientosRealizados({ site, proyecto }) {
     try {
       const vs = await listarVisitasDeSite(site.id);
       const mapa = {};
-      for (const v of vs) { mapa[v.id] = await listarAreasDeVisita(v.id); }
+      const fc = {};
+      for (const v of vs) {
+        mapa[v.id] = await listarAreasDeVisita(v.id);
+        try { const fs = await listarFotosVisita(v.id); for (const f of (fs || [])) { if (f.area_id) fc[f.area_id] = (fc[f.area_id] || 0) + 1; } } catch {}
+      }
       setVisitas(vs);
       setAreasPorVisita(mapa);
+      setFotosCount(fc);
       setExpandida(vs[0]?.id || null);
     } catch (e) { console.warn('LevantamientosRealizados:', e?.message); }
     setLoading(false);
@@ -813,6 +859,12 @@ function LevantamientosRealizados({ site, proyecto }) {
         const totalTecho = areas.reduce((s, a) => s + (Number(a.secondary_area_m2) || 0), 0);
         const nVerif = areas.filter(a => a.data?.por_verificar).length;
         const fecha = v.checkin_at || v.created_at;
+        // v8.25.32: agregados para el resumen "Para cotizar".
+        const sumC = (id) => areas.reduce((s, a) => s + (Number(a.data?.[id]) || 0), 0);
+        const sistemasProp = [...new Set(areas.flatMap(a => Array.isArray(a.data?.proposed_system) ? a.data.proposed_system : []))];
+        const nFotos = areas.reduce((s, a) => s + (fotosCount[a.id] || 0), 0);
+        const cotizar = [['Penetraciones', 'penetraciones_cantidad'], ['Desagües', 'desagues_cantidad'], ['Equipos A/C', 'ac_equipos'], ['Tinacos', 'tinacos'], ['Ductos', 'ductos_cantidad']].map(([l, id]) => [l, sumC(id)]).filter(([, n]) => n > 0);
+        const unSoloGrupo = grupos.length <= 1;
         return (
           <div key={v.id} className="bg-zinc-900 border border-zinc-800 rounded-card">
             <button
@@ -834,51 +886,65 @@ function LevantamientosRealizados({ site, proyecto }) {
             </button>
             {abierta && (
               <div className="border-t border-zinc-800 p-3 space-y-3">
-                {/* v8.19.48: exportar PDF autocontenido del levantamiento */}
-                <button
-                  onClick={() => exportarPdf(v)}
-                  disabled={!template || generandoPdf === v.id}
-                  className="w-full flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-xs font-bold uppercase py-2 rounded-card"
-                  title={!template ? 'Cargando plantilla…' : 'Generar PDF autocontenido'}
-                >
-                  {generandoPdf === v.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
-                  {generandoPdf === v.id ? 'Generando…' : 'Exportar PDF del levantamiento'}
-                </button>
-                <button
-                  onClick={() => borrarVisita(v, areas)}
-                  className="w-full flex items-center justify-center gap-2 bg-zinc-800 hover:bg-red-900/40 text-zinc-300 hover:text-red-300 text-[11px] font-bold uppercase py-1.5 rounded-card"
-                >
-                  <Trash2 className="w-3.5 h-3.5" /> Eliminar esta visita
-                </button>
+                {/* v8.25.32: KPIs del levantamiento (estilo proyecto) */}
+                <div className="grid grid-cols-3 gap-2">
+                  <KpiTile label="m² total" value={fmtM2(totalPared)} />
+                  <KpiTile label={areas.length === 1 ? 'Área' : 'Áreas'} value={areas.length} />
+                  <KpiTile label="Fotos" value={nFotos} />
+                </div>
+
+                {/* v8.25.32: bloque "Para cotizar" — lo que el cotizador necesita de un vistazo */}
+                {(sistemasProp.length > 0 || cotizar.length > 0) && (
+                  <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2.5 space-y-1.5">
+                    <div className="text-[10px] uppercase tracking-wider text-green-500 font-bold">💰 Para cotizar</div>
+                    {sistemasProp.length > 0 && <div className="text-xs"><span className="text-zinc-500">Sistema(s) propuesto(s): </span><span className="font-bold text-zinc-100">{sistemasProp.join(', ')}</span></div>}
+                    {cotizar.length > 0 && <div className="flex flex-wrap gap-1.5">{cotizar.map(([l, n]) => <span key={l} className="text-[11px] bg-zinc-900 border border-zinc-700 rounded-card px-2 py-1 font-bold text-zinc-200">{l}: {n}</span>)}</div>}
+                  </div>
+                )}
+
+                {/* v8.25.32: tarjetas de área (planas; el nivel "piso" solo aparece si hay más de un bloque) */}
                 {grupos.map(({ piso, items, subPared, subTecho }) => (
-                  <div key={piso}>
-                    <div className="flex items-center justify-between text-[11px] font-black uppercase tracking-wider text-zinc-300 mb-1">
-                      <span className="flex items-center gap-1"><Layers className="w-3 h-3 text-red-500" /> {tituloBloque(piso)} <span className="text-zinc-600">({items.length})</span></span>
-                      <span className="text-zinc-500">{fmtM2(subPared)} m²{subTecho > 0 ? ` + ${fmtM2(subTecho)} techo` : ''}</span>
-                    </div>
-                    <div className="space-y-1">
-                      {items.map(a => {
-                        const abiertaA = areaExp === a.id;
-                        return (
-                          <div key={a.id} className="bg-zinc-950 border border-zinc-800 rounded-card">
-                            <button onClick={() => setAreaExp(abiertaA ? null : a.id)} className="w-full px-2 py-1.5 text-xs flex items-start justify-between gap-2 text-left hover:bg-zinc-900/60">
-                              <div className="min-w-0 flex items-center gap-1.5">
-                                <ChevronDown className={`w-3 h-3 text-zinc-600 transition-transform ${abiertaA ? 'rotate-180' : ''}`} />
-                                <span className="font-bold truncate">{a.name || `Sección ${a.area_number}`}</span>
-                                {a.data?.section_surface_type && <span className="text-[9px] uppercase text-zinc-500 border border-zinc-700 rounded px-1">{a.data.section_surface_type}</span>}
+                  <div key={piso} className="space-y-2">
+                    {!unSoloGrupo && (
+                      <div className="flex items-center justify-between text-[11px] font-black uppercase tracking-wider text-zinc-400 pt-1">
+                        <span className="flex items-center gap-1"><Layers className="w-3 h-3 text-red-500" /> {tituloBloque(piso)} <span className="text-zinc-600">({items.length})</span></span>
+                        <span className="text-zinc-500">{fmtM2(subPared)} m²{subTecho > 0 ? ` + ${fmtM2(subTecho)} techo` : ''}</span>
+                      </div>
+                    )}
+                    {items.map(a => {
+                      const abiertaA = areaExp === a.id;
+                      const chips = chipsArea(a);
+                      const nf = fotosCount[a.id] || 0;
+                      return (
+                        <div key={a.id} className="bg-zinc-950 border border-zinc-800 rounded-card">
+                          <button onClick={() => setAreaExp(abiertaA ? null : a.id)} className="w-full p-3 text-left hover:bg-zinc-900/60">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-bold text-sm truncate">{a.name || `Sección ${a.area_number}`}</span>
+                                  {a.data?.section_surface_type && <span className="text-[9px] uppercase text-zinc-400 border border-zinc-700 rounded px-1.5 py-0.5 flex-shrink-0">{a.data.section_surface_type}</span>}
+                                </div>
                               </div>
                               <div className="text-right flex-shrink-0">
-                                <div className="font-bold">{a.gross_area_m2 != null ? `${fmtM2(a.gross_area_m2)} m²` : '—'}</div>
+                                <div className="text-lg font-black leading-none">{a.gross_area_m2 != null ? fmtM2(a.gross_area_m2) : '—'}<span className="text-xs font-bold text-zinc-400"> m²</span></div>
                                 {Number(a.secondary_area_m2) > 0 && <div className="text-[9px] text-zinc-500">+{fmtM2(a.secondary_area_m2)} techo</div>}
                               </div>
-                            </button>
-                            {abiertaA && <DetalleArea area={a} fields={camposBloque(a.block_id)} />}
-                          </div>
-                        );
-                      })}
-                    </div>
+                            </div>
+                            {(chips.length > 0 || nf > 0) && (
+                              <div className="flex flex-wrap gap-1.5 mt-2">
+                                {chips.map((c, i) => <span key={i} className="text-[10px] bg-zinc-900 border border-zinc-800 rounded-card px-1.5 py-0.5 text-zinc-300">{c}</span>)}
+                                {nf > 0 && <span className="text-[10px] bg-zinc-900 border border-zinc-800 rounded-card px-1.5 py-0.5 text-blue-300">📷 {nf}</span>}
+                              </div>
+                            )}
+                            <div className="text-[10px] text-zinc-600 mt-1.5 flex items-center gap-1">{abiertaA ? 'Ocultar detalle' : 'Ver detalle'} <ChevronDown className={`w-3 h-3 transition-transform ${abiertaA ? 'rotate-180' : ''}`} /></div>
+                          </button>
+                          {abiertaA && <DetalleArea area={a} fields={camposBloque(a.block_id)} />}
+                        </div>
+                      );
+                    })}
                   </div>
                 ))}
+
                 <div className="border-t border-zinc-700 pt-2 flex items-center justify-between text-sm font-black">
                   <span className="uppercase tracking-wider text-zinc-400">Total</span>
                   <span>{fmtM2(totalPared)} m²{totalTecho > 0 ? ` · ${fmtM2(totalTecho)} m² techo` : ''}</span>
@@ -886,6 +952,26 @@ function LevantamientosRealizados({ site, proyecto }) {
                 {v.general_notes && (
                   <div className="text-[10px] text-zinc-500 border-t border-zinc-800 pt-2">{v.general_notes}</div>
                 )}
+
+                {/* Acciones */}
+                <div className="flex gap-2 pt-1">
+                  <button
+                    onClick={() => exportarPdf(v)}
+                    disabled={!template || generandoPdf === v.id}
+                    className="flex-1 flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-xs font-bold uppercase py-2.5 rounded-card"
+                    title={!template ? 'Cargando plantilla…' : 'Generar PDF autocontenido'}
+                  >
+                    {generandoPdf === v.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+                    {generandoPdf === v.id ? 'Generando…' : 'Exportar PDF'}
+                  </button>
+                  <button
+                    onClick={() => borrarVisita(v, areas)}
+                    className="flex items-center justify-center gap-1 bg-zinc-800 hover:bg-red-900/40 text-zinc-400 hover:text-red-300 text-[11px] font-bold uppercase px-3 py-2.5 rounded-card"
+                    title="Eliminar esta visita"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
             )}
           </div>

@@ -5,7 +5,10 @@
 // Uso: await imprimirInformeFotografico({ proyecto, site, usuario });
 
 import { listarVisitasDeSite, listarAreasDeVisita, listarFotosVisita, getSignedUrlFotoSurvey, SERVICE_LINES } from '../../lib/surveys';
-import { membreteHTML, MEMBRETE_CSS } from '../../lib/membrete';
+import { cargarPdfLib } from '../../lib/helpers/pdf';
+
+// pdf-lib + StandardFonts solo soportan Latin-1: sanea em-dash y quita emojis/no-Latin1.
+const safe = (s) => String(s ?? '').replace(/[—–]/g, '-').replace(/[^\x00-\xFF]/g, '');
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -49,64 +52,79 @@ export async function imprimirInformeFotografico({ proyecto, site, usuario }) {
   const levantador = proyecto?.asignado_a_nombre || usuario?.nombre || '—';
   const gps = (site?.latitude != null) ? `${site.latitude}, ${site.longitude}` : '—';
 
-  const bloqueFotos = (titulo, fotos) => {
-    if (!fotos || !fotos.length) return '';
-    return `<section class="grupo">
-      <h2>${esc(titulo)} <span class="conteo">(${fotos.length})</span></h2>
-      <div class="grid">${fotos.map(f => `<figure><img src="${esc(f.url)}" />${f.caption ? `<figcaption>${esc(f.caption)}</figcaption>` : ''}</figure>`).join('')}</div>
-    </section>`;
+  // Grupos: generales primero, luego por sección.
+  const grupos = [];
+  if (generales.length) grupos.push({ titulo: 'Fotos generales / panorámicas', fotos: generales });
+  for (const [aid, fotos] of Object.entries(porArea)) grupos.push({ titulo: areasMap[aid] || 'Sección', fotos });
+
+  // ---- Generar PDF descargable con pdf-lib ----
+  const PDFLib = await cargarPdfLib();
+  const { PDFDocument, StandardFonts, rgb } = PDFLib;
+  const pdf = await PDFDocument.create();
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const ROJO = rgb(0.8, 0, 0), GRIS = rgb(0.45, 0.45, 0.48), NEGRO = rgb(0.1, 0.1, 0.1);
+  const PW = 595.28, PH = 841.89, M = 40, W = PW - M * 2;
+  const IMG_MAX_H = 300, SLOT_H = 340;
+
+  // Portada
+  let page = pdf.addPage([PW, PH]);
+  let y = PH - M;
+  page.drawText('INFORME FOTOGRAFICO DE LEVANTAMIENTO', { x: M, y: y -= 8, size: 9, font: bold, color: ROJO });
+  page.drawText(safe(site?.name || proyecto?.client_name || 'Levantamiento').slice(0, 55), { x: M, y: y -= 24, size: 18, font: bold, color: NEGRO });
+  y -= 16;
+  const meta = [
+    ['Cliente', proyecto?.client_name], ['Servicio', serviceLabel], ['Locacion', site?.name],
+    ['Direccion', site?.address], ['Fecha del levantamiento', fmtFecha(fechaRef)],
+    ['Realizado por', levantador], ['GPS', gps], ['Total de fotos', String(totalFotos)],
+  ];
+  for (const [k, v] of meta) {
+    y -= 16;
+    page.drawText(safe(k) + ':', { x: M, y, size: 9, font: bold, color: GRIS });
+    page.drawText(safe(v || '-').slice(0, 75), { x: M + 135, y, size: 9, font, color: NEGRO });
+  }
+
+  let cy = y - 10;
+  const nuevaPagina = (titulo) => {
+    page = pdf.addPage([PW, PH]);
+    cy = PH - M;
+    if (titulo) { page.drawText(safe(titulo).slice(0, 70), { x: M, y: cy - 4, size: 12, font: bold, color: ROJO }); cy -= 26; }
   };
 
-  const seccionesHtml = Object.entries(porArea).map(([aid, fotos]) => bloqueFotos(areasMap[aid] || 'Sección', fotos)).join('');
+  for (const g of grupos) {
+    // título de la sección (en la página actual si cabe, si no en una nueva)
+    if (cy - 26 < M) nuevaPagina(g.titulo);
+    else { page.drawText(safe(`${g.titulo} (${g.fotos.length})`).slice(0, 70), { x: M, y: cy - 4, size: 12, font: bold, color: ROJO }); cy -= 26; }
+    for (const f of g.fotos) {
+      if (cy - SLOT_H < M) nuevaPagina(`${g.titulo} (cont.)`);
+      try {
+        const bytes = await (await fetch(f.url)).arrayBuffer();
+        let img = null;
+        try { img = await pdf.embedJpg(bytes); } catch { try { img = await pdf.embedPng(bytes); } catch { img = null; } }
+        if (img) {
+          const s = Math.min(W / img.width, IMG_MAX_H / img.height);
+          const iw = img.width * s, ih = img.height * s;
+          page.drawImage(img, { x: M + (W - iw) / 2, y: cy - ih, width: iw, height: ih });
+          cy -= ih + 4;
+        }
+      } catch (e) { /* foto que no carga: la saltamos */ }
+      if (f.caption) { page.drawText(safe(f.caption).slice(0, 95), { x: M, y: cy - 9, size: 8, font, color: GRIS }); cy -= 13; }
+      cy -= 12;
+    }
+  }
 
-  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8" />
-  <title>Informe Fotográfico — ${esc(site?.name || proyecto?.client_name || '')}</title>
-  <style>
-    * { box-sizing: border-box; }
-    body { font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; color: #18181b; margin: 0; padding: 24px; font-size: 12px; }
-    .portada { border: 2px solid #CC0000; border-radius: 10px; padding: 16px 20px; margin-bottom: 16px; }
-    .portada .tit { font-size: 11px; text-transform: uppercase; letter-spacing: 2px; color: #CC0000; font-weight: 800; }
-    .portada h1 { margin: 2px 0 8px; font-size: 22px; }
-    .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 18px; font-size: 11px; }
-    .meta b { color: #666; font-weight: 600; }
-    h2 { font-size: 14px; border-bottom: 2px solid #CC0000; padding-bottom: 3px; margin: 16px 0 8px; }
-    h2 .conteo { color: #999; font-weight: normal; font-size: 12px; }
-    .grupo { page-break-inside: auto; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    figure { margin: 0; page-break-inside: avoid; }
-    .grid img { width: 100%; height: auto; max-height: 360px; object-fit: contain; border-radius: 6px; border: 1px solid #ddd; background: #f4f4f5; }
-    figcaption { font-size: 10px; color: #777; margin-top: 3px; text-align: center; }
-    .vacio { color: #999; padding: 20px; text-align: center; }
-    .footer { margin-top: 18px; padding-top: 8px; border-top: 1px solid #ccc; font-size: 9px; color: #999; text-align: center; }
-    ${MEMBRETE_CSS}
-    @media print { body { padding: 0; } @page { margin: 14mm; } }
-  </style></head><body>
-    ${membreteHTML(proyecto?.company)}
-    <div class="portada">
-      <div class="tit">Informe Fotográfico de Levantamiento</div>
-      <h1>${esc(site?.name || proyecto?.client_name || '')}</h1>
-      <div class="meta">
-        <div><b>Cliente:</b> ${esc(proyecto?.client_name || '—')}</div>
-        <div><b>Servicio:</b> ${esc(serviceLabel)}</div>
-        <div><b>Locación:</b> ${esc(site?.name || '—')}</div>
-        <div><b>Dirección:</b> ${esc(site?.address || '—')}</div>
-        <div><b>Fecha del levantamiento:</b> ${fmtFecha(fechaRef)}</div>
-        <div><b>Realizado por:</b> ${esc(levantador)}</div>
-        <div><b>GPS:</b> ${esc(gps)}</div>
-        <div><b>Total de fotos:</b> ${totalFotos}</div>
-      </div>
-    </div>
+  if (totalFotos === 0) {
+    page.drawText('Este levantamiento no tiene fotos.', { x: M, y: cy - 16, size: 11, font, color: GRIS });
+  }
 
-    ${totalFotos === 0 ? '<div class="vacio">Este levantamiento no tiene fotos.</div>' : ''}
-    ${bloqueFotos('Fotos generales / panorámicas', generales)}
-    ${seccionesHtml}
-
-    <div class="footer">Super Techos Control · Informe fotográfico generado ${fmtFecha(new Date().toISOString())}</div>
-  </body></html>`;
-
-  const w = window.open('', '_blank');
-  if (!w) { alert('Permite las ventanas emergentes para generar el informe.'); return; }
-  w.document.write(html);
-  w.document.close();
-  w.onload = () => { setTimeout(() => { w.focus(); w.print(); }, 700); };
+  // Guardar → abrir en pestaña + descargar
+  const pdfBytes = await pdf.save();
+  const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const nombre = `Informe-fotografico-${safe(site?.name || proyecto?.client_name || 'levantamiento').replace(/[^a-zA-Z0-9]+/g, '-')}.pdf`;
+  const a = document.createElement('a');
+  a.href = url; a.download = nombre;
+  document.body.appendChild(a); a.click(); a.remove();
+  window.open(url, '_blank'); // también lo abre para verlo
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
 }

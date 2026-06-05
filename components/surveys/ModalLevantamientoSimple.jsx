@@ -401,6 +401,28 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
         ubicacionId: ubicId,
       });
 
+      // v8.25.34: si el contacto de la obra no existe como contacto del cliente, créalo en el CRM
+      // (antes solo quedaba inline en la locación/sitio; el cliente quedaba con Contactos en 0).
+      if (finalContactName) {
+        const existentes = [...contactos, ...contactosExtra].filter(c => c.clienteId === cid);
+        const yaExiste = existentes.some(c =>
+          (c.nombre || '').trim().toLowerCase() === finalContactName.trim().toLowerCase() ||
+          (finalContactPhone && (c.telefono === finalContactPhone || c.whatsapp === finalContactPhone))
+        );
+        if (!yaExiste) {
+          try {
+            await crearContacto({
+              id: 'ct_' + Date.now() + Math.random().toString(36).slice(2, 7),
+              clienteId: cid,
+              nombre: finalContactName,
+              telefono: finalContactPhone,
+              whatsapp: finalContactPhone,
+              esPrincipal: existentes.length === 0,
+            });
+          } catch (e) { console.warn('No se pudo crear contacto del cliente:', e?.message); }
+        }
+      }
+
       // Chatter: registrar la creación del levantamiento (entidad = proyecto survey).
       try {
         await registrarCreacion('levantamiento', proyecto.id, usuario,

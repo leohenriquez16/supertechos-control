@@ -13180,6 +13180,28 @@ function MiPerfil({ usuario, persona, onVolver, onGuardar }) {
   const [cambios, setCambios] = useState(false);
   const [viendoImagen, setViendoImagen] = useState(null);
 
+  // v8.25.36: las imágenes (cédula/carta/conducta) ya no vienen en la carga global (eran ~5MB).
+  // Se traen bajo demanda al abrir el perfil y se mezclan en el form (sin pisar ediciones en curso).
+  useEffect(() => {
+    if (!puedoVerCedula || !persona?.id) return;
+    let cancel = false;
+    (async () => {
+      try {
+        const imgs = await db.obtenerImagenesPersona(persona.id);
+        if (cancel || !imgs) return;
+        setForm(f => ({
+          ...f,
+          foto2x2: f.foto2x2 || imgs.foto2x2 || '',
+          cedulaFrente: f.cedulaFrente || imgs.cedulaFrente || '',
+          cedulaReverso: f.cedulaReverso || imgs.cedulaReverso || '',
+          cartaBancaria: f.cartaBancaria || imgs.cartaBancaria || '',
+          buenaConducta: f.buenaConducta || imgs.buenaConducta || '',
+        }));
+      } catch (e) {}
+    })();
+    return () => { cancel = true; };
+  }, [persona?.id]);
+
   const actualizar = (campo, valor) => { setForm({ ...form, [campo]: valor }); setCambios(true); };
 
   const subirImagen = async (campo, file, maxWidth, quality) => {
@@ -13201,7 +13223,7 @@ function MiPerfil({ usuario, persona, onVolver, onGuardar }) {
       )}
       <label className="absolute bottom-1 right-1 bg-red-600 p-1.5 cursor-pointer rounded-card">
         {subiendoFoto === campo ? <Loader2 className="w-3 h-3 text-white animate-spin" /> : <Camera className="w-3 h-3 text-white" />}
-        <input type="file" accept="image/*" className="hidden" onChange={e => e.target.files[0] && subirImagen(campo, e.target.files[0], 1400, 0.75)} />
+        <input type="file" accept="image/*" className="hidden" onChange={e => e.target.files[0] && subirImagen(campo, e.target.files[0], 1100, 0.6)} />
       </label>
     </div>
   );
@@ -13307,7 +13329,7 @@ function MiPerfil({ usuario, persona, onVolver, onGuardar }) {
                     )}
                     <label className="absolute bottom-1 right-1 bg-red-600 p-1.5 cursor-pointer">
                       {subiendoFoto === 'cedulaFrente' ? <Loader2 className="w-3 h-3 text-white animate-spin" /> : <Camera className="w-3 h-3 text-white" />}
-                      <input type="file" accept="image/*" className="hidden" onChange={e => e.target.files[0] && subirImagen('cedulaFrente', e.target.files[0], 1200, 0.75)} />
+                      <input type="file" accept="image/*" className="hidden" onChange={e => e.target.files[0] && subirImagen('cedulaFrente', e.target.files[0], 1000, 0.6)} />
                     </label>
                   </div>
                 </div>
@@ -13323,7 +13345,7 @@ function MiPerfil({ usuario, persona, onVolver, onGuardar }) {
                     )}
                     <label className="absolute bottom-1 right-1 bg-red-600 p-1.5 cursor-pointer">
                       {subiendoFoto === 'cedulaReverso' ? <Loader2 className="w-3 h-3 text-white animate-spin" /> : <Camera className="w-3 h-3 text-white" />}
-                      <input type="file" accept="image/*" className="hidden" onChange={e => e.target.files[0] && subirImagen('cedulaReverso', e.target.files[0], 1200, 0.75)} />
+                      <input type="file" accept="image/*" className="hidden" onChange={e => e.target.files[0] && subirImagen('cedulaReverso', e.target.files[0], 1000, 0.6)} />
                     </label>
                   </div>
                 </div>

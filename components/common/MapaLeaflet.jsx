@@ -51,6 +51,9 @@ export default function MapaLeaflet({
   circle = null,
   scrollWheelZoom = false,
   className = '',
+  // v8.17.85: bounds opcionales para restringir el área visible (uso en módulo Banreservas)
+  maxBounds = null,    // [[swLat, swLng], [neLat, neLng]] — fuerza panning dentro de este rectángulo
+  minZoom = null,      // impide alejarse más allá de este nivel
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -74,13 +77,19 @@ export default function MapaLeaflet({
       // Inicializar mapa si no existe
       if (!mapRef.current) {
         const initialCenter = center || [18.4861, -69.9312]; // Santo Domingo por defecto
-        mapRef.current = L.map(containerRef.current, {
+        const opts = {
           center: initialCenter,
           zoom,
           scrollWheelZoom,
           zoomControl: true,
           attributionControl: true,
-        });
+        };
+        if (maxBounds) {
+          opts.maxBounds = L.latLngBounds(maxBounds[0], maxBounds[1]);
+          opts.maxBoundsViscosity = 1.0; // bordes "pegajosos" — no se puede arrastrar afuera
+        }
+        if (minZoom != null) opts.minZoom = minZoom;
+        mapRef.current = L.map(containerRef.current, opts);
 
         // Tile layer OpenStreetMap (sin API key)
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {

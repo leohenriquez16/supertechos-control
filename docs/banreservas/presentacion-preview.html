@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>PNM Banreservas · Presentación</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+    background: #18181b;
+    color: #1f2937;
+  }
+  .slide {
+    display: none;
+    width: 100vw;
+    height: 100vh;
+    padding: 60px 80px;
+    overflow-y: auto;
+    background: #fff;
+    position: relative;
+  }
+  .slide.active { display: block; }
+  .slide:nth-child(1) {
+    background: linear-gradient(135deg, #fef2f2 0%, #ffffff 100%);
+    text-align: center;
+    padding-top: 12vh;
+  }
+  h1 {
+    font-size: 42px;
+    font-weight: 900;
+    color: #18181b;
+    margin: 0 0 18px 0;
+    line-height: 1.15;
+  }
+  h2 {
+    font-size: 14px;
+    font-weight: 700;
+    color: #dc2626;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin: 0 0 6px 0;
+  }
+  h3 { font-size: 22px; color: #18181b; }
+  p { font-size: 18px; line-height: 1.6; color: #3f3f46; margin: 12px 0; }
+  ul { font-size: 17px; line-height: 1.7; color: #3f3f46; padding-left: 24px; }
+  li { margin: 8px 0; }
+  strong { color: #18181b; }
+  blockquote {
+    border-left: 4px solid #dc2626;
+    padding: 14px 22px;
+    background: #fef2f2;
+    margin: 18px 0;
+    color: #18181b;
+    font-style: italic;
+    font-size: 18px;
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 16px 0;
+    font-size: 15px;
+  }
+  th {
+    background: #18181b;
+    color: #fff;
+    padding: 10px 14px;
+    text-align: left;
+    font-weight: 600;
+  }
+  td {
+    padding: 9px 14px;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  tr:hover td { background: #f9fafb; }
+  .nav {
+    position: fixed;
+    bottom: 18px;
+    right: 24px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    background: rgba(24,24,27,0.92);
+    border-radius: 999px;
+    padding: 8px 16px;
+    color: #fff;
+    font-size: 13px;
+    font-family: monospace;
+    z-index: 10;
+  }
+  .nav button {
+    background: none;
+    border: 1px solid #555;
+    color: #fff;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 14px;
+  }
+  .nav button:hover { background: #dc2626; border-color: #dc2626; }
+  .hint {
+    position: fixed;
+    bottom: 18px;
+    left: 24px;
+    background: rgba(24,24,27,0.5);
+    color: #fff;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-family: monospace;
+    z-index: 10;
+  }
+</style>
+</head>
+<body>
+<section class="slide" data-n="1"><h1>Programa Nacional de Mantenimiento — Banreservas</h1>
+<blockquote>Presentación comercial · Super Techos SRL → Departamento de Servicios Generales, Banco de Reservas</blockquote>
+<blockquote>Versión 1 · Mayo 2026</blockquote></section><section class="slide" data-n="2"><h2>Portada</h2>
+<h1>Programa Nacional de Mantenimiento</h1>
+<h2>Gestión Técnica Bimensual de Techos · 190 Sucursales</h2>
+<p><strong>Super Techos SRL</strong>
+30 años especializados en impermeabilización y aislamiento térmico
+Suplidor registrado del Banco de Reservas (2017 – 2019)</p>
+<blockquote>Presentado a: Banco de Reservas de la República Dominicana</blockquote>
+<blockquote>Departamento de Servicios Generales</blockquote></section><section class="slide" data-n="3"><h2>El problema que estamos resolviendo</h2>
+<h1>Una red de 190 techos, cero visibilidad</h1>
+<ul><li>190 sucursales operando 6 días/semana</li>
+<li>Techos planos expuestos a clima caribeño extremo</li>
+<li>Filtraciones que comprometen cubierta, equipos y operación</li>
+<li>Garantías que vencen sin inspección de cierre</li>
+<li>Reparaciones reactivas a costo 4-5× más alto que el mantenimiento preventivo</li>
+<li><strong>Sin un sistema central</strong>, cada sucursal reporta tarde — cuando ya hay daño</li></ul>
+<blockquote><strong>El costo de no tener un programa: imprevistos cada trimestre, interrupciones operativas, pérdida de garantías de aplicador</strong></blockquote></section><section class="slide" data-n="4"><h2>Lo que proponemos</h2>
+<h1>Un programa preventivo + un portal de control</h1>
+<p><strong>Servicio operativo:</strong>
+<ul><li><strong>6 visitas/año</strong> a cada sucursal (cada 60 días)</li>
+<li>2 brigadas dedicadas con base en Santo Domingo</li>
+<li>Reporte técnico PDF al cierre de cada visita</li>
+<li>Categorización A/B/C/D del estado del techo</li>
+<li>Mantenimiento ligero incluido en cuota fija</li>
+<li>OS tarifario para reparaciones mayores (Anexo A)</li></ul></p>
+<p><strong>Plataforma digital — Portal Cliente:</strong>
+<ul><li>Vista en tiempo real del estado de las 190 sucursales</li>
+<li>Dashboard con KPIs, mapa nacional, alertas</li>
+<li>Expediente por sucursal: historial, fotos, garantías, OS</li>
+<li>Aprobación digital de cotizaciones desde la plataforma</li></ul></p>
+<blockquote>Cuota fija bimensual + tarifario transparente</blockquote></section><section class="slide" data-n="5"><h2>Cobertura nacional — 2 brigadas, 190 sucursales</h2>
+<h1>Dos brigadas, todo el territorio dominicano</h1>
+<table><thead><tr><th>Brigada</th><th>Cobertura</th><th>Sucursales</th><th>Base</th></tr></thead><tbody>
+<tr><td><strong>B1</strong></td><td>Metro DN + Sur + Este</td><td>108</td><td>Santo Domingo</td></tr>
+<tr><td><strong>B2</strong></td><td>Norte + Cibao + Frontera + Samaná</td><td>77</td><td>Santo Domingo</td></tr>
+<tr><td><strong>Total</strong></td><td>República Dominicana</td><td><strong>185</strong></td><td>—</td></tr>
+</tbody></table>
+<blockquote>Especialización geográfica → menos km, más tiempo onsite, mejor calidad de inspección</blockquote></section><section class="slide" data-n="6"><h2>Infraestructura operacional — la flota detrás del programa</h2>
+<h1>9 vehículos hoy en servicio nacional · 11 al firmar Banreservas</h1>
+<p><strong>Estructura instalada AHORA:</strong>
+<ul><li><strong>9 vehículos</strong> equipados operando en todo el territorio dominicano</li>
+<li>Todos los supervisores con <strong>tabletas dedicadas</strong> para captura de campo</li>
+<li>Equipos en producción, no en proyecto</li></ul></p>
+<p><strong>Al activar el PNM Banreservas:</strong> sumamos <strong>+2 vehículos dedicados</strong> exclusivos al programa = <strong>11 vehículos en total</strong></p>
+<blockquote>No estamos pidiendo confianza para escalar. Mostramos capacidad instalada que ya escaló.</blockquote></section><section class="slide" data-n="7"><h2>Cada vehículo es un taller móvil completo</h2>
+<h1>Equipamiento a bordo — atender el hallazgo en la misma visita</h1>
+<table><thead><tr><th>Equipo embarcado</th><th>Función operativa</th></tr></thead><tbody>
+<tr><td>🪜 <strong>Escaleras</strong></td><td>Acceso seguro a cubiertas, distintas alturas</td></tr>
+<tr><td>📏 <strong>Equipo de medición</strong></td><td>Espesores de membrana, humedad, pruebas de hidrosello</td></tr>
+<tr><td>💧 <strong>Máquinas de lavar a presión</strong></td><td>Limpieza profunda incluida en cada visita preventiva</td></tr>
+<tr><td>🎨 <strong>Máquinas de pintar industriales</strong></td><td>Aplicación de capa reflectiva y selladores en sitio</td></tr>
+<tr><td>🧰 <strong>Stock de productos de reparación</strong></td><td>Selladores, primers, parches, tela de refuerzo, accesorios</td></tr>
+<tr><td>📱 <strong>Tablet del supervisor</strong></td><td>Checklist + fotos GPS + firma digital — cero papel</td></tr>
+</tbody></table>
+<strong>Lo que esto significa para Banreservas:</strong>
+<ul><li>La brigada <strong>NO regresa a base</strong> por equipos ni materiales</li>
+<li><strong>~90% de los hallazgos críticos se mitigan en la misma visita</strong> que se detectan</li>
+<li>Filtraciones: respuesta en <strong>horas</strong>, no en semanas</li>
+<li>Sin subcontratistas, sin demoras de coordinación con terceros</li></ul>
+<blockquote>Detectar y reparar son la <strong>misma operación</strong>, no dos eventos separados</blockquote></section><section class="slide" data-n="8"><h2>Capacidad logística — bases y soporte operativo</h2>
+<h1>11 personas en oficina + red de almacenes regionales</h1>
+<p><strong>Personal fijo en oficina central:</strong>
+<ul><li><strong>11 personas a tiempo completo</strong> dedicadas a soporte operativo</li>
+<li>Administración, facturación, cobros, compras, RRHH, gestión técnica, logística</li>
+<li>Estructura de soporte que <strong>libera a las brigadas de tareas administrativas</strong> y las mantiene en campo</li></ul></p>
+<p><strong>Red de almacenes — plan de descentralización en ejecución:</strong></p>
+<table><thead><tr><th>Año</th><th>Ubicación</th><th>Función</th></tr></thead><tbody>
+<tr><td>Hoy</td><td>Santo Domingo</td><td>Base central · stock principal · taller</td></tr>
+<tr><td><strong>2026</strong></td><td><strong>Punta Cana</strong> (apertura este año)</td><td>Stock regional + base para rutas Este (B1)</td></tr>
+<tr><td><strong>2027</strong></td><td><strong>Cibao</strong> (apertura próximo año)</td><td>Stock regional + base para rutas Norte/Cibao (B2)</td></tr>
+</tbody></table>
+<strong>Lo que esto significa para Banreservas:</strong>
+<ul><li>⏱ Reducción de tiempos de respuesta a emergencias en Este y Cibao</li>
+<li>📦 Stock regional → sin viajes desde SD para reparaciones menores en provincias</li>
+<li>🌙 Brigadas pueden trabajar 2-3 días continuos sin volver a SD por materiales</li>
+<li>📈 Plan de crecimiento <strong>alineado al cliente</strong>: Cibao 2027 = más capacidad cerca de las 77 sucursales PNM del Norte</li></ul>
+<blockquote>No solo crecemos en facturación — crecemos en <strong>presencia física en el país</strong></blockquote></section><section class="slide" data-n="9"><h2>Plan operativo — ciclo de 60 días</h2>
+<h1>Cada sucursal recibe atención cada 2 meses</h1>
+<p><strong>Reglas operativas que respetamos:</strong>
+<ul><li>🕗 Sucursales abren a las <strong>8:00 AM</strong> — primera visita siempre ≥ 8 AM</li>
+<li>🚐 Brigada sale temprano y maneja primero hasta la sucursal <strong>más lejana del día</strong></li>
+<li>🔄 Resto del día se acerca hacia Santo Domingo por proximidad (FAR-FIRST + Nearest-Neighbor)</li>
+<li>↩ Regreso a SD antes de <strong>2:00 PM</strong> (Lun-Vie) / mediodía (Sáb)</li>
+<li>🌙 Pernoctas autorizadas: hasta <strong>12 noches/mes por brigada</strong> para regiones lejanas (Pedernales, Puerto Plata, Frontera)</li></ul></p>
+<p><strong>Resultado del algoritmo de planificación:</strong></p>
+<table><thead><tr><th>Métrica</th><th>Valor</th></tr></thead><tbody>
+<tr><td>Cobertura por ciclo</td><td><strong>100%</strong> (185/185)</td></tr>
+<tr><td>Trips B1 / B2</td><td>27 / 12</td></tr>
+<tr><td>Pernoctas usadas</td><td>12 (de 48 disponibles)</td></tr>
+<tr><td>Km recorridos por ciclo</td><td>6,598</td></tr>
+</tbody></table></section><section class="slide" data-n="10"><h2>Lo que ve Banreservas — Portal Cliente</h2>
+<h1>Dashboard Nacional · Vista consolidada</h1>
+<p><strong>4 KPIs siempre visibles:</strong>
+<ul><li>Sucursales bajo gestión activa (185)</li>
+<li>% visitas a tiempo (objetivo 96.8%)</li>
+<li>Sucursales críticas (estado D)</li>
+<li>Garantías por vencer en próximos 6 meses</li></ul></p>
+<p><strong>Mapa nacional interactivo</strong> con marcadores por categoría · click → ficha completa.</p>
+<p><strong>Filtros</strong>: búsqueda por sucursal/código/gerente · regional · provincia · estado.</p></section><section class="slide" data-n="11"><h2>Ficha técnica de sucursal — el expediente digital</h2>
+<h1>Toda la historia de un techo en una pantalla</h1>
+<p><strong>7 secciones por sucursal:</strong>
+1. <strong>Resumen</strong> — info técnica + última inspección + historial
+2. <strong>Visitas</strong> — cronología completa con folio, brigada, supervisor
+3. <strong>Hallazgos</strong> — todos los hallazgos con severidad CRÍTICA/ALTA/MEDIA
+4. <strong>Fotos</strong> — galería filtrable por severidad y fecha
+5. <strong>Garantía</strong> — vigencia, aplicador original, alertas anticipadas
+6. <strong>Cotizaciones</strong> — OS con estados (pendiente → aprobada → ejecutada → facturada)
+7. <strong>Facturación</strong> — NCF, conceptos, pagos</p>
+<blockquote>Cada sucursal tiene un <strong>código BR-XXX</strong> único y trazable</blockquote></section><section class="slide" data-n="12"><h2>Reporte técnico — el entregable contractual</h2>
+<h1>Tras cada visita: reporte PDF auditable</h1>
+<p><strong>Estructura del reporte de inspección:</strong></p>
+<ul><li>Encabezado: folio, fecha, sucursal, brigada, supervisor</li>
+<li><strong>Sección 1</strong>: Categoría asignada (A/B/C/D) + comparación vs visita anterior</li>
+<li><strong>Sección 2</strong>: Checklist técnico (membrana, juntas, pitch pans, imbornales, canaletas, ponding, equipos en cubierta)</li>
+<li><strong>Sección 3</strong>: Evidencia fotográfica (mín. 8 fotos por visita)</li>
+<li><strong>Sección 4</strong>: Hallazgos identificados con severidad</li>
+<li><strong>Sección 5</strong>: Trabajos ejecutados en visita (lavado, sellado, reparaciones menores)</li>
+<li><strong>Sección 6</strong>: OS sugeridas + cotización referencial</li>
+<li><strong>Pie</strong>: firma digital del supervisor + firma del responsable de sucursal + QR</li></ul>
+<blockquote>Entrega contractual: &lt;48 horas hábiles tras la visita</blockquote></section><section class="slide" data-n="13"><h2>Tiempo dedicado al mantenimiento — el dato que importa</h2>
+<h1>Más allá de inspeccionar: trabajos incluidos en cuota</h1>
+<p>Asumiendo que <strong>30% de las localidades</strong> requieren mantenimiento adicional en cada ciclo:</p>
+<table><thead><tr><th>Brigada</th><th>Horas disponibles / mes</th><th>Sucs con mantenimiento</th><th><strong>Horas por visita</strong></th></tr></thead><tbody>
+<tr><td>B1 Sur/Este</td><td>58.6 hrs</td><td>16 sucs</td><td><strong>3.7 hrs</strong></td></tr>
+<tr><td>B2 Norte/Cibao</td><td>82.8 hrs</td><td>12 sucs</td><td><strong>6.9 hrs</strong></td></tr>
+</tbody></table>
+<strong>Lo que alcanza con 3-7 horas por visita:</strong>
+<ul><li>✓ Re-aplicar capa reflectiva (5-30 m²)</li>
+<li>✓ Resellar 2-4 juntas perimetrales</li>
+<li>✓ Limpieza profunda imbornales + canaletas</li>
+<li>✓ Reparación menor de pitch pan HVAC</li>
+<li>✓ Parche en filtración localizada</li></ul>
+<blockquote>Esto es valor agregado sin costo extra — viene incluido en la cuota fija</blockquote></section><section class="slide" data-n="14"><h2>Categorización técnica — A/B/C/D</h2>
+<h1>Cada techo, una nota técnica visible</h1>
+<table><thead><tr><th>Categoría</th><th>Estado</th><th>Acción</th><th>Visitas/año</th></tr></thead><tbody>
+<tr><td><strong>A</strong></td><td>Óptimo</td><td>Mantenimiento preventivo estándar</td><td>6</td></tr>
+<tr><td><strong>B</strong></td><td>Bueno</td><td>Vigilancia + correcciones menores</td><td>6</td></tr>
+<tr><td><strong>C</strong></td><td>Atención</td><td>OS correctiva en próxima visita</td><td>6 + correctivas</td></tr>
+<tr><td><strong>D</strong></td><td>Crítico</td><td>Intervención inmediata</td><td>6 + emergencias</td></tr>
+</tbody></table>
+<p><strong>Cambios de categoría se notifican al instante</strong> vía el portal y email a Servicios Generales.</p>
+<blockquote>Banreservas tiene visibilidad técnica anticipada: ya no hay "sorpresas"</blockquote></section><section class="slide" data-n="15"><h2>SLA medibles y auditables</h2>
+<h1>Compromisos que se pueden verificar en tiempo real</h1>
+<table><thead><tr><th>KPI</th><th>Compromiso</th></tr></thead><tbody>
+<tr><td>% visitas ejecutadas a tiempo</td><td><strong>≥ 95%</strong> (ventana ±5 días)</td></tr>
+<tr><td>Tiempo entre visita y reporte</td><td><strong>&lt; 48 horas hábiles</strong></td></tr>
+<tr><td>Tiempo de respuesta emergencia zona metro</td><td><strong>&lt; 4 horas</strong></td></tr>
+<tr><td>Tiempo de respuesta emergencia provincias</td><td><strong>&lt; 12 horas</strong></td></tr>
+<tr><td>Tiempo aprobación OS por banco</td><td><strong>5 días hábiles</strong></td></tr>
+</tbody></table>
+<strong>Todos los KPIs son visibles en el portal en vivo</strong> — Banreservas no necesita pedir reportes, los ve cuando quiera.</section><section class="slide" data-n="16"><h2>Stack tecnológico — no es un Excel compartido</h2>
+<h1>El portal que ven Uds. es el mismo ERP que usamos cada día</h1>
+<p><strong>Super Techos Control</strong> — ERP propio en producción activa desde 2023:
+<ul><li>Gestión de cotizaciones, proyectos, personal, caja chica, garantías</li>
+<li>Misma plataforma que ejecuta nuestros proyectos comerciales hoy</li>
+<li>Acceso de Banreservas = ventana al sistema real, no a copias o reportes manuales</li></ul></p>
+<p><strong>Mismas pantallas, dos audiencias:</strong></p>
+<table><thead><tr><th>Operativo Super Techos ve...</th><th>Banreservas ve...</th></tr></thead><tbody>
+<tr><td>Todos los proyectos, todos los clientes</td><td>Solo su cuenta y sucursales</td></tr>
+<tr><td>Caja chica, nómina, materiales</td><td>KPIs, mapa, fichas, garantías</td></tr>
+<tr><td>Asignación de personal, calendario</td><td>Calendario de visitas del PNM</td></tr>
+</tbody></table>
+<blockquote>El portal cliente <strong>no es un producto separado</strong>. Es una vista filtrada del ERP en producción.</blockquote></section><section class="slide" data-n="17"><h2>El ERP que opera el negocio · pantallas reales</h2>
+<h1>Esto no es un mockup — es producción</h1>
+<p><strong>Lo que estas pantallas demuestran:</strong>
+<ul><li>Sistema <strong>vivo</strong> con datos reales — no demo, no slides</li>
+<li>Granularidad técnica: cada proyecto trazable a sistema, área, material, persona, gasto</li>
+<li>Mismo nivel de detalle que recibirá Banreservas en su Portal Cliente PNM</li></ul></p></section><section class="slide" data-n="18"><h2>Operación — quién está detrás</h2>
+<h1>Personas + vehículos + plataforma + soporte de oficina</h1>
+<p><strong>Núcleo asignado al PNM Banreservas:</strong>
+<ul><li>1 Ingeniero Líder del Programa (Ricardo Henríquez)</li>
+<li>1 Coordinador de Operaciones (Miguel Martínez)</li>
+<li>2 Supervisores de Brigada (1 por brigada · tablet dedicada cada uno)</li>
+<li>4 Técnicos de campo (2 por brigada)</li>
+<li><strong>2 vehículos taller-móvil dedicados</strong> al programa</li></ul></p>
+<p><strong>Capacidad nacional ya instalada que respalda al PNM:</strong>
+<ul><li>9 vehículos adicionales en operación regular (otros clientes, proyectos)</li>
+<li>Pool total de <strong>11 vehículos</strong> al firmar — disponible para emergencias y escalamiento</li>
+<li><strong>11 personas fijas en oficina central</strong> (administración, facturación, cobros, compras, RRHH, gestión técnica, logística)</li>
+<li>2 almacenes operativos (SD hoy · Punta Cana 2026 · Cibao 2027)</li></ul></p>
+<p><strong>Soporte compartido del programa:</strong>
+<ul><li>Equipo administrativo Super Techos</li>
+<li>Plataforma ERP Super Techos Control (la misma que ven Uds. en el portal)</li></ul></p>
+<p><strong>Plantilla total Super Techos: 19+ personas fijas + 11 vehículos + 2 almacenes</strong>
+<strong>Dedicación exclusiva al PNM: 8 personas + 2 vehículos + portal</strong></p>
+<blockquote>Estructura calibrada para servicio continuo. <strong>Cero dependencia de subcontratistas</strong>.</blockquote></section><section class="slide" data-n="19"><h2>Inversión — economía del programa</h2>
+<h1>Costo predecible, ROI medible</h1>
+<table><thead><tr><th>Componente</th><th>Monto mensual</th></tr></thead><tbody>
+<tr><td>Cuota fija del programa</td><td><strong>RD$ 950,000</strong></td></tr>
+<tr><td>Cuota bimensual (factura)</td><td>RD$ 1,900,000</td></tr>
+<tr><td>Tarifario referencial OS (Anexo A)</td><td>Según trabajos aprobados</td></tr>
+<tr><td>Reimpermeabilizaciones</td><td>Cotizadas por proyecto</td></tr>
+</tbody></table>
+<strong>Lo que esto evita:</strong>
+<ul><li>✗ Reparaciones reactivas a costo 4-5× del preventivo</li>
+<li>✗ Interrupciones operativas en sucursales con filtraciones</li>
+<li>✗ Pérdida de garantías de aplicador por falta de inspección</li>
+<li>✗ Daños a equipos electrónicos, mobiliario, archivos</li></ul>
+<p><strong>Modelo de contrato propuesto:</strong> 3 años con ajuste anual por IPC. Estabilidad operativa y financiera.</p></section><section class="slide" data-n="20"><h2>Cronograma de implementación</h2>
+<h1>6 semanas para arrancar el programa</h1>
+<table><thead><tr><th>Sprint</th><th>Semanas</th><th>Entregable</th></tr></thead><tbody>
+<tr><td><strong>1</strong></td><td>1-2</td><td>Censo de 190 sucursales + catalogación inicial</td></tr>
+<tr><td><strong>2</strong></td><td>2-3</td><td>Activación de portal + acceso para usuarios Banreservas</td></tr>
+<tr><td><strong>3</strong></td><td>3-4</td><td>Capacitación: SS.GG., Auditoría Interna, Gerencia Regional</td></tr>
+<tr><td><strong>4</strong></td><td>4-5</td><td>Primer ciclo de visitas (29 sucursales/semana)</td></tr>
+<tr><td><strong>5</strong></td><td>5-6</td><td>Primer reporte consolidado al banco</td></tr>
+<tr><td><strong>6</strong></td><td>continuo</td><td>Operación regular bimensual</td></tr>
+</tbody></table>
+<blockquote>Arranque escalonado para que SS.GG. valide cada fase antes de la siguiente</blockquote></section><section class="slide" data-n="21"><h2>Banreservas ya nos conoce</h2>
+<h1>Esta no es una relación nueva — es un regreso formalizado</h1>
+<p><strong>Super Techos estuvo registrado como suplidor activo del Banco de Reservas entre 2017 y 2019</strong>, ejecutando servicios de impermeabilización en sucursales y oficinas del banco.</p>
+<p><strong>Lo que esto significa para Banreservas hoy:</strong></p>
+<ul><li>✓ Ya pasamos el <strong>proceso de homologación de suplidores</strong> del banco</li>
+<li>✓ Tenemos <strong>referencias internas verificables</strong> dentro de SS.GG.</li>
+<li>✓ Conocemos los <strong>protocolos operativos</strong>: acceso a sucursales, coordinación con seguridad, ventanas horarias permitidas</li>
+<li>✓ Conocemos el <strong>estándar técnico esperado</strong> por el banco</li>
+<li>✓ No empezamos de cero la relación contractual ni operativa</li></ul>
+<p><strong>Volvemos con:</strong>
+<ul><li>Una estructura operacional más grande (9 vehículos hoy · 11 con Banreservas)</li>
+<li>Un ERP propio y un Portal Cliente dedicado</li>
+<li>Un plan formal y bimensual de mantenimiento continuo</li></ul></p>
+<blockquote>Esta propuesta <strong>no busca presentarnos al banco</strong> — busca formalizar el regreso a una relación que ya funcionó.</blockquote></section><section class="slide" data-n="22"><h2>Por qué Super Techos</h2>
+<h1>30 años, no 30 meses</h1>
+<ul><li><strong>Suplidor conocido por Banreservas</strong>: registrados y activos entre 2017 y 2019 — homologación previa, referencias internas</li>
+<li><strong>Flota instalada</strong>: 9 vehículos en servicio nacional hoy · +2 dedicados a Banreservas al firmar = <strong>11 vehículos</strong></li>
+<li><strong>Equipos especializados embarcados</strong>: cada vehículo es un taller móvil con escaleras, medición, lavadora a presión, máquina de pintar y stock de reparación</li>
+<li><strong>Estructura administrativa robusta</strong>: 11 personas fijas en oficina central</li>
+<li><strong>Red de almacenes en expansión</strong>: SD hoy · Punta Cana 2026 · Cibao 2027</li>
+<li><strong>Especialización pura</strong>: solo impermeabilización y aislamiento, desde 1996</li>
+<li><strong>Equipo propio</strong>: 19+ personas de planta entre operaciones y oficina, <strong>cero subcontratistas</strong></li>
+<li><strong>ERP propio</strong>: visibilidad operativa de extremo a extremo (la plataforma que ven Uds. la usamos también internamente)</li>
+<li><strong>Aplicadores certificados</strong>: Polyglass, GAF, Sika, Fester</li>
+<li><strong>Cobertura nacional comprobada</strong>: proyectos activos hoy en metro, Cibao, Este y Sur</li>
+<li><strong>Portfolio bancario</strong>: experiencia previa con instituciones financieras</li></ul>
+<blockquote>No le proponemos a Banreservas que confíe en una promesa. Le proponemos que vea operar el sistema antes de firmar.</blockquote></section><section class="slide" data-n="23"><h2>Próximos pasos</h2>
+<h1>Lo que sugerimos hacer ahora</h1>
+<p>1. <strong>Reunión técnica</strong> con SS.GG. para validar la propuesta (1 hora)
+2. <strong>Demo en vivo del portal</strong> con 3-5 sucursales piloto cargadas (30 min)
+3. <strong>Visita conjunta</strong> a 2 sucursales para que vean el flujo de inspección
+4. <strong>Pilot opcional</strong> de 30 días en 20 sucursales antes del contrato completo
+5. <strong>Contrato marco</strong> una vez aprobado el modelo</p>
+<p><strong>Próxima fecha tentativa</strong>: a definir esta semana</p></section><section class="slide" data-n="24"><h2>Cierre</h2>
+<h1>Estamos listos para empezar</h1>
+<p><strong>Contacto comercial:</strong>
+Leonardo Henríquez · Presidente
+Super Techos SRL
+lhenriquez@supertechos.com.do</p>
+<p><strong>Equipo técnico:</strong>
+Ricardo Henríquez · Ingeniero Líder del Programa
+Miguel Martínez · Coordinador de Operaciones</p>
+<blockquote><strong>Gracias por el tiempo. Las 190 sucursales merecen este nivel de atención.</strong></blockquote></section>
+<div class="nav">
+  <button onclick="prev()">‹</button>
+  <span><span id="cur">1</span> / 24</span>
+  <button onclick="next()">›</button>
+</div>
+<div class="hint">↑ ↓ ← → o espacio · "F" pantalla completa</div>
+<script>
+let cur = 0;
+const slides = document.querySelectorAll('.slide');
+const curEl = document.getElementById('cur');
+function show(i) {
+  slides.forEach((s, idx) => s.classList.toggle('active', idx === i));
+  cur = i;
+  curEl.textContent = i + 1;
+  history.replaceState(null, '', '#' + (i+1));
+}
+function next() { if (cur < slides.length - 1) show(cur+1); }
+function prev() { if (cur > 0) show(cur-1); }
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') { next(); e.preventDefault(); }
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { prev(); e.preventDefault(); }
+  if (e.key.toLowerCase() === 'f') {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+    else document.exitFullscreen();
+  }
+});
+const hash = parseInt(location.hash.slice(1)) || 1;
+show(Math.max(0, Math.min(slides.length-1, hash-1)));
+</script>
+</body>
+</html>

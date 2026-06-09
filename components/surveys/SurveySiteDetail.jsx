@@ -14,7 +14,7 @@ import { ArrowLeft, Building, MapPin, Calendar, Clock, FileText, AlertTriangle, 
 import QuickActions from './QuickActions';
 import DynamicSurveyForm from './DynamicSurveyForm';
 import SatelitalAreas from './SatelitalAreas';
-import { SITE_STATUS, listarVisitasDeSite, listarAreasDeVisita, obtenerTemplateSurvey, asignarPersonaSurvey, ESCALERA, setRequiereEscaleraSurvey, eliminarProyectoSurvey, solicitarEliminacionSurvey, cancelarSolicitudEliminacionSurvey, listarTemplatesSurveys, actualizarTipoProyectoSurvey, eliminarVisita, listarFotosVisita, getSignedUrlFotoSurvey, finalizarLevantamientoSurvey, reabrirLevantamientoSurvey, setEtapaSurvey, ETAPAS_LEVANTAMIENTO, actualizarSiteSurvey, SERVICE_LINES, FAMILIAS_SERVICIO, familiaDeServiceLine, TIPO_CITA, citaTextoHora } from '../../lib/surveys';
+import { SITE_STATUS, listarVisitasDeSite, listarAreasDeVisita, obtenerTemplateSurvey, asignarPersonaSurvey, ESCALERA, setRequiereEscaleraSurvey, eliminarProyectoSurvey, solicitarEliminacionSurvey, cancelarSolicitudEliminacionSurvey, listarTemplatesSurveys, actualizarTipoProyectoSurvey, eliminarVisita, listarFotosVisita, getSignedUrlFotoSurvey, finalizarLevantamientoSurvey, reabrirLevantamientoSurvey, setEtapaSurvey, ETAPAS_LEVANTAMIENTO, actualizarSiteSurvey, reabrirVisitaDeSite, SERVICE_LINES, FAMILIAS_SERVICIO, familiaDeServiceLine, TIPO_CITA, citaTextoHora } from '../../lib/surveys';
 import EditorCita from './EditorCita';
 import { imprimirLevantamiento } from './imprimirLevantamiento';
 import { imprimirInformeFotografico } from './imprimirInformeFotografico';
@@ -128,6 +128,17 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
     try { await reabrirLevantamientoSurvey(proyecto.id); setStatusProy('survey_in_progress'); try { await chatterEventoSurvey('levantamiento', proyecto.id, 'Levantamiento reabierto', usuario); } catch {} }
     catch (e) { alert('Error: ' + (e?.message || e)); }
     setFinalizando(false);
+  };
+  // v8.25.39: abrir un levantamiento ya realizado para agregar fotos / seguir editando.
+  // Reabre la visita existente (no crea una nueva), conservando áreas y fotos.
+  const [reabriendoVisita, setReabriendoVisita] = useState(false);
+  const agregarFotos = async () => {
+    setReabriendoVisita(true);
+    try {
+      await reabrirVisitaDeSite(site.id);
+      setFormAbierto(true);
+    } catch (e) { alert('No se pudo abrir: ' + (e?.message || e)); }
+    setReabriendoVisita(false);
   };
   // v8.25.16: cambiar la etapa del levantamiento desde aquí (además del Kanban).
   const MAP_ETAPA = { planning: 'New', survey_in_progress: 'Asignado', survey_completed: 'Realizado', quoted: 'Cotizacion Realizada' };
@@ -261,10 +272,16 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
       )}
 
       {/* v8.24.18: el estado "Realizado" se marca al finalizar DENTRO del modal de captura */}
-      {statusProy === 'survey_completed' && (
-        <div className="flex items-center justify-between gap-2 bg-green-900/20 border border-green-700 rounded-card px-3 py-2">
-          <span className="text-sm font-bold text-green-300 flex items-center gap-1.5"><Check className="w-4 h-4" /> Levantamiento realizado</span>
-          <button onClick={reabrir} disabled={finalizando} className="text-[11px] text-zinc-400 hover:text-white underline">Reabrir</button>
+      {esRealizado && (
+        <div className="bg-green-900/20 border border-green-700 rounded-card px-3 py-2.5 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm font-bold text-green-300 flex items-center gap-1.5"><Check className="w-4 h-4" /> Levantamiento realizado</span>
+            <button onClick={reabrir} disabled={finalizando} className="text-[11px] text-zinc-400 hover:text-white underline">Reabrir etapa</button>
+          </div>
+          {/* v8.25.39: abrir el levantamiento ya hecho para agregar fotos / seguir editando */}
+          <button onClick={agregarFotos} disabled={reabriendoVisita} className="w-full bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white font-bold uppercase tracking-wider py-2.5 rounded-card flex items-center justify-center gap-2">
+            {reabriendoVisita ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImageIcon className="w-4 h-4" />} Abrir para agregar fotos / editar
+          </button>
         </div>
       )}
 

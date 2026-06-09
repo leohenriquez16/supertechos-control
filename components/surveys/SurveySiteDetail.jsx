@@ -10,11 +10,11 @@
 //  - Botón "Iniciar levantamiento" (placeholder — se conecta en PR 3B.4)
 
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Building, MapPin, Calendar, Clock, FileText, AlertTriangle, Play, ClipboardList, Layers, ChevronDown, Loader2, Trash2, Check, Image as ImageIcon } from 'lucide-react';
+import { ArrowLeft, Building, MapPin, Calendar, Clock, FileText, AlertTriangle, Play, ClipboardList, Layers, ChevronDown, Loader2, Trash2, Check, Image as ImageIcon, X } from 'lucide-react';
 import QuickActions from './QuickActions';
 import DynamicSurveyForm from './DynamicSurveyForm';
 import SatelitalAreas from './SatelitalAreas';
-import { SITE_STATUS, listarVisitasDeSite, listarAreasDeVisita, obtenerTemplateSurvey, asignarPersonaSurvey, ESCALERA, setRequiereEscaleraSurvey, eliminarProyectoSurvey, solicitarEliminacionSurvey, cancelarSolicitudEliminacionSurvey, listarTemplatesSurveys, actualizarTipoProyectoSurvey, eliminarVisita, listarFotosVisita, getSignedUrlFotoSurvey, finalizarLevantamientoSurvey, reabrirLevantamientoSurvey, setEtapaSurvey, ETAPAS_LEVANTAMIENTO, SERVICE_LINES, FAMILIAS_SERVICIO, familiaDeServiceLine, TIPO_CITA, citaTextoHora } from '../../lib/surveys';
+import { SITE_STATUS, listarVisitasDeSite, listarAreasDeVisita, obtenerTemplateSurvey, asignarPersonaSurvey, ESCALERA, setRequiereEscaleraSurvey, eliminarProyectoSurvey, solicitarEliminacionSurvey, cancelarSolicitudEliminacionSurvey, listarTemplatesSurveys, actualizarTipoProyectoSurvey, eliminarVisita, listarFotosVisita, getSignedUrlFotoSurvey, finalizarLevantamientoSurvey, reabrirLevantamientoSurvey, setEtapaSurvey, ETAPAS_LEVANTAMIENTO, actualizarSiteSurvey, reabrirVisitaDeSite, SERVICE_LINES, FAMILIAS_SERVICIO, familiaDeServiceLine, TIPO_CITA, citaTextoHora } from '../../lib/surveys';
 import EditorCita from './EditorCita';
 import { imprimirLevantamiento } from './imprimirLevantamiento';
 import { imprimirInformeFotografico } from './imprimirInformeFotografico';
@@ -22,7 +22,11 @@ import ChatterPanel from '../common/ChatterPanel';
 import Lightbox from '../common/Lightbox';
 import { registrarEvento as chatterEventoSurvey } from '../../lib/chatter';
 
-export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolver, onVerEdificaciones }) {
+export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, data, onVolver, onVerEdificaciones }) {
+  // v8.25.38: site en estado local para reflejar ediciones (datos del cliente/dirección).
+  const [site, setSite] = useState(siteProp);
+  useEffect(() => { setSite(siteProp); }, [siteProp]);
+  const [editarDatos, setEditarDatos] = useState(false);
   const [formAbierto, setFormAbierto] = useState(false);
   const [satelitalAbierta, setSatelitalAbierta] = useState(false); // v8.19.86
 
@@ -125,6 +129,17 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
     catch (e) { alert('Error: ' + (e?.message || e)); }
     setFinalizando(false);
   };
+  // v8.25.39: abrir un levantamiento ya realizado para agregar fotos / seguir editando.
+  // Reabre la visita existente (no crea una nueva), conservando áreas y fotos.
+  const [reabriendoVisita, setReabriendoVisita] = useState(false);
+  const agregarFotos = async () => {
+    setReabriendoVisita(true);
+    try {
+      await reabrirVisitaDeSite(site.id);
+      setFormAbierto(true);
+    } catch (e) { alert('No se pudo abrir: ' + (e?.message || e)); }
+    setReabriendoVisita(false);
+  };
   // v8.25.16: cambiar la etapa del levantamiento desde aquí (además del Kanban).
   const MAP_ETAPA = { planning: 'New', survey_in_progress: 'Asignado', survey_completed: 'Realizado', quoted: 'Cotizacion Realizada' };
   const [etapaProy, setEtapaProy] = useState(proyecto?.odoo_stage || MAP_ETAPA[proyecto?.status] || 'New');
@@ -165,12 +180,23 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
         <button onClick={onVolver} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm">
           <ArrowLeft className="w-4 h-4" /> Volver
         </button>
-        {onVerEdificaciones && (
-          <button onClick={onVerEdificaciones} className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-3 py-1.5 rounded-card">
-            <Building className="w-3.5 h-3.5" /> Edificaciones / ＋ agregar
+        <div className="flex items-center gap-2">
+          {/* v8.25.38: editar datos del cliente/contacto/dirección del levantamiento */}
+          <button onClick={() => setEditarDatos(true)} className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-3 py-1.5 rounded-card">
+            <FileText className="w-3.5 h-3.5" /> Editar datos
           </button>
-        )}
+          {onVerEdificaciones && (
+            <button onClick={onVerEdificaciones} className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-3 py-1.5 rounded-card">
+              <Building className="w-3.5 h-3.5" /> Edificaciones / ＋ agregar
+            </button>
+          )}
+        </div>
       </div>
+      {editarDatos && (
+        <EditarDatosSitio site={site} usuario={usuario} proyecto={proyecto}
+          onCerrar={() => setEditarDatos(false)}
+          onGuardado={(s) => { setSite(s); setEditarDatos(false); }} />
+      )}
 
       <FachadaHero site={site} />
 
@@ -246,10 +272,16 @@ export default function SurveySiteDetail({ site, proyecto, usuario, data, onVolv
       )}
 
       {/* v8.24.18: el estado "Realizado" se marca al finalizar DENTRO del modal de captura */}
-      {statusProy === 'survey_completed' && (
-        <div className="flex items-center justify-between gap-2 bg-green-900/20 border border-green-700 rounded-card px-3 py-2">
-          <span className="text-sm font-bold text-green-300 flex items-center gap-1.5"><Check className="w-4 h-4" /> Levantamiento realizado</span>
-          <button onClick={reabrir} disabled={finalizando} className="text-[11px] text-zinc-400 hover:text-white underline">Reabrir</button>
+      {esRealizado && (
+        <div className="bg-green-900/20 border border-green-700 rounded-card px-3 py-2.5 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm font-bold text-green-300 flex items-center gap-1.5"><Check className="w-4 h-4" /> Levantamiento realizado</span>
+            <button onClick={reabrir} disabled={finalizando} className="text-[11px] text-zinc-400 hover:text-white underline">Reabrir etapa</button>
+          </div>
+          {/* v8.25.39: abrir el levantamiento ya hecho para agregar fotos / seguir editando */}
+          <button onClick={agregarFotos} disabled={reabriendoVisita} className="w-full bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white font-bold uppercase tracking-wider py-2.5 rounded-card flex items-center justify-center gap-2">
+            {reabriendoVisita ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImageIcon className="w-4 h-4" />} Abrir para agregar fotos / editar
+          </button>
         </div>
       )}
 
@@ -977,6 +1009,84 @@ function LevantamientosRealizados({ site, proyecto }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// v8.25.38: modal para editar los datos del cliente/contacto/dirección del levantamiento.
+function EditarDatosSitio({ site, usuario, proyecto, onCerrar, onGuardado }) {
+  const [f, setF] = useState({
+    name: site.name || '', address: site.address || '', city: site.city || '', province: site.province || '',
+    latitude: site.latitude ?? '', longitude: site.longitude ?? '',
+    contactName: site.contact_name || '', contactRole: site.contact_role || '',
+    mobilePhone: site.mobile_phone || '', officePhone: site.office_phone || '',
+    weekdayHours: site.weekday_hours || '', saturdayHours: site.saturday_hours || '',
+    notes: site.notes || '',
+  });
+  const [guardando, setGuardando] = useState(false);
+  const [err, setErr] = useState(null);
+  const set = (k, v) => setF(prev => ({ ...prev, [k]: v }));
+  const inp = 'w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2.5 text-white text-sm sm:text-base';
+  const lab = 'text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1';
+  const guardar = async () => {
+    if (!f.name.trim()) { setErr('El nombre de la locación es obligatorio.'); return; }
+    setGuardando(true); setErr(null);
+    try {
+      const s = await actualizarSiteSurvey(site.id, f);
+      try { await chatterEventoSurvey('levantamiento', proyecto.id, 'Datos del sitio actualizados', usuario); } catch {}
+      onGuardado?.(s);
+    } catch (e) { setErr(e?.message || String(e)); setGuardando(false); }
+  };
+  return (
+    <div className="fixed inset-0 bg-black/80 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="bg-zinc-950 border-2 border-red-600 rounded-t-2xl sm:rounded-card w-full max-w-2xl flex flex-col max-h-[100dvh] sm:max-h-[90dvh]">
+        <div className="flex items-center justify-between p-4 border-b border-zinc-800 shrink-0">
+          <div className="text-xs tracking-widest uppercase text-red-500 font-bold">Editar datos del levantamiento</div>
+          <button onClick={onCerrar} className="text-zinc-500 hover:text-white"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="p-4 space-y-4 overflow-y-auto flex-1 overscroll-contain"
+          onFocus={e => { const t = e.target; if (t && t.matches && t.matches('input,textarea')) setTimeout(() => { try { t.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch {} }, 280); }}>
+          <div>
+            <div className="text-[11px] uppercase tracking-widest text-red-400 font-bold mb-2">Locación</div>
+            <div className="space-y-2">
+              <div><div className={lab}>Nombre de la locación *</div><input value={f.name} onChange={e => set('name', e.target.value)} className={inp} /></div>
+              <div><div className={lab}>Dirección</div><input value={f.address} onChange={e => set('address', e.target.value)} className={inp} /></div>
+              <div className="grid grid-cols-2 gap-2">
+                <div><div className={lab}>Ciudad</div><input value={f.city} onChange={e => set('city', e.target.value)} className={inp} /></div>
+                <div><div className={lab}>Provincia</div><input value={f.province} onChange={e => set('province', e.target.value)} className={inp} /></div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div><div className={lab}>Latitud</div><input value={f.latitude} onChange={e => set('latitude', e.target.value)} type="number" inputMode="decimal" step="any" className={inp} /></div>
+                <div><div className={lab}>Longitud</div><input value={f.longitude} onChange={e => set('longitude', e.target.value)} type="number" inputMode="decimal" step="any" className={inp} /></div>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div className="text-[11px] uppercase tracking-widest text-red-400 font-bold mb-2">Contacto</div>
+            <div className="grid grid-cols-2 gap-2">
+              <div><div className={lab}>Nombre</div><input value={f.contactName} onChange={e => set('contactName', e.target.value)} className={inp} /></div>
+              <div><div className={lab}>Cargo</div><input value={f.contactRole} onChange={e => set('contactRole', e.target.value)} className={inp} /></div>
+              <div><div className={lab}>Móvil</div><input value={f.mobilePhone} onChange={e => set('mobilePhone', e.target.value)} inputMode="numeric" className={inp} /></div>
+              <div><div className={lab}>Oficina</div><input value={f.officePhone} onChange={e => set('officePhone', e.target.value)} inputMode="numeric" className={inp} /></div>
+            </div>
+          </div>
+          <div>
+            <div className="text-[11px] uppercase tracking-widest text-red-400 font-bold mb-2">Horarios y notas</div>
+            <div className="grid grid-cols-2 gap-2">
+              <div><div className={lab}>Lun–Vie</div><input value={f.weekdayHours} onChange={e => set('weekdayHours', e.target.value)} placeholder="8:00 am – 4:00 pm" className={inp} /></div>
+              <div><div className={lab}>Sábado</div><input value={f.saturdayHours} onChange={e => set('saturdayHours', e.target.value)} placeholder="9:00 am – 1:00 pm" className={inp} /></div>
+            </div>
+            <div className="mt-2"><div className={lab}>Notas</div><textarea value={f.notes} onChange={e => set('notes', e.target.value)} rows={3} className={inp + ' resize-y'} /></div>
+          </div>
+          {err && <div className="bg-red-900/20 border border-red-700 rounded-card text-red-300 p-2 text-xs">{err}</div>}
+        </div>
+        <div className="flex gap-2 p-4 border-t border-zinc-800 shrink-0">
+          <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-sm font-bold uppercase py-3 rounded-card">Cancelar</button>
+          <button onClick={guardar} disabled={guardando} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-sm font-black uppercase py-3 rounded-card flex items-center justify-center gap-2">
+            {guardando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Guardar cambios
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed, Building2, Star, MessageCircle, Send, Search, Filter, CloudRain } from 'lucide-react';
+import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed, Building2, Star, MessageCircle, Send, Search, Filter, CloudRain, Calculator } from 'lucide-react';
 import * as db from '../lib/db';
 import { leerArchivo, parseMateriales, parseSistemas, descargarPlantilla, comprimirImagen } from '../lib/imports';
 import { obtenerUbicacion, distanciaMetros, formatDistancia, abrirEnMapa } from '../lib/geo';
@@ -77,6 +77,8 @@ import SeccionArchivosProyecto from '../components/proyecto/SeccionArchivosProye
 import ModalReportarAvanceUnidades from '../components/proyecto/ModalReportarAvanceUnidades';
 // v8.17.49: propiedades de la empresa (apartamento Punta Cana, etc)
 import VistaPropiedadesEmpresa from '../components/propiedades/VistaPropiedadesEmpresa';
+// v8.26.0: módulo Contabilidad (DGII 606/607/608 + IT-1), Fase 1
+import VistaContabilidad from '../components/contabilidad/VistaContabilidad';
 // v8.10.13: VistaNomina extraída
 import VistaNomina from '../components/nomina/VistaNomina';
 // v8.19.1: Módulo Levantamientos (surveys)
@@ -734,6 +736,8 @@ export default function App() {
     { seccion: 'FINANZAS', items: [
       { id: 'nomina', label: 'Nómina', icon: Wallet, vista: 'nomina' },
       { id: 'cajaChica', label: 'Caja Chica', icon: CreditCard, vista: 'cajaChica' },
+      // v8.26.0: módulo Contabilidad — reportes DGII 606/607/608 + IT-1
+      { id: 'contabilidad', label: 'Contabilidad', icon: Calculator, vista: 'contabilidad' },
       // v8.17.49: propiedades de la empresa (apartamento Punta Cana, etc) — log de estadías
       { id: 'propiedadesEmpresa', label: 'Propiedades', icon: Building2, vista: 'propiedadesEmpresa' },
     ]},
@@ -900,6 +904,8 @@ export default function App() {
         {vista === 'auditLog' && esAdmin && <VistaAuditLog data={data} onVolver={() => setVista('dashboard')} />}
         {/* v8.17.49: Propiedades de la empresa (apartamento Punta Cana, etc) */}
         {vista === 'propiedadesEmpresa' && esAdmin && <VistaPropiedadesEmpresa usuario={usuario} data={data} onVolver={() => setVista('dashboard')} />}
+        {/* v8.26.0: Contabilidad — reportes DGII (606/607/608) + resumen ITBIS/IT-1 */}
+        {vista === 'contabilidad' && esAdmin && <VistaContabilidad usuario={usuario} onVolver={() => setVista('dashboard')} />}
         {vista === 'miPerfil' && <MiPerfil usuario={usuario} persona={usuario} soloLectura={false} onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }} onGuardar={(campos) => withSync(() => db.guardarPerfil(usuario.id, campos))} />}
         {esAdmin && vista === 'personal' && <GestionPersonal usuario={usuario} personal={data.personal} data={data} onVolver={() => setVista('dashboard')} onActualizar={(p) => withSync(() => db.reemplazarPersonal(p))} onRecargar={recargar} onAbrirPerfil={(p) => { setPerfilViendo(p); setVista('perfilPersona'); }} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'perfilPersona' && perfilViendo && <MiPerfil usuario={usuario} persona={perfilViendo} soloLectura={false} onVolver={() => setVista('personal')} onGuardar={(campos) => withSync(async () => { await db.guardarPerfil(perfilViendo.id, campos); const d = await db.loadAllData(); const actualizada = d.personal.find(p => p.id === perfilViendo.id); if (actualizada) setPerfilViendo(actualizada); })} />}

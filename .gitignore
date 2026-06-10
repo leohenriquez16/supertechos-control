@@ -17,6 +17,9 @@ supabase/.branches/
 # Las migraciones futuras SÍ se versionan (sin guion bajo inicial en el nombre).
 supabase/migrations/00000000000000_baseline.sql
 
+# contadom — artefacto compilado del módulo portable (se genera en dev/build)
+lib/contadom/dist/
+
 # logs / debug
 *.log
 npm-debug.log*

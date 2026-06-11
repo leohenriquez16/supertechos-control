@@ -179,7 +179,8 @@ export default function ModalReportarGasto({ usuario, proyectos = [], proyectoId
       });
       onGuardado();
     } catch (e) {
-      toast.error('Error guardando: ' + (e.message || e));
+      if (e?.code === 'NCF_DUPLICADO') toast.error(e.message, { duration: 9000 });
+      else toast.error('Error guardando: ' + (e.message || e));
       setPaso('confirmar');
     }
   };

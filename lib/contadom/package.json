@@ -1,0 +1,15 @@
+{
+  "name": "@supertechos/contadom",
+  "version": "0.1.0",
+  "description": "Núcleo portable de contabilidad y cumplimiento fiscal dominicano (DGII): formatos 606/607/608, resumen ITBIS (IT-1), códigos y utilidades NCF. Agnóstico de plataforma — sin DOM, sin framework, sin acceso a datos. Las apps host proveen los datos ya normalizados y la persistencia/descarga.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "license": "UNLICENSED",
+  "private": true,
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  }
+}

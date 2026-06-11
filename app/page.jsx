@@ -6523,6 +6523,14 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
       {esSupervisor && onIrAReportar && proyecto.estado === 'en_ejecucion' && <button onClick={onIrAReportar} className="w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase py-3 flex items-center justify-center gap-2"><Plus className="w-4 h-4" /> Reportar Avance</button>}
       {esAdmin && onIrAReportar && proyecto.estado === 'en_ejecucion' && <button onClick={onIrAReportar} className="w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase py-3 flex items-center justify-center gap-2"><Plus className="w-4 h-4" /> Reportar Avance</button>}
 
+      {/* v8.25.46: obra PARADA → la bitácora (chatter) sube arriba para ver razones + siguiente paso */}
+      {proyecto.estado === 'parado' && (
+        <div className="border-2 border-amber-700 bg-amber-900/10 rounded-card overflow-hidden">
+          <div className="px-3 py-2 text-[11px] font-bold text-amber-300 flex items-center gap-1.5 border-b border-amber-800/40"><AlertTriangle className="w-3.5 h-3.5" /> OBRA PARADA — razones y siguiente paso</div>
+          <div className="p-2"><ChatterPanel entityType="proyecto" entityId={proyecto?.id} usuario={usuario} titulo="Bitácora de la obra" /></div>
+        </div>
+      )}
+
       <div className="flex gap-1 border-b-2 border-zinc-800 overflow-x-auto">
         <TabBtn active={tab === 'avance'} onClick={() => setTab('avance')}><TrendingUp className="w-3 h-3 inline mr-1" />Avance</TabBtn>
         <TabBtn active={tab === 'info'} onClick={() => setTab('info')}><MapPin className="w-3 h-3 inline mr-1" />Info</TabBtn>
@@ -6554,7 +6562,8 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
       {tab === 'mdo' && esAdmin && <TabManoDeObra proyecto={proyecto} data={data} usuario={usuario} onActualizarProyecto={onActualizarProyecto} onRecargar={onRecargar} />}
       {tab === 'dieta' && !esSupervisor && <TabDieta proyecto={proyecto} reportes={data.reportes} personal={data.personal} onActualizarProyecto={onActualizarProyecto} />}
 
-      <ChatterPanel entityType="proyecto" entityId={proyecto?.id} usuario={usuario} />
+      {/* v8.25.46: si está parado, el chatter ya se muestra arriba; no duplicar abajo */}
+      {proyecto.estado !== 'parado' && <ChatterPanel entityType="proyecto" entityId={proyecto?.id} usuario={usuario} />}
     </div>
   );
 }
@@ -13012,6 +13021,7 @@ function ModalProgramarJornada({ proyecto, personal, personasElegibles, onCerrar
 function ModalCambiarEstado({ proyecto, usuario, personal, sistema, onCerrar, onConfirmar }) {
   const [estadoNuevo, setEstadoNuevo] = useState(proyecto.estado);
   const [nota, setNota] = useState('');
+  const [siguientePaso, setSiguientePaso] = useState(''); // v8.25.46: para estado "parado"
   const [guardando, setGuardando] = useState(false);
   const [numeroFactura, setNumeroFactura] = useState(proyecto.numeroFactura || '');
   const [montoFinal, setMontoFinal] = useState(proyecto.montoFinalCubicado || '');
@@ -13035,6 +13045,13 @@ function ModalCambiarEstado({ proyecto, usuario, personal, sistema, onCerrar, on
   const serviciosTipo = serviciosDeTipo(tipoGarantia);
 
   const confirmar = async () => {
+    // v8.25.46: al PARAR la obra, exigir razón + siguiente paso (quedan en el chatter).
+    let notaFinal = nota;
+    if (estadoNuevo === 'parado') {
+      if (!nota.trim()) { toast.warning('Explica POR QUÉ se está parando la obra.'); return; }
+      if (!siguientePaso.trim()) { toast.warning('Indica el SIGUIENTE PASO para retomarla.'); return; }
+      notaFinal = `⏸ Parada: ${nota.trim()}\n➡ Siguiente paso: ${siguientePaso.trim()}`;
+    }
     setGuardando(true);
     const extra = {};
     if (estadoNuevo === 'finalizado_recibido_conforme') {
@@ -13049,7 +13066,7 @@ function ModalCambiarEstado({ proyecto, usuario, personal, sistema, onCerrar, on
       };
     }
     if (estadoNuevo === 'facturado' && numeroFactura) extra.numero_factura = numeroFactura;
-    await onConfirmar(estadoNuevo, nota, extra);
+    await onConfirmar(estadoNuevo, notaFinal, extra);
     setGuardando(false);
   };
 
@@ -13117,7 +13134,16 @@ function ModalCambiarEstado({ proyecto, usuario, personal, sistema, onCerrar, on
           </>
         )}
         {estadoNuevo === 'facturado' && <Campo label="Número de factura"><Input value={numeroFactura} onChange={setNumeroFactura} placeholder="B01-..." /></Campo>}
-        <Campo label="Nota (opcional)"><textarea value={nota} onChange={e => setNota(e.target.value)} rows={2} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm" /></Campo>
+        {estadoNuevo === 'parado' ? (
+          <div className="bg-amber-900/15 border-2 border-amber-700 rounded-card p-3 space-y-2">
+            <div className="text-[10px] tracking-widest uppercase text-amber-400 font-bold">⏸ Por qué se para la obra (obligatorio)</div>
+            <Campo label="Razón de la parada *"><textarea value={nota} onChange={e => setNota(e.target.value)} rows={2} placeholder="Ej: el cliente no liberó el área, falta material, lluvia, falta de pago…" className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-amber-600 outline-none px-3 py-2 text-white text-sm" /></Campo>
+            <Campo label="Siguiente paso para retomar *"><textarea value={siguientePaso} onChange={e => setSiguientePaso(e.target.value)} rows={2} placeholder="Ej: el cliente confirma fecha, llega el material el lunes, esperar el pago…" className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-amber-600 outline-none px-3 py-2 text-white text-sm" /></Campo>
+            <div className="text-[10px] text-amber-300/80">Esto queda en el chatter del proyecto para que todos sepan por qué está parada y qué falta.</div>
+          </div>
+        ) : (
+          <Campo label="Nota (opcional)"><textarea value={nota} onChange={e => setNota(e.target.value)} rows={2} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm" /></Campo>
+        )}
         <div className="flex gap-2"><button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button><button onClick={confirmar} disabled={guardando || estadoNuevo === proyecto.estado} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-3 flex items-center justify-center gap-1">{guardando ? <Loader2 className="w-3 h-3 animate-spin" /> : <><Save className="w-3 h-3" /> Confirmar</>}</button></div>
       </div>
     </div>

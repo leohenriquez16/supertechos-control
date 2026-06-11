@@ -21,6 +21,9 @@ export default function ModalReporteAvancePDF({ proyecto, sistema, data, usuario
   const [incluirFotos, setIncluirFotos] = useState(true);
   const [incluirBitacora, setIncluirBitacora] = useState(true);
   const [incluirFinanciero, setIncluirFinanciero] = useState(true);
+  // v8.25.43: estado de resultados del periodo (producción vs MDO/materiales/caja chica)
+  const [incluirRentabilidad, setIncluirRentabilidad] = useState(true);
+  const [cajaChicaPeriodo, setCajaChicaPeriodo] = useState({ total: 0, count: 0, cargado: false });
   const [preview, setPreview] = useState(false);
   // v8.9.28: fotos reales cargadas para el PDF
   const [fotosCargadas, setFotosCargadas] = useState([]);
@@ -126,6 +129,23 @@ export default function ModalReporteAvancePDF({ proyecto, sistema, data, usuario
     return () => { cancelado = true; };
   }, [proyecto.id, fechaInicio, fechaFin, incluirFotos, tipo]);
 
+  // v8.25.43: gastos de caja chica del proyecto en el periodo (para el estado de resultados).
+  useEffect(() => {
+    if (!incluirRentabilidad) { setCajaChicaPeriodo({ total: 0, count: 0, cargado: false }); return; }
+    let cancel = false;
+    (async () => {
+      try {
+        const movs = await db.listarMovimientosCajaChica({ proyectoId: proyecto.id, fechaDesde: fechaInicio, fechaHasta: fechaFin });
+        if (cancel) return;
+        // Gastos reales del proyecto: factura + dieta (no entregas ni rechazados). Ajustes con su signo.
+        const gastos = (movs || []).filter(m => m.status !== 'rechazado' && (m.tipo === 'gasto_factura' || m.tipo === 'dieta' || m.tipo === 'ajuste'));
+        const total = gastos.reduce((s, m) => s + (Number(m.monto) || 0) * (m.tipo === 'ajuste' ? (Number(m.signoAjuste) || 1) : 1), 0);
+        setCajaChicaPeriodo({ total, count: gastos.length, cargado: true });
+      } catch (e) { if (!cancel) setCajaChicaPeriodo({ total: 0, count: 0, cargado: true, error: true }); }
+    })();
+    return () => { cancel = true; };
+  }, [proyecto.id, fechaInicio, fechaFin, incluirRentabilidad]);
+
   const reportesPeriodo = (data.reportes || [])
     .filter(r => r.proyectoId === proyecto.id && r.fecha >= fechaInicio && r.fecha <= fechaFin)
     .sort((a, b) => a.fecha.localeCompare(b.fecha));
@@ -177,6 +197,23 @@ export default function ModalReporteAvancePDF({ proyecto, sistema, data, usuario
     const precio = getPrecioVentaArea(area, sisR) || 0;
     return s + m2 * precio * peso;
   }, 0);
+
+  // v8.25.43: MDO DEVENGADO del periodo = Σ(m² del rango × costo_mo_m2 del sistema × peso/100).
+  const costoMDOPeriodo = reportesPeriodo.reduce((s, r) => {
+    const area = (proyecto.areas || []).find(a => a.id === r.areaId);
+    if (!area) return s;
+    const sisR = (data.sistemas && data.sistemas[area.sistemaId || proyecto.sistema]) || sistema;
+    const m2 = getM2Reporte(r, sisR);
+    const tarea = (sisR?.tareas || []).find(t => t.id === r.tareaId);
+    const peso = tarea ? (Number(tarea.peso) || 0) / 100 : 1;
+    return s + m2 * (Number(sisR?.costo_mo_m2) || 0) * peso;
+  }, 0);
+
+  // v8.25.43: materiales ENVIADOS al proyecto en el periodo (del modal de materiales/envíos).
+  // No es consumo real (aún no habilitado); es lo despachado en el rango con su costo.
+  const costoMaterialesPeriodo = (data.envios || [])
+    .filter(e => e.proyectoId === proyecto.id && e.fecha >= fechaInicio && e.fecha <= fechaFin)
+    .reduce((s, e) => s + (e.costoTotal != null ? Number(e.costoTotal) : (Number(e.costoUnidad) || 0) * (Number(e.cantidad) || 0)), 0);
 
   // Bitácora por día con detalle de actividad por tarea — v8.9.28
   const bitacoraPorDia = {};
@@ -414,6 +451,10 @@ export default function ModalReporteAvancePDF({ proyecto, sistema, data, usuario
                   <input type="checkbox" checked={incluirFinanciero} onChange={e => setIncluirFinanciero(e.target.checked)} className="w-4 h-4 accent-red-600" />
                   <span className="text-xs">Información financiera (monto aprobado y resumen)</span>
                 </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={incluirRentabilidad} onChange={e => setIncluirRentabilidad(e.target.checked)} className="w-4 h-4 accent-red-600" />
+                  <span className="text-xs">Estado de resultados del periodo (rentabilidad) — página aparte</span>
+                </label>
               </div>
             </div>
 
@@ -440,9 +481,13 @@ export default function ModalReporteAvancePDF({ proyecto, sistema, data, usuario
             incluirFotos={incluirFotos}
             incluirBitacora={incluirBitacora}
             incluirFinanciero={incluirFinanciero}
+            incluirRentabilidad={incluirRentabilidad}
             porcentaje={porcentaje}
             produccionRD={produccionRD}
             produccionRDPeriodo={produccionRDPeriodo}
+            costoMDOPeriodo={costoMDOPeriodo}
+            costoMaterialesPeriodo={costoMaterialesPeriodo}
+            cajaChicaPeriodo={cajaChicaPeriodo}
             valorContrato={valorContrato}
             porTarea={porTarea}
             totalM2Periodo={totalM2Periodo}
@@ -459,7 +504,7 @@ export default function ModalReporteAvancePDF({ proyecto, sistema, data, usuario
   );
 }
 
-function ReportePDFContenido({ proyecto, sistema, data, tipo, fechaInicio, fechaFin, proximosPasos, incluirFotos, incluirBitacora, incluirFinanciero, porcentaje, produccionRD, produccionRDPeriodo, valorContrato, porTarea, totalM2Periodo, bitacora, areasConAvance, diasTrabajados, reportesPeriodo, fotosCargadas, cargandoFotos }) {
+function ReportePDFContenido({ proyecto, sistema, data, tipo, fechaInicio, fechaFin, proximosPasos, incluirFotos, incluirBitacora, incluirFinanciero, incluirRentabilidad, porcentaje, produccionRD, produccionRDPeriodo, costoMDOPeriodo, costoMaterialesPeriodo, cajaChicaPeriodo, valorContrato, porTarea, totalM2Periodo, bitacora, areasConAvance, diasTrabajados, reportesPeriodo, fotosCargadas, cargandoFotos }) {
   const supervisor = getPersona(data.personal, proyecto.supervisorId);
   const maestro = getPersona(data.personal, proyecto.maestroId);
   const tipoLabel = { diario: 'Diario', semanal: 'Semanal', quincenal: 'Quincenal', custom: 'Personalizado' }[tipo] || 'Avance';
@@ -719,6 +764,53 @@ function ReportePDFContenido({ proyecto, sistema, data, tipo, fechaInicio, fecha
             </div>
           </div>
         )}
+
+        {/* v8.25.43: ESTADO DE RESULTADOS DEL PERIODO — página aparte (rentabilidad) */}
+        {incluirRentabilidad && (() => {
+          const cc = cajaChicaPeriodo?.total || 0;
+          const mdo = costoMDOPeriodo || 0;
+          const mat = costoMaterialesPeriodo || 0;
+          const totalCostos = mdo + mat + cc;
+          const ingreso = produccionRDPeriodo || 0;
+          const rent = ingreso - totalCostos;
+          const margenPct = ingreso > 0 ? (rent / ingreso) * 100 : 0;
+          const fila = (label, valor, opts = {}) => (
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid #f1f1f4', fontSize: opts.big ? 14 : 12, ...(opts.style || {}) }}>
+              <span style={{ color: opts.color || '#52525b', fontWeight: opts.bold ? 600 : 400 }}>{label}</span>
+              <span style={{ color: opts.color || '#18181b', fontWeight: opts.bold ? 700 : 500, fontVariantNumeric: 'tabular-nums' }}>{opts.neg ? '(' : ''}{formatRD(Math.abs(valor))}{opts.neg ? ')' : ''}</span>
+            </div>
+          );
+          return (
+            <div style={{ pageBreakBefore: 'always', breakBefore: 'page', padding: '32px 36px' }}>
+              <div style={{ color: '#dc2626', fontSize: 10, letterSpacing: '2px', fontWeight: 600 }}>ESTADO DE RESULTADOS DEL PERIODO</div>
+              <div style={{ color: '#27272a', fontSize: 22, fontWeight: 600, marginTop: 4 }}>{proyecto.nombre}</div>
+              <div style={{ color: '#71717a', fontSize: 11, marginTop: 2 }}>{formatFechaCorta(fechaInicio)} — {formatFechaCorta(fechaFin)}{proyecto.referenciaOdoo ? ` · ORDEN ${proyecto.referenciaOdoo}` : ''}</div>
+
+              <div style={{ marginTop: 22, border: '1px solid #e4e4e7' }}>
+                <div style={{ padding: '0 16px' }}>
+                  {fila('Producción devengada del periodo', ingreso, { bold: true, color: '#16a34a', big: true, style: { borderBottom: '2px solid #e4e4e7' } })}
+                  <div style={{ color: '#a1a1aa', fontSize: 9, letterSpacing: '1.5px', paddingTop: 12, paddingBottom: 2 }}>COSTOS DIRECTOS DEL PERIODO</div>
+                  {fila('Mano de obra (devengado · producción × costo MO/m²)', mdo, { neg: true })}
+                  {fila('Materiales despachados (de envíos)', mat, { neg: true })}
+                  {fila(`Caja chica (gastos${cajaChicaPeriodo?.count ? ` · ${cajaChicaPeriodo.count} mov.` : ''})`, cc, { neg: true })}
+                  {fila('Total costos directos', totalCostos, { bold: true, neg: true, style: { borderTop: '1px solid #e4e4e7', borderBottom: '2px solid #27272a' } })}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '14px 0', fontSize: 16 }}>
+                    <span style={{ color: '#18181b', fontWeight: 700 }}>RENTABILIDAD DEL PERIODO</span>
+                    <span style={{ color: rent >= 0 ? '#16a34a' : '#dc2626', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{formatRD(rent)} · {margenPct.toFixed(1)}%</span>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ marginTop: 14, color: '#a1a1aa', fontSize: 9, lineHeight: 1.5 }}>
+                <div>• <strong>Producción devengada</strong>: valor de venta de los m² ejecutados en el periodo (no facturación).</div>
+                <div>• <strong>Mano de obra</strong>: devengado = producción del periodo × costo de MO por m² del sistema (configúralo en Sistemas si sale 0).</div>
+                <div>• <strong>Materiales</strong>: lo despachado al proyecto en el periodo (del módulo de materiales/envíos). No es consumo real — el reporte de consumo aún no está habilitado.</div>
+                <div>• <strong>Caja chica</strong>: gastos del proyecto en el periodo (factura + dieta + ajustes), no incluye rechazados.</div>
+                {!cajaChicaPeriodo?.cargado && <div style={{ color: '#dc2626' }}>• Caja chica aún cargando — vuelve a generar si el monto sale en 0.</div>}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Footer */}
         <div style={{ padding: '14px 36px', background: '#18181b', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#a1a1aa', fontSize: '9px', letterSpacing: '1px' }}>

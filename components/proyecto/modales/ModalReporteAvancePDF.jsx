@@ -185,7 +185,16 @@ export default function ModalReporteAvancePDF({ proyecto, sistema, data, usuario
       if (tieneTarea) porTarea[taskId].m2Total += (a.m2 || 0);
     });
   });
-  const totalM2Periodo = Object.values(porTarea).reduce((s, v) => s + v.m2Ejecutado, 0);
+  // v8.25.47: NO sumar el m² crudo de cada tarea (son capas sobre la misma superficie,
+  // inflaba el total). Se pondera por el peso de la tarea → m² de superficie avanzada.
+  const totalM2Periodo = reportesPeriodo.reduce((s, r) => {
+    const area = (proyecto.areas || []).find(a => a.id === r.areaId);
+    const sisR = (data.sistemas && data.sistemas[area?.sistemaId || proyecto.sistema]) || sistema;
+    const m2 = getM2Reporte(r, sisR);
+    const tarea = (sisR?.tareas || []).find(t => t.id === r.tareaId);
+    const peso = tarea ? (Number(tarea.peso) || 0) / 100 : 1;
+    return s + m2 * peso;
+  }, 0);
 
   // v8.25.42: RD$ producido EN EL PERIODO seleccionado (m² × precio venta × peso de la
   // tarea/100), igual que produccionRD pero solo con los reportes del rango de fechas.
@@ -606,6 +615,7 @@ function ReportePDFContenido({ proyecto, sistema, data, tipo, fechaInicio, fecha
             <div style={{ border: '1px solid #e4e4e7', padding: '14px', background: '#f0fdf4' }}>
               <div style={{ color: '#71717a', fontSize: '9px', letterSpacing: '1.5px' }}>AVANCE DEL PERIODO</div>
               <div style={{ color: '#16a34a', fontSize: '24px', fontWeight: 600, marginTop: '4px', lineHeight: 1 }}>{totalM2Periodo.toFixed(1)} <span style={{ fontSize: '13px' }}>m²</span></div>
+              <div style={{ color: '#a1a1aa', fontSize: '8px', marginTop: '2px' }}>superficie avanzada (ponderado por tareas)</div>
               {incluirFinanciero && produccionRDPeriodo > 0 && (
                 <div style={{ color: '#16a34a', fontSize: '12px', fontWeight: 600, marginTop: '4px' }}>{formatRD(produccionRDPeriodo)}</div>
               )}

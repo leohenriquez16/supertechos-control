@@ -882,7 +882,7 @@ export default function App() {
         {esAdmin && vista === 'nomina' && <VistaNomina usuario={usuario} data={data} onVolver={volverAtras} onRecargarGlobal={recargar} onVerProyecto={(p, tabDestino) => navegarA('proyecto', { proyectoActivo: p, tab: tabDestino || 'avance' })} />}
         {esAdmin && vista === 'galeria' && <GaleriaGlobal usuario={usuario} data={data} onVolver={() => setVista('dashboard')} />}
         {esAdmin && vista === 'equipoGlobal' && <VistaEquipoGlobal data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
-        {vista === 'planificacion' && puede(usuario, data.permisos, 'planificacion', 'ver') && <VistaPlanificacion usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
+        {vista === 'planificacion' && puede(usuario, data.permisos, 'planificacion', 'ver') && <VistaPlanificacion usuario={usuario} data={data} onRecargar={recargar} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'miProduccion' && tieneRol(usuario, 'maestro') && <VistaMiProduccion usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'miCajaChica' && (tieneRol(usuario, 'maestro') || tieneRol(usuario, 'supervisor')) && usuario.cajaChicaHabilitada && <VistaMiCajaChica usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} />}
         {vista === 'surveys' && (esAdmin || tieneRol(usuario, 'supervisor')) && <ModuloSurveys usuario={usuario} data={data} onRecargar={recargar} />}
@@ -11296,7 +11296,7 @@ function VistaMiProduccion({ usuario, data, onVolver, onVerProyecto }) {
 }
 
 
-function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto }) {
+function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto, onRecargar }) {
   const esAdmin = tieneRol(usuario, 'admin');
   const puedeAsignar = esAdmin || puede(usuario, data.permisos, 'planificacion', 'asignar_personal');
   // v8.8: Filtrar proyectos según rol
@@ -11572,8 +11572,22 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto }) {
     setModalAsignar({ personaId, fecha });
   };
 
-  const confirmarAsignacion = async ({ proyectoId, personaId, fecha }) => {
+  const confirmarAsignacion = async ({ proyectoId, personaId, fecha, fechaHasta, rol }) => {
     try {
+      // v8.25.40: rango de varios días → ASIGNACIÓN programada (no jornadas sueltas).
+      if (fechaHasta && fechaHasta > fecha) {
+        await db.crearAsignacion({
+          personaId, proyectoId,
+          fechaDesde: fecha, fechaHasta,
+          rol: rol || 'ayudante',
+          estado: 'confirmada',
+          creadoPorId: usuario.id,
+          notas: 'Planificación (calendario semanal)',
+        });
+        setModalAsignar(null);
+        await Promise.all([cargar(), onRecargar?.()]);
+        return;
+      }
       // Buscar jornada existente
       const existente = jornadasSemana.find(j => j.proyectoId === proyectoId && j.fecha === fecha);
       if (existente) {
@@ -11960,26 +11974,37 @@ function PopupDetalleJornada({ personaId, proyectoInfo, fecha, data, gridProyect
 }
 
 // Modal para asignar persona a un proyecto desde celda vacía
+// v8.25.40: permite VARIOS DÍAS a futuro (rango hasta) y, para admin, cualquier
+// proyecto activo (antes solo donde la persona ya estaba en el equipo).
 function ModalAsignarDesdeGrid({ personaId, fecha, data, usuario, onCerrar, onConfirmar }) {
   const persona = data.personal.find(p => p.id === personaId);
   const esAdmin = tieneRol(usuario, 'admin');
   // Proyectos donde la persona es supervisor/maestro/ayudante
-  let proyectosElegibles = data.proyectos.filter(p =>
-    !p.archivado && (
-      p.supervisorId === personaId ||
-      p.maestroId === personaId ||
-      (p.ayudantesIds || []).includes(personaId)
-    )
-  );
-  // v8.8: Si el usuario NO es admin, solo puede asignar en sus propios proyectos
-  if (!esAdmin) {
-    proyectosElegibles = proyectosElegibles.filter(p =>
+  const esDeLaPersona = (p) => p.supervisorId === personaId || p.maestroId === personaId || (p.ayudantesIds || []).includes(personaId);
+  let proyectosElegibles;
+  if (esAdmin) {
+    // Admin: todos los proyectos activos (los de la persona primero).
+    const activos = data.proyectos.filter(p => !p.archivado && !['facturado', 'finalizado_recibido_conforme'].includes(p.estado));
+    proyectosElegibles = [...activos.filter(esDeLaPersona), ...activos.filter(p => !esDeLaPersona(p))];
+  } else {
+    // No-admin: solo sus propios proyectos y donde la persona ya está en el equipo.
+    proyectosElegibles = data.proyectos.filter(p => !p.archivado && esDeLaPersona(p)).filter(p =>
       p.supervisorId === usuario.id ||
       p.maestroId === usuario.id ||
       (p.ayudantesIds || []).includes(usuario.id)
     );
   }
   const [proyectoId, setProyectoId] = useState(proyectosElegibles[0]?.id || '');
+  const [fechaHasta, setFechaHasta] = useState(fecha); // v8.25.40: rango (mismo día = jornada única)
+  const [rol, setRol] = useState('ayudante');
+  // Rol sugerido según la relación con el proyecto elegido.
+  useEffect(() => {
+    const p = proyectosElegibles.find(x => x.id === proyectoId);
+    if (!p) return;
+    setRol(p.maestroId === personaId ? 'maestro' : p.supervisorId === personaId ? 'supervisor' : 'ayudante');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proyectoId]);
+  const esRango = fechaHasta && fechaHasta > fecha;
   const fechaLabel = new Date(fecha + 'T12:00:00').toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'long' });
 
   return (
@@ -12003,11 +12028,31 @@ function ModalAsignarDesdeGrid({ personaId, fecha, data, usuario, onCerrar, onCo
           <>
             <Campo label="Proyecto">
               <select value={proyectoId} onChange={e => setProyectoId(e.target.value)} className="w-full bg-zinc-900 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm">
-                {proyectosElegibles.map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo ? p.referenciaOdoo + ' · ' : ''}{p.cliente}</option>)}
+                {proyectosElegibles.map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo ? p.referenciaOdoo + ' · ' : ''}{p.cliente}{!esDeLaPersona(p) ? ' (no está en el equipo)' : ''}</option>)}
               </select>
             </Campo>
+            {/* v8.25.40: planificar varios días a futuro */}
+            <div className="grid grid-cols-2 gap-2">
+              <Campo label="Desde">
+                <input type="date" value={fecha} disabled className="w-full bg-zinc-950 border-2 border-zinc-800 outline-none px-3 py-2 text-zinc-400 text-sm" />
+              </Campo>
+              <Campo label="Hasta (incluido)">
+                <input type="date" value={fechaHasta} min={fecha} onChange={e => setFechaHasta(e.target.value)} className="w-full bg-zinc-900 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm" />
+              </Campo>
+            </div>
+            {esRango && (
+              <Campo label="Rol en el proyecto">
+                <select value={rol} onChange={e => setRol(e.target.value)} className="w-full bg-zinc-900 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm">
+                  <option value="maestro">Maestro</option>
+                  <option value="ayudante">Ayudante</option>
+                  <option value="supervisor">Supervisor</option>
+                </select>
+              </Campo>
+            )}
             <div className="text-[10px] text-zinc-500 bg-zinc-950 border border-zinc-800 rounded-card p-2">
-              💡 Si ya existe una jornada ese día para el proyecto, se agregará a la persona. Si no, se creará una nueva jornada programada.
+              {esRango
+                ? '📅 Se creará una ASIGNACIÓN programada por el rango completo (sale en el calendario con borde azul). Las jornadas reales se crean cada día en obra.'
+                : '💡 Si ya existe una jornada ese día para el proyecto, se agregará a la persona. Si no, se creará una nueva jornada programada. Para varios días, cambia "Hasta".'}
             </div>
           </>
         )}
@@ -12016,10 +12061,10 @@ function ModalAsignarDesdeGrid({ personaId, fecha, data, usuario, onCerrar, onCo
           <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2">Cancelar</button>
           {proyectosElegibles.length > 0 && (
             <button
-              onClick={() => onConfirmar({ proyectoId, personaId, fecha })}
+              onClick={() => onConfirmar({ proyectoId, personaId, fecha, fechaHasta, rol })}
               className="flex-1 bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase py-2 flex items-center justify-center gap-2"
             >
-              <Plus className="w-3 h-3" /> Asignar
+              <Plus className="w-3 h-3" /> {esRango ? `Asignar ${Math.round((new Date(fechaHasta) - new Date(fecha)) / 86400000) + 1} días` : 'Asignar'}
             </button>
           )}
         </div>

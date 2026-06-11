@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Download, Eye, Loader2, X } from 'lucide-react';
 import * as db from '../../../lib/db';
 import { formatRD, formatFechaCorta } from '../../../lib/helpers/formato';
-import { getM2Reporte, calcAvanceProyecto } from '../../../lib/helpers/calculos';
+import { getM2Reporte, calcAvanceProyecto, getPrecioVentaArea } from '../../../lib/helpers/calculos';
 import Campo from '../../common/Campo';
 import Input from '../../common/Input';
 
@@ -164,6 +164,19 @@ export default function ModalReporteAvancePDF({ proyecto, sistema, data, usuario
     });
   });
   const totalM2Periodo = Object.values(porTarea).reduce((s, v) => s + v.m2Ejecutado, 0);
+
+  // v8.25.42: RD$ producido EN EL PERIODO seleccionado (m² × precio venta × peso de la
+  // tarea/100), igual que produccionRD pero solo con los reportes del rango de fechas.
+  const produccionRDPeriodo = reportesPeriodo.reduce((s, r) => {
+    const area = (proyecto.areas || []).find(a => a.id === r.areaId);
+    if (!area) return s;
+    const sisR = (data.sistemas && data.sistemas[area.sistemaId || proyecto.sistema]) || sistema;
+    const m2 = getM2Reporte(r, sisR);
+    const tarea = (sisR?.tareas || []).find(t => t.id === r.tareaId);
+    const peso = tarea ? (Number(tarea.peso) || 0) / 100 : 1;
+    const precio = getPrecioVentaArea(area, sisR) || 0;
+    return s + m2 * precio * peso;
+  }, 0);
 
   // Bitácora por día con detalle de actividad por tarea — v8.9.28
   const bitacoraPorDia = {};
@@ -429,6 +442,7 @@ export default function ModalReporteAvancePDF({ proyecto, sistema, data, usuario
             incluirFinanciero={incluirFinanciero}
             porcentaje={porcentaje}
             produccionRD={produccionRD}
+            produccionRDPeriodo={produccionRDPeriodo}
             valorContrato={valorContrato}
             porTarea={porTarea}
             totalM2Periodo={totalM2Periodo}
@@ -445,7 +459,7 @@ export default function ModalReporteAvancePDF({ proyecto, sistema, data, usuario
   );
 }
 
-function ReportePDFContenido({ proyecto, sistema, data, tipo, fechaInicio, fechaFin, proximosPasos, incluirFotos, incluirBitacora, incluirFinanciero, porcentaje, produccionRD, valorContrato, porTarea, totalM2Periodo, bitacora, areasConAvance, diasTrabajados, reportesPeriodo, fotosCargadas, cargandoFotos }) {
+function ReportePDFContenido({ proyecto, sistema, data, tipo, fechaInicio, fechaFin, proximosPasos, incluirFotos, incluirBitacora, incluirFinanciero, porcentaje, produccionRD, produccionRDPeriodo, valorContrato, porTarea, totalM2Periodo, bitacora, areasConAvance, diasTrabajados, reportesPeriodo, fotosCargadas, cargandoFotos }) {
   const supervisor = getPersona(data.personal, proyecto.supervisorId);
   const maestro = getPersona(data.personal, proyecto.maestroId);
   const tipoLabel = { diario: 'Diario', semanal: 'Semanal', quincenal: 'Quincenal', custom: 'Personalizado' }[tipo] || 'Avance';
@@ -527,13 +541,20 @@ function ReportePDFContenido({ proyecto, sistema, data, tipo, fechaInicio, fecha
           </div>
         </div>
 
-        {/* Resumen de la semana */}
+        {/* Resumen del periodo — v8.25.42: lo PRINCIPAL es lo ejecutado en las fechas
+            seleccionadas; el % total acumulado de la obra queda como contexto. */}
         <div style={{ padding: '22px 36px' }}>
-          <div style={{ color: '#71717a', fontSize: '10px', letterSpacing: '1.5px', marginBottom: '12px' }}>RESUMEN DEL PERIODO</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '12px' }}>
+            <div style={{ color: '#71717a', fontSize: '10px', letterSpacing: '1.5px' }}>EJECUTADO EN EL PERIODO · {formatFechaCorta(fechaInicio)} — {formatFechaCorta(fechaFin)}</div>
+            <div style={{ color: '#a1a1aa', fontSize: '10px' }}>Avance total acumulado de la obra: <strong style={{ color: '#27272a' }}>{porcentaje.toFixed(1)}%</strong></div>
+          </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
-            <div style={{ border: '1px solid #e4e4e7', padding: '14px' }}>
-              <div style={{ color: '#71717a', fontSize: '9px', letterSpacing: '1.5px' }}>AVANCE TOTAL</div>
-              <div style={{ color: '#18181b', fontSize: '24px', fontWeight: 600, marginTop: '4px', lineHeight: 1 }}>{porcentaje.toFixed(1)}%</div>
+            <div style={{ border: '1px solid #e4e4e7', padding: '14px', background: '#f0fdf4' }}>
+              <div style={{ color: '#71717a', fontSize: '9px', letterSpacing: '1.5px' }}>AVANCE DEL PERIODO</div>
+              <div style={{ color: '#16a34a', fontSize: '24px', fontWeight: 600, marginTop: '4px', lineHeight: 1 }}>{totalM2Periodo.toFixed(1)} <span style={{ fontSize: '13px' }}>m²</span></div>
+              {incluirFinanciero && produccionRDPeriodo > 0 && (
+                <div style={{ color: '#16a34a', fontSize: '12px', fontWeight: 600, marginTop: '4px' }}>{formatRD(produccionRDPeriodo)}</div>
+              )}
             </div>
             <div style={{ border: '1px solid #e4e4e7', padding: '14px' }}>
               <div style={{ color: '#71717a', fontSize: '9px', letterSpacing: '1.5px' }}>DÍAS TRABAJADOS</div>
@@ -682,10 +703,14 @@ function ReportePDFContenido({ proyecto, sistema, data, tipo, fechaInicio, fecha
         {incluirFinanciero && valorContrato > 0 && (
           <div style={{ padding: '0 36px 24px' }}>
             <div style={{ color: '#71717a', fontSize: '10px', letterSpacing: '1.5px', marginBottom: '10px' }}>RESUMEN FINANCIERO</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
+              <div style={{ background: '#f0fdf4', padding: '14px', border: '1px solid #bbf7d0' }}>
+                <div style={{ color: '#71717a', fontSize: '10px' }}>Producido en el periodo</div>
+                <div style={{ color: '#16a34a', fontSize: '18px', fontWeight: 600, marginTop: '4px' }}>{formatRD(produccionRDPeriodo)}</div>
+              </div>
               <div style={{ background: '#fafafa', padding: '14px', border: '1px solid #e4e4e7' }}>
-                <div style={{ color: '#71717a', fontSize: '10px' }}>Avance monetario ejecutado</div>
-                <div style={{ color: '#16a34a', fontSize: '18px', fontWeight: 600, marginTop: '4px' }}>{formatRD(produccionRD)}</div>
+                <div style={{ color: '#71717a', fontSize: '10px' }}>Avance acumulado total</div>
+                <div style={{ color: '#27272a', fontSize: '18px', fontWeight: 600, marginTop: '4px' }}>{formatRD(produccionRD)}</div>
               </div>
               <div style={{ background: '#fafafa', padding: '14px', border: '1px solid #e4e4e7' }}>
                 <div style={{ color: '#71717a', fontSize: '10px' }}>Pendiente por ejecutar</div>

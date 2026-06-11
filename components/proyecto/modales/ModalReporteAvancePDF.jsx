@@ -624,9 +624,16 @@ function ReportePDFContenido({ proyecto, sistema, data, tipo, fechaInicio, fecha
         {/* v8.9.29: Avance por área con desglose de tareas — reemplaza las 2 secciones anteriores */}
         {areasConAvance.length > 0 && (
           <div style={{ padding: '0 36px 22px' }}>
-            <div style={{ color: '#71717a', fontSize: '10px', letterSpacing: '1.5px', marginBottom: '4px' }}>AVANCE POR ÁREA Y TAREA</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '4px' }}>
+              <div style={{ color: '#71717a', fontSize: '10px', letterSpacing: '1.5px' }}>AVANCE POR ÁREA Y TAREA</div>
+              {/* v8.25.45: leyenda de los dos tonos de la barra */}
+              <div style={{ color: '#71717a', fontSize: '8px', display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}><span style={{ width: 10, height: 7, background: '#bbf7d0', display: 'inline-block', borderRadius: 2 }} /> antes</span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}><span style={{ width: 10, height: 7, background: '#16a34a', display: 'inline-block', borderRadius: 2 }} /> en el periodo</span>
+              </div>
+            </div>
             <div style={{ color: '#a1a1aa', fontSize: '9px', marginBottom: '12px', fontStyle: 'italic' }}>
-              Cada tarea es una capa sobre la misma superficie. El avance del área combina todas sus tareas ponderadas por peso.
+              Cada tarea es una capa sobre la misma superficie. El avance del área combina todas sus tareas ponderadas por peso. El verde oscuro de cada barra es lo ejecutado en las fechas del reporte.
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               {areasConAvance.map(area => (
@@ -657,13 +664,24 @@ function ReportePDFContenido({ proyecto, sistema, data, tipo, fechaInicio, fecha
                             <span style={{ fontWeight: 500 }}>{t.nombre}</span>
                             {t.peso > 0 && <span style={{ color: '#a1a1aa', marginLeft: '6px', fontSize: '9px' }}>peso {t.peso}%</span>}
                           </div>
-                          <div style={{ fontSize: '10px', color: t.pct >= 100 ? '#16a34a' : t.pct > 0 ? '#d97706' : '#71717a', fontWeight: 600 }}>
-                            {t.m2Historico.toFixed(0)} / {area.m2} m² <span style={{ color: '#a1a1aa', fontWeight: 500 }}>({t.pct.toFixed(0)}%)</span>
+                          <div style={{ fontSize: '10px', textAlign: 'right' }}>
+                            {/* v8.25.45: lo ejecutado EN EL PERIODO, destacado */}
+                            {t.m2Periodo > 0
+                              ? <span style={{ color: '#16a34a', fontWeight: 700 }}>+{t.m2Periodo.toFixed(0)} m² este periodo</span>
+                              : <span style={{ color: '#a1a1aa', fontWeight: 500 }}>sin avance este periodo</span>}
+                            <span style={{ color: t.pct >= 100 ? '#16a34a' : t.pct > 0 ? '#d97706' : '#71717a', fontWeight: 600 }}> · acum. {t.m2Historico.toFixed(0)}/{area.m2} m² ({t.pct.toFixed(0)}%)</span>
                           </div>
                         </div>
-                        <div style={{ height: '6px', background: '#f4f4f5', borderRadius: '2px', overflow: 'hidden' }}>
-                          <div style={{ height: '100%', width: `${t.pct}%`, background: t.pct >= 100 ? '#16a34a' : '#16a34a', borderRadius: '2px' }} />
-                        </div>
+                        {(() => {
+                          const pctPeriodo = area.m2 > 0 ? Math.min(t.pct, (t.m2Periodo / area.m2) * 100) : 0;
+                          const pctAntes = Math.max(0, t.pct - pctPeriodo);
+                          return (
+                            <div style={{ height: '7px', background: '#f4f4f5', borderRadius: '2px', overflow: 'hidden', display: 'flex' }}>
+                              <div style={{ height: '100%', width: `${pctAntes}%`, background: '#bbf7d0' }} />
+                              <div style={{ height: '100%', width: `${pctPeriodo}%`, background: '#16a34a' }} />
+                            </div>
+                          );
+                        })()}
                       </div>
                     ))}
                   </div>

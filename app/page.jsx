@@ -11591,7 +11591,39 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto, onRecargar
 
   const confirmarAsignacion = async ({ proyectoId, personaId, fecha, fechaHasta, rol }) => {
     try {
-      // v8.25.40: rango de varios días → ASIGNACIÓN programada (no jornadas sueltas).
+      const hoyStr = new Date().toISOString().split('T')[0];
+      // v8.26.4: rango de días PASADOS → ASISTENCIA RETROACTIVA: jornadas reales día
+      // por día (cuentan para nómina), no asignación programada. Se omiten domingos.
+      if (fechaHasta && fechaHasta > fecha && fechaHasta <= hoyStr) {
+        let diasMarcados = 0;
+        for (let d = new Date(fecha + 'T12:00:00'); d <= new Date(fechaHasta + 'T12:00:00'); d.setDate(d.getDate() + 1)) {
+          if (d.getDay() === 0) continue; // domingo
+          const f = d.toISOString().split('T')[0];
+          // Buscar en BD (el rango puede salir de la semana visible)
+          const existente = await db.obtenerJornadaHoy(proyectoId, f).catch(() => null);
+          if (existente) {
+            if (!(existente.personasPresentesIds || []).includes(personaId)) {
+              await db.actualizarPersonasJornada(existente.id, [...(existente.personasPresentesIds || []), personaId]);
+            }
+          } else {
+            await db.iniciarJornada({
+              id: 'j_' + Date.now() + Math.random(),
+              proyectoId, fecha: f,
+              horaInicio: `${f}T08:00:00.000Z`,
+              iniciadaPorId: 'planificacion', iniciadaPorNombre: `Retroactivo (${usuario?.nombre || 'admin'})`,
+              inicioLat: null, inicioLng: null,
+              inicioPrecisionM: null, inicioDistanciaObraM: null,
+              personasPresentesIds: [personaId],
+            });
+          }
+          diasMarcados++;
+        }
+        alert(`✓ Asistencia registrada: ${diasMarcados} día(s) (domingos omitidos). Ya cuentan para nómina.`);
+        setModalAsignar(null);
+        await cargar();
+        return;
+      }
+      // v8.25.40: rango hacia FUTURO → ASIGNACIÓN programada (no jornadas sueltas).
       if (fechaHasta && fechaHasta > fecha) {
         await db.crearAsignacion({
           personaId, proyectoId,
@@ -12057,6 +12089,8 @@ function ModalAsignarDesdeGrid({ personaId, fecha, data, usuario, onCerrar, onCo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proyectoId]);
   const esRango = fechaHasta && fechaHasta > fecha;
+  // v8.26.4: rango completamente en el pasado = asistencia retroactiva (jornadas reales)
+  const esRetro = esRango && fechaHasta <= new Date().toISOString().split('T')[0];
   const fechaLabel = new Date(fecha + 'T12:00:00').toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'long' });
 
   return (
@@ -12092,7 +12126,7 @@ function ModalAsignarDesdeGrid({ personaId, fecha, data, usuario, onCerrar, onCo
                 <input type="date" value={fechaHasta} min={fecha} onChange={e => setFechaHasta(e.target.value)} className="w-full bg-zinc-900 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm" />
               </Campo>
             </div>
-            {esRango && (
+            {esRango && !esRetro && (
               <Campo label="Rol en el proyecto">
                 <select value={rol} onChange={e => setRol(e.target.value)} className="w-full bg-zinc-900 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm">
                   <option value="maestro">Maestro</option>
@@ -12102,7 +12136,9 @@ function ModalAsignarDesdeGrid({ personaId, fecha, data, usuario, onCerrar, onCo
               </Campo>
             )}
             <div className="text-[10px] text-zinc-500 bg-zinc-950 border border-zinc-800 rounded-card p-2">
-              {esRango
+              {esRetro
+                ? '✍️ ASISTENCIA RETROACTIVA: se registran JORNADAS reales por cada día del rango (domingos omitidos) — cuentan para la nómina de una vez.'
+                : esRango
                 ? '📅 Se creará una ASIGNACIÓN programada por el rango completo (sale en el calendario con borde azul). Las jornadas reales se crean cada día en obra.'
                 : '💡 Si ya existe una jornada ese día para el proyecto, se agregará a la persona. Si no, se creará una nueva jornada programada. Para varios días, cambia "Hasta".'}
             </div>
@@ -12116,7 +12152,7 @@ function ModalAsignarDesdeGrid({ personaId, fecha, data, usuario, onCerrar, onCo
               onClick={() => onConfirmar({ proyectoId, personaId, fecha, fechaHasta, rol })}
               className="flex-1 bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase py-2 flex items-center justify-center gap-2"
             >
-              <Plus className="w-3 h-3" /> {esRango ? `Asignar ${Math.round((new Date(fechaHasta) - new Date(fecha)) / 86400000) + 1} días` : 'Asignar'}
+              <Plus className="w-3 h-3" /> {esRetro ? `Registrar asistencia (${Math.round((new Date(fechaHasta) - new Date(fecha)) / 86400000) + 1} días)` : esRango ? `Asignar ${Math.round((new Date(fechaHasta) - new Date(fecha)) / 86400000) + 1} días` : 'Asignar'}
             </button>
           )}
         </div>

@@ -110,6 +110,8 @@ export default function VistaContabilidad({ usuario, onVolver }) {
         <TabBtn activo={tab === 'cxp'} onClick={() => setTab('cxp')}>CxP</TabBtn>
         <TabBtn activo={tab === 'catalogo'} onClick={() => setTab('catalogo')}>Catálogo</TabBtn>
         <TabBtn activo={tab === 'bancos'} onClick={() => setTab('bancos')}>Bancos</TabBtn>
+        <TabBtn activo={tab === 'asientos'} onClick={() => setTab('asientos')}>Asientos</TabBtn>
+        <TabBtn activo={tab === 'balanza'} onClick={() => setTab('balanza')}>Balanza</TabBtn>
         <TabBtn activo={tab === 'anulados'} onClick={() => setTab('anulados')}><Ban className="w-3 h-3 inline mr-1" /> NCF anulados</TabBtn>
         <TabBtn activo={tab === 'secuencias'} onClick={() => setTab('secuencias')}><ListOrdered className="w-3 h-3 inline mr-1" /> Secuencias NCF</TabBtn>
       </div>
@@ -127,6 +129,8 @@ export default function VistaContabilidad({ usuario, onVolver }) {
         {tab === 'cxp' && <CuentasPendientes tipo="cxp" empresa={empresa} setEmpresa={setEmpresa} />}
         {tab === 'catalogo' && <CatalogoCuentas empresa={empresa} setEmpresa={setEmpresa} />}
         {tab === 'bancos' && <ConciliacionBancaria empresa={empresa} setEmpresa={setEmpresa} usuario={usuario} />}
+        {tab === 'asientos' && <AsientosGL empresa={empresa} setEmpresa={setEmpresa} usuario={usuario} />}
+        {tab === 'balanza' && <BalanzaGL empresa={empresa} setEmpresa={setEmpresa} usuario={usuario} />}
         {tab === 'anulados' && <NcfAnulados usuario={usuario} />}
         {tab === 'secuencias' && <SecuenciasNcf usuario={usuario} />}
       </div>
@@ -993,6 +997,281 @@ function ConciliacionBancaria({ empresa, setEmpresa, usuario }) {
       )}
 
       <div className="text-[10px] text-zinc-600">v1: las sugerencias comparan contra gastos APROBADOS de caja chica (monto ±RD$1, fecha ±5 días). Entradas (cobros) se concilian manual por ahora; el matching contra pagos/cobros nativos y el cierre formal del mes llegan con la Fase 4.</div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
+// Tab: Asientos (libro diario) — v8.26.3 Fase 2 GL
+// Partida doble validada en la BD (RPC cont_crear_asiento); inmutables, solo reverso.
+// ────────────────────────────────────────────────────────────
+function AsientosGL({ empresa, setEmpresa, usuario }) {
+  const [asientos, setAsientos] = useState([]);
+  const [cuentas, setCuentas] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [nuevo, setNuevo] = useState(null); // null | { fecha, descripcion, lineas: [{cuentaTxt, cuentaId, debe, haber, descripcion}] }
+  const [guardando, setGuardando] = useState(false);
+  const [expandido, setExpandido] = useState(null);
+
+  const cargar = async () => {
+    setLoading(true);
+    try {
+      const [as, cat] = await Promise.all([db.listarAsientosContables(empresa), db.listarCatalogoContable(empresa)]);
+      setAsientos(as); setCuentas(cat.cuentas.filter(c => c.activa));
+    } catch (e) { toast('Error: ' + (e?.message || e), 'error'); }
+    setLoading(false);
+  };
+  useEffect(() => { cargar(); /* eslint-disable-next-line */ }, [empresa]);
+
+  const lineaVacia = () => ({ cuentaTxt: '', debe: '', haber: '', descripcion: '' });
+  const abrirNuevo = () => setNuevo({ fecha: new Date().toISOString().split('T')[0], descripcion: '', lineas: [lineaVacia(), lineaVacia()] });
+  const setLinea = (i, campo, v) => setNuevo(n => ({ ...n, lineas: n.lineas.map((l, x) => x === i ? { ...l, [campo]: v } : l) }));
+
+  const cuentaDeTxt = (txt) => cuentas.find(c => `${c.codigo} — ${c.nombre}` === txt || c.codigo === txt.trim());
+  const totDebe = nuevo ? nuevo.lineas.reduce((s, l) => s + (parseFloat(l.debe) || 0), 0) : 0;
+  const totHaber = nuevo ? nuevo.lineas.reduce((s, l) => s + (parseFloat(l.haber) || 0), 0) : 0;
+  const balanceado = Math.round(totDebe * 100) === Math.round(totHaber * 100) && totDebe > 0;
+
+  const guardarAsiento = async () => {
+    const lineas = [];
+    for (const l of nuevo.lineas) {
+      const tieneMonto = (parseFloat(l.debe) || 0) > 0 || (parseFloat(l.haber) || 0) > 0;
+      if (!l.cuentaTxt.trim() && !tieneMonto) continue; // línea vacía: ignorar
+      const cta = cuentaDeTxt(l.cuentaTxt);
+      if (!cta) { toast(`Cuenta no reconocida: "${l.cuentaTxt}" — elígela de la lista`, 'error'); return; }
+      lineas.push({ cuentaId: cta.id, debe: parseFloat(l.debe) || 0, haber: parseFloat(l.haber) || 0, descripcion: l.descripcion || null });
+    }
+    if (lineas.length < 2) { toast('Un asiento necesita al menos 2 líneas', 'info'); return; }
+    setGuardando(true);
+    try {
+      await db.crearAsientoContable({ empresa, fecha: nuevo.fecha, descripcion: nuevo.descripcion, lineas, usuarioId: usuario?.id });
+      toast('Asiento creado ✓', 'success');
+      setNuevo(null);
+      await cargar();
+    } catch (e) { toast(e?.message || String(e), 'error'); }
+    setGuardando(false);
+  };
+
+  const reversar = async (a) => {
+    if (!window.confirm(`¿Reversar el asiento #${a.numero}? Se crea el asiento inverso (los asientos no se borran).`)) return;
+    try { await db.reversarAsientoContable(a.id, usuario?.id); toast('Reversado ✓', 'success'); await cargar(); }
+    catch (e) { toast(e?.message || String(e), 'error'); }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 bg-zinc-900 border border-zinc-800 rounded-card p-3">
+        <SelectorEmpresa empresa={empresa} setEmpresa={setEmpresa} />
+        <button onClick={abrirNuevo} disabled={cuentas.length === 0}
+          className="bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-xs font-bold uppercase px-4 py-2 rounded-card flex items-center gap-1.5">
+          <Plus className="w-3.5 h-3.5" /> Asiento manual
+        </button>
+      </div>
+      {cuentas.length === 0 && !loading && (
+        <div className="bg-amber-900/15 border border-amber-700 rounded-card p-3 text-xs text-amber-300">
+          Primero importa el <b>Catálogo</b> de cuentas desde Odoo (tab Catálogo) para poder registrar asientos.
+        </div>
+      )}
+
+      {/* Nuevo asiento */}
+      {nuevo && (
+        <div className="bg-zinc-900 border-2 border-red-700 rounded-card p-3 space-y-3">
+          <div className="text-xs font-bold text-red-400 uppercase tracking-widest">Nuevo asiento</div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <Campo label="Fecha"><Input type="date" value={nuevo.fecha} onChange={v => setNuevo({ ...nuevo, fecha: v })} /></Campo>
+            <div className="sm:col-span-2"><Campo label="Descripción"><Input value={nuevo.descripcion} onChange={v => setNuevo({ ...nuevo, descripcion: v })} placeholder="Ej: Registro de gasto bancario junio" /></Campo></div>
+          </div>
+          <datalist id="dl-cuentas">{cuentas.map(c => <option key={c.id} value={`${c.codigo} — ${c.nombre}`} />)}</datalist>
+          <div className="space-y-1.5">
+            {nuevo.lineas.map((l, i) => (
+              <div key={i} className="flex gap-1.5 items-center">
+                <input list="dl-cuentas" value={l.cuentaTxt} onChange={e => setLinea(i, 'cuentaTxt', e.target.value)} placeholder="Cuenta (escribe código o nombre)…"
+                  className="flex-1 min-w-0 bg-zinc-950 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-2.5 py-2 text-white text-xs" />
+                <input type="number" inputMode="decimal" value={l.debe} onChange={e => setLinea(i, 'debe', e.target.value)} placeholder="Debe"
+                  className="w-24 bg-zinc-950 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-2 text-white text-xs text-right tabular-nums" />
+                <input type="number" inputMode="decimal" value={l.haber} onChange={e => setLinea(i, 'haber', e.target.value)} placeholder="Haber"
+                  className="w-24 bg-zinc-950 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-2 text-white text-xs text-right tabular-nums" />
+                <button onClick={() => setNuevo(n => ({ ...n, lineas: n.lineas.filter((_, x) => x !== i) }))} className="text-zinc-600 hover:text-red-400 shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>
+              </div>
+            ))}
+          </div>
+          <button onClick={() => setNuevo(n => ({ ...n, lineas: [...n.lineas, lineaVacia()] }))} className="text-[10px] text-red-400 font-bold uppercase flex items-center gap-1"><Plus className="w-3 h-3" /> Línea</button>
+          <div className={`flex items-center justify-between rounded-card px-3 py-2 text-xs font-bold ${balanceado ? 'bg-green-900/20 border border-green-700 text-green-300' : 'bg-amber-900/20 border border-amber-700 text-amber-300'}`}>
+            <span>Debe: {formatRD(totDebe)} · Haber: {formatRD(totHaber)}</span>
+            <span>{balanceado ? '✓ Balanceado' : `Diferencia: ${formatRD(Math.abs(totDebe - totHaber))}`}</span>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => setNuevo(null)} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2.5 rounded-card">Cancelar</button>
+            <button onClick={guardarAsiento} disabled={!balanceado || guardando}
+              className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-xs font-black uppercase py-2.5 rounded-card flex items-center justify-center gap-2">
+              {guardando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null} Registrar asiento
+            </button>
+          </div>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="flex items-center gap-2 text-zinc-500 text-sm py-6 justify-center"><Loader2 className="w-4 h-4 animate-spin" /> Cargando…</div>
+      ) : asientos.length === 0 ? (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-8 text-center text-sm text-zinc-500">Sin asientos aún. Crea el primero con "+ Asiento manual".</div>
+      ) : (
+        <div className="space-y-1.5">
+          {asientos.map(a => (
+            <div key={a.id} className={`bg-zinc-900 border rounded-card ${a.estado === 'reversado' ? 'border-zinc-800 opacity-60' : 'border-zinc-800'}`}>
+              <button onClick={() => setExpandido(expandido === a.id ? null : a.id)} className="w-full p-3 flex items-center justify-between gap-3 text-left">
+                <div className="min-w-0 flex items-center gap-2">
+                  <span className="font-mono text-[10px] text-zinc-500 shrink-0">#{a.numero}</span>
+                  <span className="text-xs text-zinc-500 shrink-0">{a.fecha}</span>
+                  <span className="text-sm text-zinc-200 truncate">{a.descripcion || '(sin descripción)'}</span>
+                  {a.estado === 'reversado' && <span className="text-[9px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded uppercase font-bold shrink-0">Reversado</span>}
+                  {a.origenTipo === 'reverso' && <span className="text-[9px] bg-amber-900/40 text-amber-300 px-1.5 py-0.5 rounded uppercase font-bold shrink-0">Reverso</span>}
+                </div>
+                <span className="text-sm font-bold tabular-nums text-zinc-300 shrink-0">{formatRD(a.totalDebe)}</span>
+              </button>
+              {expandido === a.id && (
+                <div className="border-t border-zinc-800 p-3 space-y-1">
+                  {a.lineas.map(l => (
+                    <div key={l.id} className="flex items-center gap-2 text-[11px]">
+                      <span className="font-mono text-zinc-600 w-20 shrink-0">{l.codigo}</span>
+                      <span className="text-zinc-300 truncate flex-1">{l.cuentaNombre}{l.descripcion ? ` — ${l.descripcion}` : ''}</span>
+                      <span className="w-24 text-right tabular-nums text-zinc-400">{l.debe > 0 ? formatRD(l.debe) : ''}</span>
+                      <span className="w-24 text-right tabular-nums text-zinc-400">{l.haber > 0 ? formatRD(l.haber) : ''}</span>
+                    </div>
+                  ))}
+                  {a.estado === 'posteado' && (
+                    <div className="pt-2"><button onClick={() => reversar(a)} className="text-[10px] text-amber-400 hover:text-amber-300 font-bold uppercase">↩ Reversar asiento</button></div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
+// Tab: Balanza de comprobación + libro mayor + períodos — v8.26.3 Fase 2 GL
+// ────────────────────────────────────────────────────────────
+function BalanzaGL({ empresa, setEmpresa, usuario }) {
+  const hoy = new Date();
+  const primerDia = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-01`;
+  const [desde, setDesde] = useState(primerDia);
+  const [hasta, setHasta] = useState(hoy.toISOString().split('T')[0]);
+  const [filas, setFilas] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [mayor, setMayor] = useState(null); // { cuenta, movimientos }
+  const [periodos, setPeriodos] = useState([]);
+
+  const cargar = async () => {
+    setLoading(true); setMayor(null);
+    try {
+      const [b, ps] = await Promise.all([db.balanzaContable(empresa, desde, hasta), db.listarPeriodosContables(empresa)]);
+      setFilas(b); setPeriodos(ps);
+    } catch (e) { toast('Error: ' + (e?.message || e), 'error'); }
+    setLoading(false);
+  };
+  useEffect(() => { cargar(); /* eslint-disable-next-line */ }, [empresa]);
+
+  const verMayor = async (f) => {
+    try {
+      const movs = await db.libroMayorCuenta(empresa, f.cuentaId, desde, hasta);
+      setMayor({ cuenta: f, movimientos: movs });
+    } catch (e) { toast('Error: ' + (e?.message || e), 'error'); }
+  };
+
+  const togglePeriodoActual = async () => {
+    const anio = parseInt(desde.slice(0, 4)), mes = parseInt(desde.slice(5, 7));
+    const per = periodos.find(p => p.anio === anio && p.mes === mes);
+    const nuevoEstado = per?.estado === 'cerrado' ? 'abierto' : 'cerrado';
+    if (!window.confirm(`¿${nuevoEstado === 'cerrado' ? 'CERRAR' : 'REABRIR'} el período ${String(mes).padStart(2, '0')}/${anio} de ${empresa === 'prouco' ? 'Prouco' : 'Super Techos'}? ${nuevoEstado === 'cerrado' ? 'No se podrán registrar asientos en ese mes.' : ''}`)) return;
+    try { await db.setPeriodoContable(empresa, anio, mes, nuevoEstado, usuario?.id); toast(`Período ${nuevoEstado} ✓`, 'success'); await cargar(); }
+    catch (e) { toast(e?.message || String(e), 'error'); }
+  };
+
+  const totDebe = (filas || []).reduce((s, f) => s + f.debe, 0);
+  const totHaber = (filas || []).reduce((s, f) => s + f.haber, 0);
+  const anioSel = parseInt(desde.slice(0, 4)), mesSel = parseInt(desde.slice(5, 7));
+  const perSel = periodos.find(p => p.anio === anioSel && p.mes === mesSel);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end gap-2 bg-zinc-900 border border-zinc-800 rounded-card p-3">
+        <SelectorEmpresa empresa={empresa} setEmpresa={setEmpresa} />
+        <Campo label="Desde"><Input type="date" value={desde} onChange={setDesde} /></Campo>
+        <Campo label="Hasta"><Input type="date" value={hasta} onChange={setHasta} /></Campo>
+        <button onClick={cargar} disabled={loading} className="bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white text-xs font-bold uppercase px-4 py-2.5 rounded-card flex items-center gap-2">
+          {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null} Generar
+        </button>
+        <button onClick={togglePeriodoActual} className={`text-[10px] font-bold uppercase px-3 py-2.5 rounded-card border ${perSel?.estado === 'cerrado' ? 'border-red-700 text-red-300 bg-red-900/20' : 'border-zinc-700 text-zinc-400 hover:text-white'}`}>
+          {perSel?.estado === 'cerrado' ? `🔒 ${String(mesSel).padStart(2, '0')}/${anioSel} cerrado — reabrir` : `Cerrar mes ${String(mesSel).padStart(2, '0')}/${anioSel}`}
+        </button>
+      </div>
+
+      {filas && !loading && (
+        filas.length === 0 ? (
+          <div className="bg-zinc-900 border border-zinc-800 rounded-card p-8 text-center text-sm text-zinc-500">Sin movimientos en el rango. Registra asientos en la tab "Asientos".</div>
+        ) : (
+          <div className="bg-zinc-900 border border-zinc-800 rounded-card overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-zinc-950 border-b border-zinc-800">
+                <tr>
+                  <th className="px-3 py-2 text-left text-[10px] uppercase tracking-wider text-zinc-500">Cuenta</th>
+                  <th className="px-3 py-2 text-right text-[10px] uppercase tracking-wider text-zinc-500">Débitos</th>
+                  <th className="px-3 py-2 text-right text-[10px] uppercase tracking-wider text-zinc-500">Créditos</th>
+                  <th className="px-3 py-2 text-right text-[10px] uppercase tracking-wider text-zinc-500">Balance</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filas.map(f => (
+                  <tr key={f.cuentaId} onClick={() => verMayor(f)} className="border-b border-zinc-800/50 hover:bg-zinc-800/40 cursor-pointer" title="Ver libro mayor de la cuenta">
+                    <td className="px-3 py-2"><span className="font-mono text-zinc-500 mr-2">{f.codigo}</span><span className="text-zinc-200">{f.nombre}</span></td>
+                    <td className="px-3 py-2 text-right tabular-nums text-zinc-300">{f.debe ? formatRD(f.debe) : '—'}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-zinc-300">{f.haber ? formatRD(f.haber) : '—'}</td>
+                    <td className={`px-3 py-2 text-right tabular-nums font-bold ${f.debe - f.haber >= 0 ? 'text-zinc-200' : 'text-amber-300'}`}>{formatRD(f.debe - f.haber)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="bg-zinc-950 border-t-2 border-zinc-700">
+                <tr>
+                  <td className="px-3 py-2 text-[10px] uppercase tracking-wider font-bold text-zinc-400">Totales</td>
+                  <td className="px-3 py-2 text-right tabular-nums font-black text-white">{formatRD(totDebe)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums font-black text-white">{formatRD(totHaber)}</td>
+                  <td className={`px-3 py-2 text-right tabular-nums font-black ${Math.round((totDebe - totHaber) * 100) === 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    {Math.round((totDebe - totHaber) * 100) === 0 ? '✓ Cuadra' : formatRD(totDebe - totHaber)}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )
+      )}
+
+      {/* Libro mayor de la cuenta seleccionada */}
+      {mayor && (
+        <div className="bg-zinc-900 border-2 border-zinc-700 rounded-card p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="text-xs font-bold text-zinc-200">📒 Libro mayor · <span className="font-mono text-zinc-500">{mayor.cuenta.codigo}</span> {mayor.cuenta.nombre}</div>
+            <button onClick={() => setMayor(null)} className="text-zinc-500 hover:text-white"><X className="w-4 h-4" /></button>
+          </div>
+          <table className="w-full text-[11px]">
+            <tbody>
+              {(() => { let saldo = 0; return mayor.movimientos.map(m => { saldo += m.debe - m.haber; return (
+                <tr key={m.id} className="border-b border-zinc-800/50">
+                  <td className="px-2 py-1.5 text-zinc-500 whitespace-nowrap">#{m.asientoNumero} · {m.fecha}</td>
+                  <td className="px-2 py-1.5 text-zinc-300 truncate max-w-[260px]">{m.lineaDesc || m.asientoDesc}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-zinc-400 w-24">{m.debe ? formatRD(m.debe) : ''}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-zinc-400 w-24">{m.haber ? formatRD(m.haber) : ''}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums font-bold text-zinc-200 w-28">{formatRD(saldo)}</td>
+                </tr>
+              ); }); })()}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className="text-[10px] text-zinc-600">Toca una cuenta para ver su libro mayor. Los asientos son inmutables (la BD bloquea ediciones; las correcciones se hacen con reversos) y el cierre de mes impide registrar en períodos cerrados.</div>
     </div>
   );
 }

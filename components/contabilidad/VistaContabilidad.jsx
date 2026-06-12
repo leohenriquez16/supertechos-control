@@ -104,8 +104,11 @@ export default function VistaContabilidad({ usuario, onVolver }) {
         <span className="text-[10px] uppercase tracking-widest text-zinc-600 font-bold">DGII · 606 / 607 / 608 · IT-1</span>
       </div>
 
-      <div className="flex border-b border-zinc-800 px-2 mt-2">
+      <div className="flex border-b border-zinc-800 px-2 mt-2 overflow-x-auto">
         <TabBtn activo={tab === 'reportes'} onClick={() => setTab('reportes')}><FileText className="w-3 h-3 inline mr-1" /> Reportes DGII</TabBtn>
+        <TabBtn activo={tab === 'cxc'} onClick={() => setTab('cxc')}>CxC</TabBtn>
+        <TabBtn activo={tab === 'cxp'} onClick={() => setTab('cxp')}>CxP</TabBtn>
+        <TabBtn activo={tab === 'catalogo'} onClick={() => setTab('catalogo')}>Catálogo</TabBtn>
         <TabBtn activo={tab === 'anulados'} onClick={() => setTab('anulados')}><Ban className="w-3 h-3 inline mr-1" /> NCF anulados</TabBtn>
         <TabBtn activo={tab === 'secuencias'} onClick={() => setTab('secuencias')}><ListOrdered className="w-3 h-3 inline mr-1" /> Secuencias NCF</TabBtn>
       </div>
@@ -119,6 +122,9 @@ export default function VistaContabilidad({ usuario, onVolver }) {
             loading={loading} generar={generar} rep={rep}
           />
         )}
+        {tab === 'cxc' && <CuentasPendientes tipo="cxc" empresa={empresa} setEmpresa={setEmpresa} />}
+        {tab === 'cxp' && <CuentasPendientes tipo="cxp" empresa={empresa} setEmpresa={setEmpresa} />}
+        {tab === 'catalogo' && <CatalogoCuentas empresa={empresa} setEmpresa={setEmpresa} />}
         {tab === 'anulados' && <NcfAnulados usuario={usuario} />}
         {tab === 'secuencias' && <SecuenciasNcf usuario={usuario} />}
       </div>
@@ -480,6 +486,243 @@ function SecuenciasNcf({ usuario }) {
             </table>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
+// Selector de empresa compartido (CxC/CxP/Catálogo)
+// ────────────────────────────────────────────────────────────
+function SelectorEmpresa({ empresa, setEmpresa }) {
+  return (
+    <div className="flex gap-2">
+      {Object.entries(EMPRESAS_RECEPTORAS).map(([key, info]) => (
+        <button key={key} onClick={() => setEmpresa(key)}
+          className={`px-3 py-1.5 rounded-card text-xs font-bold border ${empresa === key ? `${info.color} text-white border-transparent` : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'}`}>
+          {info.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
+// Tab: Cuentas por Cobrar / Pagar (v8.26.1 — leídas de Odoo, Fase 3 las hace nativas)
+// ────────────────────────────────────────────────────────────
+function CuentasPendientes({ tipo, empresa, setEmpresa }) {
+  const [loading, setLoading] = useState(false);
+  const [facturas, setFacturas] = useState(null);
+  const [error, setError] = useState(null);
+  const [busqueda, setBusqueda] = useState('');
+  const esCxc = tipo === 'cxc';
+  const hoyStr = new Date().toISOString().split('T')[0];
+
+  useEffect(() => {
+    let cancel = false;
+    (async () => {
+      setLoading(true); setError(null); setFacturas(null);
+      try {
+        const res = await fetch(`/api/contabilidad/pendientes-odoo?empresa=${empresa}&tipo=${tipo}`);
+        const json = await res.json();
+        if (cancel) return;
+        if (!json.ok) { setError(json.error || 'Error consultando Odoo'); }
+        else setFacturas(json.facturas || []);
+      } catch (e) { if (!cancel) setError(e?.message || String(e)); }
+      if (!cancel) setLoading(false);
+    })();
+    return () => { cancel = true; };
+  }, [empresa, tipo]);
+
+  const diasVencida = (f) => f.vence ? Math.floor((new Date(hoyStr) - new Date(f.vence)) / 86400000) : 0;
+  const lista = (facturas || []).filter(f => {
+    if (!busqueda.trim()) return true;
+    const q = busqueda.toLowerCase();
+    return (f.tercero || '').toLowerCase().includes(q) || (f.ncf || '').toLowerCase().includes(q) || (f.documento || '').toLowerCase().includes(q);
+  });
+
+  // Aging buckets sobre el saldo pendiente
+  const buckets = [
+    { k: 'corriente', label: 'Corriente', test: d => d <= 0, color: '#16a34a' },
+    { k: 'b30', label: '1–30 días', test: d => d >= 1 && d <= 30, color: '#eab308' },
+    { k: 'b60', label: '31–60', test: d => d >= 31 && d <= 60, color: '#f97316' },
+    { k: 'b90', label: '61–90', test: d => d >= 61 && d <= 90, color: '#ef4444' },
+    { k: 'b90p', label: '+90 días', test: d => d > 90, color: '#b91c1c' },
+  ].map(b => ({ ...b, total: (facturas || []).reduce((s, f) => s + (b.test(diasVencida(f)) ? f.pendiente : 0), 0) }));
+  const totalPendiente = (facturas || []).reduce((s, f) => s + f.pendiente, 0);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 bg-zinc-900 border border-zinc-800 rounded-card p-3">
+        <SelectorEmpresa empresa={empresa} setEmpresa={setEmpresa} />
+        <div className="text-right">
+          <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">{esCxc ? 'Por cobrar' : 'Por pagar'} total</div>
+          <div className={`text-xl font-black ${esCxc ? 'text-green-400' : 'text-red-400'}`}>{formatRD(totalPendiente)}</div>
+        </div>
+      </div>
+
+      {loading && <div className="flex items-center gap-2 text-zinc-500 text-sm py-8 justify-center"><Loader2 className="w-4 h-4 animate-spin" /> Leyendo {esCxc ? 'facturas de clientes' : 'facturas de proveedores'} de Odoo…</div>}
+      {error && <div className="bg-red-900/20 border border-red-700 rounded-card text-red-300 p-3 text-sm">No se pudo leer de Odoo: {error}</div>}
+
+      {facturas && !loading && (
+        <>
+          {/* Aging */}
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+            {buckets.map(b => (
+              <div key={b.k} className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
+                <div className="text-[9px] uppercase tracking-widest font-bold" style={{ color: b.color }}>{b.label}</div>
+                <div className="text-sm font-black mt-1" style={{ color: b.total > 0 ? b.color : '#52525b' }}>{formatRD(b.total)}</div>
+              </div>
+            ))}
+          </div>
+
+          <input value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder={`Buscar ${esCxc ? 'cliente' : 'proveedor'} / NCF…`}
+            className="w-full bg-zinc-950 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm" />
+
+          <div className="bg-zinc-900 border border-zinc-800 rounded-card overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-zinc-950 border-b border-zinc-800">
+                <tr>
+                  <th className="px-3 py-2 text-left text-[10px] uppercase tracking-wider text-zinc-500">{esCxc ? 'Cliente' : 'Proveedor'}</th>
+                  <th className="px-3 py-2 text-left text-[10px] uppercase tracking-wider text-zinc-500">NCF / Doc</th>
+                  <th className="px-3 py-2 text-left text-[10px] uppercase tracking-wider text-zinc-500">Fecha</th>
+                  <th className="px-3 py-2 text-left text-[10px] uppercase tracking-wider text-zinc-500">Vence</th>
+                  <th className="px-3 py-2 text-right text-[10px] uppercase tracking-wider text-zinc-500">Total</th>
+                  <th className="px-3 py-2 text-right text-[10px] uppercase tracking-wider text-zinc-500">Pendiente</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lista.length === 0 && <tr><td colSpan={6} className="px-3 py-6 text-center text-zinc-500">Sin facturas pendientes 🎉</td></tr>}
+                {lista.map(f => {
+                  const d = diasVencida(f);
+                  const colorV = d <= 0 ? 'text-zinc-400' : d <= 30 ? 'text-yellow-400' : d <= 90 ? 'text-orange-400' : 'text-red-400';
+                  return (
+                    <tr key={f.id} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
+                      <td className="px-3 py-2 font-medium text-white max-w-[220px] truncate">{f.tercero || '—'}</td>
+                      <td className="px-3 py-2 font-mono text-zinc-400">{f.ncf || f.documento || '—'}</td>
+                      <td className="px-3 py-2 text-zinc-400 whitespace-nowrap">{f.fecha || '—'}</td>
+                      <td className={`px-3 py-2 whitespace-nowrap font-bold ${colorV}`}>{f.vence || '—'}{d > 0 && <span className="ml-1 text-[9px]">({d}d)</span>}</td>
+                      <td className="px-3 py-2 text-right text-zinc-300 tabular-nums">{formatRD(f.total)}</td>
+                      <td className={`px-3 py-2 text-right font-bold tabular-nums ${esCxc ? 'text-green-400' : 'text-red-400'}`}>{formatRD(f.pendiente)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="text-[10px] text-zinc-600">{facturas.length} factura{facturas.length === 1 ? '' : 's'} pendiente{facturas.length === 1 ? '' : 's'} · leídas de Odoo en vivo (solo lectura). En Fase 3 esto pasa a ser nativo con registro de pagos/cobros.</div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
+// Tab: Catálogo de cuentas + diarios (v8.26.1 — importado de Odoo a cont_cuentas/cont_diarios)
+// ────────────────────────────────────────────────────────────
+const TIPO_CUENTA_LABEL = {
+  asset_cash: 'Efectivo y bancos', asset_current: 'Activo corriente', asset_receivable: 'Cuentas por cobrar',
+  asset_fixed: 'Activo fijo', asset_non_current: 'Activo no corriente', asset_prepayments: 'Pagos anticipados',
+  liability_payable: 'Cuentas por pagar', liability_credit_card: 'Tarjetas de crédito',
+  liability_current: 'Pasivo corriente', liability_non_current: 'Pasivo no corriente',
+  equity: 'Patrimonio', equity_unaffected: 'Resultados acumulados',
+  income: 'Ingresos', income_other: 'Otros ingresos',
+  expense: 'Gastos', expense_depreciation: 'Depreciación', expense_direct_cost: 'Costos directos',
+  off_balance: 'Fuera de balance',
+};
+const TIPO_DIARIO_LABEL = { sale: 'Ventas', purchase: 'Compras', bank: 'Banco', cash: 'Efectivo', general: 'General' };
+
+function CatalogoCuentas({ empresa, setEmpresa }) {
+  const [loading, setLoading] = useState(true);
+  const [importando, setImportando] = useState(false);
+  const [cat, setCat] = useState({ cuentas: [], diarios: [] });
+  const [busqueda, setBusqueda] = useState('');
+  const [seccion, setSeccion] = useState('cuentas'); // cuentas | diarios
+
+  const cargar = async () => {
+    setLoading(true);
+    try { setCat(await db.listarCatalogoContable(empresa)); }
+    catch (e) { toast('Error cargando catálogo: ' + (e?.message || e), 'error'); }
+    setLoading(false);
+  };
+  useEffect(() => { cargar(); /* eslint-disable-next-line */ }, [empresa]);
+
+  const importar = async () => {
+    setImportando(true);
+    try {
+      const res = await fetch(`/api/contabilidad/catalogo-odoo?empresa=${empresa}`);
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'Error leyendo Odoo');
+      const r = await db.reemplazarCatalogoContable(empresa, json.cuentas, json.diarios);
+      toast(`Importado: ${r.cuentas} cuentas y ${r.diarios} diarios desde Odoo`, 'success');
+      await cargar();
+    } catch (e) { toast('Error importando: ' + (e?.message || e), 'error'); }
+    setImportando(false);
+  };
+
+  const q = busqueda.trim().toLowerCase();
+  const cuentasFiltradas = cat.cuentas.filter(c => !q || c.codigo.toLowerCase().includes(q) || c.nombre.toLowerCase().includes(q));
+  // Agrupar por tipo
+  const grupos = {};
+  cuentasFiltradas.forEach(c => { const k = c.tipo || 'otros'; (grupos[k] ||= []).push(c); });
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 bg-zinc-900 border border-zinc-800 rounded-card p-3">
+        <SelectorEmpresa empresa={empresa} setEmpresa={setEmpresa} />
+        <button onClick={importar} disabled={importando}
+          className="bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white text-xs font-bold uppercase px-4 py-2 rounded-card flex items-center gap-2">
+          {importando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+          {cat.cuentas.length > 0 ? 'Re-importar desde Odoo' : 'Importar desde Odoo'}
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center gap-2 text-zinc-500 text-sm py-8 justify-center"><Loader2 className="w-4 h-4 animate-spin" /> Cargando…</div>
+      ) : cat.cuentas.length === 0 ? (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-8 text-center">
+          <div className="text-sm text-zinc-300 font-bold mb-1">Aún no hay catálogo para esta empresa</div>
+          <div className="text-xs text-zinc-500">Toca <b>"Importar desde Odoo"</b> para traer el catálogo de cuentas y los diarios reales que usa tu contador.</div>
+        </div>
+      ) : (
+        <>
+          <div className="flex gap-2 items-center">
+            <button onClick={() => setSeccion('cuentas')} className={`px-3 py-1.5 rounded-card text-xs font-bold border ${seccion === 'cuentas' ? 'bg-red-600 border-red-600 text-white' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>Cuentas ({cat.cuentas.length})</button>
+            <button onClick={() => setSeccion('diarios')} className={`px-3 py-1.5 rounded-card text-xs font-bold border ${seccion === 'diarios' ? 'bg-red-600 border-red-600 text-white' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>Diarios ({cat.diarios.length})</button>
+            {seccion === 'cuentas' && (
+              <input value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar código / nombre…"
+                className="flex-1 min-w-[140px] bg-zinc-950 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-1.5 text-white text-xs" />
+            )}
+          </div>
+
+          {seccion === 'cuentas' && Object.entries(grupos).map(([tipo, cuentas]) => (
+            <div key={tipo} className="bg-zinc-900 border border-zinc-800 rounded-card overflow-hidden">
+              <div className="px-3 py-2 bg-zinc-950 border-b border-zinc-800 text-[10px] uppercase tracking-widest font-bold text-red-400 flex justify-between">
+                <span>{TIPO_CUENTA_LABEL[tipo] || tipo}</span><span className="text-zinc-600">{cuentas.length}</span>
+              </div>
+              <div className="divide-y divide-zinc-800/50">
+                {cuentas.map(c => (
+                  <div key={c.id} className="px-3 py-1.5 flex items-center gap-3 text-xs hover:bg-zinc-800/30">
+                    <span className="font-mono text-zinc-500 w-24 shrink-0">{c.codigo}</span>
+                    <span className={`truncate ${c.activa ? 'text-zinc-200' : 'text-zinc-600 line-through'}`}>{c.nombre}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+
+          {seccion === 'diarios' && (
+            <div className="bg-zinc-900 border border-zinc-800 rounded-card divide-y divide-zinc-800/50">
+              {cat.diarios.map(d => (
+                <div key={d.id} className="px-3 py-2 flex items-center gap-3 text-xs">
+                  <span className="text-[9px] uppercase font-black px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 w-16 text-center shrink-0">{TIPO_DIARIO_LABEL[d.tipo] || d.tipo}</span>
+                  <span className="font-mono text-zinc-500 w-14 shrink-0">{d.codigo}</span>
+                  <span className="text-zinc-200 truncate">{d.nombre}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

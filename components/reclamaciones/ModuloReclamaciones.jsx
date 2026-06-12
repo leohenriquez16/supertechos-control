@@ -10,6 +10,7 @@ import MapaLeaflet from '../common/MapaLeaflet';
 import CalendarioLevantamientos from '../surveys/CalendarioLevantamientos';
 import ChatterPanel from '../common/ChatterPanel';
 import { registrarCreacion as chatterCreacion, registrarCambioEstado as chatterEstado } from '../../lib/chatter';
+import { formatRD } from '../../lib/helpers/formato';
 
 const fmtFecha = (s) => { if (!s) return '—'; try { return new Date(s + 'T12:00:00').toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return s; } };
 const COLS = [
@@ -162,6 +163,8 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
           </div>
           {/* Resolución: qué y cuándo se hizo */}
           <ResolucionReclamacion r={r} onGuardado={() => setReload(x => x + 1)} />
+          {/* v8.26.8: pago de mano de obra de la reclamación → cae a nómina como ajuste */}
+          <PagoManoObraReclamacion r={r} data={data} usuario={usuario} permitido={esOwnerApp || esAdminApp} />
           <div className="mt-3 flex gap-2 flex-wrap">
             <button onClick={() => recordarWhatsApp(r)} className="bg-green-700 hover:bg-green-600 text-white text-[10px] font-bold uppercase px-3 py-1.5 rounded-card flex items-center gap-1"><MessageCircle className="w-3 h-3" /> WhatsApp al cliente</button>
             {p && onVerProyecto && <button onClick={() => onVerProyecto(p)} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-bold uppercase px-3 py-1.5 rounded-card">Ver proyecto →</button>}
@@ -302,6 +305,114 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
       )}
 
       {modalNueva && <ModalNuevaReclamacion data={data} usuario={usuario} ubicaciones={ubicaciones} garantias={garantias} onCerrar={() => setModalNueva(false)} onCreada={() => { setModalNueva(false); setReload(r => r + 1); }} />}
+    </div>
+  );
+}
+
+// ---------- v8.26.8: PAGO DE MANO DE OBRA de la reclamación ----------
+// Cada pago se registra como ajuste de nómina (tipo bono) vinculado a la
+// reclamación: cae al corte abierto por su fecha y aquí se acumula como
+// costo de mano de obra de la reclamación.
+function PagoManoObraReclamacion({ r, data, usuario, permitido }) {
+  const [pagos, setPagos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [abierto, setAbierto] = useState(false);
+  const [personaId, setPersonaId] = useState('');
+  const [dias, setDias] = useState('1');
+  const [tarifa, setTarifa] = useState('');
+  const [nota, setNota] = useState('');
+  const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
+  const [guardando, setGuardando] = useState(false);
+  const [reloadP, setReloadP] = useState(0);
+
+  useEffect(() => {
+    let off = false;
+    (async () => {
+      setLoading(true);
+      try { const lista = await db.listarAjustes({ reclamacionId: r.id }); if (!off) setPagos(lista); }
+      catch { if (!off) setPagos([]); }
+      if (!off) setLoading(false);
+    })();
+    return () => { off = true; };
+  }, [r.id, reloadP]);
+
+  const total = pagos.reduce((s, a) => s + ((a.tipo === 'descuento' || a.tipo === 'adelanto') ? -a.monto : a.monto), 0);
+  const nombreDe = (pid) => (data.personal || []).find(p => p.id === pid)?.nombre || pid;
+  const dN = parseFloat(dias) || 0;
+  const tN = parseFloat(tarifa) || 0;
+
+  const guardar = async () => {
+    if (!personaId || dN <= 0 || tN <= 0) return;
+    setGuardando(true);
+    try {
+      await db.crearAjuste({
+        id: 'a_' + Date.now(), personaId, tipo: 'bono', monto: dN * tN, fecha,
+        concepto: `Reclamación${r.codigo ? ' ' + r.codigo : ''} — ${nota || 'trabajo realizado'} (${dN} día${dN !== 1 ? 's' : ''} × RD$${tN})`,
+        reclamacionId: r.id, proyectoId: r.proyectoId || null, creadoPorId: usuario.id,
+      });
+      setAbierto(false); setPersonaId(''); setDias('1'); setTarifa(''); setNota('');
+      setReloadP(x => x + 1);
+    } catch (e) { alert('Error: ' + (e.message || e)); }
+    setGuardando(false);
+  };
+
+  return (
+    <div className="mt-3 bg-zinc-950 border border-zinc-800 rounded-card p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold flex items-center gap-1"><Wrench className="w-3 h-3" /> Pago de mano de obra</div>
+        {total > 0 && <div className="text-xs font-bold text-green-400">{formatRD(total)}</div>}
+      </div>
+      {loading ? (
+        <Loader2 className="w-4 h-4 animate-spin text-zinc-600" />
+      ) : pagos.length === 0 ? (
+        <div className="text-[11px] text-zinc-600">Sin pagos registrados. Lo que registres aquí cae automáticamente al corte de nómina abierto (por la fecha del pago).</div>
+      ) : (
+        <div className="space-y-1">
+          {pagos.map(a => (
+            <div key={a.id} className="flex items-center justify-between gap-2 text-[11px] border-b border-zinc-900 pb-1">
+              <div className="min-w-0">
+                <span className="text-zinc-300 font-bold">{nombreDe(a.personaId)}</span>
+                <span className="text-zinc-500"> · {fmtFecha(a.fecha)} · {a.concepto}</span>
+                {a.aplicadoACorteId && <span className="text-green-600 ml-1">(pagado)</span>}
+              </div>
+              <span className="text-green-400 font-bold shrink-0">{formatRD(a.monto)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {permitido && !abierto && (
+        <button onClick={() => setAbierto(true)} className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-[11px] font-bold uppercase py-2 rounded-card flex items-center justify-center gap-1"><Plus className="w-3 h-3" /> Registrar pago</button>
+      )}
+      {permitido && abierto && (
+        <div className="space-y-2 border border-zinc-800 rounded-card p-2 bg-zinc-900/50">
+          <select value={personaId} onChange={e => setPersonaId(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-2 py-2 text-xs text-white outline-none focus:border-red-600">
+            <option value="">Persona…</option>
+            {(data.personal || []).filter(p => p.activo !== false).map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+          </select>
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <div className="text-[9px] uppercase text-zinc-500 mb-0.5">Días</div>
+              <input type="text" inputMode="decimal" value={dias} onChange={e => setDias(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-2 py-2 text-xs text-white text-right outline-none focus:border-red-600" />
+            </div>
+            <div>
+              <div className="text-[9px] uppercase text-zinc-500 mb-0.5">RD$/día</div>
+              <input type="text" inputMode="decimal" value={tarifa} onChange={e => setTarifa(e.target.value)} placeholder="0" className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-2 py-2 text-xs text-white text-right outline-none focus:border-red-600" />
+            </div>
+            <div>
+              <div className="text-[9px] uppercase text-zinc-500 mb-0.5">Fecha</div>
+              <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-1 py-2 text-xs text-white outline-none focus:border-red-600" />
+            </div>
+          </div>
+          <input value={nota} onChange={e => setNota(e.target.value)} placeholder="Trabajo realizado (ej. reparación de filtración)" className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-2 py-2 text-xs text-white outline-none focus:border-red-600" />
+          {dN > 0 && tN > 0 && <div className="text-[11px] text-zinc-400 text-right">Total: <span className="text-green-400 font-bold">{formatRD(dN * tN)}</span></div>}
+          <div className="flex gap-2">
+            <button onClick={() => setAbierto(false)} className="px-3 bg-zinc-800 text-zinc-400 text-[10px] font-bold uppercase py-2 rounded-card">Cancelar</button>
+            <button onClick={guardar} disabled={guardando || !personaId || dN <= 0 || tN <= 0} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-[11px] font-black uppercase py-2 rounded-card">
+              {guardando ? 'Guardando…' : 'Registrar pago'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

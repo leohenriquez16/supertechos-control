@@ -11414,6 +11414,7 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto, onRecargar
           condicionDia: j.condicionDia,
           horaInicio: j.horaInicio,
           hayReporte,
+          diaDoble: !!(j.diaDoble || j.condicionDia === 'doble'), // v8.26.4: paga ×2 en nómina
           esProgramada: false, // viene de jornada real
         });
       });
@@ -11628,6 +11629,15 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto, onRecargar
     } catch (e) { alert('Error: ' + (e.message || e)); }
   };
 
+  // v8.26.4: marcar/quitar día DOBLE en la jornada (paga ×2 en nómina; aplica a todo el equipo del día)
+  const marcarDoble = async (jornadaId, esDoble) => {
+    try {
+      await db.marcarDiaDoble(jornadaId, esDoble);
+      setCeldaSeleccionada(null);
+      await cargar();
+    } catch (e) { alert('Error: ' + (e.message || e)); }
+  };
+
   const quitarPersona = async (jornadaId, personaId) => {
     if (!confirm('¿Quitar a esta persona de esta jornada?')) return;
     const jornada = jornadasSemana.find(j => j.id === jornadaId);
@@ -11755,7 +11765,7 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto, onRecargar
                                 className={`w-full text-left px-1.5 py-1 text-[10px] border hover:brightness-125 ${proy.esProgramada ? 'bg-blue-900/40 border-blue-700 text-blue-300 border-dashed' : !proy.hayReporte ? 'bg-yellow-900/40 border-yellow-700 text-yellow-300' : coloresProyecto[proy.proyectoId] || 'bg-zinc-800 border-zinc-700'}`}
                                 title={`${proy.proyectoNombre}${proy.esProgramada ? ' · PROGRAMADO (sin check-in aún)' : !proy.hayReporte ? ' · SIN REPORTE DE m²' : ''}`}
                               >
-                                <div className="font-bold truncate">{proy.referenciaOdoo || proy.proyectoNombre}</div>
+                                <div className="font-bold truncate">{proy.referenciaOdoo || proy.proyectoNombre}{proy.diaDoble && <span className="ml-1 text-yellow-300 font-black">×2</span>}</div>
                                 <div className="flex items-center gap-1 text-[9px]">
                                   {proy.esProgramada && <span>📅</span>}
                                   {proy.esProgramada && proy.rol === 'ayudante' && <span>🔧</span>}
@@ -11767,13 +11777,24 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto, onRecargar
                             ))}
                             {proyectos.length === 0 && (
                               puedeAsignar ? (
-                                <button
-                                  onClick={() => abrirAsignacion(persona.id, fechaStrDia)}
-                                  className="w-full h-8 border border-dashed border-zinc-800 hover:border-red-500 hover:bg-red-950/20 text-[10px] text-zinc-700 hover:text-red-400"
-                                  title="Click para asignar proyecto"
-                                >
-                                  +
-                                </button>
+                                // v8.26.4: días PASADOS sin marcar se resaltan en ámbar (jornada olvidada → se registra retroactivo)
+                                fechaStrDia < hoy && d.getDay() !== 0 ? (
+                                  <button
+                                    onClick={() => abrirAsignacion(persona.id, fechaStrDia)}
+                                    className="w-full h-8 border border-dashed border-amber-800/70 bg-amber-950/15 hover:border-amber-500 hover:bg-amber-900/25 text-[9px] text-amber-600/80 hover:text-amber-300"
+                                    title="Día sin marcar — toca para registrar la jornada retroactiva"
+                                  >
+                                    sin marcar
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => abrirAsignacion(persona.id, fechaStrDia)}
+                                    className="w-full h-8 border border-dashed border-zinc-800 hover:border-red-500 hover:bg-red-950/20 text-[10px] text-zinc-700 hover:text-red-400"
+                                    title="Click para asignar proyecto"
+                                  >
+                                    +
+                                  </button>
+                                )
                               ) : (
                                 <div className="w-full h-8 text-[10px] text-zinc-700 flex items-center justify-center">—</div>
                               )
@@ -11872,6 +11893,7 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto, onRecargar
           onCerrar={() => setCeldaSeleccionada(null)}
           onVerProyecto={(p) => { setCeldaSeleccionada(null); onVerProyecto(p); }}
           onQuitarPersona={quitarPersona}
+          onMarcarDoble={marcarDoble}
         />
       )}
 
@@ -11891,7 +11913,7 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto, onRecargar
 }
 
 // Popup con detalle del proyecto + personal ese día
-function PopupDetalleJornada({ personaId, proyectoInfo, fecha, data, gridProyectos, reportesSemana, puedeAsignar, onCerrar, onVerProyecto, onQuitarPersona }) {
+function PopupDetalleJornada({ personaId, proyectoInfo, fecha, data, gridProyectos, reportesSemana, puedeAsignar, onCerrar, onVerProyecto, onQuitarPersona, onMarcarDoble }) {
   const proyecto = data.proyectos.find(p => p.id === proyectoInfo.proyectoId);
   if (!proyecto) return null;
   const info = gridProyectos[proyecto.id]?.[fecha];
@@ -11976,6 +11998,20 @@ function PopupDetalleJornada({ personaId, proyectoInfo, fecha, data, gridProyect
               </div>
             )}
           </>
+        )}
+
+        {/* v8.26.4: marcar el día como DOBLE (paga ×2 en nómina) — aplica a TODA la jornada del proyecto ese día */}
+        {puedeAsignar && !proyectoInfo.esProgramada && proyectoInfo.jornadaId && onMarcarDoble && (
+          <button
+            onClick={() => onMarcarDoble(proyectoInfo.jornadaId, !proyectoInfo.diaDoble)}
+            className={`w-full text-xs font-bold uppercase py-2.5 rounded-card border-2 flex items-center justify-center gap-2 ${proyectoInfo.diaDoble ? 'border-yellow-600 bg-yellow-900/30 text-yellow-300' : 'border-zinc-700 text-zinc-300 hover:border-yellow-600 hover:text-yellow-300'}`}
+            title="El día doble cuenta como 2 días para TODO el equipo de esta jornada"
+          >
+            {proyectoInfo.diaDoble ? '×2 Día DOBLE activo — tocar para quitar' : 'Marcar día DOBLE ×2 (paga 2 días)'}
+          </button>
+        )}
+        {puedeAsignar && !proyectoInfo.esProgramada && proyectoInfo.jornadaId && onMarcarDoble && (
+          <div className="text-[10px] text-zinc-500 -mt-1">⚠ El doble aplica a toda la jornada del proyecto ese día (todo el equipo presente).</div>
         )}
 
         <div className="flex gap-2 pt-1">

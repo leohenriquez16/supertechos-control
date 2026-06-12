@@ -11610,7 +11610,8 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto, onRecargar
               id: 'j_' + Date.now() + Math.random(),
               proyectoId, fecha: f,
               horaInicio: `${f}T08:00:00.000Z`,
-              iniciadaPorId: 'planificacion', iniciadaPorNombre: `Retroactivo (${usuario?.nombre || 'admin'})`,
+              // v8.26.6: iniciada_por_id tiene FK a personal → debe ser una persona real (quien registra)
+              iniciadaPorId: usuario?.id || null, iniciadaPorNombre: `Retroactivo (${usuario?.nombre || 'admin'})`,
               inicioLat: null, inicioLng: null,
               inicioPrecisionM: null, inicioDistanciaObraM: null,
               personasPresentesIds: [personaId],
@@ -11650,7 +11651,8 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto, onRecargar
           id: 'j_' + Date.now() + Math.random(),
           proyectoId, fecha,
           horaInicio: `${fecha}T08:00:00.000Z`,
-          iniciadaPorId: 'planificacion', iniciadaPorNombre: 'Planificación (admin)',
+          // v8.26.6: iniciada_por_id tiene FK a personal → debe ser una persona real (quien registra)
+          iniciadaPorId: usuario?.id || null, iniciadaPorNombre: `Planificación (${usuario?.nombre || 'admin'})`,
           inicioLat: null, inicioLng: null,
           inicioPrecisionM: null, inicioDistanciaObraM: null,
           personasPresentesIds: [personaId],

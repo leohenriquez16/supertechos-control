@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { ArrowLeft, ChevronDown, FileText, Loader2, Plus, Save, Trash2, X, Wallet } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatRD, formatFecha, formatFechaCorta, formatNum } from '../../lib/helpers/formato';
-import { getM2Reporte } from '../../lib/helpers/calculos';
+import { getM2Reporte, calcAvanceProyecto } from '../../lib/helpers/calculos';
 import Campo from '../common/Campo';
 import Input from '../common/Input';
 
@@ -27,10 +27,15 @@ function PrecioEditable({ proyecto, personaId, fila, esOwner, onSaved }) {
   const [valor, setValor] = React.useState('');
   const [guardando, setGuardando] = React.useState(false);
 
-  const modo = proyecto?.modoPagoManoObra;
+  // v8.26.7: el modo efectivo es el de la FILA (puede ser un override por persona),
+  // y el precio m² fijo se edita POR PERSONA (override en costos_dia_proyecto) — para
+  // obras con 2 maestros con sistemas/precios distintos.
+  const modo = fila?.modoPago || proyecto?.modoPagoManoObra;
   let precioActual = 0;
-  if (modo === 'm2_fijo') precioActual = Number(proyecto.precioM2FijoMaestro || 0);
-  else if (modo === 'dia') {
+  if (modo === 'm2_fijo') {
+    // Mostrar el precio realmente aplicado (override de la persona o el del proyecto)
+    precioActual = (fila?.m2Efectivo > 0) ? (fila.montoBase / fila.m2Efectivo) : Number(proyecto.precioM2FijoMaestro || 0);
+  } else if (modo === 'dia') {
     const div = Math.max(1, (fila?.diasTrabajados || 0) + (fila?.diasDobles || 0));
     precioActual = (fila?.montoBase || 0) / div;
   }
@@ -43,7 +48,8 @@ function PrecioEditable({ proyecto, personaId, fila, esOwner, onSaved }) {
     setGuardando(true);
     try {
       if (modo === 'm2_fijo') {
-        await db.actualizarProyecto({ ...proyecto, precioM2FijoMaestro: n });
+        // v8.26.7: override por PERSONA (no toca el precio general del proyecto).
+        await db.guardarPagoPersonaProyecto(proyecto.id, personaId, { precioM2: n });
       } else if (modo === 'dia') {
         await db.guardarCostoDia(proyecto.id, personaId, n);
       }
@@ -1106,7 +1112,8 @@ export async function calcularDetalle(jornadas, data, corte, ajustesLista) {
     try {
       const lista = await db.listarCostosDia(pid);
       costosDiaMap[pid] = {};
-      lista.forEach(c => { costosDiaMap[pid][c.personaId] = c.costoDia; });
+      // v8.26.7: guarda el override completo por persona (costoDia + precioM2 + modoPago)
+      lista.forEach(c => { costosDiaMap[pid][c.personaId] = { costoDia: c.costoDia, precioM2: c.precioM2, modoPago: c.modoPago }; });
     } catch {}
   }));
 
@@ -1118,16 +1125,21 @@ export async function calcularDetalle(jornadas, data, corte, ajustesLista) {
     const diasN = b.dias.size;
     const dobles = b.diasDobles.size;
     const diasEfectivos = diasN + dobles;
+    // v8.26.7: override por PERSONA dentro del proyecto (2 maestros con sistemas/
+    // precios distintos en la misma obra): modo y precio m² propios si existen.
+    const ov = costosDiaMap[proy.id]?.[b.personaId] || {};
+    const modoPersona = ov.modoPago || proy.modoPagoManoObra;
+    const precioFijoPersona = (ov.precioM2 != null && ov.precioM2 > 0) ? ov.precioM2 : (proy.precioM2FijoMaestro || 0);
     let montoBase = 0;
-    if (proy.modoPagoManoObra === 'dia') {
-      const costoDia = costosDiaMap[proy.id]?.[b.personaId] || 0;
+    if (modoPersona === 'dia') {
+      const costoDia = ov.costoDia || 0;
       montoBase = diasEfectivos * costoDia;
-    } else if (proy.modoPagoManoObra === 'm2_fijo') {
+    } else if (modoPersona === 'm2_fijo') {
       // v8.19.20: el precio fijo cubre el SISTEMA COMPLETO. Si un avance solo
       // reportó parte de las tareas, el maestro cobra el peso% de cada tarea
       // sobre el precio. Antes era b.m2 × precio (doble cobro al reportar
       // varios pasos sobre la misma área).
-      const precioFijo = proy.precioM2FijoMaestro || 0;
+      const precioFijo = precioFijoPersona;
       const sistema = data.sistemas[proy.sistema];
       const tareas = sistema?.tareas || [];
       const totalPesoCfg = tareas.reduce((s, t) => s + (Number(t.peso) || 0), 0);
@@ -1143,12 +1155,12 @@ export async function calcularDetalle(jornadas, data, corte, ajustesLista) {
         // Fallback: sistema sin pesos definidos → comportamiento anterior.
         montoBase = b.m2 * precioFijo;
       }
-    } else if (proy.modoPagoManoObra === 'm2') {
+    } else if (modoPersona === 'm2') {
       const precios = proy.preciosTareasM2 || {};
       if (b.tareaReportes) {
         Object.entries(b.tareaReportes).forEach(([tid, m2]) => { montoBase += m2 * (precios[tid] || 0); });
       }
-    } else if (proy.modoPagoManoObra === 'tarea') {
+    } else if (modoPersona === 'tarea') {
       const preciosMO = proy.preciosManoObraTareas || {};
       if (b.tareaReportes) {
         Object.entries(b.tareaReportes).forEach(([tid, m2]) => { montoBase += m2 * (preciosMO[tid] || 0); });
@@ -1160,14 +1172,14 @@ export async function calcularDetalle(jornadas, data, corte, ajustesLista) {
     //   suma total reportada (puede ser mayor por reportes en múltiples pasos
     //   sobre la misma área).
     let m2Efectivo = b.m2;
-    if (proy.modoPagoManoObra === 'm2_fijo' && (proy.precioM2FijoMaestro || 0) > 0) {
-      m2Efectivo = montoBase / proy.precioM2FijoMaestro;
+    if (modoPersona === 'm2_fijo' && precioFijoPersona > 0) {
+      m2Efectivo = montoBase / precioFijoPersona;
     }
     filas.push({
       id: 'd_' + corte.id + '_' + b.personaId + '_' + b.proyectoId,
       corteId: corte.id, personaId: b.personaId, personaNombre: p.nombre,
       proyectoId: b.proyectoId, proyectoNombre: labelProyecto(proy),
-      modoPago: proy.modoPagoManoObra || 'dia',
+      modoPago: modoPersona || 'dia',
       diasTrabajados: diasN, diasDobles: dobles,
       m2Producidos: b.m2, m2Efectivo,
       montoBase, montoDieta: 0, montoAdelantos: 0, montoOtros: 0,
@@ -1499,7 +1511,7 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
                               <td></td>
                               <td colSpan={7} className="px-3 py-2">
                                 <table className="w-full text-[11px]">
-                                  <thead><tr className="text-[9px] uppercase tracking-wider text-zinc-600"><th className="text-left">Proyecto</th><th>Modo</th><th className="text-right">Días/m²</th><th className="text-right">Precio acordado</th><th className="text-right">Base</th><th className="text-right">Total</th></tr></thead>
+                                  <thead><tr className="text-[9px] uppercase tracking-wider text-zinc-600"><th className="text-left">Proyecto</th><th>Modo</th><th className="text-right">Días/m²</th><th className="text-right">% Av.</th><th className="text-right">Precio acordado</th><th className="text-right">Base</th><th className="text-right">Total</th></tr></thead>
                                   <tbody>
                                     {rp.proyectos.map(r => {
                                       const proy = data.proyectos.find(p => p.id === r.proyectoId);
@@ -1521,7 +1533,30 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
                                             )}
                                             {sis?.nombre && <div className="text-[9px] text-zinc-500 truncate">Sistema: {sis.nombre}</div>}
                                           </td>
-                                          <td className="text-center"><ModoBadge modo={r.modoPago} /></td>
+                                          <td className="text-center">
+                                            <ModoBadge modo={r.modoPago} />
+                                            {/* v8.26.7: modo de pago POR PERSONA en este proyecto (override; owner) */}
+                                            {esOwner && proy && (
+                                              <select
+                                                value=""
+                                                onClick={e => e.stopPropagation()}
+                                                onChange={async (e) => {
+                                                  const v = e.target.value; if (!v) return;
+                                                  try {
+                                                    await db.guardarPagoPersonaProyecto(proy.id, r.personaId, { modoPago: v === 'heredar' ? null : v });
+                                                    await recargarTodo();
+                                                  } catch (err) { alert('Error: ' + (err.message || err)); }
+                                                }}
+                                                className="block mx-auto mt-0.5 bg-transparent text-[8px] text-zinc-600 hover:text-zinc-300 outline-none cursor-pointer w-14"
+                                                title="Cambiar el modo de pago de ESTA persona en este proyecto"
+                                              >
+                                                <option value="">cambiar…</option>
+                                                <option value="heredar">— heredar del proyecto —</option>
+                                                <option value="dia">Por día</option>
+                                                <option value="m2_fijo">M² fijo</option>
+                                              </select>
+                                            )}
+                                          </td>
                                           <td className="text-right tabular-nums">
                                             {r.modoPago === 'dia'
                                               ? `${r.diasTrabajados}d${r.diasDobles ? ` (${r.diasDobles}×2)` : ''}`
@@ -1536,6 +1571,17 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
                                                     </>
                                                   );
                                                 })()}
+                                          </td>
+                                          {/* v8.26.7: % de avance del proyecto — para informar al maestro con contexto */}
+                                          <td className="text-right tabular-nums">
+                                            {(() => {
+                                              if (!proy) return '—';
+                                              try {
+                                                const { porcentaje } = calcAvanceProyecto(proy, data.reportes, sis, data.sistemas);
+                                                const c = porcentaje >= 100 ? 'text-green-400' : porcentaje >= 50 ? 'text-amber-400' : 'text-zinc-400';
+                                                return <span className={`font-bold ${c}`}>{porcentaje.toFixed(0)}%</span>;
+                                              } catch { return '—'; }
+                                            })()}
                                           </td>
                                           <td className="text-right tabular-nums text-zinc-300">
                                             <PrecioEditable proyecto={proy} personaId={r.personaId} fila={r} esOwner={esOwner} onSaved={recargarTodo} />

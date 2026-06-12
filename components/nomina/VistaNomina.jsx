@@ -1098,16 +1098,17 @@ export async function calcularDetalle(jornadas, data, corte, ajustesLista) {
     b.tareaReportes[r.tareaId] = (b.tareaReportes[r.tareaId] || 0) + m2;
   });
 
-  // Costos de día para los proyectos involucrados
+  // Costos de día para los proyectos involucrados — v8.26.5: en PARALELO
+  // (antes era 1 query por proyecto en serie, parte de la lentitud al abrir).
   const proyectosInvolucrados = [...new Set(Object.values(buckets).map(b => b.proyectoId))];
   const costosDiaMap = {};
-  for (const pid of proyectosInvolucrados) {
+  await Promise.all(proyectosInvolucrados.map(async (pid) => {
     try {
       const lista = await db.listarCostosDia(pid);
       costosDiaMap[pid] = {};
       lista.forEach(c => { costosDiaMap[pid][c.personaId] = c.costoDia; });
     } catch {}
-  }
+  }));
 
   const filas = [];
   Object.values(buckets).forEach(b => {
@@ -1284,16 +1285,14 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
     try {
       const [det, aj] = await Promise.all([db.obtenerDetalleCorte(corte.id), db.listarAjustes({ sinCorte: corte.estado === 'abierto' })]);
       setAjustes(aj.filter(a => a.fecha >= corte.fechaInicio && a.fecha <= corte.fechaFin));
-      // Jornadas del periodo
-      const todasJornadas = [];
-      for (const p of data.proyectos) {
-        try {
-          const lista = await db.listarJornadasProyecto(p.id);
-          lista.forEach(j => {
-            if (j.fecha >= corte.fechaInicio && j.fecha <= corte.fechaFin) todasJornadas.push({ ...j, proyecto: p });
-          });
-        } catch (e) {}
-      }
+      // v8.26.5: jornadas del periodo en UNA sola query por rango de fechas.
+      // Antes: 1 query POR PROYECTO en serie (70+ requests) trayendo TODO el
+      // histórico y filtrando en el cliente → la nómina tardaba 15-30s en abrir.
+      const proyectosPorId = new Map((data.proyectos || []).map(p => [p.id, p]));
+      const enRango = await db.listarJornadasEnRango(corte.fechaInicio, corte.fechaFin);
+      const todasJornadas = enRango
+        .map(j => ({ ...j, proyecto: proyectosPorId.get(j.proyectoId) }))
+        .filter(j => j.proyecto); // solo proyectos visibles (no archivados)
       setJornadasCorte(todasJornadas);
       // Si no hay detalle guardado, calcular preview
       if (det.length === 0 && corte.estado === 'abierto') {

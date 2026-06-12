@@ -109,6 +109,7 @@ export default function VistaContabilidad({ usuario, onVolver }) {
         <TabBtn activo={tab === 'cxc'} onClick={() => setTab('cxc')}>CxC</TabBtn>
         <TabBtn activo={tab === 'cxp'} onClick={() => setTab('cxp')}>CxP</TabBtn>
         <TabBtn activo={tab === 'catalogo'} onClick={() => setTab('catalogo')}>Catálogo</TabBtn>
+        <TabBtn activo={tab === 'bancos'} onClick={() => setTab('bancos')}>Bancos</TabBtn>
         <TabBtn activo={tab === 'anulados'} onClick={() => setTab('anulados')}><Ban className="w-3 h-3 inline mr-1" /> NCF anulados</TabBtn>
         <TabBtn activo={tab === 'secuencias'} onClick={() => setTab('secuencias')}><ListOrdered className="w-3 h-3 inline mr-1" /> Secuencias NCF</TabBtn>
       </div>
@@ -125,6 +126,7 @@ export default function VistaContabilidad({ usuario, onVolver }) {
         {tab === 'cxc' && <CuentasPendientes tipo="cxc" empresa={empresa} setEmpresa={setEmpresa} />}
         {tab === 'cxp' && <CuentasPendientes tipo="cxp" empresa={empresa} setEmpresa={setEmpresa} />}
         {tab === 'catalogo' && <CatalogoCuentas empresa={empresa} setEmpresa={setEmpresa} />}
+        {tab === 'bancos' && <ConciliacionBancaria empresa={empresa} setEmpresa={setEmpresa} usuario={usuario} />}
         {tab === 'anulados' && <NcfAnulados usuario={usuario} />}
         {tab === 'secuencias' && <SecuenciasNcf usuario={usuario} />}
       </div>
@@ -724,6 +726,273 @@ function CatalogoCuentas({ empresa, setEmpresa }) {
           )}
         </>
       )}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
+// Tab: Conciliación bancaria v1 (v8.26.2)
+// Importa el estado de cuenta (PDF/foto/CSV → IA) y concilia cada línea contra
+// caja chica (sugerencias automáticas) o manualmente. El cierre formal del mes
+// y el matching contra el libro mayor llegan con la Fase 4 completa.
+// ────────────────────────────────────────────────────────────
+function ConciliacionBancaria({ empresa, setEmpresa, usuario }) {
+  const [bancos, setBancos] = useState([]);
+  const [bancoId, setBancoId] = useState('');
+  const [movs, setMovs] = useState([]);
+  const [gastosCC, setGastosCC] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [parseando, setParseando] = useState(false);
+  const [preview, setPreview] = useState(null); // { movimientos, banco, advertencias }
+  const [guardandoImport, setGuardandoImport] = useState(false);
+  const [mostrarConciliados, setMostrarConciliados] = useState(false);
+  const [nuevoBanco, setNuevoBanco] = useState(null); // null | {nombre, numeroCuenta}
+
+  const cargarBancos = async () => {
+    try {
+      const bs = await db.listarBancos(empresa);
+      setBancos(bs);
+      setBancoId(prev => bs.some(b => b.id === prev) ? prev : (bs[0]?.id || ''));
+    } catch (e) { toast('Error cargando bancos: ' + (e?.message || e), 'error'); }
+  };
+  useEffect(() => { cargarBancos(); /* eslint-disable-next-line */ }, [empresa]);
+
+  const cargarMovs = async () => {
+    if (!bancoId) { setMovs([]); return; }
+    setLoading(true);
+    try {
+      const ms = await db.listarMovimientosBanco(bancoId);
+      setMovs(ms);
+      // Candidatos de caja chica para matching: gastos aprobados en el rango de fechas ±7 días
+      if (ms.length > 0) {
+        const fechas = ms.map(m => m.fecha).sort();
+        const d0 = new Date(fechas[0]); d0.setDate(d0.getDate() - 7);
+        const d1 = new Date(fechas[fechas.length - 1]); d1.setDate(d1.getDate() + 7);
+        const gastos = await db.listarMovimientosCajaChica({
+          status: 'aprobado', tipo: 'gasto_factura',
+          fechaDesde: d0.toISOString().split('T')[0], fechaHasta: d1.toISOString().split('T')[0],
+        });
+        setGastosCC(gastos || []);
+      } else setGastosCC([]);
+    } catch (e) { toast('Error: ' + (e?.message || e), 'error'); }
+    setLoading(false);
+  };
+  useEffect(() => { cargarMovs(); /* eslint-disable-next-line */ }, [bancoId]);
+
+  const crearBancoNuevo = async () => {
+    if (!nuevoBanco?.nombre?.trim()) { toast('Ponle nombre al banco', 'info'); return; }
+    try {
+      const id = await db.crearBanco({ empresa, nombre: nuevoBanco.nombre.trim(), numeroCuenta: (nuevoBanco.numeroCuenta || '').trim() });
+      setNuevoBanco(null);
+      await cargarBancos();
+      setBancoId(id);
+    } catch (e) { toast('Error creando banco: ' + (e?.message || e), 'error'); }
+  };
+
+  // ── Importar estado de cuenta (PDF / foto / CSV) ──
+  const onFileEstado = async (file) => {
+    if (!file || !bancoId) return;
+    setParseando(true); setPreview(null);
+    try {
+      let body;
+      if (/\.(csv|txt)$/i.test(file.name) || file.type === 'text/csv' || file.type === 'text/plain') {
+        const texto = await file.text();
+        body = { textoCsv: texto };
+      } else {
+        const b64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
+        body = { base64Data: b64, mediaType: file.type || (/\.pdf$/i.test(file.name) ? 'application/pdf' : 'image/jpeg') };
+      }
+      const res = await fetch('/api/contabilidad/parse-estado', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || 'No se pudo leer el estado');
+      if (!json.movimientos?.length) throw new Error('La IA no encontró movimientos en el documento');
+      setPreview(json);
+    } catch (e) { toast('Error leyendo el estado: ' + (e?.message || e), 'error'); }
+    setParseando(false);
+  };
+
+  const guardarImport = async () => {
+    if (!preview?.movimientos?.length || !bancoId) return;
+    setGuardandoImport(true);
+    try {
+      const r = await db.importarMovimientosBanco(bancoId, preview.movimientos);
+      toast(`Importados ${r.nuevos} movimientos nuevos${r.duplicados ? ` (${r.duplicados} ya existían)` : ''}`, 'success');
+      setPreview(null);
+      await cargarMovs();
+    } catch (e) { toast('Error guardando: ' + (e?.message || e), 'error'); }
+    setGuardandoImport(false);
+  };
+
+  // ── Matching: sugerencias de caja chica para un débito del banco ──
+  const idsUsados = new Set(movs.filter(m => m.conciliadoTipo === 'caja_chica' && m.conciliadoId).map(m => m.conciliadoId));
+  const sugerencias = (mov) => {
+    if (mov.monto >= 0) return []; // créditos: v1 manual
+    const objetivo = Math.abs(mov.monto);
+    return gastosCC.filter(g => {
+      if (idsUsados.has(g.id)) return false;
+      if (Math.abs(Number(g.monto) - objetivo) > 1) return false; // tolerancia RD$1
+      const dd = Math.abs((new Date(g.fecha) - new Date(mov.fecha)) / 86400000);
+      return dd <= 5;
+    }).slice(0, 3);
+  };
+
+  const conciliar = async (mov, tipo, refId, nota) => {
+    try {
+      await db.conciliarMovimientoBanco(mov.id, { tipo, refId, nota, usuarioId: usuario?.id });
+      setMovs(prev => prev.map(m => m.id === mov.id ? { ...m, conciliadoTipo: tipo, conciliadoId: refId, conciliadoNota: nota } : m));
+    } catch (e) { toast('Error: ' + (e?.message || e), 'error'); }
+  };
+  const conciliarManual = async (mov) => {
+    const nota = window.prompt('Nota de conciliación (qué es este movimiento):', mov.descripcion || '');
+    if (nota === null) return;
+    await conciliar(mov, 'manual', null, nota.trim() || null);
+  };
+  const deshacer = async (mov) => {
+    try { await db.desconciliarMovimientoBanco(mov.id); setMovs(prev => prev.map(m => m.id === mov.id ? { ...m, conciliadoTipo: null, conciliadoId: null, conciliadoNota: null } : m)); }
+    catch (e) { toast('Error: ' + (e?.message || e), 'error'); }
+  };
+
+  const pendientes = movs.filter(m => !m.conciliadoTipo);
+  const conciliados = movs.filter(m => m.conciliadoTipo);
+  const entradasPend = pendientes.filter(m => m.monto > 0).reduce((s, m) => s + m.monto, 0);
+  const salidasPend = pendientes.filter(m => m.monto < 0).reduce((s, m) => s + Math.abs(m.monto), 0);
+  const banco = bancos.find(b => b.id === bancoId);
+
+  return (
+    <div className="space-y-4">
+      {/* Controles: empresa + banco + importar */}
+      <div className="flex flex-wrap items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-card p-3">
+        <SelectorEmpresa empresa={empresa} setEmpresa={setEmpresa} />
+        <select value={bancoId} onChange={e => setBancoId(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded-card px-3 py-1.5 text-xs text-white outline-none focus:border-red-600 min-w-[180px]">
+          {bancos.length === 0 && <option value="">— sin bancos —</option>}
+          {bancos.map(b => <option key={b.id} value={b.id}>{b.nombre}{b.numeroCuenta ? ` · ${b.numeroCuenta}` : ''}</option>)}
+        </select>
+        <button onClick={() => setNuevoBanco({ nombre: '', numeroCuenta: '' })} className="text-[10px] text-red-400 hover:text-red-300 font-bold uppercase flex items-center gap-1"><Plus className="w-3 h-3" /> Banco</button>
+        {bancoId && (
+          <label className={`ml-auto bg-red-600 hover:bg-red-700 text-white text-xs font-bold uppercase px-4 py-2 rounded-card flex items-center gap-2 cursor-pointer ${parseando ? 'opacity-60 pointer-events-none' : ''}`}>
+            {parseando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+            {parseando ? 'Leyendo con IA…' : 'Importar estado (PDF/foto/CSV)'}
+            <input type="file" accept=".pdf,.csv,.txt,image/*" className="hidden" onChange={e => { onFileEstado(e.target.files?.[0]); e.target.value = ''; }} />
+          </label>
+        )}
+      </div>
+
+      {nuevoBanco && (
+        <div className="bg-zinc-900 border border-zinc-700 rounded-card p-3 flex flex-wrap items-end gap-2">
+          <Campo label="Banco"><Input value={nuevoBanco.nombre} onChange={v => setNuevoBanco({ ...nuevoBanco, nombre: v })} placeholder="Ej: Banreservas" /></Campo>
+          <Campo label="Número de cuenta (opcional)"><Input value={nuevoBanco.numeroCuenta} onChange={v => setNuevoBanco({ ...nuevoBanco, numeroCuenta: v })} placeholder="9600852854" /></Campo>
+          <button onClick={crearBancoNuevo} className="bg-red-600 text-white text-xs font-bold uppercase px-4 py-2.5 rounded-card">Crear</button>
+          <button onClick={() => setNuevoBanco(null)} className="text-zinc-500 text-xs px-2 py-2.5">Cancelar</button>
+        </div>
+      )}
+
+      {/* Preview de importación */}
+      {preview && (
+        <div className="bg-zinc-900 border-2 border-amber-700 rounded-card p-3 space-y-2">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="text-xs font-bold text-amber-300">
+              📄 {preview.banco || 'Estado'} {preview.periodo ? `· ${preview.periodo}` : ''} — {preview.movimientos.length} movimientos detectados
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setPreview(null)} className="text-zinc-400 text-xs px-3 py-1.5">Descartar</button>
+              <button onClick={guardarImport} disabled={guardandoImport} className="bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white text-xs font-bold uppercase px-4 py-1.5 rounded-card flex items-center gap-1.5">
+                {guardandoImport ? <Loader2 className="w-3 h-3 animate-spin" /> : null} Guardar {preview.movimientos.length}
+              </button>
+            </div>
+          </div>
+          {preview.advertencias?.length > 0 && <div className="text-[10px] text-amber-400">⚠ {preview.advertencias.join(' · ')}</div>}
+          <div className="max-h-56 overflow-y-auto border border-zinc-800 rounded-card">
+            <table className="w-full text-[11px]">
+              <tbody>
+                {preview.movimientos.map((m, i) => (
+                  <tr key={i} className="border-b border-zinc-800/50">
+                    <td className="px-2 py-1 text-zinc-500 whitespace-nowrap">{m.fecha}</td>
+                    <td className="px-2 py-1 text-zinc-300 truncate max-w-[300px]">{m.descripcion}</td>
+                    <td className={`px-2 py-1 text-right font-bold tabular-nums ${m.monto < 0 ? 'text-red-400' : 'text-green-400'}`}>{formatRD(m.monto)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Resumen */}
+      {bancoId && movs.length > 0 && (
+        <div className="grid grid-cols-3 gap-2">
+          <Card titulo="Pendientes de conciliar"><div className="text-xl font-black text-amber-400">{pendientes.length}</div></Card>
+          <Card titulo="Entradas sin conciliar"><div className="text-xl font-black text-green-400">{formatRD(entradasPend)}</div></Card>
+          <Card titulo="Salidas sin conciliar"><div className="text-xl font-black text-red-400">{formatRD(salidasPend)}</div></Card>
+        </div>
+      )}
+
+      {loading && <div className="flex items-center gap-2 text-zinc-500 text-sm py-6 justify-center"><Loader2 className="w-4 h-4 animate-spin" /> Cargando…</div>}
+
+      {!loading && bancoId && movs.length === 0 && !preview && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-8 text-center">
+          <div className="text-sm text-zinc-300 font-bold mb-1">Sin movimientos en {banco?.nombre}</div>
+          <div className="text-xs text-zinc-500">Sube el <b>estado de cuenta</b> (PDF, foto o CSV del internet banking) y la IA extrae los movimientos.</div>
+        </div>
+      )}
+
+      {/* Pendientes con sugerencias */}
+      {!loading && pendientes.length > 0 && (
+        <div className="space-y-2">
+          <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">Por conciliar ({pendientes.length})</div>
+          {pendientes.map(mov => {
+            const sugs = sugerencias(mov);
+            return (
+              <div key={mov.id} className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-xs text-zinc-500">{mov.fecha}{mov.referencia ? ` · ref ${mov.referencia}` : ''}</div>
+                    <div className="text-sm text-zinc-200 truncate">{mov.descripcion || '(sin descripción)'}</div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className={`text-sm font-black tabular-nums ${mov.monto < 0 ? 'text-red-400' : 'text-green-400'}`}>{formatRD(mov.monto)}</span>
+                    <button onClick={() => conciliarManual(mov)} className="text-[10px] bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold uppercase px-2.5 py-1.5 rounded-card">Manual</button>
+                  </div>
+                </div>
+                {sugs.length > 0 && (
+                  <div className="mt-2 pt-2 border-t border-zinc-800 space-y-1">
+                    {sugs.map(g => (
+                      <div key={g.id} className="flex items-center justify-between gap-2 bg-green-900/10 border border-green-800/40 rounded-card px-2 py-1.5">
+                        <div className="text-[11px] text-zinc-300 truncate">💡 Caja chica · {g.fecha} · {g.proveedor || g.concepto || 'gasto'} · <b>{formatRD(g.monto)}</b></div>
+                        <button onClick={() => conciliar(mov, 'caja_chica', g.id, `Caja chica: ${g.proveedor || g.concepto || g.id}`)}
+                          className="text-[10px] bg-green-700 hover:bg-green-600 text-white font-bold uppercase px-2.5 py-1 rounded-card shrink-0">Conciliar</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Conciliados */}
+      {!loading && conciliados.length > 0 && (
+        <div>
+          <button onClick={() => setMostrarConciliados(v => !v)} className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold hover:text-zinc-300">
+            {mostrarConciliados ? '▾' : '▸'} Conciliados ({conciliados.length})
+          </button>
+          {mostrarConciliados && (
+            <div className="mt-2 space-y-1">
+              {conciliados.map(mov => (
+                <div key={mov.id} className="flex items-center justify-between gap-2 bg-zinc-900/60 border border-zinc-800 rounded-card px-3 py-1.5 text-[11px]">
+                  <div className="truncate text-zinc-400">✅ {mov.fecha} · {mov.descripcion} {mov.conciliadoNota ? <span className="text-zinc-600">— {mov.conciliadoNota}</span> : null}</div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className={`font-bold tabular-nums ${mov.monto < 0 ? 'text-red-400/70' : 'text-green-400/70'}`}>{formatRD(mov.monto)}</span>
+                    <button onClick={() => deshacer(mov)} className="text-zinc-600 hover:text-red-400" title="Deshacer"><X className="w-3 h-3" /></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="text-[10px] text-zinc-600">v1: las sugerencias comparan contra gastos APROBADOS de caja chica (monto ±RD$1, fecha ±5 días). Entradas (cobros) se concilian manual por ahora; el matching contra pagos/cobros nativos y el cierre formal del mes llegan con la Fase 4.</div>
     </div>
   );
 }

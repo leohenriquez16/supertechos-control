@@ -1092,10 +1092,12 @@ export async function calcularDetalle(jornadas, data, corte, ajustesLista) {
   (data.reportes || []).filter(r => r.fecha >= corte.fechaInicio && r.fecha <= corte.fechaFin).forEach(r => {
     const proy = data.proyectos.find(p => p.id === r.proyectoId);
     if (!proy) return;
-    const sistema = data.sistemas[proy.sistema];
+    const area = (proy.areas || []).find(a => a.id === r.areaId);
+    // v8.26.8: multi-sistema — el sistema correcto es el del ÁREA reportada
+    // (puede ser distinto al principal del proyecto, p.ej. cementicio en obra de lona).
+    const sistema = data.sistemas[area?.sistemaId || proy.sistema];
     if (!sistema) return;
     const m2 = getM2Reporte(r, sistema);
-    const area = (proy.areas || []).find(a => a.id === r.areaId);
     const maestroId = area?.maestroAreaId || proy.maestroId;
     if (!maestroId) return;
     const b = getBucket(maestroId, proy.id);
@@ -1140,19 +1142,35 @@ export async function calcularDetalle(jornadas, data, corte, ajustesLista) {
       // sobre el precio. Antes era b.m2 × precio (doble cobro al reportar
       // varios pasos sobre la misma área).
       const precioFijo = precioFijoPersona;
-      const sistema = data.sistemas[proy.sistema];
-      const tareas = sistema?.tareas || [];
-      const totalPesoCfg = tareas.reduce((s, t) => s + (Number(t.peso) || 0), 0);
-      if (tareas.length > 0 && totalPesoCfg > 0 && b.tareaReportes) {
-        const pesoMap = {};
-        tareas.forEach(t => { pesoMap[t.id] = Number(t.peso) || 0; });
+      // v8.26.8: multi-sistema — los pesos se buscan en TODOS los sistemas que
+      // usa el proyecto (principal + el de cada área). Antes solo se miraba el
+      // sistema principal: las tareas de un segundo sistema tenían peso 0 y el
+      // maestro cobraba RD$0 aunque el avance estuviera reportado.
+      const sistemaIds = [...new Set([proy.sistema, ...(proy.areas || []).map(a => a.sistemaId).filter(Boolean)])];
+      const pesoMap = {};
+      const tareasConPeso = new Set(); // tareas cuyo sistema SÍ tiene pesos configurados
+      sistemaIds.forEach(sid => {
+        const sis = data.sistemas[sid];
+        const tareasSis = sis?.tareas || [];
+        const totalPesoSis = tareasSis.reduce((s, t) => s + (Number(t.peso) || 0), 0);
+        tareasSis.forEach(t => {
+          if (pesoMap[t.id] === undefined) pesoMap[t.id] = Number(t.peso) || 0;
+          if (totalPesoSis > 0) tareasConPeso.add(t.id);
+        });
+      });
+      if (Object.keys(pesoMap).length > 0 && b.tareaReportes) {
         montoBase = 0;
         Object.entries(b.tareaReportes).forEach(([tid, m2]) => {
-          const peso = pesoMap[tid] || 0;
-          montoBase += m2 * precioFijo * (peso / 100);
+          if (tareasConPeso.has(tid)) {
+            montoBase += m2 * precioFijo * ((pesoMap[tid] || 0) / 100);
+          } else if (pesoMap[tid] !== undefined) {
+            // Tarea de un sistema sin pesos definidos → comportamiento anterior (sin ponderar).
+            montoBase += m2 * precioFijo;
+          }
+          // Tarea desconocida (no está en ningún sistema del proyecto) → no paga, igual que antes.
         });
       } else {
-        // Fallback: sistema sin pesos definidos → comportamiento anterior.
+        // Fallback: ningún sistema con tareas definidas → comportamiento anterior.
         montoBase = b.m2 * precioFijo;
       }
     } else if (modoPersona === 'm2') {
@@ -1554,6 +1572,8 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
                                                 <option value="heredar">— heredar del proyecto —</option>
                                                 <option value="dia">Por día</option>
                                                 <option value="m2_fijo">M² fijo</option>
+                                                <option value="m2">Por m² por tarea</option>
+                                                <option value="tarea">Por tarea</option>
                                               </select>
                                             )}
                                           </td>

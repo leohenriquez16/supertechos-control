@@ -234,6 +234,25 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
 
   // Previews numéricos por modo de pago — usan m² total estimado y pesos del sistema
   const m2TotalProyecto = (form.areas || []).reduce((s, a) => s + (Number(a.m2) || 0), 0);
+
+  // v8.26.8: multi-sistema — para los modos m2/tarea se listan las tareas de TODOS
+  // los sistemas que usa el proyecto (principal + el de cada área), no solo el
+  // principal. Antes las tareas del segundo sistema no se podían cotizar.
+  const sistemasProyecto = [...new Set([form.sistema, ...(form.areas || []).map(a => a.sistemaId).filter(Boolean)])].filter(Boolean);
+  const m2PorSistema = {};
+  (form.areas || []).forEach(a => {
+    const sid = a.sistemaId || form.sistema;
+    m2PorSistema[sid] = (m2PorSistema[sid] || 0) + (Number(a.m2) || 0);
+  });
+  const tareasPagables = [];
+  sistemasProyecto.forEach(sid => {
+    const sis = data.sistemas[sid];
+    (sis?.tareas || []).forEach(t => {
+      if (!tareasPagables.some(x => x.id === t.id)) {
+        tareasPagables.push({ ...t, sistemaId: sid, sistemaNombre: sis.nombre, esSecundario: sid !== form.sistema });
+      }
+    });
+  });
   const previewM2Fijo = m2TotalProyecto * (Number(form.precioM2FijoMaestro) || 0);
   const previewM2PorTarea = sistema
     ? (sistema.tareas || []).reduce((s, t) => s + (Number(form.preciosTareasM2[t.id]) || 0) * m2TotalProyecto * ((Number(t.peso) || 0) / 100), 0)
@@ -602,14 +621,14 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
                 <div className="text-[10px] text-zinc-500">Cada paso se paga al m² ejecutado de esa tarea.</div>
               </div>
               <div className="space-y-1.5">
-                {(sistema.tareas || []).map(t => {
+                {tareasPagables.map(t => {
                   const precio = Number(form.preciosTareasM2[t.id]) || 0;
-                  const m2Tarea = m2TotalProyecto * ((Number(t.peso) || 0) / 100);
+                  const m2Tarea = (m2PorSistema[t.sistemaId] != null ? m2PorSistema[t.sistemaId] : m2TotalProyecto) * ((Number(t.peso) || 0) / 100);
                   const subtotal = precio * m2Tarea;
                   return (
                     <div key={t.id} className="flex items-center gap-2">
                       <div className="flex-1 min-w-0">
-                        <div className="text-xs truncate">{t.nombre}</div>
+                        <div className="text-xs truncate">{t.nombre}{t.esSecundario && <span className="text-purple-400 text-[9px] ml-1">({t.sistemaNombre})</span>}</div>
                         <div className="text-[9px] text-zinc-500">{t.peso}% · ≈ {formatNum(m2Tarea)} m²</div>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
@@ -643,13 +662,13 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
                 <div className="w-16 text-right">Margen</div>
               </div>
               <div className="space-y-1.5">
-                {(sistema.tareas || []).map(t => {
+                {tareasPagables.map(t => {
                   const venta = Number(form.preciosTareasM2[t.id]) || 0;
                   const maestro = Number((form.preciosManoObraTareas || {})[t.id]) || 0;
                   const margen = venta > 0 ? Math.round(((venta - maestro) / venta) * 100) : 0;
                   return (
                     <div key={t.id} className="grid grid-cols-[1fr_auto_auto_auto] gap-2 items-center">
-                      <div className="text-xs truncate">{t.nombre} <span className="text-zinc-600 text-[9px]">{t.peso}%</span></div>
+                      <div className="text-xs truncate">{t.nombre} <span className="text-zinc-600 text-[9px]">{t.peso}%</span>{t.esSecundario && <span className="text-purple-400 text-[9px] ml-1">({t.sistemaNombre})</span>}</div>
                       <input type="number" value={form.preciosTareasM2[t.id] || ''} onChange={e => setPrecio(t.id, e.target.value)} placeholder="venta" className="w-20 bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1 text-white text-xs text-right" />
                       <input
                         type="number"

@@ -139,6 +139,38 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
 
   const getCostoPersona = (pid) => costosDia.find(c => c.personaId === pid)?.costoDia || '';
 
+  // v8.26.10: BRIGADAS — cada maestro de la obra puede tener su propio tipo de MDO
+  // (él + sus ayudantes): una brigada por día y otra por m² en la misma obra.
+  // Se persiste como overrides por persona en costos_dia_proyecto (la nómina ya los respeta).
+  const maestrosBrigada = [...new Set([
+    form.maestroId,
+    ...(form.areas || []).map(a => a.maestroAreaId),
+    ...Object.values(form.maestrosTareas || {}),
+  ].filter(Boolean))].map(id => getPersona(data.personal, id)).filter(Boolean);
+  const ayudantesDeBrigada = (mid) => (data.personal || []).filter(p => tieneRol(p, 'ayudante') && p.maestroId === mid);
+  const ovDe = (pid) => costosDia.find(c => c.personaId === pid) || {};
+  const setModoBrigada = async (mid, modo) => {
+    try {
+      const nuevoModo = modo === 'heredar' ? null : modo;
+      await db.guardarPagoPersonaProyecto(proyecto.id, mid, { modoPago: nuevoModo });
+      // "Por día" y "heredar" se propagan a los ayudantes de su brigada;
+      // en los modos por m²/tarea el maestro cubre (o se configura) a su gente.
+      if (modo === 'dia' || modo === 'heredar') {
+        for (const a of ayudantesDeBrigada(mid)) {
+          await db.guardarPagoPersonaProyecto(proyecto.id, a.id, { modoPago: nuevoModo });
+        }
+      }
+      setCostosDia(await db.listarCostosDia(proyecto.id));
+    } catch (e) { alert('Error: ' + (e.message || e)); }
+  };
+  const setPrecioBrigada = async (mid, precio) => {
+    const n = parseFloat(precio);
+    try {
+      await db.guardarPagoPersonaProyecto(proyecto.id, mid, { precioM2: (Number.isFinite(n) && n > 0) ? n : null });
+      setCostosDia(await db.listarCostosDia(proyecto.id));
+    } catch (e) { alert('Error: ' + (e.message || e)); }
+  };
+
   const guardar = async () => {
     // v8.7.1: Ref Odoo obligatoria (no se permite vaciar)
     if (!form.referenciaOdoo || !form.referenciaOdoo.trim()) {
@@ -723,6 +755,76 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* v8.26.10: BRIGADAS — cada maestro con su propio tipo de MDO (él + su gente).
+              Una brigada puede ir por día y otra por m² dentro de la misma obra. */}
+          {maestrosBrigada.length > 0 && (
+            <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3 space-y-2">
+              <div>
+                <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1">Modo de pago por brigada (opcional)</div>
+                <div className="text-[10px] text-zinc-500">Cada maestro puede cobrar distinto al modo general de la obra: una brigada por día y otra por m². "Por día" se aplica también a sus ayudantes. La nómina lo respeta automáticamente.</div>
+              </div>
+              {loadingCostos ? (
+                <Loader2 className="w-4 h-4 animate-spin text-zinc-500" />
+              ) : maestrosBrigada.map(m => {
+                const ov = ovDe(m.id);
+                const modoSel = ov.modoPago || 'heredar';
+                const ayus = ayudantesDeBrigada(m.id);
+                return (
+                  <div key={m.id} className="border border-zinc-800 rounded-card p-2 space-y-1.5 bg-zinc-900/40">
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-bold truncate">{m.nombre}</div>
+                        <div className="text-[9px] text-zinc-500">{ayus.length} ayudante{ayus.length !== 1 ? 's' : ''} en su brigada</div>
+                      </div>
+                      <select
+                        value={modoSel}
+                        onChange={e => setModoBrigada(m.id, e.target.value)}
+                        className={`w-48 bg-zinc-900 border rounded-card px-2 py-1.5 text-[10px] ${modoSel !== 'heredar' ? 'border-red-700 text-white' : 'border-zinc-800 text-zinc-500'}`}
+                      >
+                        <option value="heredar">— modo general de la obra —</option>
+                        <option value="dia">Por día (él + su brigada)</option>
+                        <option value="m2_fijo">M² fijo (precio propio)</option>
+                        <option value="m2">Por m² por tarea</option>
+                        <option value="tarea">Por tarea</option>
+                      </select>
+                    </div>
+                    {modoSel === 'm2_fijo' && (
+                      <div className="flex items-center gap-2 justify-end">
+                        <span className="text-[9px] text-zinc-500">RD$/m² de este maestro</span>
+                        <input
+                          key={'pm2_' + m.id + '_' + (ov.precioM2 || 0)}
+                          type="number"
+                          defaultValue={ov.precioM2 || ''}
+                          onBlur={e => setPrecioBrigada(m.id, e.target.value)}
+                          placeholder={String(form.precioM2FijoMaestro || 0)}
+                          className="w-24 bg-zinc-900 border border-green-800 px-2 py-1 text-green-400 text-xs text-right"
+                        />
+                      </div>
+                    )}
+                    {modoSel === 'dia' && (
+                      <div className="space-y-1 pt-1 border-t border-zinc-800/60">
+                        {[m, ...ayus].map(p => (
+                          <div key={p.id} className="flex items-center gap-2">
+                            <div className="flex-1 min-w-0 text-[11px] truncate text-zinc-300">{p.nombre}{p.id === m.id && <span className="text-zinc-600 text-[9px] ml-1">(maestro)</span>}</div>
+                            <span className="text-[9px] text-zinc-600">RD$/día</span>
+                            <input
+                              key={'cd_' + p.id + '_' + (getCostoPersona(p.id) || 0)}
+                              type="number"
+                              defaultValue={getCostoPersona(p.id)}
+                              onBlur={e => { const n = parseFloat(e.target.value); if (Number.isFinite(n) && n > 0 && n !== Number(getCostoPersona(p.id) || 0)) setCostoPersona(p.id, n); }}
+                              placeholder="0"
+                              className="w-24 bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1 text-white text-xs text-right"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
 

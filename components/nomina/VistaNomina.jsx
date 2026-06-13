@@ -1968,28 +1968,31 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
         </button>
       )}
 
-      {ajusteModal && <ModalAjuste personal={data.personal} onCerrar={() => setAjusteModal(null)} onCrear={crearAjuste} fechaMin={corte.fechaInicio} fechaMax={corte.fechaFin} />}
+      {ajusteModal && <ModalAjuste personal={data.personal} proyectos={data.proyectos} onCerrar={() => setAjusteModal(null)} onCrear={crearAjuste} fechaMin={corte.fechaInicio} fechaMax={corte.fechaFin} />}
     </div>
   );
 }
 
-function ModalAjuste({ personal, onCerrar, onCrear, fechaMin, fechaMax }) {
+function ModalAjuste({ personal, proyectos = [], onCerrar, onCrear, fechaMin, fechaMax }) {
   const [personaId, setPersonaId] = useState('');
+  const [proyectoId, setProyectoId] = useState(''); // v8.26.11: a qué proyecto cargar el ajuste (opcional)
   const [tipo, setTipo] = useState('adelanto');
   const [monto, setMonto] = useState('');
   const [concepto, setConcepto] = useState('');
   const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
   const elegibles = personal.filter(p => tieneRol(p, 'maestro') || tieneRol(p, 'ayudante') || tieneRol(p, 'supervisor'));
+  const proyectosActivos = (proyectos || []).filter(p => !p.archivado).sort((a, b) => labelProyecto(a).localeCompare(labelProyecto(b)));
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
       <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-md w-full p-5 space-y-3">
         <div className="flex justify-between items-start"><div className="text-xs tracking-widest uppercase text-red-500 font-bold">Nuevo ajuste</div><button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button></div>
         <Campo label="Persona"><select value={personaId} onChange={e => setPersonaId(e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="">Seleccionar...</option>{elegibles.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}</select></Campo>
+        <Campo label="Proyecto (opcional)"><select value={proyectoId} onChange={e => setProyectoId(e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="">— Sin proyecto (general) —</option>{proyectosActivos.map(p => <option key={p.id} value={p.id}>{labelProyecto(p)}</option>)}</select></Campo>
         <Campo label="Tipo"><select value={tipo} onChange={e => setTipo(e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="adelanto">Adelanto</option><option value="bono">Bono</option><option value="descuento">Descuento</option><option value="dieta_extra">Dieta extra</option></select></Campo>
         <Campo label="Monto (RD$)"><Input type="number" value={monto} onChange={setMonto} /></Campo>
         <Campo label="Concepto"><Input value={concepto} onChange={setConcepto} placeholder="Descripción breve" /></Campo>
         <Campo label="Fecha"><Input type="date" value={fecha} onChange={setFecha} /></Campo>
-        <div className="flex gap-2"><button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button><button onClick={() => personaId && monto && onCrear({ personaId, tipo, monto: parseFloat(monto), concepto, fecha })} disabled={!personaId || !monto} className="flex-1 bg-red-600 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-3"><Save className="w-3 h-3 inline mr-1" /> Registrar</button></div>
+        <div className="flex gap-2"><button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button><button onClick={() => personaId && monto && onCrear({ personaId, proyectoId: proyectoId || null, tipo, monto: parseFloat(monto), concepto, fecha })} disabled={!personaId || !monto} className="flex-1 bg-red-600 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-3"><Save className="w-3 h-3 inline mr-1" /> Registrar</button></div>
       </div>
     </div>
   );

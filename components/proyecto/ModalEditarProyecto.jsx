@@ -71,6 +71,7 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
     modoPagoManoObra: proyecto.modoPagoManoObra || 'dia',
     preciosTareasM2: proyecto.preciosTareasM2 || {},
     preciosManoObraTareas: proyecto.preciosManoObraTareas || {},
+    maestrosTareas: proyecto.maestrosTareas || {}, // v8.26.9: maestro responsable por tarea
     precioM2FijoMaestro: proyecto.precioM2FijoMaestro || 0,
     // v8.12: Dieta diaria pagada desde caja chica
     dietaDiariaRd: proyecto.dietaDiariaRd || 0,
@@ -691,6 +692,37 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
                   <div className="flex justify-between border-t border-zinc-800 pt-1"><span className="text-zinc-400">Margen mano de obra:</span><span className={`font-bold ${(previewTareaVenta - previewTareaMaestro) > 0 ? 'text-green-400' : 'text-red-400'}`}>{formatRD(previewTareaVenta - previewTareaMaestro)}</span></div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* v8.26.9: maestro responsable POR TAREA — para cuando dos maestros se
+              reparten tareas dentro de la misma área (la nómina paga cada tarea a
+              su responsable; si no se asigna, paga al maestro del área/principal). */}
+          {form.modoPagoManoObra !== 'dia' && tareasPagables.length > 0 && (
+            <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3 space-y-2">
+              <div>
+                <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1">Maestro responsable por tarea (opcional)</div>
+                <div className="text-[10px] text-zinc-500">Úsalo cuando dos maestros se reparten tareas en la misma área (ej. uno demolición, otro pulido). La nómina le paga cada tarea a su responsable. Sin asignar = maestro del área o principal.</div>
+              </div>
+              <div className="space-y-1.5">
+                {tareasPagables.map(t => (
+                  <div key={t.id} className="flex items-center gap-2">
+                    <div className="flex-1 min-w-0 text-xs truncate">{t.nombre} <span className="text-zinc-600 text-[9px]">{t.peso}%</span>{t.esSecundario && <span className="text-purple-400 text-[9px] ml-1">({t.sistemaNombre})</span>}</div>
+                    <select
+                      value={(form.maestrosTareas || {})[t.id] || ''}
+                      onChange={e => {
+                        const m = { ...(form.maestrosTareas || {}) };
+                        if (e.target.value) m[t.id] = e.target.value; else delete m[t.id];
+                        setForm({ ...form, maestrosTareas: m });
+                      }}
+                      className={`w-44 bg-zinc-900 border rounded-card px-2 py-1.5 text-[10px] ${ (form.maestrosTareas || {})[t.id] ? 'border-red-700 text-white' : 'border-zinc-800 text-zinc-500'}`}
+                    >
+                      <option value="">— maestro del área / principal —</option>
+                      {maestros.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}
+                    </select>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

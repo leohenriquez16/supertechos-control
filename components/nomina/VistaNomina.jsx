@@ -1098,7 +1098,10 @@ export async function calcularDetalle(jornadas, data, corte, ajustesLista) {
     const sistema = data.sistemas[area?.sistemaId || proy.sistema];
     if (!sistema) return;
     const m2 = getM2Reporte(r, sistema);
-    const maestroId = area?.maestroAreaId || proy.maestroId;
+    // v8.26.9: prioridad de atribución del m²: maestro DE LA TAREA (dos maestros
+    // repartiéndose tareas en la misma área, caso Ayac Mercedes) > maestro del
+    // área > maestro principal del proyecto.
+    const maestroId = (proy.maestrosTareas || {})[r.tareaId] || area?.maestroAreaId || proy.maestroId;
     if (!maestroId) return;
     const b = getBucket(maestroId, proy.id);
     b.m2 += m2;

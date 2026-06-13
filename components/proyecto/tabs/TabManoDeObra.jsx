@@ -36,6 +36,8 @@ function CostosDiaPorPersona({ proyecto, data, esAdmin, onCambio }) {
     (proyecto.ayudantesIds || []).forEach(id => ids.add(id));
     // v8.19.29: también incluye maestros de área (maestroAreaId) si los hay
     (proyecto.areas || []).forEach(a => { if (a.maestroAreaId) ids.add(a.maestroAreaId); });
+    // v8.26.9: y los maestros responsables por tarea
+    Object.values(proyecto.maestrosTareas || {}).forEach(id => { if (id) ids.add(id); });
     return [...ids].map(id => (data.personal || []).find(p => p.id === id)).filter(Boolean);
   }, [proyecto, data.personal]);
 
@@ -43,6 +45,7 @@ function CostosDiaPorPersona({ proyecto, data, esAdmin, onCambio }) {
     if (proyecto.supervisorId === persona.id) return { label: 'Supervisor', color: 'bg-blue-900/40 border-blue-700 text-blue-300' };
     if (proyecto.maestroId === persona.id) return { label: 'Maestro', color: 'bg-red-900/40 border-red-700 text-red-300' };
     if ((proyecto.areas || []).some(a => a.maestroAreaId === persona.id)) return { label: 'Maestro área', color: 'bg-red-900/30 border-red-700/60 text-red-300' };
+    if (Object.values(proyecto.maestrosTareas || {}).includes(persona.id)) return { label: 'Maestro tarea', color: 'bg-red-900/30 border-red-700/60 text-red-300' };
     return { label: 'Ayudante', color: 'bg-zinc-800 border-zinc-700 text-zinc-300' };
   };
 

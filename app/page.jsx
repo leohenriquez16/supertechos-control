@@ -85,6 +85,7 @@ import VistaNomina from '../components/nomina/VistaNomina';
 import ModuloSurveys from '../components/surveys/ModuloSurveys';
 import VistaGarantias from '../components/garantias/VistaGarantias';
 import ModuloReclamaciones from '../components/reclamaciones/ModuloReclamaciones';
+import ModuloGotera from '../components/soporte/ModuloGotera';
 import VistaMisAsignaciones from '../components/maestro/VistaMisAsignaciones';
 import InicioSupervisor from '../components/maestro/InicioSupervisor';
 import ClimaWidget from '../components/maestro/ClimaWidget';
@@ -732,6 +733,8 @@ export default function App() {
       { id: 'tareas', label: 'Tareas', icon: ClipboardList, vista: 'tareas', badge: tareas.length },
       { id: 'galeria', label: 'Galería', icon: ImageIcon, vista: 'galeria' },
       { id: 'equipoGlobal', label: 'Equipo en obra', icon: Users, vista: 'equipoGlobal' },
+      // v8.27.0: Gotera — feedback / reporte de errores del ERP en modo ticket.
+      { id: 'gotera', label: 'Gotera', icon: CloudRain, vista: 'gotera' },
     ]},
     { seccion: 'FINANZAS', items: [
       { id: 'nomina', label: 'Nómina', icon: Wallet, vista: 'nomina' },
@@ -783,6 +786,8 @@ export default function App() {
       // Caja chica: solo personal con caja_chica_habilitada (admin lo activa por persona)
       ...((tieneRol(usuario, 'maestro') || tieneRol(usuario, 'supervisor')) && usuario.cajaChicaHabilitada ? [{ id: 'miCajaChica', label: 'Mi Caja Chica', icon: CreditCard, vista: 'miCajaChica' }] : []),
       ...(tareas.filter(t => t.asignadaAId === usuario.id).length > 0 ? [{ id: 'tareas', label: 'Tareas', icon: ClipboardList, vista: 'tareas', badge: tareas.filter(t => t.asignadaAId === usuario.id).length }] : []),
+      // v8.27.0: cualquier usuario puede reportar un error o dar feedback (Gotera).
+      { id: 'gotera', label: 'Gotera', icon: CloudRain, vista: 'gotera' },
     ]},
   ];
 
@@ -891,6 +896,8 @@ export default function App() {
         {vista === 'miProduccion' && tieneRol(usuario, 'maestro') && <VistaMiProduccion usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'miCajaChica' && (tieneRol(usuario, 'maestro') || tieneRol(usuario, 'supervisor')) && usuario.cajaChicaHabilitada && <VistaMiCajaChica usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} />}
         {vista === 'surveys' && (esAdmin || tieneRol(usuario, 'supervisor')) && <ModuloSurveys usuario={usuario} data={data} onRecargar={recargar} />}
+        {/* v8.27.0: Gotera — disponible para TODOS los usuarios (reportar); owner/admin ven el kanban completo */}
+        {vista === 'gotera' && <ModuloGotera usuario={usuario} data={data} onVolver={() => setVista(esAdmin ? 'dashboard' : 'misProyectos')} />}
         {vista === 'cajaChica' && esAdmin && <VistaCajaChicaAdmin usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onIrAProveedores={() => setVista('proveedoresCajaChica')} onIrACategorias={() => setVista('categoriasCajaChica')} />}
         {vista === 'proveedoresCajaChica' && esAdmin && <VistaProveedoresCajaChica usuario={usuario} data={data} onVolver={() => setVista('cajaChica')} />}
         {vista === 'categoriasCajaChica' && esAdmin && <VistaCategoriasCajaChica usuario={usuario} onVolver={() => setVista('cajaChica')} onCambio={() => recargar()} />}

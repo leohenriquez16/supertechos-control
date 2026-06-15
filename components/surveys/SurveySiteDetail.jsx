@@ -20,6 +20,7 @@ import { imprimirLevantamiento } from './imprimirLevantamiento';
 import { imprimirInformeFotografico } from './imprimirInformeFotografico';
 import ChatterPanel from '../common/ChatterPanel';
 import Lightbox from '../common/Lightbox';
+import MapaLeaflet from '../common/MapaLeaflet';
 import { registrarEvento as chatterEventoSurvey } from '../../lib/chatter';
 
 export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, data, onVolver, onVerEdificaciones }) {
@@ -144,7 +145,7 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
   const MAP_ETAPA = { planning: 'New', survey_in_progress: 'Asignado', survey_completed: 'Realizado', quoted: 'Cotizacion Realizada' };
   const [etapaProy, setEtapaProy] = useState(proyecto?.odoo_stage || MAP_ETAPA[proyecto?.status] || 'New');
   const [cambiandoEtapa, setCambiandoEtapa] = useState(false);
-  const etapasDisponibles = esAdmin ? ETAPAS_LEVANTAMIENTO : ETAPAS_LEVANTAMIENTO.slice(0, 5); // supervisor: hasta "Realizado"
+  const etapasDisponibles = (esAdmin || esOwner) ? ETAPAS_LEVANTAMIENTO : ETAPAS_LEVANTAMIENTO.slice(0, 5); // supervisor: hasta "Realizado"
   const cambiarEtapaProy = async (etapa) => {
     if (!etapa || etapa === etapaProy) return;
     const prev = etapaProy;
@@ -245,6 +246,37 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
             )}
           </div>
         </div>
+
+        {/* v8.26.13: cambio rápido de etapa arriba (admin/owner) — píldoras clicables */}
+        {(esAdmin || esOwner) && (
+          <div className="pt-3 border-t border-zinc-800">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold flex items-center gap-1">
+                <Layers className="w-3 h-3 text-red-500" /> Etapa
+              </span>
+              {cambiandoEtapa && <Loader2 className="w-3 h-3 animate-spin text-zinc-500" />}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {etapasDisponibles.map(et => {
+                const activa = et === etapaProy;
+                return (
+                  <button
+                    key={et}
+                    onClick={() => cambiarEtapaProy(et)}
+                    disabled={cambiandoEtapa || activa}
+                    className={`text-[11px] font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-card border transition ${
+                      activa
+                        ? 'bg-red-600 border-red-600 text-white'
+                        : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200'
+                    } disabled:cursor-default`}
+                  >
+                    {et}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Aviso de información faltante */}
@@ -293,6 +325,46 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
         <QuickActions site={site} proyecto={proyecto} surveyorNombre={usuario?.nombre} />
       </div>
 
+      {/* v8.26.13: Ubicación — dirección visible + mini-mapa al lado */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
+        <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold mb-2 flex items-center gap-1">
+          <MapPin className="w-3 h-3 text-red-500" /> Ubicación
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
+          {/* Dirección */}
+          <div className="space-y-2 text-sm">
+            <Field label="Dirección" value={site.address} />
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Ciudad" value={site.city} />
+              <Field label="Provincia" value={site.province} />
+            </div>
+            {hasGeo ? (
+              <Field label="Coordenadas" value={`${Number(site.latitude).toFixed(5)}, ${Number(site.longitude).toFixed(5)}`} />
+            ) : (
+              <div className="text-[11px] text-amber-400 flex items-center gap-1 pt-1">
+                <AlertTriangle className="w-3 h-3" /> Sin coordenadas — agrégalas en "Editar datos".
+              </div>
+            )}
+          </div>
+          {/* Mini-mapa */}
+          {hasGeo ? (
+            <div className="rounded-card overflow-hidden border border-zinc-800 min-h-[160px]">
+              <MapaLeaflet
+                center={[Number(site.latitude), Number(site.longitude)]}
+                zoom={16}
+                height={160}
+                markers={[{ lat: Number(site.latitude), lng: Number(site.longitude), color: 'red', label: site.name }]}
+              />
+            </div>
+          ) : (
+            <div className="rounded-card border border-dashed border-zinc-800 bg-zinc-950 flex flex-col items-center justify-center text-zinc-600 min-h-[160px] gap-1">
+              <MapPin className="w-6 h-6 opacity-40" />
+              <span className="text-[11px]">Sin ubicación en el mapa</span>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* v8.25.33: Contacto + Horarios lado a lado en pantallas anchas (uso desde computadora) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
         <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 space-y-2">
@@ -339,20 +411,17 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
 
       {/* v8.25.33: Etapa + Tipo + Levantador + Escalera + Cita en 2-col (computadora) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
+      {/* v8.26.13: admin/owner cambian la etapa con las píldoras de arriba; aquí solo
+          se muestra para el supervisor (lectura). */}
+      {!(esAdmin || esOwner) && (
       <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
         <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1.5 flex items-center gap-1">
           <Layers className="w-3.5 h-3.5 text-red-500" /> Etapa
           {cambiandoEtapa && <Loader2 className="w-3 h-3 animate-spin text-zinc-500" />}
         </div>
-        {esAdmin ? (
-          <select value={etapaProy} onChange={e => cambiarEtapaProy(e.target.value)} disabled={cambiandoEtapa} className="w-full bg-zinc-950 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2.5 text-white text-sm">
-            {!etapasDisponibles.includes(etapaProy) && <option value={etapaProy}>{etapaProy}</option>}
-            {etapasDisponibles.map(et => <option key={et} value={et}>{et}</option>)}
-          </select>
-        ) : (
-          <div className="text-sm font-bold text-zinc-200">{etapaProy}</div>
-        )}
+        <div className="text-sm font-bold text-zinc-200">{etapaProy}</div>
       </div>
+      )}
       <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
         <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1.5 flex items-center gap-1">
           <Layers className="w-3.5 h-3.5 text-red-500" /> Tipo de levantamiento

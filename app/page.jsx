@@ -9549,6 +9549,7 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto, onRecargar
   const [soloConProyecto, setSoloConProyecto] = useState(true); // v8.7 default
   const [celdaSeleccionada, setCeldaSeleccionada] = useState(null);
   const [modalAsignar, setModalAsignar] = useState(null);
+  const [pickerPersona, setPickerPersona] = useState(false); // v8.27.5: agregar a cualquiera a la planificación
 
   // Días de la semana (lunes a domingo)
   const dias = React.useMemo(() => {
@@ -9744,14 +9745,17 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto, onRecargar
     personas = personas.filter(p => {
       const roles = p.roles || [];
       // Si es maestro o ayudante, mostrar
-      // Si es SOLO supervisor (sin ser también maestro), excluir
       if (roles.includes('maestro') || roles.includes('ayudante')) return true;
+      // v8.27.5: también mostrar a quien YA tiene jornada/asignación esta semana,
+      // aunque su rol sea admin/supervisor (p.ej. un admin que va a obra y hay que
+      // reportarle/pagarle los días). Reportado vía Gotera (caso Yamel).
+      if (gridPersonas[p.id]) return true;
       return false;
     });
-    if (filtroRol) personas = personas.filter(p => p.roles?.includes(filtroRol));
+    if (filtroRol) personas = personas.filter(p => p.roles?.includes(filtroRol) || gridPersonas[p.id]);
     // v8.7: filtro "solo con proyecto asignado"
     if (soloConProyecto) {
-      personas = personas.filter(p => proyectosFiltrados.some(pr => pr.maestroId === p.id || (pr.ayudantesIds || []).includes(p.id)));
+      personas = personas.filter(p => gridPersonas[p.id] || proyectosFiltrados.some(pr => pr.maestroId === p.id || (pr.ayudantesIds || []).includes(p.id)));
     }
     return personas.sort((a, b) => {
       const orden = (r) => r?.includes('maestro') ? 1 : 2;
@@ -9805,6 +9809,15 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto, onRecargar
   // Asignar personal desde celda vacía
   const abrirAsignacion = (personaId, fecha) => {
     setModalAsignar({ personaId, fecha });
+  };
+
+  // v8.27.5: agregar a la planificación a cualquier persona (incluso admins que
+  // van a obra, como Yamel) y abrir el modal de asignar/reportar para ella.
+  const agregarPersonaAPlanif = (personaId) => {
+    setPickerPersona(false);
+    setFiltroRol('');        // "Todos" para que aparezca aunque no sea maestro/ayudante
+    setSoloConProyecto(false);
+    abrirAsignacion(personaId, hoy);
   };
 
   const confirmarAsignacion = async ({ proyectoId, personaId, fecha, fechaHasta, rol }) => {
@@ -9948,6 +9961,11 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto, onRecargar
               <input type="checkbox" checked={soloConProyecto} onChange={e => setSoloConProyecto(e.target.checked)} className="w-3 h-3 accent-red-600" />
               <span>Solo con proyecto asignado</span>
             </label>
+            {esAdmin && (
+              <button onClick={() => setPickerPersona(true)} className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold uppercase px-3 py-1.5 rounded-card flex items-center gap-1" title="Agregar a la planificación a cualquier persona (incl. admins que van a obra)">
+                <Plus className="w-3 h-3" /> Agregar persona
+              </button>
+            )}
           </>
         )}
         <select value={filtroProyecto} onChange={e => setFiltroProyecto(e.target.value)} className="bg-zinc-900 border border-zinc-800 rounded-card px-3 py-1.5 text-xs text-white">
@@ -10160,6 +10178,54 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto, onRecargar
           onConfirmar={confirmarAsignacion}
         />
       )}
+
+      {/* v8.27.5: picker para agregar a cualquier persona a la planificación */}
+      {pickerPersona && (
+        <ModalPickPersonaPlanif
+          personal={data.personal}
+          yaEnGrid={gridPersonas}
+          onCerrar={() => setPickerPersona(false)}
+          onElegir={agregarPersonaAPlanif}
+        />
+      )}
+    </div>
+  );
+}
+
+// v8.27.5: elegir cualquier persona activa para agregarla a la planificación
+// (incluye admins/supervisores que van a obra y hay que reportarles los días).
+function ModalPickPersonaPlanif({ personal, yaEnGrid, onCerrar, onElegir }) {
+  const [q, setQ] = useState('');
+  const rolRank = (p) => {
+    const r = p.roles || [];
+    return r.includes('maestro') ? 0 : r.includes('ayudante') ? 1 : r.includes('supervisor') ? 2 : 3;
+  };
+  const rolLabel = (p) => {
+    const r = p.roles || [];
+    return r.includes('maestro') ? 'Maestro' : r.includes('ayudante') ? 'Ayudante' : r.includes('supervisor') ? 'Supervisor' : r.includes('admin') ? 'Admin' : '—';
+  };
+  const activos = (personal || [])
+    .filter(p => p.activo !== false)
+    .filter(p => !q || (p.nombre || '').toLowerCase().includes(q.toLowerCase()))
+    .sort((a, b) => { const d = rolRank(a) - rolRank(b); return d !== 0 ? d : (a.nombre || '').localeCompare(b.nombre || ''); });
+  return (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={onCerrar}>
+      <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-md w-full p-5 space-y-3 max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-start">
+          <div className="text-xs tracking-widest uppercase text-red-500 font-bold">Agregar persona a la planificación</div>
+          <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
+        </div>
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar persona…" autoFocus className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2.5 text-white text-sm rounded-card" />
+        <div className="overflow-y-auto space-y-1 flex-1">
+          {activos.map(p => (
+            <button key={p.id} onClick={() => onElegir(p.id)} className="w-full text-left bg-zinc-950 border border-zinc-800 hover:border-red-600 rounded-card px-3 py-2 flex items-center justify-between gap-2">
+              <span className="font-bold text-sm truncate">{p.nombre}</span>
+              <span className="text-[10px] uppercase tracking-wider text-zinc-500 shrink-0">{rolLabel(p)}{yaEnGrid[p.id] ? ' · en planif.' : ''}</span>
+            </button>
+          ))}
+          {activos.length === 0 && <div className="text-center text-zinc-500 text-sm py-6">Sin resultados</div>}
+        </div>
+      </div>
     </div>
   );
 }

@@ -1265,8 +1265,9 @@ export async function calcularDetalle(jornadas, data, corte, ajustesLista) {
       target = filaProyecto;
     } else {
       // Suelto (sin proyecto o de una obra fuera del ERP) → fila dedicada visible.
-      const etiqueta = a.reclamacionId ? 'Reclamaciones' : '(Ajustes)';
-      const sufijo = a.reclamacionId ? 'recl' : 'ajuste';
+      const esRecl = !!a.reclamacionId || !!a.esReclamacion;
+      const etiqueta = esRecl ? 'Reclamaciones' : '(Ajustes)';
+      const sufijo = esRecl ? 'recl' : 'ajuste';
       target = filas.find(f => f.personaId === a.personaId && f.esSintetica && f.proyectoNombre === etiqueta)
         || filaSintetica(a.personaId, p.nombre, sufijo, etiqueta);
     }
@@ -2026,12 +2027,12 @@ function ModalAjuste({ personal, proyectos = [], onCerrar, onCrear, fechaMin, fe
       <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-md w-full p-5 space-y-3">
         <div className="flex justify-between items-start"><div className="text-xs tracking-widest uppercase text-red-500 font-bold">Nuevo ajuste</div><button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button></div>
         <Campo label="Persona"><select value={personaId} onChange={e => setPersonaId(e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="">Seleccionar...</option>{elegibles.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}</select></Campo>
-        <Campo label="Proyecto (opcional)"><select value={proyectoId} onChange={e => setProyectoId(e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="">— Sin proyecto (general) —</option>{proyectosActivos.map(p => <option key={p.id} value={p.id}>{labelProyecto(p)}</option>)}</select></Campo>
+        <Campo label="Cargar a"><select value={proyectoId} onChange={e => setProyectoId(e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="">— Sin proyecto (general) —</option><option value="__reclamacion__">🔧 Reclamación (genérico)</option>{proyectosActivos.map(p => <option key={p.id} value={p.id}>{labelProyecto(p)}</option>)}</select></Campo>
         <Campo label="Tipo"><select value={tipo} onChange={e => setTipo(e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="adelanto">Adelanto</option><option value="ajuste">Ajuste (suma al pago)</option><option value="bono">Bono</option><option value="descuento">Descuento</option><option value="dieta_extra">Dieta extra</option></select></Campo>
         <Campo label="Monto (RD$)"><Input type="number" value={monto} onChange={setMonto} /></Campo>
         <Campo label="Concepto"><Input value={concepto} onChange={setConcepto} placeholder="Descripción breve" /></Campo>
         <Campo label="Fecha"><Input type="date" value={fecha} onChange={setFecha} /></Campo>
-        <div className="flex gap-2"><button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button><button onClick={() => personaId && monto && onCrear({ personaId, proyectoId: proyectoId || null, tipo, monto: parseFloat(monto), concepto, fecha })} disabled={!personaId || !monto} className="flex-1 bg-red-600 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-3"><Save className="w-3 h-3 inline mr-1" /> Registrar</button></div>
+        <div className="flex gap-2"><button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button><button onClick={() => personaId && monto && onCrear({ personaId, proyectoId: proyectoId === '__reclamacion__' ? null : (proyectoId || null), esReclamacion: proyectoId === '__reclamacion__', tipo, monto: parseFloat(monto), concepto, fecha })} disabled={!personaId || !monto} className="flex-1 bg-red-600 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-3"><Save className="w-3 h-3 inline mr-1" /> Registrar</button></div>
       </div>
     </div>
   );

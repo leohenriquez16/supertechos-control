@@ -1122,6 +1122,33 @@ export async function calcularDetalle(jornadas, data, corte, ajustesLista) {
     } catch {}
   }));
 
+  // v8.27.2 FIX: si una persona trabaja en 2+ obras el MISMO día y cobra POR DÍA,
+  // debe cobrar UN solo día (no uno por proyecto). Deduplicamos las fechas entre
+  // los buckets pago-por-día de cada persona: el proyecto con más días se queda la
+  // fecha en conflicto y los demás la sueltan. (m²/tarea pagan por producción, no
+  // por día, así que no se tocan.)
+  const modoDeBucket = (b) => {
+    const proy = data.proyectos.find(x => x.id === b.proyectoId);
+    const ov = costosDiaMap[b.proyectoId]?.[b.personaId] || {};
+    return ov.modoPago || proy?.modoPagoManoObra;
+  };
+  const bucketsDiaPorPersona = {};
+  Object.values(buckets).forEach(b => {
+    if (modoDeBucket(b) !== 'dia') return;
+    (bucketsDiaPorPersona[b.personaId] = bucketsDiaPorPersona[b.personaId] || []).push(b);
+  });
+  Object.values(bucketsDiaPorPersona).forEach(lista => {
+    if (lista.length < 2) return; // solo aplica si está por día en 2+ obras
+    lista.sort((a, b) => b.dias.size - a.dias.size); // el proyecto con más días conserva las fechas
+    const reclamadas = new Set();
+    lista.forEach(b => {
+      [...b.dias].forEach(fecha => {
+        if (reclamadas.has(fecha)) { b.dias.delete(fecha); b.diasDobles.delete(fecha); }
+        else reclamadas.add(fecha);
+      });
+    });
+  });
+
   const filas = [];
   Object.values(buckets).forEach(b => {
     const p = data.personal.find(x => x.id === b.personaId);

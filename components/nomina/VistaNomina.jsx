@@ -1236,28 +1236,40 @@ export async function calcularDetalle(jornadas, data, corte, ajustesLista) {
     });
   });
 
-  // Filas vacías para personas con ajustes pero sin jornadas en el periodo
-  const personasConAjuste = [...new Set(ajustesLista.map(a => a.personaId))];
-  personasConAjuste.forEach(pid => {
-    if (filas.filter(f => f.personaId === pid).length === 0) {
-      const p = data.personal.find(x => x.id === pid);
-      if (!p) return;
-      filas.push({
-        id: 'd_' + corte.id + '_' + pid + '_ajuste',
-        corteId: corte.id, personaId: pid, personaNombre: p.nombre,
-        proyectoId: null, proyectoNombre: '(Ajustes)',
-        modoPago: 'ajuste', diasTrabajados: 0, m2Producidos: 0,
-        montoBase: 0, montoDieta: 0, montoAdelantos: 0, montoOtros: 0, montoTotal: 0,
-      });
-    }
-  });
-  // Distribuir ajustes (a fila por proyecto si aplica; sino, a la fila con más días).
+  // v8.27.3 FIX: distribución de ajustes con fila dedicada y VISIBLE.
+  // Antes, un ajuste sin proyecto (o de un proyecto que NO está en el ERP, p.ej. un
+  // pago de reclamación) se absorbía dentro de la fila de la obra con más días, así
+  // que "no se reflejaba" como línea propia. Ahora cada ajuste que no corresponde a
+  // una obra trabajada por la persona cae en una fila sintética visible por persona:
+  // "Reclamaciones" si viene de una reclamación, o "(Ajustes)" en general.
+  const filaSintetica = (pid, nombre, sufijo, etiqueta) => {
+    const f = {
+      id: 'd_' + corte.id + '_' + pid + '_' + sufijo,
+      corteId: corte.id, personaId: pid, personaNombre: nombre,
+      proyectoId: null, proyectoNombre: etiqueta, esSintetica: true,
+      modoPago: 'ajuste', diasTrabajados: 0, m2Producidos: 0,
+      montoBase: 0, montoDieta: 0, montoAdelantos: 0, montoOtros: 0, montoTotal: 0,
+    };
+    filas.push(f);
+    return f;
+  };
   ajustesLista.forEach(a => {
-    const filasP = filas.filter(f => f.personaId === a.personaId);
-    if (filasP.length === 0) return;
-    let target = null;
-    if (a.proyectoId) target = filasP.find(f => f.proyectoId === a.proyectoId);
-    if (!target) target = filasP.sort((x, y) => y.diasTrabajados - x.diasTrabajados)[0];
+    const p = data.personal.find(x => x.id === a.personaId);
+    if (!p) return;
+    // ¿El ajuste corresponde a una obra que la persona realmente trabajó este corte?
+    const filaProyecto = a.proyectoId
+      ? filas.find(f => !f.esSintetica && f.proyectoId === a.proyectoId)
+      : null;
+    let target;
+    if (filaProyecto) {
+      target = filaProyecto;
+    } else {
+      // Suelto (sin proyecto o de una obra fuera del ERP) → fila dedicada visible.
+      const etiqueta = a.reclamacionId ? 'Reclamaciones' : '(Ajustes)';
+      const sufijo = a.reclamacionId ? 'recl' : 'ajuste';
+      target = filas.find(f => f.personaId === a.personaId && f.esSintetica && f.proyectoNombre === etiqueta)
+        || filaSintetica(a.personaId, p.nombre, sufijo, etiqueta);
+    }
     if (a.tipo === 'adelanto') target.montoAdelantos += a.monto;
     else if (a.tipo === 'descuento') target.montoOtros -= a.monto;
     else target.montoOtros += a.monto;

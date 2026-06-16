@@ -480,9 +480,16 @@ export default function App() {
   };
 
   useEffect(() => {
+    // v8.27.8: guardia de timeout — si la carga inicial no termina (conexión lenta o
+    // intermitente), no se queda girando "Conectando…" para siempre: rechaza a los 25s
+    // y muestra "Reintentar" en vez de un spinner infinito.
+    const conTimeout = (p, ms) => Promise.race([
+      p,
+      new Promise((_, rej) => setTimeout(() => rej(new Error('La carga tardó demasiado. Revisa tu conexión e inténtalo de nuevo.')), ms)),
+    ]);
     (async () => {
       try {
-        const d = await db.loadAllData();
+        const d = await conTimeout(db.loadAllData(), 25000);
         setData(d);
         // Recuperar sesión guardada
         try {
@@ -496,6 +503,12 @@ export default function App() {
             }
           }
         } catch {}
+        // v8.27.8: avatares en SEGUNDO PLANO — no bloquean el arranque; se mezclan al llegar.
+        db.cargarAvatares().then(avatares => {
+          if (!avatares) return;
+          setData(prev => prev ? { ...prev, personal: (prev.personal || []).map(p => avatares[p.id] ? { ...p, foto2x2: avatares[p.id] } : p) } : prev);
+          setUsuario(prev => (prev && avatares[prev.id]) ? { ...prev, foto2x2: avatares[prev.id] } : prev);
+        }).catch(() => {});
       } catch (e) {
         console.error(e);
         setError(e.message || 'Error cargando datos');

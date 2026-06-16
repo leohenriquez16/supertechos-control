@@ -489,7 +489,7 @@ export default function App() {
     ]);
     (async () => {
       try {
-        const d = await conTimeout(db.loadAllData(), 25000);
+        const d = await conTimeout(db.loadAllData(), 40000);
         setData(d);
         // Recuperar sesión guardada
         try {

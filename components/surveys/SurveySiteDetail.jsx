@@ -174,6 +174,10 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
   const status = SITE_STATUS[site.survey_status] || SITE_STATUS.pending;
   const hasGeo = site.latitude != null && site.longitude != null;
   const tieneInfoFaltante = site.survey_status === 'missing_info';
+  // v8.27.6: nombre del cliente — del cliente vinculado (site.cliente_id) o del
+  // proyecto del levantamiento (client_name). La localidad es site.name.
+  const clienteVinculado = site.cliente_id ? (data?.clientes || []).find(c => c.id === site.cliente_id) : null;
+  const clienteNombre = clienteVinculado?.nombre || proyecto?.client_name || '';
 
   return (
     <div className="space-y-3 max-w-5xl mx-auto">
@@ -199,7 +203,7 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
           onGuardado={(s) => { setSite(s); setEditarDatos(false); }} />
       )}
 
-      <FachadaHero site={site} />
+      <FachadaHero site={site} clienteNombre={clienteNombre} />
 
       {/* Header */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-3">
@@ -228,6 +232,12 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
                 </span>
               )}
             </div>
+            {/* v8.27.6: cliente (empresa) arriba; la localidad es el título */}
+            {clienteNombre && (
+              <div className="text-[11px] tracking-widest uppercase text-red-400 font-bold mb-0.5 flex items-center gap-1">
+                <Building className="w-3 h-3" /> {clienteNombre}
+              </div>
+            )}
             <h2 className="text-xl font-black truncate">{site.name}</h2>
             {site.address && (
               <div className="text-sm text-zinc-400 mt-1 flex items-start gap-1">
@@ -237,6 +247,15 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
                   {site.city && `, ${site.city}`}
                   {site.province && `, ${site.province}`}
                 </span>
+              </div>
+            )}
+            {/* v8.27.6: contacto del cliente, visible junto a localidad/cliente */}
+            {(site.contact_name || site.mobile_phone) && (
+              <div className="text-[12px] text-zinc-400 mt-1 flex items-center gap-1.5 flex-wrap">
+                <span className="text-zinc-500 uppercase tracking-wider text-[10px] font-bold">Contacto:</span>
+                {site.contact_name && <span className="text-zinc-200 font-semibold">{site.contact_name}</span>}
+                {site.contact_role && <span className="text-zinc-500">({site.contact_role})</span>}
+                {site.mobile_phone && <span className="text-zinc-300">· {site.mobile_phone}</span>}
               </div>
             )}
             {!hasGeo && (
@@ -615,7 +634,7 @@ function fmtCampoApp(field, v) {
 }
 
 // v8.24.18: hero de fachada — fotos generales (frontal/panorámicas) prominentes arriba.
-function FachadaHero({ site }) {
+function FachadaHero({ site, clienteNombre }) {
   const [fotos, setFotos] = useState([]);
   const [idx, setIdx] = useState(0);
   useEffect(() => {
@@ -650,6 +669,7 @@ function FachadaHero({ site }) {
         <img src={actual.url} alt="" className="w-full h-56 object-cover bg-zinc-900" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/10 to-transparent" />
         <div className="absolute bottom-0 left-0 right-0 p-3">
+          {clienteNombre && <div className="text-red-300 font-bold text-[11px] uppercase tracking-widest drop-shadow">{clienteNombre}</div>}
           <div className="text-white font-black text-xl leading-tight drop-shadow">{site.name}</div>
           {site.address && <div className="text-zinc-200 text-xs drop-shadow">{site.address}</div>}
         </div>

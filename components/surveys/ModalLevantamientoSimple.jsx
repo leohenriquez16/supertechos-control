@@ -86,6 +86,7 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
   const [nuevoCt, setNuevoCt] = useState({ nombre: '', cargo: '', telefono: '', email: '' });
   const [guardandoCt, setGuardandoCt] = useState(false);
   const [notes, setNotes] = useState('');
+  const [numeroTicket, setNumeroTicket] = useState(''); // v8.27.7: # de ticket del levantamiento (external_code)
 
   // Áreas dentro de la locación (tipo proyecto)
   const [areas, setAreas] = useState([]);
@@ -388,6 +389,7 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
       // 4. Sitio único (ligado a cliente + locación)
       const site = await crearSiteSurvey({
         projectId: proyecto.id,
+        externalCode: numeroTicket.trim() || null, // v8.27.7: # de ticket
         name: locNombreFinal,
         address: address.trim() || null,
         city: city.trim() || null,
@@ -530,6 +532,17 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
                 <button key={k} onClick={() => setCompany(k)} className={`flex-1 px-2 py-1.5 rounded-card border text-[11px] font-bold ${company === k ? 'border-red-600 bg-red-900/20 text-white' : 'border-zinc-800 bg-zinc-900 text-zinc-400'}`}>{label}</button>
               ))}
             </div>
+          </div>
+
+          {/* v8.27.7: Número de ticket (opcional) */}
+          <div>
+            <div className={labCls}># de ticket (opcional)</div>
+            <input
+              value={numeroTicket}
+              onChange={e => setNumeroTicket(e.target.value)}
+              placeholder="Ej. ST-C5477 o el # del ticket"
+              className={inpCls}
+            />
           </div>
 
           {/* Cliente — de la lista */}

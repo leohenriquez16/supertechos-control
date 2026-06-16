@@ -1106,6 +1106,7 @@ function LevantamientosRealizados({ site, proyecto }) {
 function EditarDatosSitio({ site, usuario, proyecto, onCerrar, onGuardado }) {
   const [f, setF] = useState({
     name: site.name || '', address: site.address || '', city: site.city || '', province: site.province || '',
+    externalCode: site.external_code || '', // v8.27.7: # de ticket
     latitude: site.latitude ?? '', longitude: site.longitude ?? '',
     contactName: site.contact_name || '', contactRole: site.contact_role || '',
     mobilePhone: site.mobile_phone || '', officePhone: site.office_phone || '',
@@ -1139,6 +1140,7 @@ function EditarDatosSitio({ site, usuario, proyecto, onCerrar, onGuardado }) {
             <div className="text-[11px] uppercase tracking-widest text-red-400 font-bold mb-2">Locación</div>
             <div className="space-y-2">
               <div><div className={lab}>Nombre de la locación *</div><input value={f.name} onChange={e => set('name', e.target.value)} className={inp} /></div>
+              <div><div className={lab}># de ticket</div><input value={f.externalCode} onChange={e => set('externalCode', e.target.value)} placeholder="Ej. ST-C5477" className={inp} /></div>
               <div><div className={lab}>Dirección</div><input value={f.address} onChange={e => set('address', e.target.value)} className={inp} /></div>
               <div className="grid grid-cols-2 gap-2">
                 <div><div className={lab}>Ciudad</div><input value={f.city} onChange={e => set('city', e.target.value)} className={inp} /></div>

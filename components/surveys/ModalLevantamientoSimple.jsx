@@ -10,7 +10,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { X, Loader2, MapPin, Check, Crosshair, Plus, Trash2, Building2, ChevronDown, Search } from 'lucide-react';
-import { listarTemplatesSurveys, crearProyectoSurvey, crearSiteSurvey, SERVICE_LINES, COMPANIES, FAMILIAS_SERVICIO, familiaDeServiceLine } from '../../lib/surveys';
+import { listarTemplatesSurveys, crearProyectoSurvey, crearSiteSurvey, siguienteCodigoLevantamiento, SERVICE_LINES, COMPANIES, FAMILIAS_SERVICIO, familiaDeServiceLine } from '../../lib/surveys';
 import { listarUbicacionesCliente, crearUbicacionCliente, setAreasUbicacionCliente, crearCliente, crearContacto } from '../../lib/db';
 import { obtenerUbicacion, geocodificarInverso } from '../../lib/geo';
 import { expandirYExtraer } from '../../lib/geoutils';
@@ -386,10 +386,14 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
         description: null,
         createdByAuthUserId: authUserId,
       });
+      // v8.27.10: código del levantamiento — automático (LEV-AAAA-MM-###) si no se
+      // escribió uno manual. Si el RPC falla, el código queda vacío (no bloquea).
+      let codigoLev = numeroTicket.trim();
+      if (!codigoLev) { codigoLev = (await siguienteCodigoLevantamiento()) || null; }
       // 4. Sitio único (ligado a cliente + locación)
       const site = await crearSiteSurvey({
         projectId: proyecto.id,
-        externalCode: numeroTicket.trim() || null, // v8.27.7: # de ticket
+        externalCode: codigoLev || null, // v8.27.10: # de ticket (auto LEV-AAAA-MM-### o manual)
         name: locNombreFinal,
         address: address.trim() || null,
         city: city.trim() || null,
@@ -534,15 +538,16 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
             </div>
           </div>
 
-          {/* v8.27.7: Número de ticket (opcional) */}
+          {/* v8.27.10: Código del levantamiento — automático (LEV-AAAA-MM-###) si se deja vacío */}
           <div>
-            <div className={labCls}># de ticket (opcional)</div>
+            <div className={labCls}># de ticket</div>
             <input
               value={numeroTicket}
               onChange={e => setNumeroTicket(e.target.value)}
-              placeholder="Ej. ST-C5477 o el # del ticket"
+              placeholder="Se asigna solo (LEV-AAAA-MM-###). Escríbelo solo si quieres uno manual."
               className={inpCls}
             />
+            <div className="text-[10px] text-zinc-500 mt-1">Déjalo vacío y se genera automático con el mes y año (ej. LEV-2026-06-001).</div>
           </div>
 
           {/* Cliente — de la lista */}

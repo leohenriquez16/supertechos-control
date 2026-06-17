@@ -386,14 +386,14 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
         description: null,
         createdByAuthUserId: authUserId,
       });
-      // v8.27.10: código del levantamiento — automático (LEV-AAAA-MM-###) si no se
-      // escribió uno manual. Si el RPC falla, el código queda vacío (no bloquea).
-      let codigoLev = numeroTicket.trim();
-      if (!codigoLev) { codigoLev = (await siguienteCodigoLevantamiento()) || null; }
+      // v8.27.11: DOS identificadores. Código INTERNO siempre automático
+      // (LEV-AAAA-MM-###); el campo manual es el # de ticket del CLIENTE / Odoo.
+      const codigoInterno = (await siguienteCodigoLevantamiento()) || null;
       // 4. Sitio único (ligado a cliente + locación)
       const site = await crearSiteSurvey({
         projectId: proyecto.id,
-        externalCode: codigoLev || null, // v8.27.10: # de ticket (auto LEV-AAAA-MM-### o manual)
+        externalCode: codigoInterno || null,          // interno LEV-AAAA-MM-###
+        referenciaOdoo: numeroTicket.trim() || null,  // # ticket cliente/Odoo (manual)
         name: locNombreFinal,
         address: address.trim() || null,
         city: city.trim() || null,
@@ -538,16 +538,17 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
             </div>
           </div>
 
-          {/* v8.27.10: Código del levantamiento — automático (LEV-AAAA-MM-###) si se deja vacío */}
+          {/* v8.27.11: # de ticket del CLIENTE / Odoo (manual). El código interno
+              LEV-AAAA-MM-### se asigna solo al crear. */}
           <div>
-            <div className={labCls}># de ticket</div>
+            <div className={labCls}># de ticket (Odoo / cliente)</div>
             <input
               value={numeroTicket}
               onChange={e => setNumeroTicket(e.target.value)}
-              placeholder="Se asigna solo (LEV-AAAA-MM-###). Escríbelo solo si quieres uno manual."
+              placeholder="Ej. ST-C5477 — el # que va en Odoo (opcional)"
               className={inpCls}
             />
-            <div className="text-[10px] text-zinc-500 mt-1">Déjalo vacío y se genera automático con el mes y año (ej. LEV-2026-06-001).</div>
+            <div className="text-[10px] text-zinc-500 mt-1">El código interno (LEV-AAAA-MM-###) se asigna automático al crear.</div>
           </div>
 
           {/* Cliente — de la lista */}

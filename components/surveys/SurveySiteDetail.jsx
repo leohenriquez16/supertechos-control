@@ -212,8 +212,14 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1 flex-wrap">
               {site.external_code && (
-                <span className="text-[11px] font-mono bg-zinc-800 text-zinc-300 px-2 py-0.5">
+                <span className="text-[11px] font-mono bg-zinc-800 text-zinc-300 px-2 py-0.5" title="Código interno">
                   {site.external_code}
+                </span>
+              )}
+              {/* v8.27.11: # de ticket del cliente / Odoo */}
+              {site.referencia_odoo && (
+                <span className="text-[11px] font-mono bg-blue-900/40 border border-blue-700 text-blue-300 px-2 py-0.5" title="# de ticket Odoo / cliente">
+                  🎫 {site.referencia_odoo}
                 </span>
               )}
               <span
@@ -1106,7 +1112,8 @@ function LevantamientosRealizados({ site, proyecto }) {
 function EditarDatosSitio({ site, usuario, proyecto, onCerrar, onGuardado }) {
   const [f, setF] = useState({
     name: site.name || '', address: site.address || '', city: site.city || '', province: site.province || '',
-    externalCode: site.external_code || '', // v8.27.7: # de ticket
+    externalCode: site.external_code || '', // código interno LEV-AAAA-MM-###
+    referenciaOdoo: site.referencia_odoo || '', // v8.27.11: # de ticket cliente/Odoo
     latitude: site.latitude ?? '', longitude: site.longitude ?? '',
     contactName: site.contact_name || '', contactRole: site.contact_role || '',
     mobilePhone: site.mobile_phone || '', officePhone: site.office_phone || '',
@@ -1140,7 +1147,8 @@ function EditarDatosSitio({ site, usuario, proyecto, onCerrar, onGuardado }) {
             <div className="text-[11px] uppercase tracking-widest text-red-400 font-bold mb-2">Locación</div>
             <div className="space-y-2">
               <div><div className={lab}>Nombre de la locación *</div><input value={f.name} onChange={e => set('name', e.target.value)} className={inp} /></div>
-              <div><div className={lab}># de ticket</div><input value={f.externalCode} onChange={e => set('externalCode', e.target.value)} placeholder="Ej. ST-C5477" className={inp} /></div>
+              <div><div className={lab}># de ticket (Odoo / cliente)</div><input value={f.referenciaOdoo} onChange={e => set('referenciaOdoo', e.target.value)} placeholder="Ej. ST-C5477 — el que va en Odoo" className={inp} /></div>
+              <div><div className={lab}>Código interno</div><input value={f.externalCode} onChange={e => set('externalCode', e.target.value)} placeholder="LEV-AAAA-MM-###" className={inp} /></div>
               <div><div className={lab}>Dirección</div><input value={f.address} onChange={e => set('address', e.target.value)} className={inp} /></div>
               <div className="grid grid-cols-2 gap-2">
                 <div><div className={lab}>Ciudad</div><input value={f.city} onChange={e => set('city', e.target.value)} className={inp} /></div>

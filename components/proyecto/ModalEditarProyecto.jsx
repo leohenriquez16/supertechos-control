@@ -626,7 +626,7 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
             <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3 space-y-3">
               <div>
                 <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1">Precio fijo al maestro por m² del sistema</div>
-                <div className="text-[10px] text-zinc-500">Se paga este monto por cada m² ejecutado, sin importar qué tarea.</div>
+                <div className="text-[10px] text-zinc-500">Un solo precio/m². Cada tarea ejecutada paga su peso % del precio (el sistema completo = 100%).</div>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-zinc-400 shrink-0">RD$</span>
@@ -639,9 +639,42 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
                 />
                 <span className="text-xs text-zinc-500 shrink-0">/m²</span>
               </div>
+              {(form.precioM2FijoMaestro > 0) && sistema && (sistema.tareas || []).length > 0 && (() => {
+                const tareas = sistema.tareas || [];
+                const totalPeso = tareas.reduce((s, t) => s + (Number(t.peso) || 0), 0);
+                const precio = Number(form.precioM2FijoMaestro) || 0;
+                return (
+                  <div className="bg-zinc-900 border border-zinc-800 rounded-card p-2 space-y-1">
+                    <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1">
+                      Cada tarea asume su peso del precio
+                    </div>
+                    {tareas.map(t => {
+                      const peso = Number(t.peso) || 0;
+                      const rdEfectivo = precio * (peso / 100);
+                      return (
+                        <div key={t.id} className="flex items-center justify-between text-[10px]">
+                          <span className="text-zinc-300 truncate pr-2">{t.nombre}</span>
+                          <span className="text-zinc-500 shrink-0">
+                            {formatNum(peso)}% · <span className="text-green-400 font-semibold">RD${formatNum(rdEfectivo)}</span>/m²
+                          </span>
+                        </div>
+                      );
+                    })}
+                    {Math.round(totalPeso) !== 100 ? (
+                      <div className="text-[9px] text-amber-400 pt-1 border-t border-zinc-800 leading-snug">
+                        ⚠ Los pesos suman {formatNum(totalPeso)}% (deberían sumar 100%). El cálculo quedará descuadrado hasta corregir los pesos en el catálogo del sistema.
+                      </div>
+                    ) : (
+                      <div className="text-[9px] text-zinc-500 pt-1 border-t border-zinc-800 leading-snug">
+                        Por cada m² ejecutado de una tarea se paga su % del precio. Ej: pintura al 10% → RD${formatNum(precio * 0.1)}/m².
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
               {previewM2Fijo > 0 && (
                 <div className="text-[10px] text-zinc-400 bg-zinc-900 border border-zinc-800 rounded-card p-2">
-                  💡 {formatNum(m2TotalProyecto)} m² × RD${formatNum(form.precioM2FijoMaestro || 0)}/m² = <span className="text-green-400 font-bold">{formatRD(previewM2Fijo)}</span> al maestro al completar el proyecto.
+                  💡 {formatNum(m2TotalProyecto)} m² × RD${formatNum(form.precioM2FijoMaestro || 0)}/m² = <span className="text-green-400 font-bold">{formatRD(previewM2Fijo)}</span> al maestro al completar el proyecto (si los pesos suman 100%).
                 </div>
               )}
             </div>

@@ -486,6 +486,18 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
 
         <div className="p-4 space-y-4 overflow-y-auto flex-1 overscroll-contain"
           onFocus={e => { const t = e.target; if (t && t.matches && t.matches('input,textarea,select')) setTimeout(() => { try { t.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch {} }, 280); }}>
+          {/* v8.27.12: # de ticket del CLIENTE / Odoo — SIEMPRE primero en el modal. */}
+          <div>
+            <div className={labCls}># de ticket (Odoo / cliente)</div>
+            <input
+              value={numeroTicket}
+              onChange={e => setNumeroTicket(e.target.value)}
+              placeholder="Ej. ST-C5477 — el # que va en Odoo (opcional)"
+              className={inpCls}
+            />
+            <div className="text-[10px] text-zinc-500 mt-1">El código interno (LEV-AAAA-MM-###) se asigna automático al crear.</div>
+          </div>
+
           {/* Tipo de servicio — por familia (opcional; se puede definir después) */}
           <div>
             <div className="flex items-center justify-between">
@@ -536,19 +548,6 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
                 <button key={k} onClick={() => setCompany(k)} className={`flex-1 px-2 py-1.5 rounded-card border text-[11px] font-bold ${company === k ? 'border-red-600 bg-red-900/20 text-white' : 'border-zinc-800 bg-zinc-900 text-zinc-400'}`}>{label}</button>
               ))}
             </div>
-          </div>
-
-          {/* v8.27.11: # de ticket del CLIENTE / Odoo (manual). El código interno
-              LEV-AAAA-MM-### se asigna solo al crear. */}
-          <div>
-            <div className={labCls}># de ticket (Odoo / cliente)</div>
-            <input
-              value={numeroTicket}
-              onChange={e => setNumeroTicket(e.target.value)}
-              placeholder="Ej. ST-C5477 — el # que va en Odoo (opcional)"
-              className={inpCls}
-            />
-            <div className="text-[10px] text-zinc-500 mt-1">El código interno (LEV-AAAA-MM-###) se asigna automático al crear.</div>
           </div>
 
           {/* Cliente — de la lista */}

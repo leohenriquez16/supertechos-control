@@ -10,6 +10,7 @@ import { X, Loader2, Save, Camera, AlertCircle, Building2, FileText, User as Use
 import * as db from '../../lib/db';
 import { formatFechaCorta, formatRD, formatRNC, limpiarRNC, formatFechaHora } from '../../lib/helpers/formato';
 import { calcularAlertasSinFactura } from '../../lib/helpers/alertasSinFactura';
+import { validarRNC, validarNCF } from '../../lib/validacionFiscal';
 import { EMPRESAS_RECEPTORAS } from '../../lib/constants';
 import ProyectoSelector from '../common/ProyectoSelector';
 
@@ -213,6 +214,14 @@ export default function ModalDetalleMovimiento({
     if (esConFactura) {
       const rncFinal = limpiarRNC(campos.rnc || movimiento.rnc || '');
       if (!rncFinal) return 'RNC del proveedor es requerido para facturas con CF.';
+      // v8.27.16: no aprobar con RNC/NCF mal formados (control fiscal DGII).
+      const vr = validarRNC(rncFinal);
+      if (!vr.ok) return 'RNC inválido: ' + vr.mensaje + '. Corrígelo antes de aprobar.';
+      const ncfFinal = (campos.ncf ?? movimiento.datosIA?.ncf ?? '').toString().trim();
+      if (ncfFinal) {
+        const vn = validarNCF(ncfFinal);
+        if (!vn.ok) return 'NCF/e-CF inválido: ' + vn.mensaje + '. Corrígelo antes de aprobar.';
+      }
     }
     return null;
   };
@@ -697,6 +706,13 @@ export default function ModalDetalleMovimiento({
                   readOnly={soloLectura}
                   className={`w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-2 text-white text-sm font-mono ${soloLectura ? 'cursor-not-allowed opacity-60' : ''}`}
                 />
+                {(() => {
+                  const r = (campos.rnc || '').trim(); if (!r) return null;
+                  const v = validarRNC(r);
+                  const color = !v.ok ? 'text-red-400' : v.digito === 'no_cuadra' ? 'text-amber-400' : 'text-green-400';
+                  const txt = v.ok && v.digito !== 'no_cuadra' ? `✓ ${v.tipo === 'cedula' ? 'Cédula válida' : 'RNC válido'}` : `⚠ ${v.mensaje}`;
+                  return <div className={`text-[10px] mt-0.5 ${color}`}>{txt}</div>;
+                })()}
               </Field>
               <Field label="NCF">
                 <input
@@ -707,6 +723,11 @@ export default function ModalDetalleMovimiento({
                   readOnly={soloLectura}
                   className={`w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-2 py-2 text-white text-sm font-mono ${soloLectura ? 'cursor-not-allowed opacity-60' : ''}`}
                 />
+                {(() => {
+                  const n = (campos.ncf || '').trim(); if (!n) return null;
+                  const v = validarNCF(n);
+                  return <div className={`text-[10px] mt-0.5 ${v.ok ? 'text-green-400' : 'text-red-400'}`}>{v.ok ? `✓ ${v.tipo === 'e-cf' ? 'e-CF válido' : 'NCF válido'}` : `⚠ ${v.mensaje}`}</div>;
+                })()}
               </Field>
             </div>
             {/* v8.17.70: link discreto siempre disponible para el admin cuando

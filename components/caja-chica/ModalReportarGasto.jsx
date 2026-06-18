@@ -9,6 +9,7 @@ import ProyectoSelector from '../common/ProyectoSelector';
 import { formatRD } from '../../lib/helpers/formato';
 import Campo from '../common/Campo';
 import Input from '../common/Input';
+import { validarRNC, validarNCF } from '../../lib/validacionFiscal';
 
 // Modal para que un maestro/supervisor reporte un gasto pagado con caja chica.
 // Flujo:
@@ -31,12 +32,16 @@ export default function ModalReportarGasto({ usuario, proyectos = [], proyectoId
     monto: '',
     proveedor: '',
     rnc: '',
+    ncf: '',     // v8.27.16
+    itbis: '',   // v8.27.16
     concepto: '',
     categoria: '',
   });
   const [datosIA, setDatosIA] = useState(null);
   const [advertencias, setAdvertencias] = useState([]);
   const [proveedorMemoria, setProveedorMemoria] = useState(null); // si ya tenemos historial de este RNC
+  const [proveedorRncMismatch, setProveedorRncMismatch] = useState(null); // v8.27.16: la IA leyó un RNC distinto al del proveedor conocido
+  const [confirmado, setConfirmado] = useState(false); // v8.27.16: el que sube confirma RNC/NCF/total/ITBIS
 
   const reportarSinFoto = () => {
     setSinFoto(true);
@@ -98,6 +103,7 @@ export default function ModalReportarGasto({ usuario, proyectos = [], proyectoId
       // el nombre canónico que el admin guardó (más confiable que la AI).
       let nombreFinal = d.proveedor || '';
       let categoriaFinal = d.categoria_sugerida || '';
+      setProveedorRncMismatch(null);
       if (d.rnc) {
         try {
           const prov = await db.buscarProveedorCajaChicaPorRnc(d.rnc);
@@ -108,6 +114,18 @@ export default function ModalReportarGasto({ usuario, proyectos = [], proyectoId
           }
         } catch (e) { /* no bloquea */ }
       }
+      // v8.27.16: cruce por NOMBRE — si ya existe ese proveedor con un RNC distinto
+      // al que leyó la IA, avisar (la IA pudo leerlo mal).
+      if (nombreFinal) {
+        try {
+          const provN = await db.buscarProveedorCajaChicaPorNombre(nombreFinal);
+          const rncIA = String(d.rnc || '').replace(/\D/g, '');
+          const rncProv = String(provN?.rnc || '').replace(/\D/g, '');
+          if (provN && rncProv && rncIA && rncProv !== rncIA) {
+            setProveedorRncMismatch({ nombre: provN.nombre, rncConocido: provN.rnc, rncLeido: d.rnc });
+          }
+        } catch (e) { /* no bloquea */ }
+      }
 
       setDatos(prev => ({
         ...prev,
@@ -115,9 +133,12 @@ export default function ModalReportarGasto({ usuario, proyectos = [], proyectoId
         monto: d.monto_total != null ? String(d.monto_total) : prev.monto,
         proveedor: nombreFinal,
         rnc: d.rnc || prev.rnc,
+        ncf: d.ncf || prev.ncf,
+        itbis: d.itbis != null ? String(d.itbis) : prev.itbis,
         concepto: d.concepto || prev.concepto,
         categoria: categoriaFinal,
       }));
+      setConfirmado(false);
       setPaso('confirmar');
     } catch (e) {
       console.error(e);
@@ -138,6 +159,20 @@ export default function ModalReportarGasto({ usuario, proyectos = [], proyectoId
         toast.warning('Para gastos sin factura, el concepto debe tener al menos 15 caracteres. Explica con detalle qué se compró y por qué.');
         return;
       }
+    }
+    // v8.27.16: control fiscal en la captura (facturas con comprobante).
+    if (!sinFactura && !sinFoto) {
+      const rncTxt = (datos.rnc || '').trim();
+      if (rncTxt) {
+        const vr = validarRNC(rncTxt);
+        if (!vr.ok) { toast.warning('RNC inválido: ' + vr.mensaje); return; }
+      }
+      const ncfTxt = (datos.ncf || '').trim();
+      if (ncfTxt) {
+        const vn = validarNCF(ncfTxt);
+        if (!vn.ok) { toast.warning('NCF/e-CF inválido: ' + vn.mensaje); return; }
+      }
+      if (!confirmado) { toast.warning('Confirma que el RNC, NCF/e-CF, total e ITBIS coinciden con la factura.'); return; }
     }
     // v8.13: regla de máximo por transacción (bloqueante)
     const maxTx = usuario?.maxTransaccionCajaChica;
@@ -168,6 +203,12 @@ export default function ModalReportarGasto({ usuario, proyectos = [], proyectoId
         aplicaA,
         datosIA: {
           ...(datosIA || {}),
+          // v8.27.16: guardar los valores CONFIRMADOS por quien sube (no solo lo que leyó la IA).
+          ...(sinFactura ? {} : {
+            ncf: (datos.ncf || '').trim() || null,
+            itbis: datos.itbis !== '' && datos.itbis != null ? Number(datos.itbis) : (datosIA?.itbis ?? null),
+            confirmado_por_usuario: true,
+          }),
           categoria_sugerida: datos.categoria || (datosIA?.categoria_sugerida || null),
           // Flag para que el admin sepa que la foto va a llegar por WhatsApp
           ...(sinFoto ? { foto_por_ws: true } : {}),
@@ -318,6 +359,16 @@ export default function ModalReportarGasto({ usuario, proyectos = [], proyectoId
                 </div>
               </div>
             )}
+            {/* v8.27.16: si la IA no pudo leer los campos clave, pedir nueva foto */}
+            {!sinFactura && !sinFoto && datosIA && (datosIA.confianza === 'baja' || !(datos.rnc || '').trim() || !datos.monto || !(datos.ncf || '').trim()) && (
+              <div className="bg-red-900/25 border border-red-700 p-2 text-[10px] flex items-start gap-2">
+                <Camera className="w-3 h-3 shrink-0 mt-0.5 text-red-400" />
+                <div className="flex-1 text-red-200">
+                  No se leyeron bien todos los datos de la factura (RNC, NCF, total o ITBIS). Si la foto salió borrosa o cortada, <b>tómala de nuevo</b> para que queden correctos.
+                  <button type="button" onClick={() => { setPaso('foto'); setFotoData(null); setDatosIA(null); setErrorAI(null); setConfirmado(false); }} className="ml-1 underline text-red-100 font-bold">Volver a tomar foto</button>
+                </div>
+              </div>
+            )}
             {proveedorMemoria && (
               <div className="bg-blue-900/20 border border-blue-800 p-2 text-[10px] flex items-start gap-2">
                 <span className="text-blue-400 shrink-0">💡</span>
@@ -367,12 +418,31 @@ export default function ModalReportarGasto({ usuario, proyectos = [], proyectoId
               )}
             </Campo>
 
-            {/* Proveedor + RNC: ocultos en modo sin factura */}
+            {/* Proveedor + RNC + NCF + ITBIS: ocultos en modo sin factura */}
             {!sinFactura && (
               <>
                 <Campo label="Proveedor"><Input value={datos.proveedor} onChange={v => setDatos({ ...datos, proveedor: v })} placeholder="Ferretería, gasolinera, etc." /></Campo>
+                {proveedorRncMismatch && (
+                  <div className="bg-amber-900/20 border border-amber-700 p-2 text-[10px] flex items-start gap-2">
+                    <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5 text-amber-400" />
+                    <div className="flex-1 text-amber-200">
+                      Este proveedor (<b>{proveedorRncMismatch.nombre}</b>) suele tener RNC <b>{proveedorRncMismatch.rncConocido}</b>, pero la IA leyó <b>{proveedorRncMismatch.rncLeido}</b>. Verifica con la factura.
+                      <button type="button" onClick={() => { setDatos(p => ({ ...p, rnc: proveedorRncMismatch.rncConocido })); setProveedorRncMismatch(null); }} className="ml-1 underline text-amber-100">Usar {proveedorRncMismatch.rncConocido}</button>
+                    </div>
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-3">
-                  <Campo label="RNC"><Input value={datos.rnc} onChange={v => setDatos({ ...datos, rnc: v })} placeholder="130-XXXXX-X" /></Campo>
+                  <Campo label="RNC">
+                    <Input value={datos.rnc} onChange={v => setDatos({ ...datos, rnc: v })} placeholder="130-XXXXX-X" />
+                    {(() => { const r = (datos.rnc || '').trim(); if (!r) return null; const v = validarRNC(r); const color = !v.ok ? 'text-red-400' : v.digito === 'no_cuadra' ? 'text-amber-400' : 'text-green-400'; const txt = v.ok && v.digito !== 'no_cuadra' ? `✓ ${v.tipo === 'cedula' ? 'Cédula válida' : 'RNC válido'}` : `⚠ ${v.mensaje}`; return <div className={`text-[10px] mt-0.5 ${color}`}>{txt}</div>; })()}
+                  </Campo>
+                  <Campo label="NCF / e-CF">
+                    <Input value={datos.ncf} onChange={v => setDatos({ ...datos, ncf: (v || '').toUpperCase() })} placeholder="B0100... / E31..." />
+                    {(() => { const n = (datos.ncf || '').trim(); if (!n) return null; const v = validarNCF(n); return <div className={`text-[10px] mt-0.5 ${v.ok ? 'text-green-400' : 'text-red-400'}`}>{v.ok ? `✓ ${v.tipo === 'e-cf' ? 'e-CF válido' : 'NCF válido'}` : `⚠ ${v.mensaje}`}</div>; })()}
+                  </Campo>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <Campo label="ITBIS RD$"><Input type="number" value={datos.itbis} onChange={v => setDatos({ ...datos, itbis: v })} placeholder="0.00" /></Campo>
                   <Campo label="Categoría">
                     <select
                       value={datos.categoria}
@@ -420,6 +490,14 @@ export default function ModalReportarGasto({ usuario, proyectos = [], proyectoId
               )}
             </Campo>
 
+            {/* v8.27.16: confirmación obligatoria de los datos fiscales */}
+            {!sinFactura && !sinFoto && (
+              <label className="flex items-start gap-2 bg-zinc-950 border border-zinc-700 rounded-card p-2 cursor-pointer">
+                <input type="checkbox" checked={confirmado} onChange={e => setConfirmado(e.target.checked)} className="mt-0.5 accent-red-600" />
+                <span className="text-[11px] text-zinc-300">Confirmo que el <b>RNC</b>, el <b>NCF/e-CF</b>, el <b>total</b> y el <b>ITBIS</b> coinciden con la factura.</span>
+              </label>
+            )}
+
             <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2 text-[10px] text-zinc-500">
               💡 El gasto quedará pendiente de aprobación. Una vez aprobado, se descuenta de tu caja chica.
             </div>
@@ -428,7 +506,15 @@ export default function ModalReportarGasto({ usuario, proyectos = [], proyectoId
               <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2.5">Cancelar</button>
               <button
                 onClick={guardar}
-                disabled={!datos.monto || (!fotoData && !sinFoto && !sinFactura) || (sinFactura && (!datos.categoria || (datos.concepto || '').trim().length < 15))}
+                disabled={
+                  !datos.monto || (!fotoData && !sinFoto && !sinFactura)
+                  || (sinFactura && (!datos.categoria || (datos.concepto || '').trim().length < 15))
+                  || (!sinFactura && !sinFoto && (
+                    !confirmado
+                    || ((datos.rnc || '').trim() && !validarRNC(datos.rnc).ok)
+                    || ((datos.ncf || '').trim() && !validarNCF(datos.ncf).ok)
+                  ))
+                }
                 className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-xs font-black uppercase py-2.5 flex items-center justify-center gap-1"
               >
                 <Check className="w-3 h-3" /> Enviar para aprobación

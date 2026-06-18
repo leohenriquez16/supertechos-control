@@ -26,3 +26,5 @@ npm-debug.log*
 
 # OS / editor
 .DS_Store
+.env.prod
+.env.prod.local

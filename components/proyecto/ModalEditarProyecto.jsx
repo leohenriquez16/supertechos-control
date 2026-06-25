@@ -72,6 +72,7 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
     preciosTareasM2: proyecto.preciosTareasM2 || {},
     preciosManoObraTareas: proyecto.preciosManoObraTareas || {},
     maestrosTareas: proyecto.maestrosTareas || {}, // v8.26.9: maestro responsable por tarea
+    paquetesPago: proyecto.paquetesPago || [], // v8.27.17: paquetes (agrupan tareas a un precio/m² + un maestro)
     precioM2FijoMaestro: proyecto.precioM2FijoMaestro || 0,
     // v8.12: Dieta diaria pagada desde caja chica
     dietaDiariaRd: proyecto.dietaDiariaRd || 0,
@@ -261,6 +262,53 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
 
   const setPrecio = (tareaId, precio) => {
     setForm({ ...form, preciosTareasM2: { ...form.preciosTareasM2, [tareaId]: parseFloat(precio) || 0 } });
+  };
+
+  // v8.27.17: PAQUETES de pago (3.2) — agrupan varias tareas bajo un precio/m² y
+  // un solo maestro. Se persisten dentro del proyecto (form.paquetesPago).
+  const nuevoId = (pre) => `${pre}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const addPaquete = () => setForm(f => ({ ...f, paquetesPago: [...(f.paquetesPago || []), { id: nuevoId('pk'), nombre: '', tareaIds: [], precioM2: 0, maestroId: '' }] }));
+  const updatePaquete = (id, patch) => setForm(f => ({ ...f, paquetesPago: (f.paquetesPago || []).map(pk => pk.id === id ? { ...pk, ...patch } : pk) }));
+  const removePaquete = (id) => setForm(f => ({ ...f, paquetesPago: (f.paquetesPago || []).filter(pk => pk.id !== id) }));
+  const togglePaqueteTarea = (pk, tareaId) => updatePaquete(pk.id, {
+    tareaIds: (pk.tareaIds || []).includes(tareaId) ? pk.tareaIds.filter(t => t !== tareaId) : [...(pk.tareaIds || []), tareaId],
+  });
+
+  // v8.27.17: AJUSTES POR TAREA (4) — definidos en el proyecto, monto fijo RD$ a un
+  // maestro, salen como línea aparte en la nómina. Se guardan en ajustes_nomina
+  // (que ya paga una sola vez por corte) con el flag linea_aparte.
+  const [ajustesProy, setAjustesProy] = useState([]);
+  const [loadingAjustes, setLoadingAjustes] = useState(true);
+  const [ajDraft, setAjDraft] = useState({ concepto: '', monto: '', maestroId: '' });
+  useEffect(() => {
+    (async () => {
+      try { const l = await db.listarAjustes({ proyectoId: proyecto.id }); setAjustesProy(l.filter(a => a.lineaAparte)); } catch {}
+      setLoadingAjustes(false);
+    })();
+  }, [proyecto.id]);
+  const recargarAjustes = async () => {
+    const l = await db.listarAjustes({ proyectoId: proyecto.id });
+    setAjustesProy(l.filter(a => a.lineaAparte));
+  };
+  const addAjusteTarea = async () => {
+    const monto = parseFloat(ajDraft.monto);
+    if (!ajDraft.concepto.trim()) { alert('Escribe el concepto del ajuste (ej. demolición de tejas).'); return; }
+    if (!(monto > 0)) { alert('El monto debe ser mayor que 0.'); return; }
+    if (!ajDraft.maestroId) { alert('Selecciona el maestro que cobra este ajuste.'); return; }
+    try {
+      await db.crearAjuste({
+        id: nuevoId('ajt'), personaId: ajDraft.maestroId, fecha: new Date().toISOString().slice(0, 10),
+        tipo: 'ajuste', monto, concepto: ajDraft.concepto.trim(), proyectoId: proyecto.id,
+        lineaAparte: true, creadoPorId: usuario?.id,
+      });
+      setAjDraft({ concepto: '', monto: '', maestroId: '' });
+      await recargarAjustes();
+    } catch (e) { alert('Error: ' + (e.message || e)); }
+  };
+  const removeAjusteTarea = async (id) => {
+    if (!confirm('¿Eliminar este ajuste por tarea?')) return;
+    try { await db.eliminarAjuste(id); setAjustesProy(prev => prev.filter(a => a.id !== id)); }
+    catch (e) { alert('Error: ' + (e.message || e)); }
   };
 
   const personasProyecto = [form.supervisorId, form.maestroId, ...form.ayudantesIds].filter(Boolean).map(id => getPersona(data.personal, id)).filter(Boolean);
@@ -791,6 +839,69 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
             </div>
           )}
 
+          {/* v8.27.17: PAQUETES DE PAGO (3.2) — agrupan varias tareas bajo UN precio/m²
+              y UN maestro. Se paga una vez sobre los m² del área (no cada capa por
+              separado); a medio avance, proporcional. Solo en modos por m²/tarea. */}
+          {(form.modoPagoManoObra === 'm2' || form.modoPagoManoObra === 'tarea') && tareasPagables.length > 0 && (
+            <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3 space-y-2">
+              <div>
+                <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1">Paquetes de pago (opcional)</div>
+                <div className="text-[10px] text-zinc-500">Agrupa varias tareas en un solo precio/m² para un solo maestro (ej. "Silicona" = primer + sello a 65/m²). Se paga una vez sobre los m² del área; si está avanzado, proporcional. Las tareas dentro de un paquete ya no se cobran por separado.</div>
+              </div>
+              {(form.paquetesPago || []).map(pk => {
+                const selM2 = (pk.tareaIds || []).map(tid => {
+                  const t = tareasPagables.find(x => x.id === tid); if (!t) return 0;
+                  const base = (m2PorSistema[t.sistemaId] != null ? m2PorSistema[t.sistemaId] : m2TotalProyecto);
+                  return base * ((Number(t.peso) || 0) / 100);
+                });
+                const m2Paquete = selM2.length ? selM2.reduce((s, x) => s + x, 0) / selM2.length : 0;
+                const previewPk = (Number(pk.precioM2) || 0) * m2Paquete;
+                const incompleto = !pk.maestroId || !(Number(pk.precioM2) > 0) || (pk.tareaIds || []).length === 0;
+                return (
+                  <div key={pk.id} className="border border-zinc-800 rounded-card p-2 space-y-2 bg-zinc-900/40">
+                    <div className="flex items-center gap-2">
+                      <input value={pk.nombre} onChange={e => updatePaquete(pk.id, { nombre: e.target.value })} placeholder="Nombre del paquete (ej. Silicona)" className="flex-1 bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1.5 text-white text-xs" />
+                      <button type="button" onClick={() => removePaquete(pk.id)} className="text-zinc-500 hover:text-red-400 shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {tareasPagables.map(t => {
+                        const on = (pk.tareaIds || []).includes(t.id);
+                        return (
+                          <button key={t.id} type="button" onClick={() => togglePaqueteTarea(pk, t.id)}
+                            className={`text-[10px] px-2 py-1 rounded-card border ${on ? 'bg-red-600/20 border-red-600 text-white' : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:border-zinc-700'}`}>
+                            {t.nombre}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-zinc-500 shrink-0">RD$</span>
+                      <input type="number" value={pk.precioM2 || ''} onChange={e => updatePaquete(pk.id, { precioM2: parseFloat(e.target.value) || 0 })} placeholder="precio" className="w-20 bg-zinc-900 border border-green-800 px-2 py-1 text-green-400 text-xs text-right" />
+                      <span className="text-[10px] text-zinc-500 shrink-0">/m²</span>
+                      <select value={pk.maestroId || ''} onChange={e => updatePaquete(pk.id, { maestroId: e.target.value })}
+                        className={`flex-1 bg-zinc-900 border rounded-card px-2 py-1.5 text-[10px] ${pk.maestroId ? 'border-red-700 text-white' : 'border-zinc-800 text-zinc-500'}`}>
+                        <option value="">— maestro que cobra el paquete —</option>
+                        {maestros.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}
+                      </select>
+                    </div>
+                    {previewPk > 0 && (
+                      <div className="text-[10px] text-zinc-400 flex justify-between">
+                        <span>≈ {formatNum(m2Paquete)} m² × RD${formatNum(pk.precioM2 || 0)}/m² al completar</span>
+                        <span className="text-green-400 font-bold">{formatRD(previewPk)}</span>
+                      </div>
+                    )}
+                    {incompleto && (
+                      <div className="text-[9px] text-amber-400">⚠ Falta tareas, precio o maestro — el paquete no paga hasta completarlo.</div>
+                    )}
+                  </div>
+                );
+              })}
+              <button type="button" onClick={addPaquete} className="flex items-center gap-1 text-[11px] text-red-400 hover:text-red-300">
+                <Plus className="w-3.5 h-3.5" /> Agregar paquete
+              </button>
+            </div>
+          )}
+
           {/* v8.26.10: BRIGADAS — cada maestro con su propio tipo de MDO (él + su gente).
               Una brigada puede ir por día y otra por m² dentro de la misma obra. */}
           {maestrosBrigada.length > 0 && (
@@ -907,6 +1018,54 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
                 </div>
               )}
             </div>
+          )}
+        </div>
+
+        {/* v8.27.17: AJUSTES POR TAREA (4) — definidos en el proyecto, monto fijo RD$
+            a un maestro, salen como LÍNEA APARTE en la nómina. Se pagan una sola vez
+            (entran al corte abierto que cubra la fecha). */}
+        <div className="space-y-3 border-t border-zinc-800 pt-3">
+          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">🔧 Ajustes / imprevistos por tarea</div>
+          <div className="text-[10px] text-zinc-500">Monto fijo en RD$ para tareas puntuales o imprevistos (demolición de tejas, resane, movilización en obras chicas). Se asigna a un maestro y sale como línea aparte en la nómina. Se paga una sola vez en el corte que cubra hoy.</div>
+          {loadingAjustes ? (
+            <Loader2 className="w-4 h-4 animate-spin text-zinc-500" />
+          ) : (
+            <>
+              {ajustesProy.length > 0 && (
+                <div className="space-y-1">
+                  {ajustesProy.map(a => {
+                    const m = getPersona(data.personal, a.personaId);
+                    return (
+                      <div key={a.id} className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-card p-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs truncate">{a.concepto || 'Ajuste'}</div>
+                          <div className="text-[9px] text-zinc-500 truncate">{m?.nombre || '—'}{a.aplicadoACorteId ? ' · ya aplicado a un corte' : ' · pendiente'}</div>
+                        </div>
+                        <div className="text-[11px] text-green-400 font-bold shrink-0">{formatRD(a.monto)}</div>
+                        {!a.aplicadoACorteId && (
+                          <button type="button" onClick={() => removeAjusteTarea(a.id)} className="text-zinc-500 hover:text-red-400 shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <div className="border border-zinc-800 rounded-card p-2 space-y-2 bg-zinc-900/40">
+                <input value={ajDraft.concepto} onChange={e => setAjDraft({ ...ajDraft, concepto: e.target.value })} placeholder="Concepto (ej. demolición de tejas)" className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1.5 text-white text-xs" />
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-zinc-500 shrink-0">RD$</span>
+                  <input type="number" value={ajDraft.monto} onChange={e => setAjDraft({ ...ajDraft, monto: e.target.value })} placeholder="monto" className="w-24 bg-zinc-900 border border-green-800 px-2 py-1 text-green-400 text-xs text-right" />
+                  <select value={ajDraft.maestroId} onChange={e => setAjDraft({ ...ajDraft, maestroId: e.target.value })}
+                    className={`flex-1 bg-zinc-900 border rounded-card px-2 py-1.5 text-[10px] ${ajDraft.maestroId ? 'border-red-700 text-white' : 'border-zinc-800 text-zinc-500'}`}>
+                    <option value="">— maestro —</option>
+                    {maestros.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}
+                  </select>
+                  <button type="button" onClick={addAjusteTarea} className="flex items-center gap-1 text-[11px] text-red-400 hover:text-red-300 shrink-0">
+                    <Plus className="w-3.5 h-3.5" /> Agregar
+                  </button>
+                </div>
+              </div>
+            </>
           )}
         </div>
 

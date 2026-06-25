@@ -1088,6 +1088,36 @@ export async function calcularDetalle(jornadas, data, corte, ajustesLista) {
       if (j.diaDoble) b.diasDobles.add(j.fecha);
     });
   });
+  // v8.27.17: índice de PAQUETES de pago por proyecto → { tareaId: paquete }.
+  // Un paquete agrupa varias tareas bajo un solo precio/m² y un solo maestro;
+  // solo cuenta si tiene maestro asignado y precio > 0. Aplica en modos m2/tarea.
+  const paqueteIndex = {}; // proyectoId -> { tareaId -> paquete }
+  (data.proyectos || []).forEach(p => {
+    (p.paquetesPago || []).forEach(pk => {
+      if (!pk.maestroId || !(Number(pk.precioM2) > 0)) return;
+      (pk.tareaIds || []).forEach(tid => { (paqueteIndex[p.id] = paqueteIndex[p.id] || {})[tid] = pk; });
+    });
+  });
+  // v8.27.17: pago de los paquetes del proyecto que cobra ESTA persona.
+  //   pago = precioM2 × (Σ m² reportados de las tareas del paquete) / (nº de tareas)
+  //   Asunción acordada con Miguel: las tareas de un paquete caen sobre la MISMA
+  //   área, así que los m² se cuentan UNA sola vez (promedio entre sus tareas):
+  //   al completarse todas (cada tarea = m² del área) → precioM2 × m² del área;
+  //   a medio avance → proporcional. (Pendiente confirmar si en algún caso debería
+  //   SUMAR los m² de cada tarea en vez de promediarlos.)
+  const pagoPaquetes = (proy, b) => {
+    let total = 0;
+    (proy.paquetesPago || []).forEach(pk => {
+      if (pk.maestroId !== b.personaId) return;
+      const precio = Number(pk.precioM2) || 0;
+      const tids = pk.tareaIds || [];
+      if (precio <= 0 || tids.length === 0) return;
+      let sum = 0;
+      tids.forEach(tid => { sum += (b.tareaReportes?.[tid] || 0); });
+      total += precio * (sum / tids.length);
+    });
+    return total;
+  };
   // m² del maestro en cada proyecto - respeta maestroAreaId si está asignado
   (data.reportes || []).filter(r => r.fecha >= corte.fechaInicio && r.fecha <= corte.fechaFin).forEach(r => {
     const proy = data.proyectos.find(p => p.id === r.proyectoId);
@@ -1098,10 +1128,11 @@ export async function calcularDetalle(jornadas, data, corte, ajustesLista) {
     const sistema = data.sistemas[area?.sistemaId || proy.sistema];
     if (!sistema) return;
     const m2 = getM2Reporte(r, sistema);
-    // v8.26.9: prioridad de atribución del m²: maestro DE LA TAREA (dos maestros
-    // repartiéndose tareas en la misma área, caso Ayac Mercedes) > maestro del
-    // área > maestro principal del proyecto.
-    const maestroId = (proy.maestrosTareas || {})[r.tareaId] || area?.maestroAreaId || proy.maestroId;
+    // v8.27.17: si la tarea pertenece a un paquete, el m² se atribuye al maestro
+    // del paquete (un solo maestro cobra todo el paquete). Si no, se mantiene la
+    // v8.26.9: maestro DE LA TAREA > maestro del área > maestro principal.
+    const paquete = paqueteIndex[proy.id]?.[r.tareaId];
+    const maestroId = paquete?.maestroId || (proy.maestrosTareas || {})[r.tareaId] || area?.maestroAreaId || proy.maestroId;
     if (!maestroId) return;
     const b = getBucket(maestroId, proy.id);
     b.m2 += m2;
@@ -1205,14 +1236,20 @@ export async function calcularDetalle(jornadas, data, corte, ajustesLista) {
       }
     } else if (modoPersona === 'm2') {
       const precios = proy.preciosTareasM2 || {};
+      const idxPk = paqueteIndex[proy.id] || {};
       if (b.tareaReportes) {
-        Object.entries(b.tareaReportes).forEach(([tid, m2]) => { montoBase += m2 * (precios[tid] || 0); });
+        // v8.27.17: las tareas de un paquete NO se pagan por separado (se pagan como
+        // paquete abajo); el resto se paga al m² ejecutado de su tarea.
+        Object.entries(b.tareaReportes).forEach(([tid, m2]) => { if (!idxPk[tid]) montoBase += m2 * (precios[tid] || 0); });
       }
+      montoBase += pagoPaquetes(proy, b);
     } else if (modoPersona === 'tarea') {
       const preciosMO = proy.preciosManoObraTareas || {};
+      const idxPk = paqueteIndex[proy.id] || {};
       if (b.tareaReportes) {
-        Object.entries(b.tareaReportes).forEach(([tid, m2]) => { montoBase += m2 * (preciosMO[tid] || 0); });
+        Object.entries(b.tareaReportes).forEach(([tid, m2]) => { if (!idxPk[tid]) montoBase += m2 * (preciosMO[tid] || 0); });
       }
+      montoBase += pagoPaquetes(proy, b);
     }
     // v8.19.20: m² efectivos = el área "real" que se está pagando.
     //   Para m²_fijo es montoBase / precioFijo (porque ya viene ponderado por peso).
@@ -1256,20 +1293,27 @@ export async function calcularDetalle(jornadas, data, corte, ajustesLista) {
   ajustesLista.forEach(a => {
     const p = data.personal.find(x => x.id === a.personaId);
     if (!p) return;
-    // ¿El ajuste corresponde a una obra que la persona realmente trabajó este corte?
-    const filaProyecto = a.proyectoId
-      ? filas.find(f => !f.esSintetica && f.proyectoId === a.proyectoId)
-      : null;
     let target;
-    if (filaProyecto) {
-      target = filaProyecto;
+    if (a.lineaAparte) {
+      // v8.27.17: ajuste por tarea definido EN el proyecto (punto 4 de Miguel) →
+      // SIEMPRE su propia fila, etiquetada con el concepto, para revisarlo fácil.
+      const etiqueta = a.concepto ? `Ajuste: ${a.concepto}` : 'Ajuste por tarea';
+      target = filaSintetica(a.personaId, p.nombre, 'aj_' + a.id, etiqueta);
     } else {
-      // Suelto (sin proyecto o de una obra fuera del ERP) → fila dedicada visible.
-      const esRecl = !!a.reclamacionId || !!a.esReclamacion;
-      const etiqueta = esRecl ? 'Reclamaciones' : '(Ajustes)';
-      const sufijo = esRecl ? 'recl' : 'ajuste';
-      target = filas.find(f => f.personaId === a.personaId && f.esSintetica && f.proyectoNombre === etiqueta)
-        || filaSintetica(a.personaId, p.nombre, sufijo, etiqueta);
+      // ¿El ajuste corresponde a una obra que la persona realmente trabajó este corte?
+      const filaProyecto = a.proyectoId
+        ? filas.find(f => !f.esSintetica && f.proyectoId === a.proyectoId)
+        : null;
+      if (filaProyecto) {
+        target = filaProyecto;
+      } else {
+        // Suelto (sin proyecto o de una obra fuera del ERP) → fila dedicada visible.
+        const esRecl = !!a.reclamacionId || !!a.esReclamacion;
+        const etiqueta = esRecl ? 'Reclamaciones' : '(Ajustes)';
+        const sufijo = esRecl ? 'recl' : 'ajuste';
+        target = filas.find(f => f.personaId === a.personaId && f.esSintetica && f.proyectoNombre === etiqueta)
+          || filaSintetica(a.personaId, p.nombre, sufijo, etiqueta);
+      }
     }
     if (a.tipo === 'adelanto') target.montoAdelantos += a.monto;
     else if (a.tipo === 'descuento') target.montoOtros -= a.monto;

@@ -100,6 +100,7 @@ export default function TabEntrega({ proyecto, data, usuario, onRecargar }) {
 
       {modal && (
         <ModalNuevaActa proyecto={proyecto} usuario={usuario}
+          contactos={(data?.contactos || []).filter(c => c.clienteId && c.clienteId === proyecto.clienteId)}
           onCerrar={() => setModal(false)}
           onCreada={() => { setModal(false); cargar(); onRecargar?.(); }} />
       )}
@@ -107,13 +108,26 @@ export default function TabEntrega({ proyecto, data, usuario, onRecargar }) {
   );
 }
 
-function ModalNuevaActa({ proyecto, usuario, onCerrar, onCreada }) {
+function ModalNuevaActa({ proyecto, usuario, contactos = [], onCerrar, onCreada }) {
   const [tipo, setTipo] = useState('entrega_proyecto');
   const [areaId, setAreaId] = useState((proyecto.areas || [])[0]?.id || '');
   const [clienteNombre, setClienteNombre] = useState(proyecto.cliente || '');
   const [canal, setCanal] = useState('email');
   const [email, setEmail] = useState('');
   const [telefono, setTelefono] = useState('');
+  const [contactoId, setContactoId] = useState('');
+
+  // Al elegir un contacto del cliente, se autollenan nombre + email/teléfono y el canal.
+  const elegirContacto = (id) => {
+    setContactoId(id);
+    const c = contactos.find(x => x.id === id);
+    if (!c) return;
+    setClienteNombre(c.nombre || '');
+    if (c.email) setEmail(c.email);
+    const tel = c.whatsapp || c.telefono || '';
+    if (tel) setTelefono(tel);
+    setCanal(c.whatsapp ? 'whatsapp' : (c.email ? 'email' : (tel ? 'whatsapp' : 'email')));
+  };
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState('');
   const [resultado, setResultado] = useState(null);
@@ -206,6 +220,21 @@ function ModalNuevaActa({ proyecto, usuario, onCerrar, onCreada }) {
                   {(proyecto.areas || []).map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
                   {(proyecto.areas || []).length === 0 && <option value="">El proyecto no tiene áreas</option>}
                 </select>
+              </div>
+            )}
+
+            {contactos.length > 0 && (
+              <div>
+                <div className={labCls}>Contacto del cliente</div>
+                <select value={contactoId} onChange={e => elegirContacto(e.target.value)} className={inpCls}>
+                  <option value="">— Escribir manual —</option>
+                  {contactos.map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.nombre}{c.cargo ? ` · ${c.cargo}` : ''}{(c.whatsapp || c.telefono) ? ` · 📱 ${c.whatsapp || c.telefono}` : ''}{c.email ? ` · ✉️` : ''}
+                    </option>
+                  ))}
+                </select>
+                <div className="text-[10px] text-zinc-500 mt-1">Elige un contacto y se llenan nombre y datos de envío solos.</div>
               </div>
             )}
 

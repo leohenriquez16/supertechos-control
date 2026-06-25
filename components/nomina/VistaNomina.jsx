@@ -1301,8 +1301,12 @@ export async function calcularDetalle(jornadas, data, corte, ajustesLista) {
       target = filaSintetica(a.personaId, p.nombre, 'aj_' + a.id, etiqueta);
     } else {
       // ¿El ajuste corresponde a una obra que la persona realmente trabajó este corte?
+      // v8.27.18 FIX: hay que comparar también la PERSONA. Antes solo matcheaba por
+      // proyecto, así que TODOS los ajustes de una obra se apilaban en la 1ª fila de
+      // ese proyecto (de cualquiera). Caso Pablo Tejas: 19,500 que en realidad eran
+      // de Vladimir/Santo/Juan Carlos en ST-C5108. Sin match de persona → fila propia.
       const filaProyecto = a.proyectoId
-        ? filas.find(f => !f.esSintetica && f.proyectoId === a.proyectoId)
+        ? filas.find(f => !f.esSintetica && f.proyectoId === a.proyectoId && f.personaId === a.personaId)
         : null;
       if (filaProyecto) {
         target = filaProyecto;

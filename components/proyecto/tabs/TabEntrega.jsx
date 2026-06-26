@@ -31,6 +31,7 @@ export default function TabEntrega({ proyecto, data, usuario, onRecargar }) {
   const [actas, setActas] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [modal, setModal] = useState(false);
+  const [modalGarantia, setModalGarantia] = useState(false);
 
   const cargar = async () => {
     setCargando(true);
@@ -62,9 +63,14 @@ export default function TabEntrega({ proyecto, data, usuario, onRecargar }) {
           <span className="text-sm font-bold text-white">Entregas y actas</span>
           <span className="text-[10px] text-zinc-500">{actas.length}</span>
         </div>
-        <button onClick={() => setModal(true)} className="bg-red-600 hover:bg-red-700 text-white rounded-card px-3 py-1.5 text-xs font-bold inline-flex items-center gap-1 transition-colors">
-          <Plus className="w-3.5 h-3.5" /> Nueva acta de entrega
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setModalGarantia(true)} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 rounded-card px-3 py-1.5 text-xs font-bold inline-flex items-center gap-1 transition-colors">
+            🛡 Carta de garantía
+          </button>
+          <button onClick={() => setModal(true)} className="bg-red-600 hover:bg-red-700 text-white rounded-card px-3 py-1.5 text-xs font-bold inline-flex items-center gap-1 transition-colors">
+            <Plus className="w-3.5 h-3.5" /> Nueva acta de entrega
+          </button>
+        </div>
       </div>
 
       {/* Estado de áreas: entregadas vs pendientes */}
@@ -130,6 +136,118 @@ export default function TabEntrega({ proyecto, data, usuario, onRecargar }) {
           onCerrar={() => setModal(false)}
           onCreada={() => { setModal(false); cargar(); onRecargar?.(); }} />
       )}
+
+      {modalGarantia && (
+        <ModalCartaGarantia proyecto={proyecto} usuario={usuario} areas={areas}
+          entregaPorArea={entregaPorArea}
+          contactos={(data?.contactos || []).filter(c => c.clienteId && c.clienteId === proyecto.clienteId)}
+          garantias={(data?.garantias || []).filter(g => g.proyectoId === proyecto.id)}
+          onCerrar={() => setModalGarantia(false)}
+          onCreada={() => { setModalGarantia(false); cargar(); onRecargar?.(); }} />
+      )}
+    </div>
+  );
+}
+
+function ModalCartaGarantia({ proyecto, usuario, areas = [], entregaPorArea = {}, contactos = [], garantias = [], onCerrar, onCreada }) {
+  const garDefault = garantias.find(g => g.duracionMeses) || garantias[0] || null;
+  const aniosDefault = garDefault?.duracionMeses ? Math.round(garDefault.duracionMeses / 12) : 5;
+  const [anios, setAnios] = useState(aniosDefault);
+  const [clienteNombre, setClienteNombre] = useState(proyecto.cliente || '');
+  const [email, setEmail] = useState('');
+  const [contactoId, setContactoId] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const [error, setError] = useState('');
+  const [resultado, setResultado] = useState(null);
+
+  const entregadas = areas.filter(a => entregaPorArea[a.id]);
+  const elegir = (id) => { setContactoId(id); const c = contactos.find(x => x.id === id); if (c) { setClienteNombre(c.nombre || clienteNombre); if (c.email) setEmail(c.email); } };
+
+  const addAnios = (fechaIso, n) => { try { const d = new Date(fechaIso); d.setFullYear(d.getFullYear() + Number(n || 0)); return d.toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return '—'; } };
+  const lineasAreas = entregadas.map(a => {
+    const e = entregaPorArea[a.id];
+    return `• ${a.nombre} — entregada ${fmtFecha(e.fecha)} — garantía ${anios} año${anios != 1 ? 's' : ''}, vence ${addAnios(e.fecha, anios)}`;
+  });
+  const areasGarantiaTexto = lineasAreas.join('\n');
+
+  const generar = async () => {
+    setError('');
+    if (entregadas.length === 0) { setError('Aún no hay áreas entregadas para garantizar.'); return; }
+    if (!clienteNombre.trim()) { setError('Falta el nombre del cliente.'); return; }
+    if (!email.trim()) { setError('Falta el email del cliente.'); return; }
+    setEnviando(true);
+    try {
+      const { urlFirmante } = await db.crearActaProyecto({
+        tipo: 'carta_garantia',
+        proyectoId: proyecto.id,
+        empresa: proyecto.empresaEjecutora || 'super_techos',
+        garantiaId: garDefault?.id || null,
+        areaIds: entregadas.map(a => a.id),
+        cliente: { nombre: clienteNombre.trim(), email: email.trim(), viaEnvio: 'email' },
+        snapshotDatos: { anios, areas: areasGarantiaTexto },
+        generadaPorId: usuario.id,
+        docusealValues: {
+          cliente: clienteNombre.trim(),
+          fecha: new Date().toLocaleDateString('es-DO'),
+          ref_cotizacion: proyecto.referenciaOdoo || '',
+          trabajo: garDefault?.sistemaNombre || proyecto.nombre || '',
+          ubicacion: proyecto.ubicacionDireccionTexto || '',
+          areas_garantia: areasGarantiaTexto,
+        },
+      });
+      setResultado({ urlFirmante });
+    } catch (e) { setError(e?.message || 'No se pudo emitir la carta.'); }
+    finally { setEnviando(false); }
+  };
+
+  const inpCls = 'w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm placeholder-zinc-600 transition-colors';
+  const labCls = 'text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onCerrar}>
+      <div className="bg-zinc-950 border border-zinc-800 rounded-card w-full max-w-md max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 sticky top-0 bg-zinc-950 z-10">
+          <span className="text-sm font-bold text-white">🛡 Emitir carta de garantía</span>
+          <button onClick={onCerrar} className="text-zinc-500 hover:text-white"><X className="w-4 h-4" /></button>
+        </div>
+        {resultado ? (
+          <div className="p-4 space-y-3">
+            <div className="flex items-center gap-2 text-green-400 text-sm font-bold"><CheckCircle2 className="w-5 h-5" /> Carta emitida y enviada</div>
+            <div className="bg-zinc-900 border border-zinc-800 rounded-card p-2 text-[11px] text-zinc-300 break-all">{resultado.urlFirmante}</div>
+            <button onClick={onCreada} className="w-full bg-red-600 hover:bg-red-700 text-white rounded-card px-3 py-2 text-xs font-bold">Listo</button>
+          </div>
+        ) : (
+          <div className="p-4 space-y-4">
+            {entregadas.length === 0 ? (
+              <div className="text-[11px] text-amber-400 bg-amber-900/20 border border-amber-800 rounded-card p-2">Aún no hay áreas entregadas. La carta de garantía se emite sobre las áreas ya entregadas (con su fecha).</div>
+            ) : (
+              <div>
+                <div className={labCls}>Áreas que cubre la garantía ({entregadas.length})</div>
+                <div className="bg-zinc-900 border border-zinc-800 rounded-card p-2 space-y-1 text-[11px] text-zinc-300 whitespace-pre-line">{areasGarantiaTexto}</div>
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <div className="flex-1"><div className={labCls}>Años de garantía</div>
+                <input type="number" min="1" value={anios} onChange={e => setAnios(e.target.value)} className={inpCls} /></div>
+            </div>
+            {contactos.length > 0 && (
+              <div><div className={labCls}>Cliente / contacto</div>
+                <select value={contactoId} onChange={e => elegir(e.target.value)} className={inpCls}>
+                  <option value="">— Escribir manual —</option>
+                  {contactos.map(c => <option key={c.id} value={c.id}>{c.cargo ? `${c.cargo} — ` : ''}{c.email || c.nombre}</option>)}
+                </select></div>
+            )}
+            <div><div className={labCls}>Nombre del cliente</div>
+              <input value={clienteNombre} onChange={e => setClienteNombre(e.target.value)} className={inpCls} /></div>
+            <div><div className={labCls}>Email (recibe la carta para firmar)</div>
+              <input value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="correo@cliente.com" className={inpCls} /></div>
+            {error && <div className="text-[11px] text-red-400 bg-red-900/20 border border-red-800 rounded-card p-2">{error}</div>}
+            <button onClick={generar} disabled={enviando || entregadas.length === 0} className="w-full bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-white rounded-card px-3 py-2.5 text-sm font-bold inline-flex items-center justify-center gap-2">
+              {enviando ? <><Loader2 className="w-4 h-4 animate-spin" /> Emitiendo…</> : <><Send className="w-4 h-4" /> Emitir y enviar</>}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

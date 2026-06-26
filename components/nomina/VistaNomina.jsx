@@ -183,7 +183,7 @@ function imprimirReciboNomina(d, corte, data) {
 <table>
   <tr><th style="width: 30%;">Persona</th><td><b>${d.personaNombre}</b> <span style="color:#888">(${rol})</span></td></tr>
   <tr><th>Proyecto</th><td>${label}</td></tr>
-  <tr><th>Modo de pago</th><td style="text-transform:capitalize;">${d.modoPago === 'dia' ? `Por día · ${d.diasTrabajados} días${d.diasDobles ? ` (${d.diasDobles} doble)` : ''}` : d.modoPago === 'm2' ? `Por m² · ${fmt(d.m2Producidos)} m²` : d.modoPago === 'm2_fijo' ? `m² fijo sistema · ${fmt(d.m2Producidos)} m²` : d.modoPago === 'tarea' ? `Por tarea · ${fmt(d.m2Producidos)} m²` : 'Ajuste'}</td></tr>
+  <tr><th>Modo de pago</th><td style="text-transform:capitalize;">${d.modoPago === 'dia' ? `Por día · ${d.diasTrabajados} días${d.diasDobles ? ` (${d.diasDobles} doble)` : ''}` : d.modoPago === 'm2' ? `Por m² · ${fmt(d.m2Producidos)} m²` : d.modoPago === 'm2_fijo' ? `m² fijo sistema · ${fmt(typeof d.m2Efectivo === 'number' ? d.m2Efectivo : d.m2Producidos)} m²` : d.modoPago === 'tarea' ? `Por tarea · ${fmt(d.m2Producidos)} m²` : 'Ajuste'}</td></tr>
 </table>
 <table style="margin-top: 20px;">
   <tr><th style="width: 40%;">Concepto</th><th class="right">Monto RD$</th></tr>
@@ -227,9 +227,15 @@ function imprimirCorteCompleto({ corte, vistaDetalle, resumenPersonas, resumenPr
     recibos: 'Recibos',
   }[vistaDetalle] || 'Detalle';
 
+  // v8.27.21 (ticket Miguel "suma todos los m² genera confusión"): en m²-fijo el m²
+  // REPORTADO suma cada paso sobre la misma área (limpieza+imprimación+instalación de un
+  // techo de 100 m² → 300 "m²"), lo que confunde. Mostramos el m² EFECTIVO (área real
+  // ponderada, = lo que sustenta el monto). El dinero no cambia: ya venía ponderado.
+  const m2Mostrar = (r) => typeof r.m2Efectivo === 'number' ? r.m2Efectivo : r.m2Producidos;
   const desglosePago = (r) =>
     r.modoPago === 'dia' ? `${r.diasTrabajados} día${r.diasTrabajados !== 1 ? 's' : ''}${r.diasDobles ? ` (${r.diasDobles} dobles)` : ''}`
-    : (r.modoPago === 'm2' || r.modoPago === 'm2_fijo' || r.modoPago === 'tarea') ? `${fmtNum(r.m2Producidos)} m²`
+    : r.modoPago === 'm2_fijo' ? `${fmtNum(m2Mostrar(r))} m²`
+    : (r.modoPago === 'm2' || r.modoPago === 'tarea') ? `${fmtNum(r.m2Producidos)} m²`
     : 'Ajuste';
 
   let cuerpo = '';
@@ -1405,7 +1411,13 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
     setLoading(true);
     try {
       const [det, aj] = await Promise.all([db.obtenerDetalleCorte(corte.id), db.listarAjustes({ sinCorte: corte.estado === 'abierto' })]);
-      setAjustes(aj.filter(a => a.fecha >= corte.fechaInicio && a.fecha <= corte.fechaFin));
+      // v8.27.20 FIX (ticket Miguel "copia los ajustes de la quincena anterior"): SOLO los
+      // ajustes cuya fecha cae dentro del periodo del corte. Antes el preview del detalle
+      // (más abajo) se calculaba con TODOS los ajustes pendientes (aj), así que los de
+      // quincenas anteriores aún sin aplicar se "copiaban" al corte actual e inflaban el
+      // total. Ahora coincide con lo que cerrarCorte() realmente asocia (mismo rango).
+      const ajPeriodo = aj.filter(a => a.fecha >= corte.fechaInicio && a.fecha <= corte.fechaFin);
+      setAjustes(ajPeriodo);
       // v8.26.5: jornadas del periodo en UNA sola query por rango de fechas.
       // Antes: 1 query POR PROYECTO en serie (70+ requests) trayendo TODO el
       // histórico y filtrando en el cliente → la nómina tardaba 15-30s en abrir.
@@ -1417,7 +1429,7 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
       setJornadasCorte(todasJornadas);
       // Si no hay detalle guardado, calcular preview
       if (det.length === 0 && corte.estado === 'abierto') {
-        setDetalle(await calcularDetalle(todasJornadas, data, corte, aj));
+        setDetalle(await calcularDetalle(todasJornadas, data, corte, ajPeriodo));
       } else {
         setDetalle(det);
       }
@@ -1562,7 +1574,7 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
                     <MiniBar value={rp.total} max={maxPers} color="bg-green-500/50" />
                     <div className="mt-2 space-y-1">{rp.proyectos.map(r => (
                       <div key={r.id} className="bg-zinc-950 border border-zinc-800 rounded-card p-2 text-[10px] flex justify-between items-center gap-2">
-                        <div className="flex-1 min-w-0"><div className="font-bold truncate">{r.proyectoNombre}</div><div className="text-zinc-500 uppercase flex items-center gap-1 mt-0.5"><ModoBadge modo={r.modoPago} /> {r.modoPago === 'dia' ? `${r.diasTrabajados}d${r.diasDobles ? ` (${r.diasDobles}×2)` : ''}` : r.modoPago === 'm2' || r.modoPago === 'm2_fijo' || r.modoPago === 'tarea' ? `${formatNum(r.m2Producidos)} m²` : 'Ajuste'}</div></div>
+                        <div className="flex-1 min-w-0"><div className="font-bold truncate">{r.proyectoNombre}</div><div className="text-zinc-500 uppercase flex items-center gap-1 mt-0.5"><ModoBadge modo={r.modoPago} /> {r.modoPago === 'dia' ? `${r.diasTrabajados}d${r.diasDobles ? ` (${r.diasDobles}×2)` : ''}` : r.modoPago === 'm2_fijo' ? `${formatNum(typeof r.m2Efectivo === 'number' ? r.m2Efectivo : r.m2Producidos)} m²` : r.modoPago === 'm2' || r.modoPago === 'tarea' ? `${formatNum(r.m2Producidos)} m²` : 'Ajuste'}</div></div>
                         <div className="text-green-400 font-bold">{formatRD(r.montoTotal)}</div>
                       </div>
                     ))}</div>

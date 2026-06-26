@@ -40,6 +40,8 @@ export async function POST(req) {
       tipo,
       proyectoId,
       areaId = null,
+      areaIds = [],            // v8.27.20: un acta puede cubrir VARIAS áreas
+      ccEmails = [],           // destinatarios en copia (no firman)
       empresa = null,          // 'super_techos' | 'prouco' — define el membrete de la carta de garantía
       garantiaId = null,       // garantía de origen (cuando tipo = 'carta_garantia')
       cliente,
@@ -105,7 +107,9 @@ export async function POST(req) {
     const row = {
       id,
       proyecto_id: proyectoId,
-      area_id: areaId || null,
+      area_id: areaId || (Array.isArray(areaIds) && areaIds[0]) || null,
+      area_ids: Array.isArray(areaIds) ? areaIds : [],
+      cc_emails: Array.isArray(ccEmails) ? ccEmails : [],
       tipo,
       snapshot_datos: snapshotDatos,
       cliente_nombre: cliente.nombre,

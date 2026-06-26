@@ -156,6 +156,44 @@ export async function POST(req) {
       }
     }
 
+    // v8.27.22 (Fase 6): al FIRMAR la carta de garantía, se ACTIVA la garantía en
+    // el módulo (tabla garantias) y se agendan los mantenimientos obligatorios
+    // (inspecciones cada N meses según el sistema), igual que el flujo actual.
+    if (updates.status === 'firmada' && acta.tipo === 'carta_garantia') {
+      try {
+        const yaExiste = await supabase.from('garantias').select('id').eq('proyecto_id', acta.proyecto_id).limit(1);
+        if (!(yaExiste.data && yaExiste.data.length)) {
+          const { data: p } = await supabase.from('proyectos')
+            .select('id, cliente_id, ubicacion_id, referencia_odoo, sistema_id, valor_cotizacion, areas')
+            .eq('id', acta.proyecto_id).maybeSingle();
+          if (p) {
+            const { data: sis } = await supabase.from('sistemas').select('*').eq('id', p.sistema_id).maybeSingle();
+            const sumarMeses = (iso, n) => { const d = new Date(iso); d.setMonth(d.getMonth() + Number(n || 0)); return d.toISOString().split('T')[0]; };
+            const hoy = new Date().toISOString().split('T')[0];
+            const duracion = sis?.garantia_meses || 60;
+            const cadaMeses = sis?.mantenimiento_cada_meses || 24;
+            const venc = sumarMeses(hoy, duracion);
+            const m2 = (p.areas || []).reduce((a, ar) => a + (Number(ar.m2) || 0), 0);
+            const garId = 'gar_' + Date.now() + Math.random().toString(36).slice(2, 6);
+            await supabase.from('garantias').insert({
+              id: garId, cliente_id: p.cliente_id || null, ubicacion_id: p.ubicacion_id || null,
+              proyecto_id: p.id, referencia_cotizacion: p.referencia_odoo || null,
+              sistema_id: p.sistema_id || null, sistema_nombre: sis?.data?.nombre || null,
+              fecha_inicio: hoy, duracion_meses: duracion, fecha_vencimiento: venc, estado: 'vigente',
+              cobertura: sis?.data?.cobertura || null, condicion: sis?.data?.condicion || null,
+              m2, monto: p.valor_cotizacion ?? null, origen: 'auto_carta_firmada',
+            });
+            // Agendar mantenimientos (inspecciones obligatorias cada `cadaMeses`).
+            if (cadaMeses) {
+              const mants = []; let n = cadaMeses, i = 0;
+              while (i < 120) { const f = sumarMeses(hoy, n); if (f > venc) break; mants.push({ id: 'man_' + Date.now() + i + Math.random().toString(36).slice(2, 5), garantia_id: garId, cliente_id: p.cliente_id || null, ubicacion_id: p.ubicacion_id || null, tipo: 'inspeccion', obligatorio: true, fecha_programada: f, estado: 'pendiente' }); n += cadaMeses; i++; }
+              if (mants.length) await supabase.from('mantenimientos').insert(mants);
+            }
+          }
+        }
+      } catch (e) { console.warn('Activar garantía tras firma falló:', e?.message); }
+    }
+
     return new Response(JSON.stringify({ ok: true, acta_id: acta.id, evento: tipo }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },

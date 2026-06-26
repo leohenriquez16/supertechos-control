@@ -64,6 +64,7 @@ import TabCronograma from '../components/proyecto/tabs/TabCronograma';
 import TabAsistencia from '../components/proyecto/tabs/TabAsistencia';
 import TabEquipoProyecto from '../components/proyecto/tabs/TabEquipoProyecto';
 import TabAvance from '../components/proyecto/tabs/TabAvance';
+import TabEntrega from '../components/proyecto/tabs/TabEntrega';
 // Estado de pago de mano de obra del proyecto
 import TabManoDeObra from '../components/proyecto/tabs/TabManoDeObra';
 // v8.10.8: NuevoProyecto y ModalEditarProyecto extraídos a components/proyecto/
@@ -4910,6 +4911,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
         {!esSupervisor && <TabBtn active={tab === 'costo'} onClick={() => setTab('costo')}><DollarSign className="w-3 h-3 inline mr-1" />Costo</TabBtn>}
         {esAdmin && <TabBtn active={tab === 'mdo'} onClick={() => setTab('mdo')}><Wallet className="w-3 h-3 inline mr-1" />Mano de obra</TabBtn>}
         {!esSupervisor && proyecto.dieta?.habilitada && <TabBtn active={tab === 'dieta'} onClick={() => setTab('dieta')}><Utensils className="w-3 h-3 inline mr-1" />Dieta</TabBtn>}
+        {esAdmin && <TabBtn active={tab === 'entrega'} onClick={() => setTab('entrega')}>✍️ Entrega</TabBtn>}
       </div>
 
       {tab === 'avance' && <TabAvance proyecto={proyecto} reportes={data.reportes} sistema={sistema} sistemas={data.sistemas} esSupervisor={esSupervisor} onEliminarReporte={onEliminarReporte} onEditarReporte={onEditarReporte} data={data} usuario={usuario} onRecargar={onRecargar} />}
@@ -4926,6 +4928,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
       {tab === 'costo' && !esSupervisor && <TabCosto proyecto={proyecto} sistema={sistema} sistemas={data.sistemas} reportes={data.reportes} envios={data.envios} config={data.config} />}
       {tab === 'mdo' && esAdmin && <TabManoDeObra proyecto={proyecto} data={data} usuario={usuario} onActualizarProyecto={onActualizarProyecto} onRecargar={onRecargar} />}
       {tab === 'dieta' && !esSupervisor && <TabDieta proyecto={proyecto} reportes={data.reportes} personal={data.personal} onActualizarProyecto={onActualizarProyecto} />}
+      {tab === 'entrega' && esAdmin && <TabEntrega proyecto={proyecto} data={data} usuario={usuario} onRecargar={onRecargar} />}
 
       {/* v8.25.46: si está parado, el chatter ya se muestra arriba; no duplicar abajo */}
       {proyecto.estado !== 'parado' && <ChatterPanel entityType="proyecto" entityId={proyecto?.id} usuario={usuario} />}

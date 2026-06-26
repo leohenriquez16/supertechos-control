@@ -47,7 +47,7 @@ export async function POST(req) {
     // Buscar el acta vinculada al submission
     const { data: acta, error: errAct } = await supabase
       .from('actas_proyecto')
-      .select('id, status, status_facturacion, tipo')
+      .select('id, status, status_facturacion, tipo, proyecto_id, cliente_nombre')
       .eq('docuseal_submission_id', String(submissionId))
       .maybeSingle();
 
@@ -119,6 +119,41 @@ export async function POST(req) {
     if (updErr) {
       console.error('Error actualizando acta:', updErr);
       return new Response(JSON.stringify({ error: updErr.message }), { status: 500 });
+    }
+
+    // v8.27.21 (Fase 3): al FIRMAR un acta de ENTREGA, el proyecto pasa a
+    // "recibido conforme" y se avisa por correo a admins/contabilidad para facturar.
+    // Best-effort: si algo falla, no rompemos el 200 al webhook.
+    if (updates.status === 'firmada' && (acta.tipo === 'entrega_proyecto' || acta.tipo === 'entrega_area')) {
+      try {
+        const { data: proy } = await supabase
+          .from('proyectos')
+          .select('id, referencia_odoo, cliente, estado')
+          .eq('id', acta.proyecto_id)
+          .maybeSingle();
+        if (proy && proy.estado !== 'finalizado_recibido_conforme') {
+          await supabase.from('proyectos')
+            .update({ estado: 'finalizado_recibido_conforme' })
+            .eq('id', proy.id);
+        }
+        // Email a admins (incluye a Yamel cuando tenga email) para emitir la factura.
+        const { data: admins } = await supabase.from('personal')
+          .select('email, roles').contains('roles', ['admin']);
+        const destinos = [...new Set((admins || []).map(a => a.email).filter(Boolean))];
+        if (destinos.length) {
+          const ref = proy?.referencia_odoo || proy?.cliente || acta.proyecto_id;
+          const html = `<div style="font-family:Arial;padding:20px;"><h2 style="color:#CC0000;">Acta de entrega firmada — listo para facturar</h2>`
+            + `<p>El cliente <b>${acta.cliente_nombre || ''}</b> firmó el acta de entrega de <b>${ref}</b>.</p>`
+            + `<p>El proyecto pasó a <b>Recibido conforme</b>. Procede a emitir la factura.</p></div>`;
+          const origin = new URL(req.url).origin;
+          await fetch(`${origin}/api/enviar-reporte`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ destinatarios: destinos, asunto: `[${ref}] Acta firmada — listo para facturar`, html }),
+          }).catch(() => {});
+        }
+      } catch (e) {
+        console.warn('Post-firma (recibido conforme/email) falló:', e?.message);
+      }
     }
 
     return new Response(JSON.stringify({ ok: true, acta_id: acta.id, evento: tipo }), {

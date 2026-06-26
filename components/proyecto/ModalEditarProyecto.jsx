@@ -73,6 +73,7 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
     preciosManoObraTareas: proyecto.preciosManoObraTareas || {},
     maestrosTareas: proyecto.maestrosTareas || {}, // v8.26.9: maestro responsable por tarea
     paquetesPago: proyecto.paquetesPago || [], // v8.27.17: paquetes (agrupan tareas a un precio/m² + un maestro)
+    brigadas: proyecto.brigadas || [], // v8.27.22: cuadrillas [{id,nombre,maestroId,ayudantesIds}]
     precioM2FijoMaestro: proyecto.precioM2FijoMaestro || 0,
     // v8.12: Dieta diaria pagada desde caja chica
     dietaDiariaRd: proyecto.dietaDiariaRd || 0,
@@ -272,6 +273,15 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
   const removePaquete = (id) => setForm(f => ({ ...f, paquetesPago: (f.paquetesPago || []).filter(pk => pk.id !== id) }));
   const togglePaqueteTarea = (pk, tareaId) => updatePaquete(pk.id, {
     tareaIds: (pk.tareaIds || []).includes(tareaId) ? pk.tareaIds.filter(t => t !== tareaId) : [...(pk.tareaIds || []), tareaId],
+  });
+
+  // v8.27.22: BRIGADAS (cuadrillas) — cada una con su maestro y ayudantes, para tomar
+  // la asistencia agrupada por brigada. Se persisten en form.brigadas.
+  const addBrigada = () => setForm(f => ({ ...f, brigadas: [...(f.brigadas || []), { id: nuevoId('br'), nombre: `Brigada ${(f.brigadas || []).length + 1}`, maestroId: '', ayudantesIds: [] }] }));
+  const updateBrigada = (id, patch) => setForm(f => ({ ...f, brigadas: (f.brigadas || []).map(b => b.id === id ? { ...b, ...patch } : b) }));
+  const removeBrigada = (id) => setForm(f => ({ ...f, brigadas: (f.brigadas || []).filter(b => b.id !== id) }));
+  const toggleBrigadaAyudante = (b, pid) => updateBrigada(b.id, {
+    ayudantesIds: (b.ayudantesIds || []).includes(pid) ? b.ayudantesIds.filter(x => x !== pid) : [...(b.ayudantesIds || []), pid],
   });
 
   // v8.27.17: AJUSTES POR TAREA (4) — definidos en el proyecto, monto fijo RD$ a un
@@ -509,6 +519,37 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
           <Campo label="Supervisor"><select value={form.supervisorId} onChange={e => setForm({ ...form, supervisorId: e.target.value })} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="">Sin asignar</option>{supervisores.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select></Campo>
           <Campo label="Maestro"><select value={form.maestroId} onChange={e => setForm({ ...form, maestroId: e.target.value, ayudantesIds: [] })} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="">Sin asignar</option>{maestros.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select></Campo>
           {ayudantesDisp.length > 0 && <Campo label="Ayudantes"><div className="space-y-1">{ayudantesDisp.map(a => <label key={a.id} className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 rounded-card p-2 cursor-pointer hover:border-red-600"><input type="checkbox" checked={form.ayudantesIds.includes(a.id)} onChange={e => setForm({ ...form, ayudantesIds: e.target.checked ? [...form.ayudantesIds, a.id] : form.ayudantesIds.filter(x => x !== a.id) })} className="w-4 h-4 accent-red-600" /><span className="text-sm">{a.nombre}</span></label>)}</div></Campo>}
+
+          {/* v8.27.22: Brigadas (cuadrillas) — opcional. Para obras grandes: varias
+              cuadrillas, cada una con su maestro y ayudantes, y asistencia por brigada. */}
+          <div className="pt-1">
+            <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1">Brigadas / cuadrillas <span className="text-zinc-600 normal-case tracking-normal">(opcional)</span></div>
+            <div className="text-[10px] text-zinc-500 mb-2">Para obras grandes con varias cuadrillas. Define cada brigada con su maestro y ayudantes; en <b>Asistencia</b> podrás tomar la lista agrupada por brigada.</div>
+            {(form.brigadas || []).map((b, i) => (
+              <div key={b.id} className="bg-zinc-950 border border-zinc-800 rounded-card p-2 mb-2 space-y-2">
+                <div className="flex items-center gap-2">
+                  <input value={b.nombre || ''} onChange={e => updateBrigada(b.id, { nombre: e.target.value })} placeholder={`Brigada ${i + 1}`} className="flex-1 bg-zinc-900 border border-zinc-800 px-2 py-1.5 text-sm text-white outline-none focus:border-red-600" />
+                  <button type="button" onClick={() => removeBrigada(b.id)} className="text-zinc-500 hover:text-red-400 text-sm px-1" title="Quitar brigada">✕</button>
+                </div>
+                <select value={b.maestroId || ''} onChange={e => updateBrigada(b.id, { maestroId: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 px-2 py-1.5 text-sm text-white outline-none focus:border-red-600">
+                  <option value="">Maestro de la brigada…</option>
+                  {maestros.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}
+                </select>
+                <div>
+                  <div className="text-[9px] uppercase text-zinc-500 mb-1">Ayudantes de la brigada ({(b.ayudantesIds || []).length})</div>
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-1 max-h-32 overflow-auto pr-1">
+                    {(data.personal || []).filter(p => p.id !== b.maestroId).map(p => (
+                      <label key={p.id} className="flex items-center gap-1 text-[11px] cursor-pointer">
+                        <input type="checkbox" checked={(b.ayudantesIds || []).includes(p.id)} onChange={() => toggleBrigadaAyudante(b, p.id)} className="w-3.5 h-3.5 accent-red-600" />
+                        <span className="truncate">{p.nombre}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ))}
+            <button type="button" onClick={addBrigada} className="flex items-center gap-1 text-[11px] text-red-400 hover:text-red-300 font-bold"><Plus className="w-3.5 h-3.5" /> Agregar brigada</button>
+          </div>
         </div>
 
         <div className="space-y-3 border-t border-zinc-800 pt-3">

@@ -10624,6 +10624,7 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
         inicioPrecisionM: ubi?.precision ?? null,
         inicioDistanciaObraM: distancia,
         personasPresentesIds: personasSel,
+        brigadasPresentes: brigadasPresentesDe(personasSel), // v8.27.22
       });
       await recargar();
     } catch (e) { alert('Error iniciando jornada: ' + e.message); }
@@ -10634,7 +10635,7 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
     if (!jornadaHoy) return;
     setProcesando('personas');
     try {
-      await db.actualizarPersonasJornada(jornadaHoy.id, personasSel);
+      await db.actualizarPersonasJornada(jornadaHoy.id, personasSel, brigadasPresentesDe(personasSel)); // v8.27.22
       await recargar();
     } catch (e) { alert('Error: ' + e.message); }
     setProcesando(null);
@@ -10746,14 +10747,24 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
     setProcesando(null);
   };
 
-  // Personas relacionadas al proyecto: maestro, supervisor, ayudantes
-  const personasElegibles = [
+  // v8.27.22: brigadas (cuadrillas) del proyecto, cada una con su maestro y ayudantes.
+  const brigadas = proyecto.brigadas || [];
+  const miembrosDeBrigada = (b) => [b.maestroId, ...(b.ayudantesIds || [])].filter(Boolean);
+  // brigadas "presentes" = las que tienen al menos un miembro marcado.
+  const brigadasPresentesDe = (sel) => brigadas.filter(b => miembrosDeBrigada(b).some(id => sel.includes(id))).map(b => b.id);
+
+  // Personas relacionadas al proyecto: supervisor, maestro, ayudantes + miembros de
+  // todas las brigadas. Se deduplican manteniendo el orden.
+  const personasElegibles = [...new Set([
     proyecto.supervisorId,
     proyecto.maestroId,
-    ...(proyecto.ayudantesIds || [])
-  ].filter(Boolean)
+    ...(proyecto.ayudantesIds || []),
+    ...brigadas.flatMap(miembrosDeBrigada),
+  ].filter(Boolean))]
     .map(id => getPersona(personal, id))
     .filter(Boolean);
+  // IDs que pertenecen a alguna brigada (para separar el grupo "Otros").
+  const idsEnBrigadas = new Set(brigadas.flatMap(miembrosDeBrigada));
 
   const formatHora = (iso) => iso ? new Date(iso).toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—';
   const horasEntre = (a, b) => {
@@ -10797,22 +10808,65 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
               <button onClick={guardarPersonas} disabled={procesando === 'personas'} className="text-[10px] bg-red-600 text-white px-2 py-1 font-bold flex items-center gap-1">{procesando === 'personas' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />} Actualizar</button>
             )}
           </div>
-          <div className="space-y-1">
-            {personasElegibles.map(p => {
+          {(() => {
+            const cerrada = !!jornadaHoy?.horaFin;
+            const bloqueado = cerrada || !puedeOperarHoy;
+            const rolDe = (p) => p.id === proyecto.supervisorId ? 'Supervisor' : p.id === proyecto.maestroId ? 'Maestro' : 'Ayudante';
+            const filaPersona = (p, etiqueta) => {
               const selec = personasSel.includes(p.id);
-              const cerrada = !!jornadaHoy?.horaFin;
               return (
-                <label key={p.id} className={`flex items-center gap-2 p-2 border cursor-pointer ${selec ? 'bg-red-600/10 border-red-600' : 'bg-zinc-950 border-zinc-800'} ${cerrada || !puedeOperarHoy ? 'opacity-60 cursor-default' : ''}`}>
-                  <input type="checkbox" checked={selec} disabled={cerrada || !puedeOperarHoy} onChange={() => togglePersona(p.id)} className="w-4 h-4 accent-red-600" />
+                <label key={p.id} className={`flex items-center gap-2 p-2 border cursor-pointer ${selec ? 'bg-red-600/10 border-red-600' : 'bg-zinc-950 border-zinc-800'} ${bloqueado ? 'opacity-60 cursor-default' : ''}`}>
+                  <input type="checkbox" checked={selec} disabled={bloqueado} onChange={() => togglePersona(p.id)} className="w-4 h-4 accent-red-600" />
                   {p.foto2x2 ? <img src={p.foto2x2} alt="" className="w-8 h-8 object-cover rounded-sm" /> : <UserCircle className="w-8 h-8 text-zinc-500" />}
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-bold truncate">{p.nombre}</div>
-                    <div className="text-[10px] text-zinc-500">{p.id === proyecto.supervisorId ? 'Supervisor' : p.id === proyecto.maestroId ? 'Maestro' : 'Ayudante'}</div>
+                    <div className="text-[10px] text-zinc-500">{etiqueta || rolDe(p)}</div>
                   </div>
                 </label>
               );
-            })}
-          </div>
+            };
+            // Sin brigadas → lista plana (comportamiento anterior, intacto).
+            if (brigadas.length === 0) {
+              return <div className="space-y-1">{personasElegibles.map(p => filaPersona(p))}</div>;
+            }
+            // v8.27.22: con brigadas → grupos por cuadrilla + grupo "Otros".
+            const marcarBrigada = (b, marcar) => {
+              const ids = miembrosDeBrigada(b);
+              setPersonasSel(prev => marcar ? [...new Set([...prev, ...ids])] : prev.filter(x => !ids.includes(x)));
+            };
+            const otros = personasElegibles.filter(p => !idsEnBrigadas.has(p.id));
+            return (
+              <div className="space-y-3">
+                {brigadas.map(b => {
+                  const miembros = miembrosDeBrigada(b).map(id => getPersona(personal, id)).filter(Boolean);
+                  if (miembros.length === 0) return null;
+                  const maestro = getPersona(personal, b.maestroId);
+                  const nPresentes = miembros.filter(p => personasSel.includes(p.id)).length;
+                  const todosMarcados = nPresentes === miembros.length;
+                  return (
+                    <div key={b.id} className="border border-zinc-800 rounded-card overflow-hidden">
+                      <div className="flex items-center justify-between bg-zinc-900 px-2 py-1.5 gap-2">
+                        <div className="min-w-0">
+                          <div className="text-xs font-black truncate">{b.nombre || 'Brigada'}</div>
+                          <div className="text-[10px] text-zinc-500 truncate">{maestro ? `Maestro: ${maestro.nombre}` : 'Sin maestro'} · {nPresentes}/{miembros.length} presentes</div>
+                        </div>
+                        {!bloqueado && (
+                          <button type="button" onClick={() => marcarBrigada(b, !todosMarcados)} className="text-[10px] font-bold text-red-400 hover:text-red-300 whitespace-nowrap px-1">{todosMarcados ? 'Quitar todos' : 'Marcar todos'}</button>
+                        )}
+                      </div>
+                      <div className="p-1 space-y-1">{miembros.map(p => filaPersona(p, p.id === b.maestroId ? 'Maestro de brigada' : 'Ayudante'))}</div>
+                    </div>
+                  );
+                })}
+                {otros.length > 0 && (
+                  <div className="border border-zinc-800 rounded-card overflow-hidden">
+                    <div className="bg-zinc-900 px-2 py-1.5 text-xs font-black text-zinc-400">Otros (sin brigada)</div>
+                    <div className="p-1 space-y-1">{otros.map(p => filaPersona(p))}</div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
 
         {/* Horas + GPS */}

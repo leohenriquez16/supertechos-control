@@ -32,6 +32,7 @@ export default function TabEntrega({ proyecto, data, usuario, onRecargar }) {
   const [cargando, setCargando] = useState(true);
   const [modal, setModal] = useState(false);
   const [modalGarantia, setModalGarantia] = useState(false);
+  const [modalCubic, setModalCubic] = useState(false);
 
   const cargar = async () => {
     setCargando(true);
@@ -63,7 +64,10 @@ export default function TabEntrega({ proyecto, data, usuario, onRecargar }) {
           <span className="text-sm font-bold text-white">Entregas y actas</span>
           <span className="text-[10px] text-zinc-500">{actas.length}</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <button onClick={() => setModalCubic(true)} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 rounded-card px-3 py-1.5 text-xs font-bold inline-flex items-center gap-1 transition-colors">
+            📊 Cubicación mensual
+          </button>
           <button onClick={() => setModalGarantia(true)} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 rounded-card px-3 py-1.5 text-xs font-bold inline-flex items-center gap-1 transition-colors">
             🛡 Carta de garantía
           </button>
@@ -107,6 +111,8 @@ export default function TabEntrega({ proyecto, data, usuario, onRecargar }) {
                       <span className="text-xs font-bold text-white">{TIPO_LABEL[a.tipo] || a.tipo}</span>
                       {cubiertas.length > 0 && <span className="text-[10px] text-zinc-400">📍 {cubiertas.join(', ')}</span>}
                       <EstadoBadge status={a.status} />
+                      {a.tipo === 'cubicacion' && a.statusFacturacion === 'pendiente' && <span className="text-[9px] font-bold uppercase tracking-wider border rounded-card px-1.5 py-0.5 bg-amber-900/40 text-amber-300 border-amber-700/60">💰 por facturar</span>}
+                      {a.tipo === 'cubicacion' && a.statusFacturacion === 'facturada' && <span className="text-[9px] font-bold uppercase tracking-wider border rounded-card px-1.5 py-0.5 bg-green-900/40 text-green-300 border-green-700/60">💰 facturada</span>}
                     </div>
                     <div className="text-[11px] text-zinc-400 mt-0.5 truncate">
                       {a.clienteNombre || 'Sin cliente'} · {a.clienteViaEnvio === 'whatsapp' ? '📱' : '✉️'}
@@ -145,6 +151,92 @@ export default function TabEntrega({ proyecto, data, usuario, onRecargar }) {
           onCerrar={() => setModalGarantia(false)}
           onCreada={() => { setModalGarantia(false); cargar(); onRecargar?.(); }} />
       )}
+
+      {modalCubic && (
+        <ModalCubicacion proyecto={proyecto} usuario={usuario}
+          contactos={(data?.contactos || []).filter(c => c.clienteId && c.clienteId === proyecto.clienteId)}
+          onCerrar={() => setModalCubic(false)}
+          onCreada={() => { setModalCubic(false); cargar(); onRecargar?.(); }} />
+      )}
+    </div>
+  );
+}
+
+function ModalCubicacion({ proyecto, usuario, contactos = [], onCerrar, onCreada }) {
+  const mesActual = (() => { const d = new Date(); return d.toLocaleDateString('es-DO', { month: 'long', year: 'numeric' }); })();
+  const [periodo, setPeriodo] = useState(mesActual);
+  const [concepto, setConcepto] = useState('');
+  const [monto, setMonto] = useState('');
+  const [clienteNombre, setClienteNombre] = useState(proyecto.cliente || '');
+  const [email, setEmail] = useState('');
+  const [contactoId, setContactoId] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const [error, setError] = useState('');
+  const [resultado, setResultado] = useState(null);
+  const elegir = (id) => { setContactoId(id); const c = contactos.find(x => x.id === id); if (c) { setClienteNombre(c.nombre || clienteNombre); if (c.email) setEmail(c.email); } };
+
+  const generar = async () => {
+    setError('');
+    if (!periodo.trim()) { setError('Falta el período (mes).'); return; }
+    if (!concepto.trim()) { setError('Falta el detalle del avance.'); return; }
+    if (!email.trim()) { setError('Falta el email del cliente.'); return; }
+    setEnviando(true);
+    try {
+      const { urlFirmante } = await db.crearActaProyecto({
+        tipo: 'cubicacion', proyectoId: proyecto.id,
+        empresa: proyecto.empresaEjecutora || 'super_techos',
+        cliente: { nombre: clienteNombre.trim(), email: email.trim(), viaEnvio: 'email' },
+        snapshotDatos: { periodo, concepto, monto },
+        generadaPorId: usuario.id,
+        docusealValues: {
+          cliente: clienteNombre.trim(), fecha: new Date().toLocaleDateString('es-DO'),
+          ref_cotizacion: proyecto.referenciaOdoo || '', periodo, concepto,
+          monto: monto ? Number(monto).toLocaleString('es-DO', { minimumFractionDigits: 2 }) : '0.00',
+        },
+      });
+      setResultado({ urlFirmante });
+    } catch (e) { setError(e?.message || 'No se pudo crear la cubicación.'); }
+    finally { setEnviando(false); }
+  };
+
+  const inpCls = 'w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm placeholder-zinc-600 transition-colors';
+  const labCls = 'text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1';
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onCerrar}>
+      <div className="bg-zinc-950 border border-zinc-800 rounded-card w-full max-w-md max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 sticky top-0 bg-zinc-950 z-10">
+          <span className="text-sm font-bold text-white">📊 Nueva cubicación mensual</span>
+          <button onClick={onCerrar} className="text-zinc-500 hover:text-white"><X className="w-4 h-4" /></button>
+        </div>
+        {resultado ? (
+          <div className="p-4 space-y-3">
+            <div className="flex items-center gap-2 text-green-400 text-sm font-bold"><CheckCircle2 className="w-5 h-5" /> Cubicación creada y enviada</div>
+            <p className="text-[11px] text-zinc-400">Al firmarla el cliente, queda <b>pendiente de facturar</b> automáticamente.</p>
+            <div className="bg-zinc-900 border border-zinc-800 rounded-card p-2 text-[11px] text-zinc-300 break-all">{resultado.urlFirmante}</div>
+            <button onClick={onCreada} className="w-full bg-red-600 hover:bg-red-700 text-white rounded-card px-3 py-2 text-xs font-bold">Listo</button>
+          </div>
+        ) : (
+          <div className="p-4 space-y-4">
+            <p className="text-[11px] text-zinc-500">La cubicación es un <b>avance parcial facturable</b> del mes — distinto de la entrega final (que lleva garantía).</p>
+            <div><div className={labCls}>Período (mes)</div><input value={periodo} onChange={e => setPeriodo(e.target.value)} className={inpCls} /></div>
+            <div><div className={labCls}>Detalle del avance cubicado</div><textarea value={concepto} onChange={e => setConcepto(e.target.value)} rows={3} placeholder="Ej. Membrana asfáltica Torre 1 — 450 m² · acabado Torre 2 — 120 m²" className={inpCls} /></div>
+            <div><div className={labCls}>Monto cubicado (RD$)</div><input type="number" value={monto} onChange={e => setMonto(e.target.value)} placeholder="0.00" className={inpCls} /></div>
+            {contactos.length > 0 && (
+              <div><div className={labCls}>Cliente / contacto</div>
+                <select value={contactoId} onChange={e => elegir(e.target.value)} className={inpCls}>
+                  <option value="">— Escribir manual —</option>
+                  {contactos.map(c => <option key={c.id} value={c.id}>{c.cargo ? `${c.cargo} — ` : ''}{c.email || c.nombre}</option>)}
+                </select></div>
+            )}
+            <div><div className={labCls}>Nombre del cliente</div><input value={clienteNombre} onChange={e => setClienteNombre(e.target.value)} className={inpCls} /></div>
+            <div><div className={labCls}>Email</div><input value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="correo@cliente.com" className={inpCls} /></div>
+            {error && <div className="text-[11px] text-red-400 bg-red-900/20 border border-red-800 rounded-card p-2">{error}</div>}
+            <button onClick={generar} disabled={enviando} className="w-full bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-white rounded-card px-3 py-2.5 text-sm font-bold inline-flex items-center justify-center gap-2">
+              {enviando ? <><Loader2 className="w-4 h-4 animate-spin" /> Generando…</> : <><Send className="w-4 h-4" /> Generar y enviar</>}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

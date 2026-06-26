@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { ArrowLeft, FileUp, Loader2, Plus, Sparkles, Utensils, X } from 'lucide-react';
 import { formatRD, formatNum } from '../../lib/helpers/formato';
 import { extraerPDF, fileToBase64, cortarPDFaPrimerasPaginas } from '../../lib/helpers/pdf';
@@ -32,6 +32,10 @@ const buscarSistemaPorNombre = (sistemas, nombre) => {
 export default function NuevoProyecto({ personal, sistemas, clientes = [], contactos = [], proyectos = [], onCancelar, onCrear }) {
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState('');
+  // v8.27.x: guard anti doble/triple creación. Ref síncrono: bloquea el 2º clic
+  // ANTES de que React re-renderice (el race que creaba proyectos dobles).
+  const creandoRef = useRef(false);
+  const [creando, setCreando] = useState(false);
   const [extraido, setExtraido] = useState(null);
   // v8.17.64: archivo PDF original de la cotización para guardarlo al crear el proyecto
   const [pdfCotizacion, setPdfCotizacion] = useState(null);
@@ -155,7 +159,8 @@ export default function NuevoProyecto({ personal, sistemas, clientes = [], conta
     setCargando(false);
   };
 
-  const crear = () => {
+  const crear = async () => {
+    if (creandoRef.current) return; // ya hay una creación en curso → ignora clics extra
     if (!form.referenciaOdoo || !form.referenciaOdoo.trim()) { alert('⚠️ La Referencia Odoo es obligatoria. Ingresa el número de cotización/orden de Odoo.'); return; }
     // v8.17.80: bloqueo de duplicados — ya hay un proyecto con esa ref Odoo
     const refLimpia = form.referenciaOdoo.trim();
@@ -209,7 +214,16 @@ export default function NuevoProyecto({ personal, sistemas, clientes = [], conta
       // v8.10.23: fecha de aprobación = fecha actual de creación del proyecto (automática)
       fechaAprobacion: new Date().toISOString().split('T')[0],
     };
-    onCrear(payload);
+    creandoRef.current = true;
+    setCreando(true);
+    try {
+      await onCrear(payload);
+      // Éxito: normalmente el componente se desmonta (se cierra el form). No reseteamos.
+    } catch (e) {
+      creandoRef.current = false;
+      setCreando(false);
+      alert('No se pudo crear el proyecto: ' + (e?.message || e));
+    }
   };
 
   const totalM2 = form.areas.reduce((acc, a) => acc + (parseFloat(a.m2) || 0), 0);
@@ -273,15 +287,17 @@ export default function NuevoProyecto({ personal, sistemas, clientes = [], conta
             <div className="flex gap-2">
               <button onClick={() => setMostrarRevision(false)} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button>
               <button
+                disabled={creando}
                 onClick={() => {
+                  if (creandoRef.current) return;
                   setMostrarRevision(false);
                   setForm(f => ({ ...f, revisionConfirmada: true }));
                   // Disparar crear de nuevo
                   setTimeout(() => crear(), 50);
                 }}
-                className="flex-1 bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase py-3 flex items-center justify-center gap-2"
+                className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-600 text-white text-xs font-black uppercase py-3 flex items-center justify-center gap-2"
               >
-                ✓ Confirmar y crear todo
+                {creando ? 'Creando…' : '✓ Confirmar y crear todo'}
               </button>
             </div>
           </div>
@@ -533,7 +549,7 @@ export default function NuevoProyecto({ personal, sistemas, clientes = [], conta
             const puedeCrear = faltantes.length === 0;
             return (
               <div className="flex-1 flex flex-col gap-1">
-                <button onClick={crear} disabled={!puedeCrear} className="w-full bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-600 text-white font-black uppercase py-4">Crear</button>
+                <button onClick={crear} disabled={!puedeCrear || creando} className="w-full bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-600 text-white font-black uppercase py-4">{creando ? 'Creando…' : 'Crear'}</button>
                 {!puedeCrear && <div className="text-[10px] text-yellow-400 text-center">Falta: {faltantes.join(', ')}</div>}
                 {puedeCrear && (!form.supervisorId || !form.maestroId) && <div className="text-[10px] text-zinc-500 text-center">💡 Puedes asignar supervisor/maestro después</div>}
               </div>

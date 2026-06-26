@@ -384,8 +384,10 @@ function ModalNuevaActa({ proyecto, usuario, contactos = [], pendientes = [], en
     if (tipo === 'entrega_area' && areaIdsSel.length === 0) { setError('Selecciona al menos un área a entregar.'); return; }
     setEnviando(true);
     try {
-      const nombresAreas = (tipo === 'entrega_area' ? areaIdsSel : areas.map(a => a.id))
-        .map(id => areas.find(a => a.id === id)?.nombre).filter(Boolean).join(', ');
+      const _nombres = (tipo === 'entrega_area' ? areaIdsSel : areas.map(a => a.id))
+        .map(id => areas.find(a => a.id === id)?.nombre).filter(Boolean);
+      const nombresAreas = _nombres.join(', ');
+      const areaTexto = _nombres.map(n => '• ' + n).join('\n'); // una por línea en el recuadro DocuSeal
       const { urlFirmante } = await db.crearActaProyecto({
         tipo,
         proyectoId: proyecto.id,
@@ -401,7 +403,7 @@ function ModalNuevaActa({ proyecto, usuario, contactos = [], pendientes = [], en
           ref_cotizacion: proyecto.referenciaOdoo || '',
           trabajo: proyecto.nombre || '',
           ubicacion: proyecto.ubicacionDireccionTexto || '',
-          area: nombresAreas,
+          area: areaTexto,
         },
       });
       setResultado({ urlFirmante, canal, telefono: telefono.trim(), ccNombres });

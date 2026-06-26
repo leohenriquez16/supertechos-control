@@ -73,11 +73,29 @@ export async function POST(req) {
       }), { status: 503 });
     }
 
+    // Correo de DocuSeal personalizado según lo que se envía (membretado Super Techos).
+    const refTxt = docusealValues?.ref_cotizacion || proyectoId;
+    const DOC = {
+      entrega_proyecto: { que: 'Acta de Entrega', det: 'el acta de entrega de su obra' },
+      entrega_area:     { que: 'Acta de Entrega', det: 'el acta de entrega de las áreas indicadas de su obra' },
+      carta_garantia:   { que: 'Carta de Garantía', det: 'la carta de garantía de su obra' },
+      cubicacion:       { que: 'Cubicación', det: 'la cubicación del avance de su obra' },
+    }[tipo] || { que: 'Documento', det: 'el documento' };
+    const mensaje = {
+      subject: `Super Techos — ${DOC.que} para su firma${refTxt ? ` (${refTxt})` : ''}`,
+      body: `<p>Estimado/a <b>{{submitter.name}}</b>,</p>`
+        + `<p>Desde <b>Super Techos</b> le compartimos ${DOC.det} para su revisión y <b>firma electrónica</b>.</p>`
+        + `<p>Por favor haga clic en el botón para abrirlo y firmarlo desde su celular o computadora. Al firmar recibirá una copia firmada para sus archivos.</p>`
+        + `<p>{{submitter.link}}</p>`
+        + `<p>Gracias por su confianza.<br/><b>Super Techos</b> · Control de Obras</p>`,
+    };
+
     // Crear submission en DocuSeal
     let submission;
     try {
       submission = await crearSubmission({
         templateId,
+        mensaje,
         submitter: {
           email: cliente.email || `${proyectoId}@no-email.local`, // DocuSeal exige email; si solo hay teléfono, usamos placeholder
           name: cliente.nombre,

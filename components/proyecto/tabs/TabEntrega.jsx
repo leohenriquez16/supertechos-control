@@ -160,8 +160,11 @@ function ModalNuevaActa({ proyecto, usuario, contactos = [], pendientes = [], en
   const toggleArea = (id) => setAreaIdsSel(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
   const toggleCc = (id) => setCcIds(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
 
+  // Muchos contactos traen la EMPRESA en "nombre"; lo que identifica a la persona
+  // es el cargo y el email. Etiqueta legible para distinguirlos.
+  const etiqCto = (c) => c ? (c.cargo ? `${c.cargo} · ${c.email || c.whatsapp || c.telefono || ''}`.trim().replace(/·\s*$/, '') : (c.email || c.nombre)) : '';
   const ccEmails = ccIds.map(id => contactos.find(c => c.id === id)?.email).filter(Boolean);
-  const ccNombres = ccIds.map(id => contactos.find(c => c.id === id)?.nombre).filter(Boolean);
+  const ccNombres = ccIds.map(id => etiqCto(contactos.find(c => c.id === id))).filter(Boolean);
 
   const generar = async () => {
     setError('');
@@ -262,7 +265,7 @@ function ModalNuevaActa({ proyecto, usuario, contactos = [], pendientes = [], en
                 <div className={labCls}>Quién firma (contacto del cliente)</div>
                 <select value={contactoId} onChange={e => elegirContacto(e.target.value)} className={inpCls}>
                   <option value="">— Escribir manual —</option>
-                  {contactos.map(c => <option key={c.id} value={c.id}>{c.nombre}{c.cargo ? ` · ${c.cargo}` : ''}{(c.whatsapp || c.telefono) ? ` · 📱` : ''}{c.email ? ` · ✉️` : ''}</option>)}
+                  {contactos.map(c => <option key={c.id} value={c.id}>{c.cargo ? `${c.cargo} — ` : ''}{c.email || c.whatsapp || c.telefono || c.nombre}</option>)}
                 </select>
               </div>
             )}
@@ -289,7 +292,7 @@ function ModalNuevaActa({ proyecto, usuario, contactos = [], pendientes = [], en
                 <div className={labCls}>Copia a (opcional · reciben aviso, no firman)</div>
                 <div className="flex flex-wrap gap-1.5">
                   {contactos.filter(c => c.id !== contactoId && c.email).map(c => (
-                    <button key={c.id} onClick={() => toggleCc(c.id)} className={`text-[11px] rounded-card px-2 py-1 border ${ccIds.includes(c.id) ? 'bg-blue-600/20 border-blue-600 text-blue-200' : 'bg-zinc-900 border-zinc-800 text-zinc-400'}`}>{c.nombre}</button>
+                    <button key={c.id} title={`${c.nombre}${c.email ? ' · ' + c.email : ''}`} onClick={() => toggleCc(c.id)} className={`text-[11px] rounded-card px-2 py-1 border ${ccIds.includes(c.id) ? 'bg-blue-600/20 border-blue-600 text-blue-200' : 'bg-zinc-900 border-zinc-800 text-zinc-400'}`}>{etiqCto(c)}</button>
                   ))}
                 </div>
               </div>

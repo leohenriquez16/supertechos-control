@@ -83,6 +83,7 @@ import VistaContabilidad from '../components/contabilidad/VistaContabilidad';
 import VistaNomina from '../components/nomina/VistaNomina';
 // v8.19.1: Módulo Levantamientos (surveys)
 import ModuloSurveys from '../components/surveys/ModuloSurveys';
+import ModuloSolicitudes from '../components/solicitudes/ModuloSolicitudes';
 import VistaGarantias from '../components/garantias/VistaGarantias';
 import ModuloReclamaciones from '../components/reclamaciones/ModuloReclamaciones';
 import ModuloGotera from '../components/soporte/ModuloGotera';
@@ -574,6 +575,7 @@ export default function App() {
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, vista: 'dashboard' },
       { id: 'proyectos', label: 'Proyectos', icon: Briefcase, vista: 'proyectos', esProyectos: true },
       { id: 'surveys', label: 'Levantamientos', icon: MapPin, vista: 'surveys' },
+      { id: 'solicitudes', label: 'Solicitudes', icon: FileText, vista: 'solicitudes' },
       { id: 'citas', label: 'Citas', icon: Calendar, vista: 'citas' },
       { id: 'reclamaciones', label: 'Reclamaciones', icon: AlertTriangle, vista: 'reclamaciones' },
       { id: 'planificacion', label: 'Planificación', icon: Calendar, vista: 'planificacion' },
@@ -735,6 +737,7 @@ export default function App() {
         {vista === 'miProduccion' && tieneRol(usuario, 'maestro') && <VistaMiProduccion usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'miCajaChica' && (tieneRol(usuario, 'maestro') || tieneRol(usuario, 'supervisor')) && usuario.cajaChicaHabilitada && <VistaMiCajaChica usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} />}
         {vista === 'surveys' && (esAdmin || tieneRol(usuario, 'supervisor')) && <ModuloSurveys usuario={usuario} data={data} onRecargar={recargar} />}
+        {vista === 'solicitudes' && (esAdmin || tieneRol(usuario, 'supervisor')) && <ModuloSolicitudes usuario={usuario} onRecargar={recargar} />}
         {/* v8.27.0: Gotera — disponible para TODOS los usuarios (reportar); owner/admin ven el kanban completo */}
         {vista === 'gotera' && <ModuloGotera usuario={usuario} data={data} onVolver={() => setVista(esAdmin ? 'dashboard' : 'misProyectos')} />}
         {vista === 'cajaChica' && esAdmin && <VistaCajaChicaAdmin usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onIrAProveedores={() => setVista('proveedoresCajaChica')} onIrACategorias={() => setVista('categoriasCajaChica')} />}

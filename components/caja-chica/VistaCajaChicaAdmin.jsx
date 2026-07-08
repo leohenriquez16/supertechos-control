@@ -126,7 +126,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
     setLoading(true);
     try {
       const [movs, sal, cd] = await Promise.all([
-        db.listarMovimientosCajaChica({}),
+        db.listarMovimientosCajaChica({ ordenarPor: 'created_at' }), // v8.27.26: recién subido primero
         db.obtenerSaldoCajaChica(),
         db.obtenerConfigDieta().catch(() => null), // v8.17.29
       ]);

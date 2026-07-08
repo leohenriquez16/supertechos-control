@@ -32,7 +32,7 @@ export default function VistaMiCajaChica({ usuario, data, onVolver }) {
     setLoading(true);
     try {
       const [movs, sal, cd] = await Promise.all([
-        db.listarMovimientosCajaChica({ personaId: usuario.id }),
+        db.listarMovimientosCajaChica({ personaId: usuario.id, ordenarPor: 'created_at' }), // v8.27.26: recién subido primero
         db.obtenerSaldoCajaChica(usuario.id),
         db.obtenerConfigDieta().catch(() => null), // v8.17.29
       ]);

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Loader2, UserCircle } from 'lucide-react';
+import { Loader2, UserCircle, UserPlus } from 'lucide-react';
 import * as db from '../../../lib/db';
 import { formatRD, formatFechaCorta, formatNum } from '../../../lib/helpers/formato';
 import { getM2Reporte } from '../../../lib/helpers/calculos';
@@ -9,10 +9,15 @@ import { getM2Reporte } from '../../../lib/helpers/calculos';
 // Helper local (también está en page.jsx)
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 
-export default function TabEquipoProyecto({ proyecto, data, sistema }) {
+export default function TabEquipoProyecto({ proyecto, data, sistema, usuario, esAdmin, onActualizarProyecto, onRecargar }) {
   const [jornadas, setJornadas] = useState([]);
   const [costosDia, setCostosDia] = useState([]);
   const [loading, setLoading] = useState(true);
+  // v8.27.26 (ticket Miguel H. #9): el supervisor del proyecto (o admin) puede
+  // agregar/quitar operarios sin esperar al admin, para agilizar el reporte diario.
+  const [guardando, setGuardando] = useState(false);
+  const [mostrarAgregar, setMostrarAgregar] = useState(false);
+  const puedeEditar = !!onActualizarProyecto && (esAdmin || (usuario && proyecto.supervisorId === usuario.id));
 
   useEffect(() => {
     (async () => {
@@ -36,6 +41,22 @@ export default function TabEquipoProyecto({ proyecto, data, sistema }) {
   if (supervisor) miembros.push({ persona: supervisor, rol: 'Supervisor' });
   if (maestro) miembros.push({ persona: maestro, rol: 'Maestro' });
   ayudantes.forEach(a => miembros.push({ persona: a, rol: 'Ayudante' }));
+
+  // v8.27.26: operarios (ayudantes) disponibles para agregar al equipo — todos los de
+  // rol ayudante que no sean ya el maestro/supervisor del proyecto.
+  const operariosDisponibles = (data.personal || [])
+    .filter(p => (p.roles || []).includes('ayudante') && p.id !== proyecto.maestroId && p.id !== proyecto.supervisorId)
+    .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+  const toggleAyudante = async (pid) => {
+    const actuales = proyecto.ayudantesIds || [];
+    const nuevos = actuales.includes(pid) ? actuales.filter(x => x !== pid) : [...actuales, pid];
+    setGuardando(true);
+    try {
+      await onActualizarProyecto({ ...proyecto, ayudantesIds: nuevos });
+      if (onRecargar) await onRecargar();
+    } catch (e) { alert('Error: ' + (e.message || e)); }
+    setGuardando(false);
+  };
 
   const reportesProy = data.reportes.filter(r => r.proyectoId === proyecto.id);
   const m2Total = reportesProy.reduce((s, r) => s + getM2Reporte(r, sistema), 0);
@@ -81,6 +102,34 @@ export default function TabEquipoProyecto({ proyecto, data, sistema }) {
           );
         })}
       </div>
+
+      {/* v8.27.26 (#9): el supervisor/admin agrega o quita operarios sin esperar al admin */}
+      {puedeEditar && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 space-y-2">
+          <button onClick={() => setMostrarAgregar(v => !v)} disabled={guardando}
+            className="w-full flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-wider text-red-400 hover:text-red-300 disabled:opacity-60">
+            {guardando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserPlus className="w-3.5 h-3.5" />}
+            {mostrarAgregar ? 'Cerrar' : 'Agregar / quitar operarios'}
+          </button>
+          {mostrarAgregar && (
+            <div className="space-y-1 max-h-72 overflow-auto pt-1 border-t border-zinc-800">
+              <div className="text-[10px] text-zinc-500 mb-1">Marca los operarios que trabajan en este proyecto. Se guarda al instante.</div>
+              {operariosDisponibles.length === 0 && <div className="text-[10px] text-zinc-500 italic">No hay operarios (rol ayudante) registrados.</div>}
+              {operariosDisponibles.map(p => {
+                const on = (proyecto.ayudantesIds || []).includes(p.id);
+                return (
+                  <label key={p.id} className={`flex items-center gap-2 border rounded-card p-2 cursor-pointer ${on ? 'border-red-700 bg-red-600/10' : 'border-zinc-800 bg-zinc-950 hover:border-zinc-700'}`}>
+                    <input type="checkbox" checked={on} disabled={guardando} onChange={() => toggleAyudante(p.id)} className="w-4 h-4 accent-red-600" />
+                    <span className="text-sm flex-1 min-w-0 truncate">{p.nombre}</span>
+                    {on && <span className="text-[9px] text-red-400 uppercase font-bold">en el equipo</span>}
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {jornadas.length > 0 && (
         <div>
           <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2">Jornadas ({jornadas.length})</div>

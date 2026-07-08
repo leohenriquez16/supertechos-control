@@ -8169,6 +8169,9 @@ function FormReporte({ usuario, proyecto, reportes, sistema, sistemas, estadosAr
 
   const completar = async () => {
     if (m2Rest <= 0 || guardando) return;
+    // v8.27.25 (ticket Miguel H.): confirmar antes de aplicar TODO el metraje pendiente
+    // y dar la tarea por finalizada — evita marcarla completa por error al tocar la barra.
+    if (!confirm(`¿Confirmas que COMPLETASTE la tarea "${tarea.nombre}" en "${area.nombre}"?\n\nSe registrarán los ${formatNum(m2Rest)} m² restantes y la tarea quedará FINALIZADA.`)) return;
     let vals = tarea.reporta === 'rollos' ? { rollos: m2Rest / 8.5 } : { m2: m2Rest };
     setGuardando(true);
     await onGuardar(construir(vals), fotos);
@@ -8339,6 +8342,8 @@ function FormReporteLote({ usuario, proyecto, reportes, sistema, sistemas, estad
   };
   const completarRestante = () => {
     if (!area || !tarea || m2Rest <= 0) return;
+    // v8.27.25 (ticket Miguel H.): confirmar antes de agregar todo el pendiente (completa la tarea).
+    if (!confirm(`¿Agregar los ${formatNum(m2Rest)} m² restantes de "${tarea.nombre}"? Esto completa la tarea.`)) return;
     if (tarea.reporta === 'rollos') pushLinea({ rollos: m2Rest / 8.5 }); else pushLinea({ m2: m2Rest });
   };
   const quitarLinea = (i) => setLineas(lineas.filter((_, x) => x !== i));

@@ -59,6 +59,7 @@ export default function WizardOnboarding({ usuario, onListo }) {
 
   const [datos, setDatos] = useState({
     cedulaNumero: usuario.cedulaNumero || '',
+    tipoDocumento: usuario.tipoDocumento || 'cedula', // v8.27.25: 'cedula' | 'pasaporte' (Caso Onix, sin cédula)
     fechaNacimiento: usuario.fechaNacimiento || '',
     direccion: usuario.direccion || '',
     tipoSangre: usuario.tipoSangre || '',
@@ -123,8 +124,13 @@ export default function WizardOnboarding({ usuario, onListo }) {
 
   const validarPaso = (p) => {
     if (p === 2) {
-      const ced = datos.cedulaNumero.replace(/\D/g, '');
-      if (ced.length !== 11) return 'La cédula debe tener 11 dígitos.';
+      // v8.27.25: acepta pasaporte para quien no tiene cédula (ej. maestros extranjeros).
+      if (datos.tipoDocumento === 'pasaporte') {
+        if ((datos.cedulaNumero || '').trim().replace(/\s/g, '').length < 5) return 'El pasaporte debe tener al menos 5 caracteres.';
+      } else {
+        const ced = datos.cedulaNumero.replace(/\D/g, '');
+        if (ced.length !== 11) return 'La cédula debe tener 11 dígitos.';
+      }
       if (!datos.fechaNacimiento) return 'Fecha de nacimiento requerida.';
       const edad = (Date.now() - new Date(datos.fechaNacimiento).getTime()) / (1000 * 60 * 60 * 24 * 365.25);
       if (edad < 16 || edad > 90) return 'Fecha de nacimiento no parece correcta.';
@@ -168,10 +174,14 @@ export default function WizardOnboarding({ usuario, onListo }) {
     if (guardando) return;
     setGuardando(true); setError('');
     try {
+      // v8.27.25: pasaporte no se limpia a solo-dígitos (mantiene letras).
+      const esPasaporte = datos.tipoDocumento === 'pasaporte';
+      const docGuardar = esPasaporte ? datos.cedulaNumero.trim().toUpperCase() : datos.cedulaNumero.replace(/\D/g, '');
       const titularNombre = datos.titularEsOtro ? datos.bancoTitularNombre : usuario.nombre;
-      const titularCedula = datos.titularEsOtro ? datos.bancoTitularCedula.replace(/\D/g, '') : datos.cedulaNumero.replace(/\D/g, '');
+      const titularCedula = datos.titularEsOtro ? datos.bancoTitularCedula.replace(/\D/g, '') : docGuardar;
       await db.completarOnboarding(usuario.id, {
-        cedulaNumero: datos.cedulaNumero.replace(/\D/g, ''),
+        cedulaNumero: docGuardar,
+        tipoDocumento: datos.tipoDocumento,
         fechaNacimiento: datos.fechaNacimiento,
         direccion: datos.direccion.trim(),
         tipoSangre: datos.tipoSangre || null,
@@ -193,7 +203,8 @@ export default function WizardOnboarding({ usuario, onListo }) {
       onListo({
         ...usuario,
         onboardingCompletado: true,
-        cedulaNumero: datos.cedulaNumero.replace(/\D/g, ''),
+        cedulaNumero: docGuardar,
+        tipoDocumento: datos.tipoDocumento,
         fechaNacimiento: datos.fechaNacimiento,
         direccion: datos.direccion.trim(),
         whatsapp: datos.whatsapp,
@@ -314,17 +325,31 @@ function PasoBienvenida({ usuario }) {
 }
 
 function PasoDatosPersonales({ datos, set }) {
+  const esPasaporte = datos.tipoDocumento === 'pasaporte';
   return (
     <div className="space-y-3">
       <h2 className="text-lg font-black mb-1">Tus datos</h2>
-      <Field label="Cédula">
+      {/* v8.27.25: tipo de documento — permite pasaporte a quien no tiene cédula */}
+      <Field label="Tipo de documento">
+        <div className="grid grid-cols-2 gap-2">
+          {[['cedula', 'Cédula'], ['pasaporte', 'Pasaporte']].map(([v, lbl]) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => set('tipoDocumento', v)}
+              className={`py-2 border-2 text-sm font-bold uppercase ${datos.tipoDocumento === v ? 'border-red-600 bg-red-600/10 text-white' : 'border-zinc-700 bg-zinc-950 text-zinc-400'}`}
+            >{lbl}</button>
+          ))}
+        </div>
+      </Field>
+      <Field label={esPasaporte ? 'Pasaporte' : 'Cédula'}>
         <input
           type="text"
-          inputMode="numeric"
+          inputMode={esPasaporte ? 'text' : 'numeric'}
           autoFocus
-          value={formatearCedula(datos.cedulaNumero)}
-          onChange={e => set('cedulaNumero', e.target.value)}
-          placeholder="402-1234567-8"
+          value={esPasaporte ? (datos.cedulaNumero || '') : formatearCedula(datos.cedulaNumero)}
+          onChange={e => set('cedulaNumero', esPasaporte ? e.target.value.toUpperCase() : e.target.value)}
+          placeholder={esPasaporte ? 'Ej. RD1234567' : '402-1234567-8'}
           className="w-full bg-zinc-950 border border-zinc-700 focus:border-red-600 outline-none px-3 py-3 text-white tracking-wider"
         />
       </Field>

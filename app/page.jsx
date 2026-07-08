@@ -4919,7 +4919,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
       {tab === 'info' && <TabInfo proyecto={proyecto} clientes={data.clientes || []} contactos={data.contactos || []} documentos={data.documentos || []} sistemas={data.sistemas || {}} usuario={usuario} personal={data.personal} esAdmin={esAdmin} esSupervisor={esSupervisor} onRecargar={onRecargar} />}
       {/* v8.19.13: removida rama muerta `tab === 'jornada'` (sin botón, inalcanzable). */}
       {tab === 'asistencia' && <TabAsistencia usuario={usuario} proyecto={proyecto} personal={data.personal} checkins={data.checkins || []} esAdmin={esAdmin} onActualizarProyecto={onActualizarProyecto} onRecargar={onRecargar} onEliminarJornada={onEliminarJornada} TabJornada={TabJornada} />}
-      {tab === 'equipo' && <TabEquipoProyecto proyecto={proyecto} data={data} sistema={sistema} />}
+      {tab === 'equipo' && <TabEquipoProyecto proyecto={proyecto} data={data} sistema={sistema} usuario={usuario} esAdmin={esAdmin} onActualizarProyecto={onActualizarProyecto} onRecargar={onRecargar} />}
       {tab === 'fotos' && <TabFotos usuario={usuario} proyecto={proyecto} />}
       {tab === 'cronograma' && (esAdmin || proyecto.cronogramaVisibleMaestro !== false) && <TabCronograma proyecto={proyecto} porcentajeActual={porcentaje} onActualizarProyecto={onActualizarProyecto} esSupervisor={esSupervisor} reportes={data.reportes} sistema={sistema} sistemas={data.sistemas} />}
       {tab === 'unidades' && proyecto.tipoAvance === 'unidades' && <TabUnidades proyecto={proyecto} usuario={usuario} onActualizarProyecto={onActualizarProyecto} esAdmin={esAdmin} esSupervisor={esSupervisor} onRecargar={onRecargar} />}

@@ -383,7 +383,20 @@ export default function ModalReportarGasto({ usuario, proyectos = [], proyectoId
             )}
 
             <div className="grid grid-cols-2 gap-3">
-              <Campo label="Fecha"><Input type="date" value={datos.fecha} onChange={v => setDatos({ ...datos, fecha: v })} /></Campo>
+              <Campo label="Fecha">
+                <Input type="date" value={datos.fecha} onChange={v => setDatos({ ...datos, fecha: v })} />
+                {/* v8.27.26: alerta si la fecha leída por la IA es sospechosa (año/día muy viejo) —
+                    evita que la factura "desaparezca" por quedar fuera del período o hundida en la lista. */}
+                {(() => {
+                  if (!datos.fecha) return null;
+                  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+                  const f = new Date(datos.fecha + 'T00:00:00');
+                  const dias = Math.round((hoy - f) / 86400000);
+                  if (dias > 45) return <div className="text-[10px] text-amber-400 mt-0.5">⚠ Fecha con {dias} días de antigüedad — revisa que el año/día estén bien (la IA a veces lee mal la fecha).</div>;
+                  if (dias < -2) return <div className="text-[10px] text-amber-400 mt-0.5">⚠ Fecha en el futuro — verifícala.</div>;
+                  return null;
+                })()}
+              </Campo>
               <Campo label="Monto RD$">
                 <input
                   type="number"

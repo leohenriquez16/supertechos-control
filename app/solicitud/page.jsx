@@ -196,7 +196,7 @@ export default function SolicitudPage() {
 
               <div className={'fl' + (err.cliente_nombre ? ' er' : '')}>
                 <label className="lb" htmlFor="nom">Nombre o empresa <span className="rq">*</span></label>
-                <input id="nom" value={f.cliente_nombre || ''} onChange={set('cliente_nombre')} placeholder="Ej. Constructora Rizek / Juan Pérez" />
+                <input id="nom" value={f.cliente_nombre || ''} onChange={set('cliente_nombre')} placeholder="Ej. Constructora Pérez / Juan Pérez" />
                 <div className="em">Escribe tu nombre o el de la empresa.</div>
               </div>
 

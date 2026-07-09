@@ -417,6 +417,7 @@ export default function App() {
   const [syncing, setSyncing] = useState(false);
   const [perfilViendo, setPerfilViendo] = useState(null);
   const [tareas, setTareas] = useState([]);
+  const [solicitudesNuevas, setSolicitudesNuevas] = useState(0); // badge del menú "Solicitudes"
   const [jornadasHoy, setJornadasHoy] = useState([]);
   const [sidebarAbierta, setSidebarAbierta] = useState(false);
   const [modalOdooAbierto, setModalOdooAbierto] = useState(false); // v8.10.23: modal importar Odoo
@@ -526,6 +527,20 @@ export default function App() {
     return () => window.removeEventListener('recargarDatos', handler);
   }, [usuario]);
 
+  // Badge del menú "Solicitudes": conteo de solicitudes nuevas (formulario público).
+  // Solo admin/supervisor; refresca al entrar, al navegar y cada 60s.
+  useEffect(() => {
+    if (!usuario) return;
+    if (!(tieneRol(usuario, 'admin') || tieneRol(usuario, 'supervisor'))) return;
+    let vivo = true;
+    const traer = async () => {
+      try { const r = await fetch('/api/solicitudes/count'); const j = await r.json(); if (vivo) setSolicitudesNuevas(j.nuevas || 0); } catch {}
+    };
+    traer();
+    const id = setInterval(traer, 60000);
+    return () => { vivo = false; clearInterval(id); };
+  }, [usuario, vista]);
+
   const withSync = async (fn) => {
     setSyncing(true);
     try {
@@ -575,7 +590,7 @@ export default function App() {
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, vista: 'dashboard' },
       { id: 'proyectos', label: 'Proyectos', icon: Briefcase, vista: 'proyectos', esProyectos: true },
       { id: 'surveys', label: 'Levantamientos', icon: MapPin, vista: 'surveys' },
-      { id: 'solicitudes', label: 'Solicitudes', icon: FileText, vista: 'solicitudes' },
+      { id: 'solicitudes', label: 'Solicitudes', icon: FileText, vista: 'solicitudes', badge: solicitudesNuevas },
       { id: 'citas', label: 'Citas', icon: Calendar, vista: 'citas' },
       { id: 'reclamaciones', label: 'Reclamaciones', icon: AlertTriangle, vista: 'reclamaciones' },
       { id: 'planificacion', label: 'Planificación', icon: Calendar, vista: 'planificacion' },

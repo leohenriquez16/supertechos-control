@@ -114,7 +114,9 @@ export async function POST(request) {
   try {
     const { data: personas } = await db.from('personal').select('email, roles').not('email', 'is', null);
     const esAdmin = (r) => Array.isArray(r) ? r.includes('admin') : (typeof r === 'string' && r.includes('admin'));
-    const destinatarios = (personas || []).filter((p) => esAdmin(p.roles)).map((p) => p.email).filter(Boolean);
+    // Edwin siempre recibe el aviso de solicitud nueva (garantizado, aunque cambie de rol).
+    const EDWIN = 'eparra@supertechos.com.do';
+    const destinatarios = [...new Set([EDWIN, ...(personas || []).filter((p) => esAdmin(p.roles)).map((p) => p.email).filter(Boolean)])];
     if (destinatarios.length) {
       const origin = new URL(request.url).origin;
       const html = `<h2>Nueva solicitud de levantamiento</h2>

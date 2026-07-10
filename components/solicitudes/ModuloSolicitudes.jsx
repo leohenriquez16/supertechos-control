@@ -3,7 +3,7 @@
 // (service_role, porque la tabla tiene RLS ON). El admin revisa, aprueba (crea/enlaza
 // cliente + locación + levantamiento) o descarta.
 import { useState, useEffect, useCallback } from 'react';
-import { Loader2, MapPin, Phone, Mail, Camera, CheckCircle2, X, ExternalLink, Inbox } from 'lucide-react';
+import { Loader2, MapPin, Phone, Mail, Camera, CheckCircle2, X, ExternalLink, Inbox, Eye, Save } from 'lucide-react';
 
 const TABS = [
   { k: 'nueva', label: 'Nuevas' },
@@ -16,6 +16,9 @@ export default function ModuloSolicitudes({ usuario, onRecargar }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(null);
+  const [abierta, setAbierta] = useState(null); // solicitud en detalle/edición
+  const [edit, setEdit] = useState({});
+  const [guardando, setGuardando] = useState(false);
 
   const cargar = useCallback(async (estado) => {
     setLoading(true);
@@ -29,17 +32,48 @@ export default function ModuloSolicitudes({ usuario, onRecargar }) {
 
   useEffect(() => { cargar(tab); }, [tab, cargar]);
 
-  const aprobar = async (s) => {
-    const quien = s.cliente_existente ? `la locación se agregará al cliente existente "${s.cliente_existente.nombre}"` : `se creará el cliente nuevo "${s.cliente_nombre}"`;
-    if (!confirm(`Aprobar ${s.ticket}: ${quien}, se creará la locación y el levantamiento en el Kanban. ¿Continuar?`)) return;
-    setBusy(s.id);
+  const CAMPOS_EDIT = ['cliente_nombre', 'rnc', 'tipo_id', 'contacto_telefono', 'contacto_email', 'direccion', 'punto_referencia', 'locacion_nombre', 'recibe_nombre', 'recibe_telefono', 'recibe_cargo', 'tipo_servicio', 'tipo_inmueble', 'area_aprox', 'acceso_techo', 'descripcion', 'urgencia', 'preferencia_visita', 'referencia_previa'];
+  const abrir = (s) => { const e = {}; CAMPOS_EDIT.forEach((k) => { e[k] = s[k] ?? ''; }); setEdit(e); setAbierta(s); };
+  const setCampo = (k) => (ev) => setEdit((p) => ({ ...p, [k]: ev.target.value }));
+  const campo = (label, k, opts = {}) => (
+    <label className="block">
+      <span className="text-[10px] uppercase tracking-wide text-zinc-500 font-bold">{label}</span>
+      {opts.textarea
+        ? <textarea value={edit[k] ?? ''} onChange={setCampo(k)} rows={opts.rows || 3}
+            className="w-full mt-1 bg-zinc-950 border border-zinc-700 rounded px-2.5 py-2 text-sm text-white focus:border-red-600 outline-none" />
+        : opts.select
+          ? <select value={edit[k] ?? ''} onChange={setCampo(k)}
+              className="w-full mt-1 bg-zinc-950 border border-zinc-700 rounded px-2.5 py-2 text-sm text-white focus:border-red-600 outline-none">
+              {opts.select.map((o) => <option key={o} value={o}>{o}</option>)}
+            </select>
+          : <input value={edit[k] ?? ''} onChange={setCampo(k)}
+              className="w-full mt-1 bg-zinc-950 border border-zinc-700 rounded px-2.5 py-2 text-sm text-white focus:border-red-600 outline-none" />}
+    </label>
+  );
+
+  const guardar = async () => {
+    setGuardando(true);
     try {
-      const r = await fetch('/api/solicitudes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: s.id, accion: 'aprobar', usuarioId: usuario?.id }) });
+      const r = await fetch('/api/solicitudes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: abierta.id, accion: 'guardar', cambios: edit, usuarioId: usuario?.id }) });
       const j = await r.json();
-      if (j.ok) { alert(`Aprobada. Levantamiento ${s.ticket} creado en el Kanban.`); cargar(tab); onRecargar && onRecargar(); }
+      if (j.ok) { await cargar(tab); setAbierta(null); } else alert('No se pudo guardar: ' + (j.error || 'error'));
+    } catch { alert('Error de conexión.'); }
+    setGuardando(false);
+  };
+
+  const aprobar = async (s, cambios) => {
+    const quien = s.cliente_existente ? `la locación se agregará al cliente existente "${s.cliente_existente.nombre}"` : `se creará el cliente nuevo "${(cambios?.cliente_nombre) || s.cliente_nombre}"`;
+    if (!confirm(`Aprobar ${s.ticket}: ${quien}, se creará la locación y el levantamiento en el Kanban. ¿Continuar?`)) return;
+    setBusy(s.id); setGuardando(true);
+    try {
+      const body = { id: s.id, accion: 'aprobar', usuarioId: usuario?.id };
+      if (cambios) body.cambios = cambios;
+      const r = await fetch('/api/solicitudes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const j = await r.json();
+      if (j.ok) { alert(`Aprobada. Levantamiento ${s.ticket} creado en el Kanban.`); setAbierta(null); cargar(tab); onRecargar && onRecargar(); }
       else alert('No se pudo aprobar: ' + (j.error || 'error'));
     } catch { alert('Error de conexión.'); }
-    setBusy(null);
+    setBusy(null); setGuardando(false);
   };
 
   const descartar = async (s) => {
@@ -49,7 +83,7 @@ export default function ModuloSolicitudes({ usuario, onRecargar }) {
     try {
       const r = await fetch('/api/solicitudes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: s.id, accion: 'descartar', motivo, usuarioId: usuario?.id }) });
       const j = await r.json();
-      if (j.ok) cargar(tab); else alert('No se pudo descartar.');
+      if (j.ok) { setAbierta(null); cargar(tab); } else alert('No se pudo descartar.');
     } catch { alert('Error de conexión.'); }
     setBusy(null);
   };
@@ -124,22 +158,96 @@ export default function ModuloSolicitudes({ usuario, onRecargar }) {
 
               {s.referencia_previa && <div className="text-xs text-zinc-400 mt-2">Cotización previa declarada: <b>{s.referencia_previa}</b></div>}
 
-              {tab === 'nueva' ? (
-                <div className="flex gap-2 mt-4">
-                  <button onClick={() => aprobar(s)} disabled={busy === s.id}
-                    className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-2.5 rounded flex items-center justify-center gap-1.5">
-                    {busy === s.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} Aprobar
-                  </button>
-                  <button onClick={() => descartar(s)} disabled={busy === s.id}
-                    className="px-4 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-black uppercase py-2.5 rounded flex items-center gap-1.5"><X className="w-4 h-4" /> Descartar</button>
-                </div>
-              ) : tab === 'aprobada' ? (
-                <div className="text-xs text-green-400 mt-3 flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4" /> Aprobada · levantamiento {s.ticket} creado</div>
-              ) : (
-                <div className="text-xs text-zinc-500 mt-3">Descartada{s.motivo_descarte ? `: ${s.motivo_descarte}` : ''}</div>
-              )}
+              <div className="mt-4 space-y-2">
+                <button onClick={() => abrir(s)}
+                  className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold uppercase py-2 rounded flex items-center justify-center gap-1.5"><Eye className="w-4 h-4" /> Ver / editar todos los datos</button>
+                {tab === 'nueva' ? (
+                  <div className="flex gap-2">
+                    <button onClick={() => aprobar(s)} disabled={busy === s.id}
+                      className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-2.5 rounded flex items-center justify-center gap-1.5">
+                      {busy === s.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} Aprobar
+                    </button>
+                    <button onClick={() => descartar(s)} disabled={busy === s.id}
+                      className="px-4 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-black uppercase py-2.5 rounded flex items-center gap-1.5"><X className="w-4 h-4" /> Descartar</button>
+                  </div>
+                ) : tab === 'aprobada' ? (
+                  <div className="text-xs text-green-400 flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4" /> Aprobada · levantamiento {s.ticket} creado</div>
+                ) : (
+                  <div className="text-xs text-zinc-500">Descartada{s.motivo_descarte ? `: ${s.motivo_descarte}` : ''}</div>
+                )}
+              </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {abierta && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-start sm:items-center justify-center p-3 overflow-auto" onClick={() => setAbierta(null)}>
+          <div className="bg-zinc-900 border border-zinc-700 rounded-card w-full max-w-2xl my-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 sticky top-0 bg-zinc-900 rounded-t-card z-10">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-[10px] font-black bg-zinc-950 border border-zinc-700 text-zinc-300 px-2 py-0.5 rounded">{abierta.ticket}</span>
+                <span className="text-sm font-bold truncate">{edit.cliente_nombre || abierta.cliente_nombre}</span>
+                {abierta.cliente_existente
+                  ? <span className="text-[10px] font-bold bg-green-900/40 border border-green-700 text-green-300 px-2 py-0.5 rounded whitespace-nowrap">Cliente existente</span>
+                  : <span className="text-[10px] font-bold bg-amber-900/40 border border-amber-700 text-amber-300 px-2 py-0.5 rounded whitespace-nowrap">Cliente nuevo</span>}
+              </div>
+              <button onClick={() => setAbierta(null)} className="text-zinc-400 hover:text-white flex-none"><X className="w-5 h-5" /></button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              {tab === 'nueva' && <div className="text-xs text-zinc-400 bg-zinc-950 border border-zinc-800 rounded p-2.5">Revisa y corrige lo que haga falta. Al aprobar se crea el cliente/locación con <b>estos</b> datos.</div>}
+              <div>
+                <div className="text-[11px] uppercase tracking-widest text-red-400 font-bold mb-2">Cliente</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {campo('Nombre o empresa', 'cliente_nombre')}
+                  {campo('RNC / Cédula', 'rnc')}
+                  {campo('Tipo', 'tipo_id', { select: ['RNC', 'Cedula'] })}
+                  {campo('Teléfono', 'contacto_telefono')}
+                  {campo('Correo', 'contacto_email')}
+                </div>
+              </div>
+              <div>
+                <div className="text-[11px] uppercase tracking-widest text-red-400 font-bold mb-2">Locación</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {campo('Nombre de la locación', 'locacion_nombre')}
+                  {campo('Dirección', 'direccion')}
+                  {campo('Punto de referencia', 'punto_referencia')}
+                  {campo('Recibe — nombre', 'recibe_nombre')}
+                  {campo('Recibe — teléfono', 'recibe_telefono')}
+                  {campo('Recibe — cargo', 'recibe_cargo')}
+                </div>
+                {mapsUrl(abierta) && <a href={mapsUrl(abierta)} target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-300 text-xs inline-flex items-center gap-1 mt-2"><ExternalLink className="w-3 h-3" /> Ver ubicación en el mapa</a>}
+              </div>
+              <div>
+                <div className="text-[11px] uppercase tracking-widest text-red-400 font-bold mb-2">El trabajo</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {campo('Tipo de servicio', 'tipo_servicio')}
+                  {campo('Tipo de inmueble', 'tipo_inmueble')}
+                  {campo('Área aprox.', 'area_aprox')}
+                  {campo('Acceso al techo', 'acceso_techo')}
+                  {campo('Urgencia', 'urgencia')}
+                  {campo('Preferencia de visita', 'preferencia_visita')}
+                  {campo('Cotización previa (ST-C…)', 'referencia_previa')}
+                </div>
+                <div className="mt-3">{campo('Descripción', 'descripcion', { textarea: true })}</div>
+              </div>
+              {Array.isArray(abierta.fotos) && abierta.fotos.length > 0 && (
+                <div>
+                  <div className="text-[11px] uppercase tracking-widest text-red-400 font-bold mb-2">Fotos</div>
+                  <div className="flex gap-2 flex-wrap">{abierta.fotos.map((f, i) => f?.url && <a key={i} href={f.url} target="_blank" rel="noreferrer"><img src={f.url} alt="" className="w-20 h-20 object-cover rounded border border-zinc-800" /></a>)}</div>
+                </div>
+              )}
+            </div>
+
+            {tab === 'nueva' && (
+              <div className="flex flex-wrap gap-2 px-4 py-3 border-t border-zinc-800 sticky bottom-0 bg-zinc-900 rounded-b-card">
+                <button onClick={guardar} disabled={guardando} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold uppercase py-2.5 px-4 rounded flex items-center gap-1.5">{guardando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Guardar</button>
+                <button onClick={() => aprobar(abierta, edit)} disabled={guardando} className="flex-1 min-w-[160px] bg-green-600 hover:bg-green-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-2.5 rounded flex items-center justify-center gap-1.5"><CheckCircle2 className="w-4 h-4" /> Guardar y aprobar</button>
+                <button onClick={() => descartar(abierta)} disabled={guardando} className="px-4 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-black uppercase py-2.5 rounded flex items-center gap-1.5"><X className="w-4 h-4" /> Descartar</button>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

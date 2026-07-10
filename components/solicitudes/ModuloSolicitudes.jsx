@@ -4,7 +4,7 @@
 // cliente + locación + levantamiento) o descarta.
 import { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
-import { Loader2, MapPin, Phone, Mail, Camera, CheckCircle2, X, ExternalLink, Inbox, Eye, Save } from 'lucide-react';
+import { Loader2, MapPin, Phone, Mail, Camera, CheckCircle2, X, ExternalLink, Inbox, Save } from 'lucide-react';
 
 const MapaPicker = dynamic(() => import('../solicitud/MapaPicker'), { ssr: false });
 
@@ -117,7 +117,8 @@ export default function ModuloSolicitudes({ usuario, onRecargar }) {
       ) : (
         <div className="space-y-3">
           {items.map((s) => (
-            <div key={s.id} className="bg-zinc-900 border border-zinc-800 rounded-card p-4">
+            <div key={s.id} onClick={() => abrir(s)}
+              className="bg-zinc-900 border border-zinc-800 hover:border-zinc-600 rounded-card p-4 cursor-pointer transition-colors">
               <div className="flex items-start justify-between gap-3 flex-wrap">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -139,7 +140,7 @@ export default function ModuloSolicitudes({ usuario, onRecargar }) {
                 <div className="sm:col-span-2 flex items-start gap-1.5">
                   <MapPin className="w-3.5 h-3.5 text-zinc-500 flex-none mt-0.5" />
                   <span>{s.locacion_nombre ? <b>{s.locacion_nombre} — </b> : ''}{s.direccion || '(pin en mapa)'}{s.punto_referencia ? <span className="text-zinc-500"> · ref: {s.punto_referencia}</span> : ''}
-                    {mapsUrl(s) && <a href={mapsUrl(s)} target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-300 inline-flex items-center gap-0.5 ml-1"><ExternalLink className="w-3 h-3" />mapa</a>}</span>
+                    {mapsUrl(s) && <a href={mapsUrl(s)} onClick={(e) => e.stopPropagation()} target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-300 inline-flex items-center gap-0.5 ml-1"><ExternalLink className="w-3 h-3" />mapa</a>}</span>
                 </div>
               </div>
 
@@ -155,15 +156,13 @@ export default function ModuloSolicitudes({ usuario, onRecargar }) {
 
               {Array.isArray(s.fotos) && s.fotos.length > 0 && (
                 <div className="flex gap-2 mt-3 flex-wrap">
-                  {s.fotos.map((f, i) => f?.url && <a key={i} href={f.url} target="_blank" rel="noreferrer"><img src={f.url} alt="" className="w-16 h-16 object-cover rounded border border-zinc-800" /></a>)}
+                  {s.fotos.map((f, i) => f?.url && <a key={i} href={f.url} onClick={(e) => e.stopPropagation()} target="_blank" rel="noreferrer"><img src={f.url} alt="" className="w-16 h-16 object-cover rounded border border-zinc-800" /></a>)}
                 </div>
               )}
 
               {s.referencia_previa && <div className="text-xs text-zinc-400 mt-2">Cotización previa declarada: <b>{s.referencia_previa}</b></div>}
 
-              <div className="mt-4 space-y-2">
-                <button onClick={() => abrir(s)}
-                  className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold uppercase py-2 rounded flex items-center justify-center gap-1.5"><Eye className="w-4 h-4" /> Ver / editar todos los datos</button>
+              <div className="mt-4" onClick={(e) => e.stopPropagation()}>
                 {tab === 'nueva' ? (
                   <div className="flex gap-2">
                     <button onClick={() => aprobar(s)} disabled={busy === s.id}

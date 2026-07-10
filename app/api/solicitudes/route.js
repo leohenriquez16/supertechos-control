@@ -36,9 +36,31 @@ export async function POST(request) {
   const { id, accion } = b;
   if (!id || !accion) return Response.json({ ok: false, error: 'Faltan id/acción' }, { status: 400 });
 
-  const { data: sol } = await db.from('solicitudes_levantamiento').select('*').eq('id', id).maybeSingle();
+  let { data: sol } = await db.from('solicitudes_levantamiento').select('*').eq('id', id).maybeSingle();
   if (!sol) return Response.json({ ok: false, error: 'Solicitud no encontrada' }, { status: 404 });
   if (sol.estado !== 'nueva') return Response.json({ ok: false, error: 'Esta solicitud ya fue procesada.' }, { status: 409 });
+
+  // Campos que el admin puede corregir en la bandeja antes de guardar/aprobar.
+  const EDITABLES = ['cliente_nombre', 'rnc', 'tipo_id', 'contacto_telefono', 'contacto_email', 'direccion', 'punto_referencia', 'locacion_nombre', 'lat', 'lng', 'recibe_nombre', 'recibe_telefono', 'recibe_cargo', 'tipo_servicio', 'tipo_inmueble', 'area_aprox', 'acceso_techo', 'descripcion', 'urgencia', 'preferencia_visita', 'como_conocio', 'referencia_previa'];
+  const limpiarCambios = (c) => {
+    const out = {};
+    for (const k of EDITABLES) {
+      if (c && Object.prototype.hasOwnProperty.call(c, k)) {
+        let v = c[k];
+        if (k === 'lat' || k === 'lng') v = (v === '' || v == null) ? null : Number(v);
+        else if (typeof v === 'string') v = v.trim() || null;
+        out[k] = v;
+      }
+    }
+    return out;
+  };
+
+  // Guardar correcciones sin aprobar (queda en 'nueva').
+  if (accion === 'guardar') {
+    const upd = limpiarCambios(b.cambios || {});
+    if (Object.keys(upd).length) await db.from('solicitudes_levantamiento').update(upd).eq('id', id);
+    return Response.json({ ok: true });
+  }
 
   if (accion === 'descartar') {
     await db.from('solicitudes_levantamiento').update({
@@ -51,6 +73,14 @@ export async function POST(request) {
   if (accion !== 'aprobar') return Response.json({ ok: false, error: 'Acción inválida' }, { status: 400 });
 
   try {
+    // 0) Aplicar las correcciones del admin (si vienen) antes de crear los registros.
+    const upd = limpiarCambios(b.cambios || {});
+    if (Object.keys(upd).length) {
+      await db.from('solicitudes_levantamiento').update(upd).eq('id', id);
+      const { data: reread } = await db.from('solicitudes_levantamiento').select('*').eq('id', id).maybeSingle();
+      sol = reread || { ...sol, ...upd };
+    }
+
     // 1) Resolver / crear CLIENTE
     let clienteId = b.clienteId || null;
     if (!clienteId && sol.rnc) {

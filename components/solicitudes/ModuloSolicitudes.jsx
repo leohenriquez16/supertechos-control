@@ -185,9 +185,9 @@ export default function ModuloSolicitudes({ usuario, onRecargar }) {
       )}
 
       {abierta && (
-        <div className="fixed inset-0 z-50 bg-black/70 flex items-start sm:items-center justify-center p-3 overflow-auto" onClick={() => setAbierta(null)}>
-          <div className="bg-zinc-900 border border-zinc-700 rounded-card w-full max-w-4xl my-4" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 sticky top-0 bg-zinc-900 rounded-t-card z-10">
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-3" onClick={() => setAbierta(null)}>
+          <div className="bg-zinc-900 border border-zinc-700 rounded-card w-full max-w-4xl max-h-[92vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 bg-zinc-900 rounded-t-card flex-none">
               <div className="flex items-center gap-2 min-w-0">
                 <span className="text-[10px] font-black bg-zinc-950 border border-zinc-700 text-zinc-300 px-2 py-0.5 rounded">{abierta.ticket}</span>
                 <span className="text-sm font-bold truncate">{edit.cliente_nombre || abierta.cliente_nombre}</span>
@@ -198,7 +198,7 @@ export default function ModuloSolicitudes({ usuario, onRecargar }) {
               <button onClick={() => setAbierta(null)} className="text-zinc-400 hover:text-white flex-none"><X className="w-5 h-5" /></button>
             </div>
 
-            <div className="p-4 space-y-4">
+            <div className="p-4 space-y-4 flex-1 overflow-y-auto min-h-0">
               {tab === 'nueva' && <div className="text-xs text-zinc-400 bg-zinc-950 border border-zinc-800 rounded p-2.5">Revisa y corrige lo que haga falta. Al aprobar se crea el cliente/locación con <b>estos</b> datos.</div>}
               <div>
                 <div className="text-[11px] uppercase tracking-widest text-red-400 font-bold mb-2">Cliente</div>
@@ -250,7 +250,7 @@ export default function ModuloSolicitudes({ usuario, onRecargar }) {
             </div>
 
             {tab === 'nueva' && (
-              <div className="flex flex-wrap gap-2 px-4 py-3 border-t border-zinc-800 sticky bottom-0 bg-zinc-900 rounded-b-card">
+              <div className="flex flex-wrap gap-2 px-4 py-3 border-t border-zinc-800 bg-zinc-900 rounded-b-card flex-none">
                 <button onClick={guardar} disabled={guardando} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold uppercase py-2.5 px-4 rounded flex items-center gap-1.5">{guardando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Guardar</button>
                 <button onClick={() => aprobar(abierta, edit)} disabled={guardando} className="flex-1 min-w-[160px] bg-green-600 hover:bg-green-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-2.5 rounded flex items-center justify-center gap-1.5"><CheckCircle2 className="w-4 h-4" /> Guardar y aprobar</button>
                 <button onClick={() => descartar(abierta)} disabled={guardando} className="px-4 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-black uppercase py-2.5 rounded flex items-center gap-1.5"><X className="w-4 h-4" /> Descartar</button>

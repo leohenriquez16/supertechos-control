@@ -3,7 +3,10 @@
 // (service_role, porque la tabla tiene RLS ON). El admin revisa, aprueba (crea/enlaza
 // cliente + locación + levantamiento) o descarta.
 import { useState, useEffect, useCallback } from 'react';
+import dynamic from 'next/dynamic';
 import { Loader2, MapPin, Phone, Mail, Camera, CheckCircle2, X, ExternalLink, Inbox, Eye, Save } from 'lucide-react';
+
+const MapaPicker = dynamic(() => import('../solicitud/MapaPicker'), { ssr: false });
 
 const TABS = [
   { k: 'nueva', label: 'Nuevas' },
@@ -32,7 +35,7 @@ export default function ModuloSolicitudes({ usuario, onRecargar }) {
 
   useEffect(() => { cargar(tab); }, [tab, cargar]);
 
-  const CAMPOS_EDIT = ['cliente_nombre', 'rnc', 'tipo_id', 'contacto_telefono', 'contacto_email', 'direccion', 'punto_referencia', 'locacion_nombre', 'recibe_nombre', 'recibe_telefono', 'recibe_cargo', 'tipo_servicio', 'tipo_inmueble', 'area_aprox', 'acceso_techo', 'descripcion', 'urgencia', 'preferencia_visita', 'referencia_previa'];
+  const CAMPOS_EDIT = ['cliente_nombre', 'rnc', 'tipo_id', 'contacto_telefono', 'contacto_email', 'direccion', 'punto_referencia', 'locacion_nombre', 'lat', 'lng', 'recibe_nombre', 'recibe_telefono', 'recibe_cargo', 'tipo_servicio', 'tipo_inmueble', 'area_aprox', 'acceso_techo', 'descripcion', 'urgencia', 'preferencia_visita', 'referencia_previa'];
   const abrir = (s) => { const e = {}; CAMPOS_EDIT.forEach((k) => { e[k] = s[k] ?? ''; }); setEdit(e); setAbierta(s); };
   const setCampo = (k) => (ev) => setEdit((p) => ({ ...p, [k]: ev.target.value }));
   const campo = (label, k, opts = {}) => (
@@ -183,7 +186,7 @@ export default function ModuloSolicitudes({ usuario, onRecargar }) {
 
       {abierta && (
         <div className="fixed inset-0 z-50 bg-black/70 flex items-start sm:items-center justify-center p-3 overflow-auto" onClick={() => setAbierta(null)}>
-          <div className="bg-zinc-900 border border-zinc-700 rounded-card w-full max-w-2xl my-4" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-zinc-900 border border-zinc-700 rounded-card w-full max-w-4xl my-4" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 sticky top-0 bg-zinc-900 rounded-t-card z-10">
               <div className="flex items-center gap-2 min-w-0">
                 <span className="text-[10px] font-black bg-zinc-950 border border-zinc-700 text-zinc-300 px-2 py-0.5 rounded">{abierta.ticket}</span>
@@ -217,7 +220,13 @@ export default function ModuloSolicitudes({ usuario, onRecargar }) {
                   {campo('Recibe — teléfono', 'recibe_telefono')}
                   {campo('Recibe — cargo', 'recibe_cargo')}
                 </div>
-                {mapsUrl(abierta) && <a href={mapsUrl(abierta)} target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-300 text-xs inline-flex items-center gap-1 mt-2"><ExternalLink className="w-3 h-3" /> Ver ubicación en el mapa</a>}
+                <div className="mt-3">
+                  <div className="text-[10px] uppercase tracking-wide text-zinc-500 font-bold mb-1">Ubicación en el mapa {edit.lat && edit.lng ? '· toca para corregir el pin' : '· toca el mapa para marcarla'}</div>
+                  <MapaPicker pos={edit.lat && edit.lng ? [Number(edit.lat), Number(edit.lng)] : null} onPick={(la, ln) => setEdit((p) => ({ ...p, lat: la, lng: ln }))} />
+                  {edit.lat && edit.lng && (
+                    <div className="text-[11px] text-zinc-500 mt-1">📍 {Number(edit.lat).toFixed(5)}, {Number(edit.lng).toFixed(5)} · <a href={`https://www.google.com/maps?q=${edit.lat},${edit.lng}`} target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-300 inline-flex items-center gap-0.5"><ExternalLink className="w-3 h-3" />Google Maps</a></div>
+                  )}
+                </div>
               </div>
               <div>
                 <div className="text-[11px] uppercase tracking-widest text-red-400 font-bold mb-2">El trabajo</div>

@@ -155,6 +155,12 @@ export default function ModalCartaAcceso({ proyecto, data, usuario, onCerrar }) 
   // Vigencia opcional (algunos clientes piden fecha hasta cuando es válida la autorización)
   const [vigenciaHasta, setVigenciaHasta] = useState('');
 
+  // v8.27.38: vehículos a autorizar en la carta (opcional).
+  const vehiculos = useMemo(() => (data.vehiculos || []).filter(v => v.activo !== false), [data.vehiculos]);
+  const [vehiculosSel, setVehiculosSel] = useState(() => new Set());
+  const toggleVehiculo = (id) => setVehiculosSel(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const vehiculosIncluidos = vehiculos.filter(v => vehiculosSel.has(v.id));
+
   // ---- Estados de procesamiento ----
   const [generandoPDF, setGenerandoPDF] = useState(false);
   const [enviandoEmail, setEnviandoEmail] = useState(false);
@@ -408,6 +414,23 @@ export default function ModalCartaAcceso({ proyecto, data, usuario, onCerrar }) 
                   })}
                 </div>
               )}
+              {/* v8.27.38: vehículos a autorizar (opcional) */}
+              {vehiculos.length > 0 && (
+                <div className="mt-3">
+                  <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-1">Vehículo(s) a autorizar ({vehiculosIncluidos.length})</div>
+                  <div className="space-y-1">
+                    {vehiculos.map((v) => (
+                      <label key={v.id} className={`flex items-center gap-2 p-2 cursor-pointer border ${vehiculosSel.has(v.id) ? 'bg-red-900/20 border-red-700/50' : 'bg-zinc-950 border-zinc-800'}`}>
+                        <input type="checkbox" checked={vehiculosSel.has(v.id)} onChange={() => toggleVehiculo(v.id)} className="w-4 h-4 accent-red-600" />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-bold truncate">{v.marca} {v.modelo} {v.anio ? `· ${v.anio}` : ''}</div>
+                          <div className="text-[10px] text-zinc-500">{v.color || ''}{v.placa ? ` · Placa ${v.placa}` : ''}</div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
               {personasIncluidas.some(p => !p.persona.cedulaNumero) && (
                 <div className="text-[10px] text-amber-400 mt-1 flex items-start gap-1">
                   <AlertTriangle className="w-3 h-3 mt-0.5" /> Algunas personas seleccionadas no tienen cédula registrada — saldrán con "—" en la carta. Considera completarla en su perfil.
@@ -498,6 +521,7 @@ export default function ModalCartaAcceso({ proyecto, data, usuario, onCerrar }) 
                 fecha={fechaCarta}
                 vigenciaHasta={vigenciaHasta}
                 personas={personasIncluidas}
+                vehiculos={vehiculosIncluidos}
                 firmanteNombre={firmanteNombre}
                 firmanteCargo={firmanteCargo}
               />
@@ -515,7 +539,7 @@ export default function ModalCartaAcceso({ proyecto, data, usuario, onCerrar }) 
 function CartaTemplate({
   empresa, clienteNombre, clienteRNC, contacto, contactoCustomNombre,
   proyectoRef, proyectoDireccion, fecha, vigenciaHasta,
-  personas, firmanteNombre, firmanteCargo,
+  personas, vehiculos = [], firmanteNombre, firmanteCargo,
 }) {
   // Nombre del contacto: prioriza el contacto principal, luego el "contactoClienteNombre" del proyecto
   const nombreContacto = contacto?.nombre || contactoCustomNombre || '';
@@ -597,6 +621,35 @@ function CartaTemplate({
             )}
           </tbody>
         </table>
+
+        {/* v8.27.38: vehículos autorizados */}
+        {vehiculos.length > 0 && (
+          <>
+            <p style={{ margin: '4px 0 8px 0', fontSize: 12 }}>
+              Asimismo, solicitamos autorización de acceso para {vehiculos.length === 1 ? 'el siguiente vehículo' : 'los siguientes vehículos'}:
+            </p>
+            <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 16, fontSize: 11 }}>
+              <thead>
+                <tr style={{ background: '#fafafa' }}>
+                  <th style={{ border: '1px solid #e4e4e7', padding: '8px 10px', textAlign: 'left', fontSize: 9, letterSpacing: '1.5px', color: '#71717a' }}>VEHÍCULO</th>
+                  <th style={{ border: '1px solid #e4e4e7', padding: '8px 10px', textAlign: 'left', fontSize: 9, letterSpacing: '1.5px', color: '#71717a', width: 90 }}>COLOR</th>
+                  <th style={{ border: '1px solid #e4e4e7', padding: '8px 10px', textAlign: 'left', fontSize: 9, letterSpacing: '1.5px', color: '#71717a', width: 110 }}>PLACA</th>
+                  <th style={{ border: '1px solid #e4e4e7', padding: '8px 10px', textAlign: 'left', fontSize: 9, letterSpacing: '1.5px', color: '#71717a', width: 150 }}>CHASIS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {vehiculos.map((v) => (
+                  <tr key={v.id}>
+                    <td style={{ border: '1px solid #e4e4e7', padding: '8px 10px', color: '#27272a', fontWeight: 500 }}>{[v.marca, v.modelo, v.anio].filter(Boolean).join(' ')}</td>
+                    <td style={{ border: '1px solid #e4e4e7', padding: '8px 10px', color: '#27272a' }}>{v.color || '—'}</td>
+                    <td style={{ border: '1px solid #e4e4e7', padding: '8px 10px', color: '#27272a', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{v.placa || '—'}</td>
+                    <td style={{ border: '1px solid #e4e4e7', padding: '8px 10px', color: '#27272a', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 10 }}>{v.chasis || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
 
         {vigenciaHasta && (
           <div style={{ marginBottom: 14, fontSize: 11, color: '#71717a', background: '#fafafa', padding: '10px 12px', border: '1px solid #e4e4e7' }}>

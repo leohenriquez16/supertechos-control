@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed, Building2, Star, MessageCircle, Send, Search, Filter, CloudRain, Calculator, Receipt } from 'lucide-react';
+import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed, Building2, Star, MessageCircle, Send, Search, Filter, CloudRain, Calculator, Receipt, Car } from 'lucide-react';
 import * as db from '../lib/db';
 import { leerArchivo, parseMateriales, parseSistemas, descargarPlantilla, comprimirImagen } from '../lib/imports';
 import { obtenerUbicacion, distanciaMetros, formatDistancia, abrirEnMapa } from '../lib/geo';
@@ -97,6 +97,7 @@ import CubicacionesProyecto from '../components/proyecto/CubicacionesProyecto';
 import VistaMiCajaChica from '../components/caja-chica/VistaMiCajaChica';
 import VistaCajaChicaAdmin from '../components/caja-chica/VistaCajaChicaAdmin';
 import VistaFacturasOdoo from '../components/facturas/VistaFacturasOdoo';
+import VistaVehiculos from '../components/vehiculos/VistaVehiculos';
 import VistaProveedoresCajaChica from '../components/caja-chica/VistaProveedoresCajaChica';
 import VistaCategoriasCajaChica from '../components/caja-chica/VistaCategoriasCajaChica';
 // v8.10.14: VistaMapa extraída con Leaflet interactivo
@@ -598,6 +599,8 @@ export default function App() {
   const itemsMenu = esFacturasOnly ? [
     { seccion: 'FACTURAS', items: [
       { id: 'facturasOdoo', label: 'Facturas', icon: Receipt, vista: 'facturasOdoo' },
+      // v8.27.38: Lily (capturista) también llena el módulo de Vehículos.
+      { id: 'vehiculos', label: 'Vehículos', icon: Car, vista: 'vehiculos' },
       { id: 'gotera', label: 'Gotera', icon: CloudRain, vista: 'gotera' },
     ]},
   ] : esAdmin ? [
@@ -632,6 +635,8 @@ export default function App() {
       { id: 'clientes', label: 'Clientes', icon: Building2, vista: 'clientes' },
       { id: 'ubicaciones', label: 'Ubicaciones', icon: MapPin, vista: 'ubicaciones' },
       { id: 'garantias', label: 'Garantías', icon: CheckCircle2, vista: 'garantias' },
+      // v8.27.38: flota de vehículos + docs (matrícula/seguro), elegibles en cartas de acceso
+      { id: 'vehiculos', label: 'Vehículos', icon: Car, vista: 'vehiculos' },
       { id: 'personal', label: 'Personal', icon: UserIcon, vista: 'personal' },
       { id: 'notificaciones', label: 'Notificaciones', icon: Mail, vista: 'notificaciones' },
       { id: 'estadisticasPersonal', label: 'Estadísticas', icon: TrendingUp, vista: 'estadisticasPersonal' },
@@ -784,6 +789,8 @@ export default function App() {
         {vista === 'auditLog' && esAdmin && <VistaAuditLog data={data} onVolver={() => setVista('dashboard')} />}
         {/* v8.17.49: Propiedades de la empresa (apartamento Punta Cana, etc) */}
         {vista === 'propiedadesEmpresa' && esAdmin && <VistaPropiedadesEmpresa usuario={usuario} data={data} onVolver={() => setVista('dashboard')} />}
+        {/* v8.27.38: Vehículos (flota) — admin, o capturista (Lily) con rol/flag facturas */}
+        {vista === 'vehiculos' && (esAdmin || tieneRol(usuario, 'facturas') || usuario.facturasHabilitada) && <VistaVehiculos usuario={usuario} data={data} onRecargar={recargar} />}
         {/* v8.26.0: Contabilidad — reportes DGII (606/607/608) + resumen ITBIS/IT-1 */}
         {vista === 'contabilidad' && tieneRol(usuario, 'owner') && <VistaContabilidad usuario={usuario} onVolver={() => setVista('dashboard')} />}
         {vista === 'miPerfil' && <MiPerfil usuario={usuario} persona={usuario} soloLectura={false} onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }} onGuardar={(campos) => withSync(() => db.guardarPerfil(usuario.id, campos))} />}
@@ -4972,7 +4979,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
       </div>
 
       {tab === 'avance' && <TabAvance proyecto={proyecto} reportes={data.reportes} sistema={sistema} sistemas={data.sistemas} esSupervisor={esSupervisor} onEliminarReporte={onEliminarReporte} onEditarReporte={onEditarReporte} data={data} usuario={usuario} onRecargar={onRecargar} />}
-      {tab === 'info' && <TabInfo proyecto={proyecto} clientes={data.clientes || []} contactos={data.contactos || []} documentos={data.documentos || []} sistemas={data.sistemas || {}} usuario={usuario} personal={data.personal} esAdmin={esAdmin} esSupervisor={esSupervisor} onRecargar={onRecargar} />}
+      {tab === 'info' && <TabInfo proyecto={proyecto} clientes={data.clientes || []} contactos={data.contactos || []} documentos={data.documentos || []} sistemas={data.sistemas || {}} usuario={usuario} personal={data.personal} vehiculos={data.vehiculos || []} esAdmin={esAdmin} esSupervisor={esSupervisor} onRecargar={onRecargar} />}
       {/* v8.19.13: removida rama muerta `tab === 'jornada'` (sin botón, inalcanzable). */}
       {tab === 'asistencia' && <TabAsistencia usuario={usuario} proyecto={proyecto} personal={data.personal} checkins={data.checkins || []} esAdmin={esAdmin} onActualizarProyecto={onActualizarProyecto} onRecargar={onRecargar} onEliminarJornada={onEliminarJornada} TabJornada={TabJornada} />}
       {tab === 'equipo' && <TabEquipoProyecto proyecto={proyecto} data={data} sistema={sistema} usuario={usuario} esAdmin={esAdmin} onActualizarProyecto={onActualizarProyecto} onRecargar={onRecargar} />}
@@ -4995,7 +5002,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
 // ============================================================
 // TAB INFO (v8.2) - ubicación + contacto cliente
 // ============================================================
-function TabInfo({ proyecto, clientes = [], contactos = [], documentos = [], sistemas = {}, usuario, personal = [], esAdmin, esSupervisor, onRecargar }) {
+function TabInfo({ proyecto, clientes = [], contactos = [], documentos = [], sistemas = {}, usuario, personal = [], vehiculos = [], esAdmin, esSupervisor, onRecargar }) {
   // v8.17.41: modal carta de acceso del personal
   const [modalCarta, setModalCarta] = useState(false);
   // v8.17.62: modal lista de herramientas
@@ -5233,7 +5240,7 @@ function TabInfo({ proyecto, clientes = [], contactos = [], documentos = [], sis
       {modalCarta && (
         <ModalCartaAcceso
           proyecto={proyecto}
-          data={{ personal, clientes, contactos }}
+          data={{ personal, clientes, contactos, vehiculos }}
           usuario={usuario}
           onCerrar={() => setModalCarta(false)}
         />

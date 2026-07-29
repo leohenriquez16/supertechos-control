@@ -31,7 +31,7 @@ export async function POST(request) {
     }, { status: 400 });
   }
 
-  const { destinatarios, asunto, html } = body || {};
+  const { destinatarios, asunto, html, cc } = body || {};
 
   // Validar destinatarios
   if (!Array.isArray(destinatarios) || destinatarios.length === 0) {
@@ -41,9 +41,10 @@ export async function POST(request) {
     }, { status: 400 });
   }
 
-  // Validar formato de cada email
+  // Validar formato de cada email (to + cc)
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  const invalidos = destinatarios.filter(e => !emailRegex.test(String(e || '').trim()));
+  const ccList = Array.isArray(cc) ? cc.map(e => String(e || '').trim()).filter(Boolean) : [];
+  const invalidos = [...destinatarios, ...ccList].filter(e => !emailRegex.test(String(e || '').trim()));
   if (invalidos.length > 0) {
     return Response.json({
       enviado: false,
@@ -86,6 +87,7 @@ export async function POST(request) {
       body: JSON.stringify({
         from: RESEND_FROM,
         to: destinatarios.map(e => String(e).trim()),
+        ...(ccList.length ? { cc: ccList } : {}),
         subject: asunto,
         html,
       }),

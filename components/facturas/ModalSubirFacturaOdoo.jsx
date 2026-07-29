@@ -31,6 +31,7 @@ export default function ModalSubirFacturaOdoo({ usuario, facturaEditar = null, o
     itbis: facturaEditar?.itbis != null ? String(facturaEditar.itbis) : '',
     concepto: facturaEditar?.concepto || '',
     cuentaAnalitica: facturaEditar?.cuentaAnalitica || '', // v8.27.40: número azul = proyecto para Odoo
+    moneda: facturaEditar?.moneda || 'DOP', // v8.27.42: DOP | USD | EUR
     reembolsable: facturaEditar?.reembolsable || false,
   });
 
@@ -62,6 +63,7 @@ export default function ModalSubirFacturaOdoo({ usuario, facturaEditar = null, o
         itbis: d.itbis != null ? String(d.itbis) : prev.itbis,
         concepto: d.concepto || prev.concepto,
         cuentaAnalitica: d.cuenta_analitica || prev.cuentaAnalitica, // v8.27.41: número azul leído por la IA
+        moneda: d.moneda || prev.moneda, // v8.27.42: moneda leída por la IA
       }));
       setPaso('confirmar');
     } catch (e) {
@@ -88,6 +90,7 @@ export default function ModalSubirFacturaOdoo({ usuario, facturaEditar = null, o
       tipoNcf: datos.tipoNcf || null, ncf: datos.ncf || null, fecha: datos.fecha,
       concepto: datos.concepto || null, monto, itbisModo: datos.itbisModo,
       cuentaAnalitica: datos.cuentaAnalitica || null, // v8.27.40
+      moneda: datos.moneda || 'DOP', // v8.27.42
       itbis: datos.itbis !== '' ? Number(datos.itbis) : null,
       reembolsable: datos.reembolsable,
       datosIA, estado: 'lista',
@@ -186,11 +189,21 @@ export default function ModalSubirFacturaOdoo({ usuario, facturaEditar = null, o
 
             <div className="grid grid-cols-2 gap-3">
               <Campo label="Fecha"><Input type="date" value={datos.fecha} onChange={(v) => setDatos({ ...datos, fecha: v })} /></Campo>
-              <Campo label="Monto total RD$">
-                <input type="number" value={datos.monto} onChange={(e) => setDatos({ ...datos, monto: e.target.value })} placeholder="0"
-                  className="w-full bg-zinc-950 border-2 border-green-800 focus:border-green-500 outline-none px-3 py-2 text-sm font-bold text-right text-green-400" />
+              {/* v8.27.42: moneda — Odoo la necesita (hay facturas en US$). El monto se
+                  captura tal cual en la factura; Odoo convierte con su tasa del día. */}
+              <Campo label="Moneda">
+                <select value={datos.moneda} onChange={(e) => setDatos({ ...datos, moneda: e.target.value })}
+                  className={`w-full bg-zinc-950 border-2 outline-none px-3 py-2 text-white text-sm ${datos.moneda !== 'DOP' ? 'border-yellow-600' : 'border-zinc-800 focus:border-red-600'}`}>
+                  <option value="DOP">RD$ (pesos)</option>
+                  <option value="USD">US$ (dólares)</option>
+                  <option value="EUR">€ (euros)</option>
+                </select>
               </Campo>
             </div>
+            <Campo label={`Monto total ${datos.moneda === 'USD' ? 'US$' : datos.moneda === 'EUR' ? '€' : 'RD$'}`}>
+              <input type="number" value={datos.monto} onChange={(e) => setDatos({ ...datos, monto: e.target.value })} placeholder="0"
+                className="w-full bg-zinc-950 border-2 border-green-800 focus:border-green-500 outline-none px-3 py-2 text-sm font-bold text-right text-green-400" />
+            </Campo>
 
             <Campo label="Proveedor"><Input value={datos.proveedor} onChange={(v) => setDatos({ ...datos, proveedor: v })} placeholder="Ferretería, gasolinera, etc." /></Campo>
 

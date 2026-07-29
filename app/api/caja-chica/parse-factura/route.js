@@ -36,6 +36,7 @@ Devuelve EXCLUSIVAMENTE un JSON con esta estructura, sin texto antes ni después
 
 {
   "monto_total": number | null,
+  "moneda": "DOP" | "USD" | "EUR" | null, // moneda de la factura: "USD" si los montos están en US$/USD/dólares, "EUR" si €/EUR, sino "DOP" (pesos RD$). NO conviertas el monto; déjalo tal cual y solo indica la moneda.
   "subtotal": number | null,
   "itbis": number | null,
   "propina_legal": number | null,

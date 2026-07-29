@@ -3154,7 +3154,10 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
   };
 
   const toggleRol = (rol) => {
-    let roles = form.roles.includes(rol) ? form.roles.filter(r => r !== rol) : [...form.roles, rol];
+    // v8.27.37: 'facturas' es un rol dedicado (Lily) — al activarlo queda exclusivo;
+    // al activar cualquier otro rol se quita 'facturas'.
+    if (rol === 'facturas') { setForm({ ...form, roles: form.roles.includes('facturas') ? [] : ['facturas'] }); return; }
+    let roles = form.roles.includes(rol) ? form.roles.filter(r => r !== rol) : [...form.roles.filter(r => r !== 'facturas'), rol];
     if ((rol === 'supervisor' || rol === 'maestro' || rol === 'admin') && roles.includes(rol)) roles = roles.filter(r => r !== 'ayudante');
     setForm({ ...form, roles });
   };
@@ -3212,13 +3215,15 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
               <RolToggle active={form.roles.includes('supervisor')} onClick={() => toggleRol('supervisor')}>Supervisor</RolToggle>
               <RolToggle active={form.roles.includes('maestro')} onClick={() => toggleRol('maestro')}>Maestro</RolToggle>
               <RolToggle active={form.roles.includes('ayudante')} onClick={() => toggleRol('ayudante')}>Ayudante</RolToggle>
+              {/* v8.27.37: rol dedicado a captura de facturas (Lily) — entra directo y ve SOLO Facturas */}
+              <RolToggle active={form.roles.includes('facturas')} onClick={() => toggleRol('facturas')}>Facturas</RolToggle>
             </div>
           </Campo>
           {/* v8.17.89: el PIN guardado es hash bcrypt server-side y nunca se
               expone al cliente. Si admin deja el campo vacío, el PIN existente
               no se toca. Si admin teclea un PIN nuevo, se hashea en el endpoint
               /api/auth/cambiar-pin. */}
-          {(form.roles.includes('supervisor') || form.roles.includes('maestro') || form.roles.includes('admin')) && <Campo label={editando === 'new' ? 'PIN' : 'PIN (dejar vacío = mantener actual)'}><Input value={form.pin || ''} onChange={v => setForm({ ...form, pin: v })} placeholder={editando === 'new' ? '4-6 dígitos' : ''} /></Campo>}
+          {(form.roles.includes('supervisor') || form.roles.includes('maestro') || form.roles.includes('admin') || form.roles.includes('facturas')) && <Campo label={editando === 'new' ? 'PIN' : 'PIN (dejar vacío = mantener actual)'}><Input value={form.pin || ''} onChange={v => setForm({ ...form, pin: v })} placeholder={editando === 'new' ? '4-6 dígitos' : ''} /></Campo>}
           {form.roles.length === 1 && form.roles[0] === 'ayudante' && (
             <Campo label="Maestro"><select value={form.maestroId || ''} onChange={e => setForm({ ...form, maestroId: e.target.value })} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-4 py-3 text-white"><option value="">Seleccionar...</option>{maestros.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select></Campo>
           )}

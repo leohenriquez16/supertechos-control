@@ -1,10 +1,11 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Receipt, Loader2, Edit2, Trash2, Download, Eye, FileText, ArrowLeft, Check } from 'lucide-react';
+import { Plus, Receipt, Loader2, Edit2, Trash2, Download, Eye, FileText, ArrowLeft, Check, Images } from 'lucide-react';
 import * as db from '../../lib/db';
 import { toast } from '../../lib/toast';
-import { NOMBRE_EMPRESA } from '../../lib/facturasOdooMap';
+import { comprimirImagen } from '../../lib/imports';
+import { NOMBRE_EMPRESA, detectarTipoNcf } from '../../lib/facturasOdooMap';
 
 const tieneRol = (p, r) => p?.roles?.includes(r);
 import { generarZipFacturasOdoo, descargarBlob } from '../../lib/helpers/exportFacturasOdooModulo';
@@ -22,6 +23,53 @@ export default function VistaFacturasOdoo({ usuario, onVolver }) {
   const [filtroReembolso, setFiltroReembolso] = useState('');
   const [soloMias, setSoloMias] = useState(false);
   const [exportando, setExportando] = useState(null); // {hechas, total} | null
+  const [masiva, setMasiva] = useState(null); // v8.27.41: carga masiva {hechas, total, errores} | null
+
+  // v8.27.41: carga masiva — elige muchas fotos; la IA parsea cada una (incluida la
+  // cuenta analítica escrita a mano en azul) y crea BORRADORES para revisar.
+  const onCargaMasiva = async (fileList) => {
+    const imgs = Array.from(fileList || []).filter((f) => f.type.startsWith('image/'));
+    if (imgs.length === 0) return;
+    const MAX = 60;
+    if (imgs.length > MAX) toast.warning(`Máximo ${MAX} fotos por carga; se toman las primeras ${MAX}.`);
+    const lote = imgs.slice(0, MAX);
+    setMasiva({ hechas: 0, total: lote.length, errores: 0 });
+    let errores = 0;
+    for (let i = 0; i < lote.length; i++) {
+      try {
+        const dataUrl = await comprimirImagen(lote[i]);
+        let d = {};
+        try {
+          const res = await fetch('/api/caja-chica/parse-factura', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ base64Data: dataUrl }),
+          });
+          const json = await res.json();
+          if (res.ok && json.datos) d = json.datos;
+        } catch { /* si falla la IA, igual se crea el borrador con la foto */ }
+        await db.crearFacturaOdoo({
+          empresa: d.empresa_receptora || '',
+          proveedor: d.proveedor || null,
+          rnc: d.rnc || null,
+          ncf: d.ncf || null,
+          tipoNcf: detectarTipoNcf(d.ncf) || null,
+          fecha: d.fecha || new Date().toISOString().split('T')[0],
+          monto: d.monto_total || 0,
+          itbis: d.itbis != null ? d.itbis : null,
+          concepto: d.concepto || null,
+          cuentaAnalitica: d.cuenta_analitica || null, // número azul leído por la IA
+          datosIA: d,
+          estado: 'borrador',
+          fotoDataUrl: dataUrl,
+          creadoPorId: usuario.id, creadoPorNombre: usuario.nombre,
+        });
+      } catch (e) { errores++; }
+      setMasiva({ hechas: i + 1, total: lote.length, errores });
+    }
+    setMasiva(null);
+    toast.success(`Carga masiva: ${lote.length - errores} borrador(es) creado(s)${errores ? ` · ${errores} con error` : ''}. Revisa cada uno y confirma su cuenta analítica.`, { duration: 8000 });
+    cargar();
+  };
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -89,10 +137,28 @@ export default function VistaFacturasOdoo({ usuario, onVolver }) {
             <div className="text-[11px] text-zinc-500">Sube las facturas de gasto · se exportan a Odoo con su foto</div>
           </div>
         </div>
-        <button onClick={() => setModal('nueva')} className="bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase px-4 py-2.5 flex items-center gap-1">
-          <Plus className="w-4 h-4" /> Subir factura
-        </button>
+        <div className="flex items-center gap-2">
+          {/* v8.27.41: carga masiva — elegir todas las fotos de una */}
+          <label className={`bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-black uppercase px-3 py-2.5 flex items-center gap-1 cursor-pointer ${masiva ? 'opacity-50 pointer-events-none' : ''}`} title="Sube varias facturas a la vez">
+            <Images className="w-4 h-4" /> Carga masiva
+            <input type="file" accept="image/*" multiple className="hidden" disabled={!!masiva} onChange={(e) => { onCargaMasiva(e.target.files); e.target.value = ''; }} />
+          </label>
+          <button onClick={() => setModal('nueva')} disabled={!!masiva} className="bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-xs font-black uppercase px-4 py-2.5 flex items-center gap-1">
+            <Plus className="w-4 h-4" /> Subir factura
+          </button>
+        </div>
       </div>
+
+      {/* v8.27.41: progreso de la carga masiva */}
+      {masiva && (
+        <div className="bg-zinc-900 border border-red-800 rounded-card p-3 mb-4 flex items-center gap-3">
+          <Loader2 className="w-5 h-5 text-red-500 animate-spin shrink-0" />
+          <div className="text-sm">
+            Procesando fotos… <b>{masiva.hechas}/{masiva.total}</b>{masiva.errores ? ` · ${masiva.errores} con error` : ''}
+            <div className="text-[10px] text-zinc-500">Se crean como borrador. No cierres esta pantalla.</div>
+          </div>
+        </div>
+      )}
 
       {/* Resumen + acciones */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">

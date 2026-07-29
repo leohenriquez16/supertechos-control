@@ -52,6 +52,10 @@ Devuelve EXCLUSIVAMENTE un JSON con esta estructura, sin texto antes ni después
                                  //  - Combustible (gasolinera): LEE si es "Gasoil" o "Gasolina" y pon exactamente esa palabra.
                                  //  - Gas (tanque/cilindro de gas GLP) → "Gas".
                                  //  - Otros → breve descripción de qué se compró (10-60 chars).
+  "cuenta_analitica": string | null, // NÚMERO/CÓDIGO escrito A MANO en LAPICERO AZUL sobre la
+                                 // factura (no impreso). Suele ser una referencia de proyecto
+                                 // como "ST-C5737", "PG-C1297", "ST5714", o un número. Si NO hay
+                                 // nada escrito a mano en azul, devuelve null (no inventes).
   "lineas": [                    // hasta 10 productos, opcional
     { "descripcion": string, "cantidad": number | null, "precio": number | null }
   ],

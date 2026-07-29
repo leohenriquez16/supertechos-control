@@ -119,6 +119,14 @@ export default function VistaFacturasOdoo({ usuario, data, onVolver }) {
     catch (e) { toast.error('Error: ' + (e.message || e)); }
   };
 
+  // v8.27.49: cambiar el estado a mano desde la lista (útil en pruebas: revertir
+  // "exportada" → "lista" para volver a exportar). Solo admin.
+  const cambiarEstado = async (f, estado) => {
+    if (estado === f.estado) return;
+    try { await db.actualizarFacturaOdoo(f.id, { estado }); toast.success(`Estado: ${estado}.`); cargar(); }
+    catch (e) { toast.error('Error: ' + (e.message || e)); }
+  };
+
   // Exporta las que están "lista" (o las filtradas si el filtro es explícito).
   const exportar = async () => {
     const aExportar = facturas.filter((f) => f.estado === 'lista');
@@ -131,15 +139,30 @@ export default function VistaFacturasOdoo({ usuario, data, onVolver }) {
     }
     setExportando({ hechas: 0, total: aExportar.length });
     try {
+      // v8.27.50: traer cuentas analíticas de Odoo (read-only) para resolver el "número
+      // azul" → id y armar analytic_distribution (JSON). Si falla, se exporta sin analítica.
+      let cuentasAnaliticas = [];
+      try {
+        const r = await fetch('/api/odoo/cuentas-analiticas');
+        const j = await r.json();
+        if (r.ok && j.ok) cuentasAnaliticas = j.cuentas || [];
+        else toast.warning('No se pudieron leer las cuentas analíticas de Odoo; el ZIP irá sin proyecto (analytic).', { duration: 7000 });
+      } catch { toast.warning('No se pudieron leer las cuentas analíticas de Odoo; el ZIP irá sin proyecto (analytic).', { duration: 7000 }); }
+
       const { blob, counts } = await generarZipFacturasOdoo({
         facturas: aExportar,
         categorias: data?.categoriasCajaChica || [],
+        cuentasAnaliticas,
         onProgreso: (hechas, total) => setExportando({ hechas, total }),
       });
       const hoy = new Date().toISOString().split('T')[0];
       descargarBlob(blob, `facturas-odoo-${hoy}.zip`);
       await db.marcarFacturasOdooExportadas(aExportar.map((f) => f.id));
       toast.success(`Exportadas ${aExportar.length} facturas (ST ${counts.superTechos} · PG ${counts.prouco}${counts.sinFoto ? ` · ${counts.sinFoto} sin foto` : ''}).`, { duration: 7000 });
+      // v8.27.50: avisar de códigos de proyecto que no matchearon con ninguna cuenta de Odoo.
+      if (counts.sinAnalitica && counts.sinAnalitica.length) {
+        toast.warning(`Sin cuenta analítica en Odoo (van sin proyecto): ${counts.sinAnalitica.join(', ')}. Revisa que el código exista en Odoo.`, { duration: 10000 });
+      }
       cargar();
     } catch (e) {
       toast.error('Error exportando: ' + (e.message || e));
@@ -269,9 +292,20 @@ export default function VistaFacturasOdoo({ usuario, data, onVolver }) {
                   <td className="p-2 text-right font-bold whitespace-nowrap">{fmtRD(f.monto)}</td>
                   <td className="p-2 text-center">
                     {/* v8.27.48: si tiene error en un campo, badge rojo (y bloquea el export) */}
-                    {erroresFacturaOdoo(f).length > 0
-                      ? <span title={erroresFacturaOdoo(f).join(' · ')} className="text-[10px] px-2 py-0.5 rounded-full bg-red-900/50 text-red-300 border border-red-700 inline-flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> Error</span>
-                      : <span className={`text-[10px] px-2 py-0.5 rounded-full ${BADGE[f.estado] || BADGE.borrador}`}>{f.estado}</span>}
+                    <div className="inline-flex items-center gap-1">
+                      {erroresFacturaOdoo(f).length > 0 && (
+                        <span title={erroresFacturaOdoo(f).join(' · ')} className="text-[10px] px-2 py-0.5 rounded-full bg-red-900/50 text-red-300 border border-red-700 inline-flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> Error</span>
+                      )}
+                      {/* v8.27.49: admin puede cambiar el estado a mano (pruebas: revertir exportada → lista) */}
+                      {esAdmin
+                        ? <select value={f.estado} onChange={(e) => cambiarEstado(f, e.target.value)}
+                            className="bg-zinc-950 border border-zinc-700 rounded text-[10px] px-1.5 py-0.5 text-white focus:border-red-600 outline-none cursor-pointer">
+                            <option value="borrador">borrador</option>
+                            <option value="lista">lista</option>
+                            <option value="exportada">exportada</option>
+                          </select>
+                        : erroresFacturaOdoo(f).length === 0 && <span className={`text-[10px] px-2 py-0.5 rounded-full ${BADGE[f.estado] || BADGE.borrador}`}>{f.estado}</span>}
+                    </div>
                   </td>
                   <td className="p-2">
                     <div className="flex items-center justify-end gap-1">

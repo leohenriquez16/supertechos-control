@@ -47,7 +47,11 @@ Devuelve EXCLUSIVAMENTE un JSON con esta estructura, sin texto antes ni después
   "proveedor": string | null,    // nombre de la empresa que emite
   "ncf": string | null,          // número comprobante fiscal si visible (ej: B0100012345)
   "categoria_sugerida": string | null, // ELIGE EXACTAMENTE UNO de los IDs listados abajo
-  "concepto": string | null,     // breve descripción de qué se compró (10-60 chars)
+  "concepto": string | null,     // PRODUCTO para Odoo, según el tipo de gasto:
+                                 //  - Ferretería / materiales de construcción → EXACTAMENTE "Materiales Varios" (NO detalles cada ítem).
+                                 //  - Combustible (gasolinera): LEE si es "Gasoil" o "Gasolina" y pon exactamente esa palabra.
+                                 //  - Gas (tanque/cilindro de gas GLP) → "Gas".
+                                 //  - Otros → breve descripción de qué se compró (10-60 chars).
   "lineas": [                    // hasta 10 productos, opcional
     { "descripcion": string, "cantidad": number | null, "precio": number | null }
   ],

@@ -1,11 +1,24 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Receipt, Loader2, Edit2, Trash2, Download, Eye, FileText, ArrowLeft, Check, Images } from 'lucide-react';
+import { Plus, Receipt, Loader2, Edit2, Trash2, Download, Eye, FileText, ArrowLeft, Check, Images, AlertTriangle } from 'lucide-react';
 import * as db from '../../lib/db';
 import { toast } from '../../lib/toast';
 import { comprimirImagen } from '../../lib/imports';
 import { NOMBRE_EMPRESA, detectarTipoNcf } from '../../lib/facturasOdooMap';
+import { validarRNC, validarNCF } from '../../lib/validacionFiscal';
+
+// v8.27.48: valida una factura antes de exportar. Devuelve lista de errores (vacía = ok).
+function erroresFacturaOdoo(f) {
+  const e = [];
+  if (!f.empresa) e.push('sin empresa');
+  if (!(Number(f.monto) > 0)) e.push('monto inválido');
+  const rnc = (f.rnc || '').trim();
+  if (!rnc) e.push('sin RNC'); else if (!validarRNC(rnc).ok) e.push('RNC inválido');
+  const ncf = (f.ncf || '').trim();
+  if (!ncf) e.push('sin NCF'); else if (!validarNCF(ncf).ok) e.push('NCF/e-CF inválido');
+  return e;
+}
 
 const tieneRol = (p, r) => p?.roles?.includes(r);
 import { generarZipFacturasOdoo, descargarBlob } from '../../lib/helpers/exportFacturasOdooModulo';
@@ -16,7 +29,7 @@ const fmtRD = (n) => 'RD$' + new Intl.NumberFormat('es-DO', { minimumFractionDig
 const esArchivoPdf = (f) => !!f && (f.type === 'application/pdf' || /\.pdf$/i.test(f.name || ''));
 const archivoADataUrl = (file) => new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = reject; r.readAsDataURL(file); });
 
-export default function VistaFacturasOdoo({ usuario, onVolver }) {
+export default function VistaFacturasOdoo({ usuario, data, onVolver }) {
   const esAdmin = tieneRol(usuario, 'admin');
   const [facturas, setFacturas] = useState([]);
   const [cargando, setCargando] = useState(true);
@@ -110,10 +123,17 @@ export default function VistaFacturasOdoo({ usuario, onVolver }) {
   const exportar = async () => {
     const aExportar = facturas.filter((f) => f.estado === 'lista');
     if (aExportar.length === 0) { toast.warning('No hay facturas en estado "lista" para exportar.'); return; }
+    // v8.27.48: no exportar si alguna factura lista tiene error en un campo (RNC/NCF/datos).
+    const conError = aExportar.filter((f) => erroresFacturaOdoo(f).length > 0);
+    if (conError.length > 0) {
+      toast.error(`No se puede exportar: ${conError.length} factura(s) con error (marcadas en rojo en la lista). Corrígelas y reintenta.`, { duration: 9000 });
+      return;
+    }
     setExportando({ hechas: 0, total: aExportar.length });
     try {
       const { blob, counts } = await generarZipFacturasOdoo({
         facturas: aExportar,
+        categorias: data?.categoriasCajaChica || [],
         onProgreso: (hechas, total) => setExportando({ hechas, total }),
       });
       const hoy = new Date().toISOString().split('T')[0];
@@ -247,7 +267,12 @@ export default function VistaFacturasOdoo({ usuario, onVolver }) {
                   <td className="p-2 whitespace-nowrap text-[11px]">{f.ncf || '—'}{f.tipoNcf ? <span className="text-zinc-600"> ({f.tipoNcf})</span> : ''}</td>
                   <td className="p-2 whitespace-nowrap text-[11px]">{NOMBRE_EMPRESA[f.empresa] || <span className="text-amber-500">—</span>}</td>
                   <td className="p-2 text-right font-bold whitespace-nowrap">{fmtRD(f.monto)}</td>
-                  <td className="p-2 text-center"><span className={`text-[10px] px-2 py-0.5 rounded-full ${BADGE[f.estado] || BADGE.borrador}`}>{f.estado}</span></td>
+                  <td className="p-2 text-center">
+                    {/* v8.27.48: si tiene error en un campo, badge rojo (y bloquea el export) */}
+                    {erroresFacturaOdoo(f).length > 0
+                      ? <span title={erroresFacturaOdoo(f).join(' · ')} className="text-[10px] px-2 py-0.5 rounded-full bg-red-900/50 text-red-300 border border-red-700 inline-flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> Error</span>
+                      : <span className={`text-[10px] px-2 py-0.5 rounded-full ${BADGE[f.estado] || BADGE.borrador}`}>{f.estado}</span>}
+                  </td>
                   <td className="p-2">
                     <div className="flex items-center justify-end gap-1">
                       {f.fotoPath && <button onClick={() => verFoto(f)} title="Ver foto" className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded"><Eye className="w-3.5 h-3.5" /></button>}

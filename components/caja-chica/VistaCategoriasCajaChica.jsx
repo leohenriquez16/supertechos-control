@@ -20,7 +20,7 @@ const COLORES = [
   { hex: '#71717a', label: 'Gris' },
 ];
 
-const FORM_VACIO = { nombre: '', color: '#3b82f6', icono: '', descripcion: '', orden: 50, aplicaA: '' };
+const FORM_VACIO = { nombre: '', color: '#3b82f6', icono: '', descripcion: '', orden: 50, aplicaA: '', odooProducto: '', odooCuenta: '', odooImpuesto: '' };
 
 export default function VistaCategoriasCajaChica({ onVolver, onCambio, usuario }) {
   const [categorias, setCategorias] = useState([]);
@@ -68,7 +68,7 @@ export default function VistaCategoriasCajaChica({ onVolver, onCambio, usuario }
   const empezarNueva = () => { setEditando('new'); setForm(FORM_VACIO); };
   const empezarEditar = (c) => {
     setEditando(c.id);
-    setForm({ nombre: c.nombre, color: c.color, icono: c.icono || '', descripcion: c.descripcion || '', orden: c.orden, aplicaA: c.aplicaA || '' });
+    setForm({ nombre: c.nombre, color: c.color, icono: c.icono || '', descripcion: c.descripcion || '', orden: c.orden, aplicaA: c.aplicaA || '', odooProducto: c.odooProducto || '', odooCuenta: c.odooCuenta || '', odooImpuesto: c.odooImpuesto || '' });
   };
 
   const guardar = async () => {
@@ -82,6 +82,9 @@ export default function VistaCategoriasCajaChica({ onVolver, onCambio, usuario }
           descripcion: form.descripcion?.trim() || null,
           orden: parseInt(form.orden) || 50,
           aplicaA: form.aplicaA || null, // v8.17.29
+          odooProducto: form.odooProducto?.trim() || null, // v8.27.48
+          odooCuenta: form.odooCuenta?.trim() || null,
+          odooImpuesto: form.odooImpuesto?.trim() || null,
         });
       } else {
         await db.actualizarCategoriaCajaChica(editando, {
@@ -91,6 +94,9 @@ export default function VistaCategoriasCajaChica({ onVolver, onCambio, usuario }
           descripcion: form.descripcion?.trim() || null,
           orden: parseInt(form.orden) || 50,
           aplicaA: form.aplicaA || null, // v8.17.29
+          odooProducto: form.odooProducto?.trim() || null, // v8.27.48
+          odooCuenta: form.odooCuenta?.trim() || null,
+          odooImpuesto: form.odooImpuesto?.trim() || null,
         });
       }
       setEditando(null);
@@ -272,6 +278,17 @@ export default function VistaCategoriasCajaChica({ onVolver, onCambio, usuario }
             <div className="text-[10px] text-zinc-500">
               Si seleccionas una partida, los gastos en esta categoría <b>no se reembolsan</b>: consumen el presupuesto fijo de dieta u hospedaje del maestro.
             </div>
+          </div>
+          {/* v8.27.48: mapeo a Odoo — el CSV de facturas usa estos valores exactos automático */}
+          <div className="space-y-2 border-t border-zinc-800 pt-3">
+            <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">Mapeo a Odoo (facturas)</div>
+            <div className="text-[10px] text-zinc-500 -mt-1">Nombres <b>exactos</b> de Odoo para esta categoría. El CSV los usa solo. Déjalos vacíos y el CSV usa el concepto de la IA.</div>
+            <Campo label="Producto en Odoo (nombre exacto)"><Input value={form.odooProducto} onChange={v => setForm({ ...form, odooProducto: v })} placeholder="Ej. Materiales Varios, Gasoil, Gas" /></Campo>
+            <div className="grid grid-cols-2 gap-3">
+              <Campo label="Cuenta contable (opcional)"><Input value={form.odooCuenta} onChange={v => setForm({ ...form, odooCuenta: v })} placeholder="Ej. 52000002 Combustible" /></Campo>
+              <Campo label="Impuesto ITBIS (opcional)"><Input value={form.odooImpuesto} onChange={v => setForm({ ...form, odooImpuesto: v })} placeholder="Ej. 18% ITBIS Compras" /></Campo>
+            </div>
+            <div className="text-[10px] text-zinc-500">💡 Si pones el producto, Odoo suele traer su cuenta e ITBIS solo — cuenta/impuesto son solo si quieres forzarlos.</div>
           </div>
           <div className="flex gap-2 pt-2 border-t border-zinc-800">
             <button onClick={() => { setEditando(null); setForm(FORM_VACIO); }} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2.5">Cancelar</button>

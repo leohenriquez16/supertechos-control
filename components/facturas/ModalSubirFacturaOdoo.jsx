@@ -135,8 +135,8 @@ export default function ModalSubirFacturaOdoo({ usuario, facturaEditar = null, o
   };
 
   return (
-    {/* v8.27.44: items-start (no items-center) para que el scroll llegue bien al fondo
-        cuando el formulario es más alto que la pantalla (bug de flexbox+overflow). */}
+    // v8.27.45: items-start (no items-center) para que el scroll llegue bien al fondo
+    // cuando el formulario es más alto que la pantalla (bug de flexbox+overflow).
     <div className="fixed inset-0 bg-black/85 z-50 flex items-start justify-center p-4 overflow-y-auto">
       <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-md w-full p-5 space-y-4 my-8">
         <div className="flex justify-between items-start">

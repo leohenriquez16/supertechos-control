@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed, Building2, Star, MessageCircle, Send, Search, Filter, CloudRain, Calculator } from 'lucide-react';
+import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed, Building2, Star, MessageCircle, Send, Search, Filter, CloudRain, Calculator, Receipt } from 'lucide-react';
 import * as db from '../lib/db';
 import { leerArchivo, parseMateriales, parseSistemas, descargarPlantilla, comprimirImagen } from '../lib/imports';
 import { obtenerUbicacion, distanciaMetros, formatDistancia, abrirEnMapa } from '../lib/geo';
@@ -96,6 +96,7 @@ import CubicacionesProyecto from '../components/proyecto/CubicacionesProyecto';
 // v8.12: Caja Chica + Dieta
 import VistaMiCajaChica from '../components/caja-chica/VistaMiCajaChica';
 import VistaCajaChicaAdmin from '../components/caja-chica/VistaCajaChicaAdmin';
+import VistaFacturasOdoo from '../components/facturas/VistaFacturasOdoo';
 import VistaProveedoresCajaChica from '../components/caja-chica/VistaProveedoresCajaChica';
 import VistaCategoriasCajaChica from '../components/caja-chica/VistaCategoriasCajaChica';
 // v8.10.14: VistaMapa extraída con Leaflet interactivo
@@ -570,7 +571,10 @@ export default function App() {
       db.registrarAcceso({ personaId: u.id, tipo: 'login.exitoso', geoDenegada: true, geoError: String(e?.message || e) });
     }
     if (!u.pinTemporal && u.onboardingCompletado) {
-      setVista(tieneRol(u, 'admin') ? 'dashboard' : tieneRol(u, 'supervisor') ? 'inicio' : 'misProyectos');
+      // v8.27.36: usuario dedicado a Facturas (Lily) aterriza en su módulo.
+      const soloFacturas = !tieneRol(u, 'admin') && (tieneRol(u, 'facturas') || u.facturasHabilitada)
+        && !tieneRol(u, 'supervisor') && !tieneRol(u, 'maestro') && !tieneRol(u, 'ayudante');
+      setVista(soloFacturas ? 'facturasOdoo' : tieneRol(u, 'admin') ? 'dashboard' : tieneRol(u, 'supervisor') ? 'inicio' : 'misProyectos');
     }
     try { localStorage.setItem('supertechos_usuario_id', u.id); } catch {}
   }} />;
@@ -580,12 +584,23 @@ export default function App() {
   if (!usuario.onboardingCompletado) return <WizardOnboarding usuario={usuario} onListo={async (uActualizado) => {
     setUsuario(uActualizado);
     await recargar();
-    setVista(tieneRol(uActualizado, 'admin') ? 'dashboard' : tieneRol(uActualizado, 'supervisor') ? 'inicio' : 'misProyectos');
+    const soloFact = !tieneRol(uActualizado, 'admin') && (tieneRol(uActualizado, 'facturas') || uActualizado.facturasHabilitada)
+      && !tieneRol(uActualizado, 'supervisor') && !tieneRol(uActualizado, 'maestro') && !tieneRol(uActualizado, 'ayudante');
+    setVista(soloFact ? 'facturasOdoo' : tieneRol(uActualizado, 'admin') ? 'dashboard' : tieneRol(uActualizado, 'supervisor') ? 'inicio' : 'misProyectos');
   }} />;
 
   const esAdmin = tieneRol(usuario, 'admin');
+  // v8.27.36: usuario dedicado SOLO al módulo Facturas (ej. Lily). Rol 'facturas'
+  // o el flag facturas_habilitada sin ningún otro rol operativo → ve solo Facturas.
+  const esFacturasOnly = !esAdmin && (tieneRol(usuario, 'facturas') || usuario.facturasHabilitada)
+    && !tieneRol(usuario, 'supervisor') && !tieneRol(usuario, 'maestro') && !tieneRol(usuario, 'ayudante');
 
-  const itemsMenu = esAdmin ? [
+  const itemsMenu = esFacturasOnly ? [
+    { seccion: 'FACTURAS', items: [
+      { id: 'facturasOdoo', label: 'Facturas', icon: Receipt, vista: 'facturasOdoo' },
+      { id: 'gotera', label: 'Gotera', icon: CloudRain, vista: 'gotera' },
+    ]},
+  ] : esAdmin ? [
     { seccion: 'OPERACIÓN', items: [
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, vista: 'dashboard' },
       { id: 'proyectos', label: 'Proyectos', icon: Briefcase, vista: 'proyectos', esProyectos: true },
@@ -603,6 +618,8 @@ export default function App() {
     { seccion: 'FINANZAS', items: [
       { id: 'nomina', label: 'Nómina', icon: Wallet, vista: 'nomina' },
       { id: 'cajaChica', label: 'Caja Chica', icon: CreditCard, vista: 'cajaChica' },
+      // v8.27.36: Facturas — captura de facturas de gasto para exportar a Odoo.
+      { id: 'facturasOdoo', label: 'Facturas', icon: Receipt, vista: 'facturasOdoo' },
       // v8.26.0: módulo Contabilidad — reportes DGII 606/607/608 + IT-1.
       // Por ahora SOLO el dueño del app (rol owner; en validación con el contador).
       ...(tieneRol(usuario, 'owner') ? [{ id: 'contabilidad', label: 'Contabilidad', icon: Calculator, vista: 'contabilidad' }] : []),
@@ -641,6 +658,8 @@ export default function App() {
       ...(tieneRol(usuario, 'maestro') ? [{ id: 'miProduccion', label: 'Mi Producción', icon: Wallet, vista: 'miProduccion' }] : []),
       // Caja chica: solo personal con caja_chica_habilitada (admin lo activa por persona)
       ...((tieneRol(usuario, 'maestro') || tieneRol(usuario, 'supervisor')) && usuario.cajaChicaHabilitada ? [{ id: 'miCajaChica', label: 'Mi Caja Chica', icon: CreditCard, vista: 'miCajaChica' }] : []),
+      // v8.27.36: Facturas para no-admins con el flag (reportar facturas personales / reembolso)
+      ...(usuario.facturasHabilitada ? [{ id: 'facturasOdoo', label: 'Facturas', icon: Receipt, vista: 'facturasOdoo' }] : []),
       ...(tareas.filter(t => t.asignadaAId === usuario.id).length > 0 ? [{ id: 'tareas', label: 'Tareas', icon: ClipboardList, vista: 'tareas', badge: tareas.filter(t => t.asignadaAId === usuario.id).length }] : []),
       // v8.27.0: cualquier usuario puede reportar un error o dar feedback (Gotera).
       { id: 'gotera', label: 'Gotera', icon: CloudRain, vista: 'gotera' },
@@ -756,6 +775,8 @@ export default function App() {
         {/* v8.27.0: Gotera — disponible para TODOS los usuarios (reportar); owner/admin ven el kanban completo */}
         {vista === 'gotera' && <ModuloGotera usuario={usuario} data={data} onVolver={() => setVista(esAdmin ? 'dashboard' : 'misProyectos')} />}
         {vista === 'cajaChica' && esAdmin && <VistaCajaChicaAdmin usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onIrAProveedores={() => setVista('proveedoresCajaChica')} onIrACategorias={() => setVista('categoriasCajaChica')} />}
+        {/* v8.27.36: Facturas — admins, o cualquiera con el flag (Lily, reembolsos personales) */}
+        {vista === 'facturasOdoo' && (esAdmin || usuario.facturasHabilitada || tieneRol(usuario, 'facturas')) && <VistaFacturasOdoo usuario={usuario} onVolver={esFacturasOnly ? null : () => setVista(esAdmin ? 'dashboard' : 'misProyectos')} />}
         {vista === 'proveedoresCajaChica' && esAdmin && <VistaProveedoresCajaChica usuario={usuario} data={data} onVolver={() => setVista('cajaChica')} />}
         {vista === 'categoriasCajaChica' && esAdmin && <VistaCategoriasCajaChica usuario={usuario} onVolver={() => setVista('cajaChica')} onCambio={() => recargar()} />}
         {vista === 'estadisticasPersonal' && esAdmin && <VistaEstadisticasPersonal data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
@@ -3211,6 +3232,16 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
               </div>
             </label>
           )}
+          {/* v8.27.36: Toggle Facturas habilitado — reportar facturas de gasto / reembolso para Odoo */}
+          <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={!!form.facturasHabilitada} onChange={e => setForm({ ...form, facturasHabilitada: e.target.checked })} className="w-4 h-4 accent-red-600" />
+              <div className="flex-1">
+                <div className="text-xs font-bold flex items-center gap-1">🧾 Facturas habilitado</div>
+                <div className="text-[10px] text-zinc-500">Podrá subir facturas de gasto (para Odoo) y marcar si son para reembolso. Si NO es admin y no tiene otro rol, entrará directo a Facturas.</div>
+              </div>
+            </label>
+          </div>
           {/* v8.19.65: Toggle Levantamientos habilitado — admin habilita por persona */}
           <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3">
             <label className="flex items-center gap-2 cursor-pointer">

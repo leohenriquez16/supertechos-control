@@ -9600,7 +9600,10 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto, onRecargar
     });
   }, [semanaRef]);
 
-  const fechaStr = (d) => d.toISOString().split('T')[0];
+  // v8.27.35: fecha LOCAL (RD = UTC-4). Con toISOString() todo lo que pasara
+  // después de las 8:00 pm se corría al día siguiente: "hoy" quedaba en mañana,
+  // las columnas de la semana se desfasaban y los días de atrás se bloqueaban.
+  const fechaStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const fechaCorta = (d) => d.toLocaleDateString('es-DO', { day: 'numeric', month: 'short' });
   const nombreDia = (d) => ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'][d.getDay() === 0 ? 6 : d.getDay() - 1];
 
@@ -9858,7 +9861,7 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto, onRecargar
 
   const confirmarAsignacion = async ({ proyectoId, personaId, fecha, fechaHasta, rol }) => {
     try {
-      const hoyStr = new Date().toISOString().split('T')[0];
+      const hoyStr = fechaStr(new Date()); // v8.27.35: local, no UTC
       // v8.26.4: rango de días PASADOS → ASISTENCIA RETROACTIVA: jornadas reales día
       // por día (cuentan para nómina), no asignación programada. Se omiten domingos.
       if (fechaHasta && fechaHasta > fecha && fechaHasta <= hoyStr) {
@@ -10401,7 +10404,12 @@ function ModalAsignarDesdeGrid({ personaId, fecha, data, usuario, onCerrar, onCo
     );
   }
   const [proyectoId, setProyectoId] = useState(proyectosElegibles[0]?.id || '');
+  // v8.27.35: "Desde" editable. Antes venía fijo al día de la celda clicada, así que
+  // desde "Agregar persona" (que abre siempre en hoy) no había forma de poner otros días.
+  const [fechaDesde, setFechaDesde] = useState(fecha);
   const [fechaHasta, setFechaHasta] = useState(fecha); // v8.25.40: rango (mismo día = jornada única)
+  // Si mueves "Desde" más allá de "Hasta", arrastra el "Hasta" para no dejar un rango inválido.
+  const cambiarDesde = (v) => { if (!v) return; setFechaDesde(v); if (fechaHasta < v) setFechaHasta(v); };
   const [rol, setRol] = useState('ayudante');
   // Rol sugerido según la relación con el proyecto elegido.
   useEffect(() => {
@@ -10410,10 +10418,12 @@ function ModalAsignarDesdeGrid({ personaId, fecha, data, usuario, onCerrar, onCo
     setRol(p.maestroId === personaId ? 'maestro' : p.supervisorId === personaId ? 'supervisor' : 'ayudante');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proyectoId]);
-  const esRango = fechaHasta && fechaHasta > fecha;
+  const esRango = fechaHasta && fechaHasta > fechaDesde;
   // v8.26.4: rango completamente en el pasado = asistencia retroactiva (jornadas reales)
-  const esRetro = esRango && fechaHasta <= new Date().toISOString().split('T')[0];
-  const fechaLabel = new Date(fecha + 'T12:00:00').toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'long' });
+  // v8.27.35: hoy en hora local (RD), no en UTC.
+  const hoyLocal = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
+  const esRetro = esRango && fechaHasta <= hoyLocal;
+  const fechaLabel = new Date(fechaDesde + 'T12:00:00').toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'long' });
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
@@ -10442,10 +10452,10 @@ function ModalAsignarDesdeGrid({ personaId, fecha, data, usuario, onCerrar, onCo
             {/* v8.25.40: planificar varios días a futuro */}
             <div className="grid grid-cols-2 gap-2">
               <Campo label="Desde">
-                <input type="date" value={fecha} disabled className="w-full bg-zinc-950 border-2 border-zinc-800 outline-none px-3 py-2 text-zinc-400 text-sm" />
+                <input type="date" value={fechaDesde} onChange={e => cambiarDesde(e.target.value)} className="w-full bg-zinc-900 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm" />
               </Campo>
               <Campo label="Hasta (incluido)">
-                <input type="date" value={fechaHasta} min={fecha} onChange={e => setFechaHasta(e.target.value)} className="w-full bg-zinc-900 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm" />
+                <input type="date" value={fechaHasta} min={fechaDesde} onChange={e => setFechaHasta(e.target.value)} className="w-full bg-zinc-900 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm" />
               </Campo>
             </div>
             {esRango && !esRetro && (
@@ -10462,7 +10472,7 @@ function ModalAsignarDesdeGrid({ personaId, fecha, data, usuario, onCerrar, onCo
                 ? '✍️ ASISTENCIA RETROACTIVA: se registran JORNADAS reales por cada día del rango (domingos omitidos) — cuentan para la nómina de una vez.'
                 : esRango
                 ? '📅 Se creará una ASIGNACIÓN programada por el rango completo (sale en el calendario con borde azul). Las jornadas reales se crean cada día en obra.'
-                : '💡 Si ya existe una jornada ese día para el proyecto, se agregará a la persona. Si no, se creará una nueva jornada programada. Para varios días, cambia "Hasta".'}
+                : '💡 Si ya existe una jornada ese día para el proyecto, se agregará a la persona. Si no, se creará una nueva jornada programada. Para varios días, mueve "Desde" y "Hasta".'}
             </div>
           </>
         )}
@@ -10471,10 +10481,10 @@ function ModalAsignarDesdeGrid({ personaId, fecha, data, usuario, onCerrar, onCo
           <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2">Cancelar</button>
           {proyectosElegibles.length > 0 && (
             <button
-              onClick={() => onConfirmar({ proyectoId, personaId, fecha, fechaHasta, rol })}
+              onClick={() => onConfirmar({ proyectoId, personaId, fecha: fechaDesde, fechaHasta, rol })}
               className="flex-1 bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase py-2 flex items-center justify-center gap-2"
             >
-              <Plus className="w-3 h-3" /> {esRetro ? `Registrar asistencia (${Math.round((new Date(fechaHasta) - new Date(fecha)) / 86400000) + 1} días)` : esRango ? `Asignar ${Math.round((new Date(fechaHasta) - new Date(fecha)) / 86400000) + 1} días` : 'Asignar'}
+              <Plus className="w-3 h-3" /> {esRetro ? `Registrar asistencia (${Math.round((new Date(fechaHasta) - new Date(fechaDesde)) / 86400000) + 1} días)` : esRango ? `Asignar ${Math.round((new Date(fechaHasta) - new Date(fechaDesde)) / 86400000) + 1} días` : 'Asignar'}
             </button>
           )}
         </div>

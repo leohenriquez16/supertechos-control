@@ -61,6 +61,7 @@ export default function ModalSubirFacturaOdoo({ usuario, facturaEditar = null, o
         monto: d.monto_total != null ? String(d.monto_total) : prev.monto,
         itbis: d.itbis != null ? String(d.itbis) : prev.itbis,
         concepto: d.concepto || prev.concepto,
+        cuentaAnalitica: d.cuenta_analitica || prev.cuentaAnalitica, // v8.27.41: número azul leído por la IA
       }));
       setPaso('confirmar');
     } catch (e) {

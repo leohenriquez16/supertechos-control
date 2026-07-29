@@ -599,6 +599,8 @@ export default function App() {
   const itemsMenu = esFacturasOnly ? [
     { seccion: 'FACTURAS', items: [
       { id: 'facturasOdoo', label: 'Facturas', icon: Receipt, vista: 'facturasOdoo' },
+      // v8.27.38: Lily (capturista) también llena el módulo de Vehículos.
+      { id: 'vehiculos', label: 'Vehículos', icon: Car, vista: 'vehiculos' },
       { id: 'gotera', label: 'Gotera', icon: CloudRain, vista: 'gotera' },
     ]},
   ] : esAdmin ? [
@@ -787,8 +789,8 @@ export default function App() {
         {vista === 'auditLog' && esAdmin && <VistaAuditLog data={data} onVolver={() => setVista('dashboard')} />}
         {/* v8.17.49: Propiedades de la empresa (apartamento Punta Cana, etc) */}
         {vista === 'propiedadesEmpresa' && esAdmin && <VistaPropiedadesEmpresa usuario={usuario} data={data} onVolver={() => setVista('dashboard')} />}
-        {/* v8.27.38: Vehículos (flota) */}
-        {vista === 'vehiculos' && esAdmin && <VistaVehiculos usuario={usuario} data={data} onRecargar={recargar} />}
+        {/* v8.27.38: Vehículos (flota) — admin, o capturista (Lily) con rol/flag facturas */}
+        {vista === 'vehiculos' && (esAdmin || tieneRol(usuario, 'facturas') || usuario.facturasHabilitada) && <VistaVehiculos usuario={usuario} data={data} onRecargar={recargar} />}
         {/* v8.26.0: Contabilidad — reportes DGII (606/607/608) + resumen ITBIS/IT-1 */}
         {vista === 'contabilidad' && tieneRol(usuario, 'owner') && <VistaContabilidad usuario={usuario} onVolver={() => setVista('dashboard')} />}
         {vista === 'miPerfil' && <MiPerfil usuario={usuario} persona={usuario} soloLectura={false} onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }} onGuardar={(campos) => withSync(() => db.guardarPerfil(usuario.id, campos))} />}

@@ -3336,7 +3336,7 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
         </div>
       )}
 
-      {['admin', 'supervisor', 'maestro', 'ayudante'].map(rol => {
+      {['admin', 'supervisor', 'maestro', 'ayudante', 'facturas', 'otros'].map(rol => {
         const grupo = personal.filter(p => {
           // v8.17.2: búsqueda por nombre o teléfono.
           // v8.17.89: ya no se incluye el PIN en el haystack — el front no
@@ -3350,10 +3350,15 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
           if (rol === 'supervisor') return tieneRol(p, 'supervisor') && !tieneRol(p, 'admin');
           if (rol === 'maestro') return tieneRol(p, 'maestro') && !tieneRol(p, 'supervisor') && !tieneRol(p, 'admin');
           if (rol === 'ayudante') return tieneRol(p, 'ayudante');
+          // v8.27.38: rol dedicado de captura de facturas (Lily) — antes no tenía grupo
+          // y la persona no aparecía en la lista aunque estuviera creada.
+          if (rol === 'facturas') return tieneRol(p, 'facturas');
+          // v8.27.38: catch-all — cualquiera con un rol no listado (o sin rol) igual se ve.
+          if (rol === 'otros') return !['admin', 'supervisor', 'maestro', 'ayudante', 'facturas'].some(r => tieneRol(p, r));
           return false;
         });
         if (grupo.length === 0) return null;
-        const titulos = { admin: 'Administradores', supervisor: 'Supervisores', maestro: 'Maestros', ayudante: 'Ayudantes' };
+        const titulos = { admin: 'Administradores', supervisor: 'Supervisores', maestro: 'Maestros', ayudante: 'Ayudantes', facturas: 'Facturas', otros: 'Otros' };
         return (
           <div key={rol}>
             <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2">{titulos[rol]} ({grupo.length})</div>

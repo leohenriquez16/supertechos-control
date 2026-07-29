@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Camera, Loader2, X, Sparkles, AlertTriangle, Check } from 'lucide-react';
+import { Camera, Loader2, X, Sparkles, AlertTriangle, Check, FileText } from 'lucide-react';
 import * as db from '../../lib/db';
 import { toast } from '../../lib/toast';
 import { comprimirImagen } from '../../lib/imports';
@@ -10,12 +10,22 @@ import Input from '../common/Input';
 import { validarRNC, validarNCF } from '../../lib/validacionFiscal';
 import { TIPOS_NCF, detectarTipoNcf } from '../../lib/facturasOdooMap';
 
+// v8.27.43: lee un archivo (PDF) como dataURL sin comprimir (los PDF no pasan por canvas).
+const archivoADataUrl = (file) => new Promise((resolve, reject) => {
+  const r = new FileReader();
+  r.onload = () => resolve(r.result);
+  r.onerror = reject;
+  r.readAsDataURL(file);
+});
+const esArchivoPdf = (file) => !!file && (file.type === 'application/pdf' || /\.pdf$/i.test(file.name || ''));
+
 // Modal para que Lily suba una factura de gasto (para exportar a Odoo).
-// Flujo: foto → comprime → /api/caja-chica/parse-factura → revisa → guarda.
+// Flujo: foto/PDF → (comprime si es imagen) → /api/caja-chica/parse-factura → revisa → guarda.
 export default function ModalSubirFacturaOdoo({ usuario, facturaEditar = null, onCerrar, onGuardado }) {
   const editando = !!facturaEditar;
   const [paso, setPaso] = useState(editando ? 'confirmar' : 'foto'); // foto | revisando | confirmar | guardando
   const [fotoData, setFotoData] = useState(null); // dataURL nueva (si se sube/cambia)
+  const [esPdf, setEsPdf] = useState(false); // v8.27.43: el archivo subido es PDF
   const [errorAI, setErrorAI] = useState(null);
   const [datosIA, setDatosIA] = useState(facturaEditar?.datosIA || null);
   const [advertencias, setAdvertencias] = useState([]);
@@ -39,12 +49,14 @@ export default function ModalSubirFacturaOdoo({ usuario, facturaEditar = null, o
     if (!file) return;
     setErrorAI(null);
     try {
-      const dataUrl = await comprimirImagen(file);
+      const pdf = esArchivoPdf(file);
+      setEsPdf(pdf);
+      const dataUrl = pdf ? await archivoADataUrl(file) : await comprimirImagen(file);
       setFotoData(dataUrl);
       setPaso('revisando');
       const res = await fetch('/api/caja-chica/parse-factura', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ base64Data: dataUrl }),
+        body: JSON.stringify({ base64Data: dataUrl, ...(pdf ? { mediaType: 'application/pdf' } : {}) }),
       });
       const json = await res.json();
       if (!res.ok) { setErrorAI(json.error || 'Error procesando la imagen'); setPaso('confirmar'); return; }
@@ -124,7 +136,7 @@ export default function ModalSubirFacturaOdoo({ usuario, facturaEditar = null, o
           <div className="space-y-3">
             <div className="text-[10px] text-zinc-500">Toma una foto clara de la factura. La IA extrae proveedor, RNC, NCF, fecha y monto automáticamente.</div>
             <div className="relative">
-              <input type="file" accept="image/*" onChange={(e) => onFile(e.target.files?.[0])} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
+              <input type="file" accept="image/*,application/pdf" onChange={(e) => onFile(e.target.files?.[0])} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
               <div className="border-2 border-dashed border-zinc-700 hover:border-red-600 p-8 text-center transition">
                 <Camera className="w-10 h-10 text-zinc-500 mx-auto mb-2" />
                 <div className="text-sm font-bold">Toca para subir factura</div>
@@ -139,7 +151,9 @@ export default function ModalSubirFacturaOdoo({ usuario, facturaEditar = null, o
 
         {paso === 'revisando' && (
           <div className="space-y-3 py-6 text-center">
-            {fotoData && <img src={fotoData} alt="" className="max-h-48 mx-auto border border-zinc-800" />}
+            {fotoData && (esPdf
+              ? <div className="max-h-48 mx-auto border border-zinc-800 bg-zinc-950 p-4 flex items-center justify-center gap-2 text-zinc-300"><FileText className="w-6 h-6 text-red-400" /> PDF cargado</div>
+              : <img src={fotoData} alt="" className="max-h-48 mx-auto border border-zinc-800" />)}
             <div className="flex items-center justify-center gap-2 text-sm">
               <Loader2 className="w-4 h-4 animate-spin text-red-500" />
               <span className="text-zinc-400">Analizando con IA...</span>
@@ -153,13 +167,15 @@ export default function ModalSubirFacturaOdoo({ usuario, facturaEditar = null, o
           <div className="space-y-3">
             {fotoData && (
               <div className="relative">
-                <img src={fotoData} alt="" className="max-h-32 mx-auto border border-zinc-800" />
-                <button onClick={() => { setPaso('foto'); setFotoData(null); setDatosIA(null); }} className="absolute top-1 right-1 bg-black/70 text-white p-1 text-[10px]">Cambiar</button>
+                {esPdf
+                  ? <div className="max-h-32 mx-auto border border-zinc-800 bg-zinc-950 p-3 flex items-center justify-center gap-2 text-zinc-300 text-sm"><FileText className="w-5 h-5 text-red-400" /> PDF cargado</div>
+                  : <img src={fotoData} alt="" className="max-h-32 mx-auto border border-zinc-800" />}
+                <button onClick={() => { setPaso('foto'); setFotoData(null); setDatosIA(null); setEsPdf(false); }} className="absolute top-1 right-1 bg-black/70 text-white p-1 text-[10px]">Cambiar</button>
               </div>
             )}
             {editando && !fotoData && facturaEditar?.fotoPath && (
               <div className="text-[10px] text-zinc-500 text-center">📎 Foto guardada. Sube una nueva solo si quieres reemplazarla.
-                <label className="ml-1 underline text-red-400 cursor-pointer">cambiar<input type="file" accept="image/*" onChange={(e) => onFile(e.target.files?.[0])} className="hidden" /></label>
+                <label className="ml-1 underline text-red-400 cursor-pointer">cambiar<input type="file" accept="image/*,application/pdf" onChange={(e) => onFile(e.target.files?.[0])} className="hidden" /></label>
               </div>
             )}
             {errorAI && (
@@ -226,14 +242,22 @@ export default function ModalSubirFacturaOdoo({ usuario, facturaEditar = null, o
                   {TIPOS_NCF.map((t) => <option key={t.v} value={t.v}>{t.label}</option>)}
                 </select>
               </Campo>
-              <Campo label="ITBIS">
-                <select value={datos.itbisModo} onChange={(e) => setDatos({ ...datos, itbisModo: e.target.value })}
-                  className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm">
-                  <option value="incluido">Incluido en el monto</option>
-                  <option value="aparte">Aparte (se suma)</option>
-                  <option value="exento">Exento (sin ITBIS)</option>
-                </select>
+              {/* v8.27.43: mostrar el MONTO del ITBIS (la IA lo desglosa). "Incluido" solo
+                  se muestra abajo cuando la factura NO lo trae desglosado. */}
+              <Campo label="ITBIS (monto)">
+                <input type="number" value={datos.itbis}
+                  onChange={(e) => setDatos({ ...datos, itbis: e.target.value, itbisModo: e.target.value ? 'incluido' : (datos.itbisModo === 'exento' ? 'exento' : 'incluido') })}
+                  placeholder={datos.itbisModo === 'exento' ? 'Exento' : 'Monto del ITBIS'}
+                  className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm text-right" />
               </Campo>
+            </div>
+            {/* Nota de ITBIS: solo dice "incluido" cuando NO viene desglosado en la factura */}
+            <div className="text-[10px] -mt-1">
+              {datos.itbisModo === 'exento'
+                ? <span className="text-zinc-500">Factura exenta de ITBIS.</span>
+                : (datos.itbis && Number(datos.itbis) > 0)
+                  ? <span className="text-green-500/80">ITBIS desglosado: {new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2 }).format(Number(datos.itbis))}{datos.moneda === 'USD' ? ' US$' : datos.moneda === 'EUR' ? ' €' : ' RD$'} (incluido en el total).</span>
+                  : <span className="text-zinc-500">Sin desglosar en la factura → se toma como <b className="text-zinc-300">ITBIS incluido en el monto</b>. <button type="button" onClick={() => setDatos({ ...datos, itbisModo: datos.itbisModo === 'exento' ? 'incluido' : 'exento' })} className="text-yellow-500 hover:underline ml-1">{datos.itbisModo === 'exento' ? '' : 'marcar exento'}</button></span>}
             </div>
 
             <Campo label="Producto / Concepto"><Input value={datos.concepto} onChange={(v) => setDatos({ ...datos, concepto: v })} placeholder="Ferretería → Materiales Varios · Gasoil / Gasolina · Gas" /></Campo>

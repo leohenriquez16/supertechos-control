@@ -45,15 +45,11 @@ export default function ModalSubirFacturaOdoo({ usuario, facturaEditar = null, o
     reembolsable: facturaEditar?.reembolsable || false,
   });
 
-  const onFile = async (file) => {
-    if (!file) return;
+  // v8.27.44: parseo con IA reutilizable (para subir y para "volver a leer").
+  const procesarConIA = async (dataUrl, pdf) => {
     setErrorAI(null);
+    setPaso('revisando');
     try {
-      const pdf = esArchivoPdf(file);
-      setEsPdf(pdf);
-      const dataUrl = pdf ? await archivoADataUrl(file) : await comprimirImagen(file);
-      setFotoData(dataUrl);
-      setPaso('revisando');
       const res = await fetch('/api/caja-chica/parse-factura', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ base64Data: dataUrl, ...(pdf ? { mediaType: 'application/pdf' } : {}) }),
@@ -82,6 +78,23 @@ export default function ModalSubirFacturaOdoo({ usuario, facturaEditar = null, o
       setErrorAI(e.message || String(e));
       setPaso('confirmar');
     }
+  };
+
+  const onFile = async (file) => {
+    if (!file) return;
+    const pdf = esArchivoPdf(file);
+    setEsPdf(pdf);
+    try {
+      const dataUrl = pdf ? await archivoADataUrl(file) : await comprimirImagen(file);
+      setFotoData(dataUrl);
+      await procesarConIA(dataUrl, pdf);
+    } catch (e) { setErrorAI(e.message || String(e)); setPaso('confirmar'); }
+  };
+
+  // v8.27.44: re-leer la MISMA foto/PDF con IA (cuando leyó mal un campo). Rápido, sin re-subir.
+  const reLeerConIA = async () => {
+    if (fotoData) await procesarConIA(fotoData, esPdf);
+    else setPaso('foto'); // sin foto (edición manual) → ir a subir una
   };
 
   const guardar = async () => {
@@ -122,7 +135,9 @@ export default function ModalSubirFacturaOdoo({ usuario, facturaEditar = null, o
   };
 
   return (
-    <div className="fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4 overflow-auto">
+    {/* v8.27.44: items-start (no items-center) para que el scroll llegue bien al fondo
+        cuando el formulario es más alto que la pantalla (bug de flexbox+overflow). */}
+    <div className="fixed inset-0 bg-black/85 z-50 flex items-start justify-center p-4 overflow-y-auto">
       <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-md w-full p-5 space-y-4 my-8">
         <div className="flex justify-between items-start">
           <div>
@@ -171,6 +186,13 @@ export default function ModalSubirFacturaOdoo({ usuario, facturaEditar = null, o
                   ? <div className="max-h-32 mx-auto border border-zinc-800 bg-zinc-950 p-3 flex items-center justify-center gap-2 text-zinc-300 text-sm"><FileText className="w-5 h-5 text-red-400" /> PDF cargado</div>
                   : <img src={fotoData} alt="" className="max-h-32 mx-auto border border-zinc-800" />}
                 <button onClick={() => { setPaso('foto'); setFotoData(null); setDatosIA(null); setEsPdf(false); }} className="absolute top-1 right-1 bg-black/70 text-white p-1 text-[10px]">Cambiar</button>
+              </div>
+            )}
+            {/* v8.27.44: si la IA leyó mal un campo (ej. e-NCF), re-leer la misma foto o re-tomarla */}
+            {fotoData && (
+              <div className="flex gap-2">
+                <button type="button" onClick={reLeerConIA} className="flex-1 border border-zinc-700 hover:border-red-600 text-zinc-300 text-[11px] font-bold py-1.5 flex items-center justify-center gap-1"><Sparkles className="w-3 h-3 text-yellow-400" /> Volver a leer con IA</button>
+                <button type="button" onClick={() => { setPaso('foto'); setFotoData(null); setDatosIA(null); setEsPdf(false); }} className="flex-1 border border-zinc-700 hover:border-red-600 text-zinc-300 text-[11px] font-bold py-1.5 flex items-center justify-center gap-1"><Camera className="w-3 h-3" /> Re-tomar foto</button>
               </div>
             )}
             {editando && !fotoData && facturaEditar?.fotoPath && (
@@ -281,7 +303,8 @@ export default function ModalSubirFacturaOdoo({ usuario, facturaEditar = null, o
               </button>
             </div>
 
-            <div className="flex gap-2 pt-2 border-t border-zinc-800">
+            {/* v8.27.44: footer fijo (sticky) para que Guardar/Cancelar estén SIEMPRE visibles */}
+            <div className="flex gap-2 pt-3 border-t border-zinc-800 sticky bottom-0 bg-zinc-900 -mx-5 px-5 pb-1 -mb-1">
               <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2.5">Cancelar</button>
               <button onClick={guardar} disabled={!datos.empresa || !datos.monto}
                 className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-xs font-black uppercase py-2.5 flex items-center justify-center gap-1">

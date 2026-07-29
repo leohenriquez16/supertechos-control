@@ -30,6 +30,7 @@ export default function ModalSubirFacturaOdoo({ usuario, facturaEditar = null, o
     itbisModo: facturaEditar?.itbisModo || 'incluido',
     itbis: facturaEditar?.itbis != null ? String(facturaEditar.itbis) : '',
     concepto: facturaEditar?.concepto || '',
+    cuentaAnalitica: facturaEditar?.cuentaAnalitica || '', // v8.27.40: número azul = proyecto para Odoo
     reembolsable: facturaEditar?.reembolsable || false,
   });
 
@@ -76,11 +77,16 @@ export default function ModalSubirFacturaOdoo({ usuario, facturaEditar = null, o
     if (rncTxt) { const v = validarRNC(rncTxt); if (!v.ok) { toast.warning('RNC inválido: ' + v.mensaje); return; } }
     const ncfTxt = (datos.ncf || '').trim();
     if (ncfTxt) { const v = validarNCF(ncfTxt); if (!v.ok) { toast.warning('NCF/e-CF inválido: ' + v.mensaje); return; } }
+    // v8.27.40: cuenta analítica NO es obligatoria, pero si va vacía se avisa (no bloquea).
+    if (!(datos.cuentaAnalitica || '').trim()) {
+      if (!confirm('⚠️ Esta factura no tiene CUENTA ANALÍTICA (proyecto). Irá a Odoo sin obra asignada.\n\n¿Guardar así de todos modos?')) return;
+    }
     setPaso('guardando');
     const payload = {
       empresa: datos.empresa, proveedor: datos.proveedor || null, rnc: datos.rnc || null,
       tipoNcf: datos.tipoNcf || null, ncf: datos.ncf || null, fecha: datos.fecha,
       concepto: datos.concepto || null, monto, itbisModo: datos.itbisModo,
+      cuentaAnalitica: datos.cuentaAnalitica || null, // v8.27.40
       itbis: datos.itbis !== '' ? Number(datos.itbis) : null,
       reembolsable: datos.reembolsable,
       datosIA, estado: 'lista',
@@ -216,7 +222,12 @@ export default function ModalSubirFacturaOdoo({ usuario, facturaEditar = null, o
               </Campo>
             </div>
 
-            <Campo label="Producto / Concepto"><Input value={datos.concepto} onChange={(v) => setDatos({ ...datos, concepto: v })} placeholder="Qué se compró" /></Campo>
+            <Campo label="Producto / Concepto"><Input value={datos.concepto} onChange={(v) => setDatos({ ...datos, concepto: v })} placeholder="Ferretería → Materiales Varios · Gasoil / Gasolina · Gas" /></Campo>
+            {/* v8.27.40: cuenta analítica = el número que se anota en lapicero azul en la
+                factura física (el proyecto). Odoo la usa para cargar el gasto a la obra. */}
+            <Campo label="Cuenta analítica (proyecto) — número azul">
+              <Input value={datos.cuentaAnalitica} onChange={(v) => setDatos({ ...datos, cuentaAnalitica: v })} placeholder="Ej. ST-C5737, PG-C1297, Oficina" />
+            </Campo>
 
             {/* ¿Solo registrar el gasto o pedir reembolso? */}
             <div className="grid grid-cols-2 gap-2">

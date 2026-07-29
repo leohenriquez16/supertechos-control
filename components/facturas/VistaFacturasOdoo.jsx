@@ -139,29 +139,40 @@ export default function VistaFacturasOdoo({ usuario, data, onVolver }) {
     }
     setExportando({ hechas: 0, total: aExportar.length });
     try {
-      // v8.27.50: traer cuentas analíticas de Odoo (read-only) para resolver el "número
-      // azul" → id y armar analytic_distribution (JSON). Si falla, se exporta sin analítica.
-      let cuentasAnaliticas = [];
+      // v8.27.51: traer de Odoo (read-only) cuentas analíticas + productos + proveedores
+      // (por los RNC presentes) para resolver TODO a valores EXACTOS y que el import
+      // auto-mapee y matchee. Si falla, se exporta con lo que haya (sin bloquear).
+      let cuentasAnaliticas = [], productos = [], proveedores = [];
       try {
-        const r = await fetch('/api/odoo/cuentas-analiticas');
+        const rncs = [...new Set(aExportar.map((f) => (f.rnc || '')).filter(Boolean))];
+        const r = await fetch('/api/odoo/import-refs', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rncs }),
+        });
         const j = await r.json();
-        if (r.ok && j.ok) cuentasAnaliticas = j.cuentas || [];
-        else toast.warning('No se pudieron leer las cuentas analíticas de Odoo; el ZIP irá sin proyecto (analytic).', { duration: 7000 });
-      } catch { toast.warning('No se pudieron leer las cuentas analíticas de Odoo; el ZIP irá sin proyecto (analytic).', { duration: 7000 }); }
+        if (r.ok && j.ok) { cuentasAnaliticas = j.cuentas || []; productos = j.productos || []; proveedores = j.proveedores || []; }
+        else toast.warning('No se pudieron leer las referencias de Odoo; el CSV puede requerir mapeo manual.', { duration: 7000 });
+      } catch { toast.warning('No se pudieron leer las referencias de Odoo; el CSV puede requerir mapeo manual.', { duration: 7000 }); }
 
       const { blob, counts } = await generarZipFacturasOdoo({
         facturas: aExportar,
         categorias: data?.categoriasCajaChica || [],
-        cuentasAnaliticas,
+        cuentasAnaliticas, productos, proveedores,
         onProgreso: (hechas, total) => setExportando({ hechas, total }),
       });
       const hoy = new Date().toISOString().split('T')[0];
       descargarBlob(blob, `facturas-odoo-${hoy}.zip`);
       await db.marcarFacturasOdooExportadas(aExportar.map((f) => f.id));
       toast.success(`Exportadas ${aExportar.length} facturas (ST ${counts.superTechos} · PG ${counts.prouco}${counts.sinFoto ? ` · ${counts.sinFoto} sin foto` : ''}).`, { duration: 7000 });
-      // v8.27.50: avisar de códigos de proyecto que no matchearon con ninguna cuenta de Odoo.
+      // v8.27.51: avisar de lo que Odoo no pudo resolver (va vacío, no bloquea el import).
+      if (counts.sinProveedor && counts.sinProveedor.length) {
+        toast.warning(`Proveedor no encontrado en Odoo por RNC (créalo o revísalo): ${counts.sinProveedor.slice(0, 8).join(', ')}${counts.sinProveedor.length > 8 ? '…' : ''}.`, { duration: 11000 });
+      }
+      if (counts.sinProducto && counts.sinProducto.length) {
+        toast.warning(`Producto sin match exacto en Odoo (línea sin producto): ${counts.sinProducto.slice(0, 8).join(', ')}${counts.sinProducto.length > 8 ? '…' : ''}. Ajusta el mapeo por categoría.`, { duration: 11000 });
+      }
       if (counts.sinAnalitica && counts.sinAnalitica.length) {
-        toast.warning(`Sin cuenta analítica en Odoo (van sin proyecto): ${counts.sinAnalitica.join(', ')}. Revisa que el código exista en Odoo.`, { duration: 10000 });
+        toast.warning(`Sin cuenta analítica en Odoo (van sin proyecto): ${counts.sinAnalitica.join(', ')}.`, { duration: 10000 });
       }
       cargar();
     } catch (e) {

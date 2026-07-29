@@ -21,7 +21,7 @@ const esArchivoPdf = (file) => !!file && (file.type === 'application/pdf' || /\.
 
 // Modal para que Lily suba una factura de gasto (para exportar a Odoo).
 // Flujo: foto/PDF → (comprime si es imagen) → /api/caja-chica/parse-factura → revisa → guarda.
-export default function ModalSubirFacturaOdoo({ usuario, facturaEditar = null, onCerrar, onGuardado }) {
+export default function ModalSubirFacturaOdoo({ usuario, categorias = [], facturaEditar = null, onCerrar, onGuardado }) {
   const editando = !!facturaEditar;
   const [paso, setPaso] = useState(editando ? 'confirmar' : 'foto'); // foto | revisando | confirmar | guardando
   const [fotoData, setFotoData] = useState(null); // dataURL nueva (si se sube/cambia)
@@ -52,7 +52,8 @@ export default function ModalSubirFacturaOdoo({ usuario, facturaEditar = null, o
     try {
       const res = await fetch('/api/caja-chica/parse-factura', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ base64Data: dataUrl, ...(pdf ? { mediaType: 'application/pdf' } : {}) }),
+        // v8.27.52: pasar las categorías REALES para que la IA use sus IDs (gas, etc.).
+        body: JSON.stringify({ base64Data: dataUrl, categorias: categorias || [], ...(pdf ? { mediaType: 'application/pdf' } : {}) }),
       });
       const json = await res.json();
       if (!res.ok) { setErrorAI(json.error || 'Error procesando la imagen'); setPaso('confirmar'); return; }

@@ -59,7 +59,9 @@ export default function VistaFacturasOdoo({ usuario, data, onVolver }) {
         try {
           const res = await fetch('/api/caja-chica/parse-factura', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ base64Data: dataUrl, ...(pdf ? { mediaType: 'application/pdf' } : {}) }),
+            // v8.27.52: pasar las categorías REALES para que la IA use sus IDs (gas, etc.)
+            // y el mapeo a Odoo por categoría se aplique al exportar.
+            body: JSON.stringify({ base64Data: dataUrl, categorias: data?.categoriasCajaChica || [], ...(pdf ? { mediaType: 'application/pdf' } : {}) }),
           });
           const json = await res.json();
           if (res.ok && json.datos) d = json.datos;
@@ -339,6 +341,7 @@ export default function VistaFacturasOdoo({ usuario, data, onVolver }) {
       {modal && (
         <ModalSubirFacturaOdoo
           usuario={usuario}
+          categorias={data?.categoriasCajaChica || []}
           facturaEditar={modal === 'nueva' ? null : modal}
           onCerrar={() => setModal(null)}
           onGuardado={() => { setModal(null); cargar(); }}

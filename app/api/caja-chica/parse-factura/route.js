@@ -128,10 +128,15 @@ export async function POST(request) {
       detectedMedia = m[1];
       pureBase64 = m[2];
     }
-    // Whitelist de tipos soportados por Claude Vision
-    if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(detectedMedia)) {
+    // v8.27.43: soporta PDF (subir factura desde computadora) además de imagen.
+    const esPdf = detectedMedia === 'application/pdf';
+    // Whitelist de tipos soportados por Claude Vision (para imágenes)
+    if (!esPdf && !['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(detectedMedia)) {
       detectedMedia = 'image/jpeg';
     }
+    const bloqueDoc = esPdf
+      ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pureBase64 } }
+      : { type: 'image', source: { type: 'base64', media_type: detectedMedia, data: pureBase64 } };
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -146,7 +151,7 @@ export async function POST(request) {
         messages: [{
           role: 'user',
           content: [
-            { type: 'image', source: { type: 'base64', media_type: detectedMedia, data: pureBase64 } },
+            bloqueDoc,
             { type: 'text', text: buildPrompt(categorias, new Date().toISOString().slice(0, 10)) },
           ],
         }],

@@ -12,6 +12,9 @@ import { generarZipFacturasOdoo, descargarBlob } from '../../lib/helpers/exportF
 import ModalSubirFacturaOdoo from './ModalSubirFacturaOdoo';
 
 const fmtRD = (n) => 'RD$' + new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n) || 0);
+// v8.27.43: PDF (subir desde computadora) sin comprimir
+const esArchivoPdf = (f) => !!f && (f.type === 'application/pdf' || /\.pdf$/i.test(f.name || ''));
+const archivoADataUrl = (file) => new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = reject; r.readAsDataURL(file); });
 
 export default function VistaFacturasOdoo({ usuario, onVolver }) {
   const esAdmin = tieneRol(usuario, 'admin');
@@ -28,7 +31,7 @@ export default function VistaFacturasOdoo({ usuario, onVolver }) {
   // v8.27.41: carga masiva — elige muchas fotos; la IA parsea cada una (incluida la
   // cuenta analítica escrita a mano en azul) y crea BORRADORES para revisar.
   const onCargaMasiva = async (fileList) => {
-    const imgs = Array.from(fileList || []).filter((f) => f.type.startsWith('image/'));
+    const imgs = Array.from(fileList || []).filter((f) => f.type.startsWith('image/') || esArchivoPdf(f));
     if (imgs.length === 0) return;
     const MAX = 60;
     if (imgs.length > MAX) toast.warning(`Máximo ${MAX} fotos por carga; se toman las primeras ${MAX}.`);
@@ -37,12 +40,13 @@ export default function VistaFacturasOdoo({ usuario, onVolver }) {
     let errores = 0;
     for (let i = 0; i < lote.length; i++) {
       try {
-        const dataUrl = await comprimirImagen(lote[i]);
+        const pdf = esArchivoPdf(lote[i]);
+        const dataUrl = pdf ? await archivoADataUrl(lote[i]) : await comprimirImagen(lote[i]);
         let d = {};
         try {
           const res = await fetch('/api/caja-chica/parse-factura', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ base64Data: dataUrl }),
+            body: JSON.stringify({ base64Data: dataUrl, ...(pdf ? { mediaType: 'application/pdf' } : {}) }),
           });
           const json = await res.json();
           if (res.ok && json.datos) d = json.datos;
@@ -142,7 +146,7 @@ export default function VistaFacturasOdoo({ usuario, onVolver }) {
           {/* v8.27.41: carga masiva — elegir todas las fotos de una */}
           <label className={`bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-black uppercase px-3 py-2.5 flex items-center gap-1 cursor-pointer ${masiva ? 'opacity-50 pointer-events-none' : ''}`} title="Sube varias facturas a la vez">
             <Images className="w-4 h-4" /> Carga masiva
-            <input type="file" accept="image/*" multiple className="hidden" disabled={!!masiva} onChange={(e) => { onCargaMasiva(e.target.files); e.target.value = ''; }} />
+            <input type="file" accept="image/*,application/pdf" multiple className="hidden" disabled={!!masiva} onChange={(e) => { onCargaMasiva(e.target.files); e.target.value = ''; }} />
           </label>
           <button onClick={() => setModal('nueva')} disabled={!!masiva} className="bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-xs font-black uppercase px-4 py-2.5 flex items-center gap-1">
             <Plus className="w-4 h-4" /> Subir factura

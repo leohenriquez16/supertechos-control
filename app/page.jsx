@@ -1038,11 +1038,13 @@ export default function App() {
                 }
                 try {
                   const proy = data.proyectos.find(p => p.id === proyId);
-                  const destinos = admins.map(a => a.email).filter(Boolean);
-                  if (destinos.length) {
-                    db.enviarCorreoReporte(destinos, `[${proy?.referenciaOdoo || proy?.cliente}] Listo para facturar`,
-                      `<div style="font-family:Arial;padding:20px;"><h2 style="color:#CC0000;">Super Techos - Listo para facturar</h2><p><strong>${proy?.cliente}</strong> · ${proy?.referenciaProyecto || proy?.nombre}</p><p>El supervisor ya midió con el cliente. Procede a emitir la factura.</p>${nota ? `<p><em>"${nota}"</em></p>` : ''}</div>`);
-                  }
+                  // v8.27.40: "Listo para facturar" va a Yamel (factura) con copia al equipo
+                  // administrativo. Destinatarios fijos — fácil de editar aquí.
+                  const FACTURAR_TO = ['yharris@supertechos.com.do'];
+                  const FACTURAR_CC = ['mmartinez@supertechos.com.do', 'fcalcano@supertechos.com.do', 'ljaime@supertechos.com.do'];
+                  db.enviarCorreoReporte(FACTURAR_TO, `[${proy?.referenciaOdoo || proy?.cliente}] Listo para facturar`,
+                    `<div style="font-family:Arial;padding:20px;"><h2 style="color:#CC0000;">Super Techos - Listo para facturar</h2><p><strong>${proy?.cliente}</strong> · ${proy?.referenciaProyecto || proy?.nombre}</p><p>El supervisor ya midió con el cliente. Procede a emitir la factura.</p>${nota ? `<p><em>"${nota}"</em></p>` : ''}</div>`,
+                    { cc: FACTURAR_CC });
                 } catch (e) { console.warn(e); }
               }
               // 'facturado' → tarea de cobro

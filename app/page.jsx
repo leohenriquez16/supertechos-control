@@ -781,7 +781,7 @@ export default function App() {
         {vista === 'gotera' && <ModuloGotera usuario={usuario} data={data} onVolver={() => setVista(esAdmin ? 'dashboard' : 'misProyectos')} />}
         {vista === 'cajaChica' && esAdmin && <VistaCajaChicaAdmin usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onIrAProveedores={() => setVista('proveedoresCajaChica')} onIrACategorias={() => setVista('categoriasCajaChica')} />}
         {/* v8.27.36: Facturas — admins, o cualquiera con el flag (Lily, reembolsos personales) */}
-        {vista === 'facturasOdoo' && (esAdmin || usuario.facturasHabilitada || tieneRol(usuario, 'facturas')) && <VistaFacturasOdoo usuario={usuario} onVolver={esFacturasOnly ? null : () => setVista(esAdmin ? 'dashboard' : 'misProyectos')} />}
+        {vista === 'facturasOdoo' && (esAdmin || usuario.facturasHabilitada || tieneRol(usuario, 'facturas')) && <VistaFacturasOdoo usuario={usuario} data={data} onVolver={esFacturasOnly ? null : () => setVista(esAdmin ? 'dashboard' : 'misProyectos')} />}
         {vista === 'proveedoresCajaChica' && esAdmin && <VistaProveedoresCajaChica usuario={usuario} data={data} onVolver={() => setVista('cajaChica')} />}
         {vista === 'categoriasCajaChica' && esAdmin && <VistaCategoriasCajaChica usuario={usuario} onVolver={() => setVista('cajaChica')} onCambio={() => recargar()} />}
         {vista === 'estadisticasPersonal' && esAdmin && <VistaEstadisticasPersonal data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}

@@ -58,6 +58,7 @@ export default function VistaFacturasOdoo({ usuario, onVolver }) {
           itbis: d.itbis != null ? d.itbis : null,
           concepto: d.concepto || null,
           cuentaAnalitica: d.cuenta_analitica || null, // número azul leído por la IA
+          moneda: d.moneda || 'DOP', // v8.27.42: moneda leída por la IA
           datosIA: d,
           estado: 'borrador',
           fotoDataUrl: dataUrl,

@@ -47,6 +47,7 @@ export default function VistaFacturasOdoo({ usuario, data, onVolver }) {
   const [adjuntando, setAdjuntando] = useState(null); // v8.27.57: adjuntar fotos a Odoo
   const [revisando, setRevisando] = useState(false); // v8.27.60: revisión secuencial de borradores
   const [avisando, setAvisando] = useState(false);   // v8.27.60: enviando aviso a Felvison
+  const [verificando, setVerificando] = useState(false); // v8.27.61: verificar en Odoo
 
   // v8.27.41: carga masiva — elige muchas fotos; la IA parsea cada una (incluida la
   // cuenta analítica escrita a mano en azul) y crea BORRADORES para revisar.
@@ -279,6 +280,40 @@ export default function VistaFacturasOdoo({ usuario, data, onVolver }) {
     toast.success(`Fotos a Odoo: ${adjuntadas} adjuntada(s)${noEnc ? ` · ${noEnc} sin factura en Odoo (¿ya importaste?)` : ''}${err ? ` · ${err} error` : ''}.`, { duration: 10000 });
   };
 
+  // v8.27.61: verifica en Odoo que cada factura exportada realmente entró (casa por NCF).
+  // Marca la factura con odooMoveId (persistente) y avisa cuáles no están o van sin foto.
+  const verificarEnOdoo = async () => {
+    const exp = facturas.filter((f) => f.estado === 'exportada' && f.ncf);
+    if (exp.length === 0) { toast.warning('No hay facturas exportadas con NCF para verificar.'); return; }
+    setVerificando(true);
+    try {
+      const r = await fetch('/api/odoo/verificar', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: exp.map((f) => ({ ncf: f.ncf, empresa: f.empresa })) }),
+      });
+      const j = await r.json();
+      if (!j.ok) { toast.error('No se pudo verificar en Odoo: ' + (j.error || '')); return; }
+      const res = j.resultado || {};
+      let enOdoo = 0, noEstan = [], sinFoto = [];
+      const ahora = new Date().toISOString();
+      for (const f of exp) {
+        const info = res[f.ncf];
+        if (info && info.found) {
+          enOdoo++;
+          if (!info.adjuntos) sinFoto.push(f.ncf);
+          if (f.odooMoveId !== String(info.moveId)) {
+            try { await db.actualizarFacturaOdoo(f.id, { odooMoveId: String(info.moveId), verificadaOdooAt: ahora }); } catch { /* noop */ }
+          }
+        } else { noEstan.push(f.ncf); }
+      }
+      await cargar();
+      toast.success(`Verificación Odoo: ${enOdoo}/${exp.length} confirmadas${noEstan.length ? ` · ${noEstan.length} NO están` : ''}.`, { duration: 9000 });
+      if (noEstan.length) toast.error(`No están en Odoo: ${noEstan.slice(0, 8).join(', ')}${noEstan.length > 8 ? '…' : ''}. Revisa el import.`, { duration: 11000 });
+      if (sinFoto.length) toast.warning(`En Odoo pero SIN foto: ${sinFoto.slice(0, 8).join(', ')}${sinFoto.length > 8 ? '…' : ''}. Usa "Adjuntar fotos".`, { duration: 10000 });
+    } catch (e) { toast.error('Error verificando: ' + (e.message || e)); }
+    finally { setVerificando(false); }
+  };
+
   const BADGE = {
     borrador: 'bg-zinc-800 text-zinc-400',
     lista: 'bg-green-900/40 text-green-400 border border-green-800',
@@ -326,14 +361,21 @@ export default function VistaFacturasOdoo({ usuario, data, onVolver }) {
         </div>
       )}
 
-      {/* v8.27.57: adjuntar a Odoo las fotos de las facturas ya exportadas (por NCF) */}
-      {facturas.some((f) => f.estado === 'exportada' && f.fotoPath && f.ncf) && (
-        <div className="mb-3">
-          <button onClick={adjuntarFotos} disabled={!!adjuntando}
-            className="bg-zinc-900 border border-blue-800 hover:bg-blue-950/40 disabled:opacity-50 text-blue-300 text-xs font-bold px-3 py-2 flex items-center gap-2">
-            {adjuntando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Paperclip className="w-4 h-4" />}
-            {adjuntando ? `Adjuntando fotos a Odoo… ${adjuntando.hechas}/${adjuntando.total}` : 'Adjuntar fotos a Odoo (después de importar)'}
+      {/* v8.27.57/61: acciones sobre las facturas ya exportadas (verificar + adjuntar fotos) */}
+      {facturas.some((f) => f.estado === 'exportada' && f.ncf) && (
+        <div className="mb-3 flex flex-wrap gap-2">
+          <button onClick={verificarEnOdoo} disabled={verificando}
+            className="bg-zinc-900 border border-green-800 hover:bg-green-950/40 disabled:opacity-50 text-green-300 text-xs font-bold px-3 py-2 flex items-center gap-2" title="Confirma que cada factura exportada realmente entró en Odoo (casa por NCF)">
+            {verificando ? <Loader2 className="w-4 h-4 animate-spin" /> : <ClipboardCheck className="w-4 h-4" />}
+            {verificando ? 'Verificando en Odoo…' : 'Verificar en Odoo'}
           </button>
+          {facturas.some((f) => f.estado === 'exportada' && f.fotoPath && f.ncf) && (
+            <button onClick={adjuntarFotos} disabled={!!adjuntando}
+              className="bg-zinc-900 border border-blue-800 hover:bg-blue-950/40 disabled:opacity-50 text-blue-300 text-xs font-bold px-3 py-2 flex items-center gap-2">
+              {adjuntando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Paperclip className="w-4 h-4" />}
+              {adjuntando ? `Adjuntando fotos… ${adjuntando.hechas}/${adjuntando.total}` : 'Adjuntar fotos a Odoo'}
+            </button>
+          )}
         </div>
       )}
 
@@ -445,6 +487,8 @@ export default function VistaFacturasOdoo({ usuario, data, onVolver }) {
                             <option value="exportada">exportada</option>
                           </select>
                         : erroresFacturaOdoo(f).length === 0 && <span className={`text-[10px] px-2 py-0.5 rounded-full ${BADGE[f.estado] || BADGE.borrador}`}>{f.estado}</span>}
+                      {/* v8.27.61: confirmada en Odoo (verificada por NCF) */}
+                      {f.odooMoveId && <span title={`Confirmada en Odoo${f.verificadaOdooAt ? ' · ' + new Date(f.verificadaOdooAt).toLocaleDateString('es-DO') : ''}`} className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-900/50 text-green-300 border border-green-700 inline-flex items-center gap-0.5"><Check className="w-3 h-3" /> Odoo</span>}
                     </div>
                   </td>
                   <td className="p-2">

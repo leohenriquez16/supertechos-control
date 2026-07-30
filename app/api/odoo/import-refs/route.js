@@ -22,6 +22,7 @@ export async function POST(request) {
       productos: prod.productos,
       cuentasProducto: prod.cuentas,
       cuentaDefault: prod.cuentaDefault,
+      impuestos: prod.impuestos,
       proveedores,
     });
   } catch (e) {

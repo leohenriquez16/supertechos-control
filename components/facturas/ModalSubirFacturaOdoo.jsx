@@ -21,7 +21,7 @@ const esArchivoPdf = (file) => !!file && (file.type === 'application/pdf' || /\.
 
 // Modal para que Lily suba una factura de gasto (para exportar a Odoo).
 // Flujo: foto/PDF → (comprime si es imagen) → /api/caja-chica/parse-factura → revisa → guarda.
-export default function ModalSubirFacturaOdoo({ usuario, categorias = [], facturaEditar = null, onCerrar, onGuardado }) {
+export default function ModalSubirFacturaOdoo({ usuario, categorias = [], facturaEditar = null, revisando = false, onCerrar, onGuardado }) {
   const editando = !!facturaEditar;
   const [paso, setPaso] = useState(editando ? 'confirmar' : 'foto'); // foto | revisando | confirmar | guardando
   const [fotoData, setFotoData] = useState(null); // dataURL nueva (si se sube/cambia)
@@ -309,7 +309,7 @@ export default function ModalSubirFacturaOdoo({ usuario, categorias = [], factur
               <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2.5">Cancelar</button>
               <button onClick={guardar} disabled={!datos.empresa || !datos.monto}
                 className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-xs font-black uppercase py-2.5 flex items-center justify-center gap-1">
-                <Check className="w-3 h-3" /> {editando ? 'Guardar cambios' : 'Guardar factura'}
+                <Check className="w-3 h-3" /> {revisando ? 'Aprobar y siguiente' : editando ? 'Guardar cambios' : 'Guardar factura'}
               </button>
             </div>
           </div>

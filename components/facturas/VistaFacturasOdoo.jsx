@@ -144,7 +144,7 @@ export default function VistaFacturasOdoo({ usuario, data, onVolver }) {
       // v8.27.51: traer de Odoo (read-only) cuentas analíticas + productos + proveedores
       // (por los RNC presentes) para resolver TODO a valores EXACTOS y que el import
       // auto-mapee y matchee. Si falla, se exporta con lo que haya (sin bloquear).
-      let cuentasAnaliticas = [], productos = [], proveedores = [];
+      let cuentasAnaliticas = [], productos = [], proveedores = [], cuentasProducto = {}, cuentaDefault = {};
       try {
         const rncs = [...new Set(aExportar.map((f) => (f.rnc || '')).filter(Boolean))];
         const r = await fetch('/api/odoo/import-refs', {
@@ -152,14 +152,16 @@ export default function VistaFacturasOdoo({ usuario, data, onVolver }) {
           body: JSON.stringify({ rncs }),
         });
         const j = await r.json();
-        if (r.ok && j.ok) { cuentasAnaliticas = j.cuentas || []; productos = j.productos || []; proveedores = j.proveedores || []; }
-        else toast.warning('No se pudieron leer las referencias de Odoo; el CSV puede requerir mapeo manual.', { duration: 7000 });
+        if (r.ok && j.ok) {
+          cuentasAnaliticas = j.cuentas || []; productos = j.productos || []; proveedores = j.proveedores || [];
+          cuentasProducto = j.cuentasProducto || {}; cuentaDefault = j.cuentaDefault || {};
+        } else toast.warning('No se pudieron leer las referencias de Odoo; el CSV puede requerir mapeo manual.', { duration: 7000 });
       } catch { toast.warning('No se pudieron leer las referencias de Odoo; el CSV puede requerir mapeo manual.', { duration: 7000 }); }
 
       const { blob, counts } = await generarZipFacturasOdoo({
         facturas: aExportar,
         categorias: data?.categoriasCajaChica || [],
-        cuentasAnaliticas, productos, proveedores,
+        cuentasAnaliticas, productos, proveedores, cuentasProducto, cuentaDefault,
         onProgreso: (hechas, total) => setExportando({ hechas, total }),
       });
       const hoy = new Date().toISOString().split('T')[0];
@@ -175,6 +177,9 @@ export default function VistaFacturasOdoo({ usuario, data, onVolver }) {
       }
       if (counts.sinAnalitica && counts.sinAnalitica.length) {
         toast.warning(`Sin cuenta analítica en Odoo (van sin proyecto): ${counts.sinAnalitica.join(', ')}.`, { duration: 10000 });
+      }
+      if (counts.sinCuenta && counts.sinCuenta.length) {
+        toast.error(`Sin cuenta contable (Odoo la exige): ${counts.sinCuenta.slice(0, 8).join(', ')}${counts.sinCuenta.length > 8 ? '…' : ''}. Esas líneas fallarán al importar.`, { duration: 11000 });
       }
       cargar();
     } catch (e) {

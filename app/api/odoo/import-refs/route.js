@@ -11,12 +11,19 @@ export async function POST(request) {
   try {
     let rncs = [];
     try { const body = await request.json(); rncs = Array.isArray(body?.rncs) ? body.rncs : []; } catch { /* sin body */ }
-    const [cuentas, productos, proveedores] = await Promise.all([
+    const [cuentas, prod, proveedores] = await Promise.all([
       listarCuentasAnaliticasOdoo(),
       listarProductosCompraOdoo(),
       buscarProveedoresPorRncOdoo(rncs),
     ]);
-    return Response.json({ ok: true, cuentas, productos, proveedores });
+    return Response.json({
+      ok: true,
+      cuentas,
+      productos: prod.productos,
+      cuentasProducto: prod.cuentas,
+      cuentaDefault: prod.cuentaDefault,
+      proveedores,
+    });
   } catch (e) {
     console.error('Error import-refs Odoo:', e);
     return Response.json({ ok: false, error: e.message }, { status: 500 });

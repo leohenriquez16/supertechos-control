@@ -25,6 +25,9 @@ import { generarZipFacturasOdoo, descargarBlob } from '../../lib/helpers/exportF
 import ModalSubirFacturaOdoo from './ModalSubirFacturaOdoo';
 
 const fmtRD = (n) => 'RD$' + new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n) || 0);
+// v8.27.59: símbolo según la moneda de la factura (la lista mostraba RD$ fijo aun en USD/EUR).
+const SIMBOLO_MONEDA = { DOP: 'RD$', USD: 'US$', EUR: '€' };
+const fmtMoneda = (n, moneda) => (SIMBOLO_MONEDA[moneda] || 'RD$') + new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n) || 0);
 // v8.27.43: PDF (subir desde computadora) sin comprimir
 const esArchivoPdf = (f) => !!f && (f.type === 'application/pdf' || /\.pdf$/i.test(f.name || ''));
 const archivoADataUrl = (file) => new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = reject; r.readAsDataURL(file); });
@@ -99,8 +102,10 @@ export default function VistaFacturasOdoo({ usuario, data, onVolver }) {
   }, []);
   useEffect(() => { cargar(); }, [cargar]);
 
+  // v8.27.59: por defecto se ocultan las EXPORTADAS de la vista principal (ya fueron a Odoo);
+  // se ven solo si el filtro pide explícitamente ese estado.
   const visibles = facturas.filter((f) =>
-    (!filtroEstado || f.estado === filtroEstado)
+    (filtroEstado ? f.estado === filtroEstado : f.estado !== 'exportada')
     && (!filtroEmpresa || f.empresa === filtroEmpresa)
     && (!filtroReembolso || (filtroReembolso === 'si' ? f.reembolsable : !f.reembolsable))
     && (!soloMias || f.creadoPorId === usuario.id));
@@ -300,7 +305,7 @@ export default function VistaFacturasOdoo({ usuario, data, onVolver }) {
       {/* Filtros */}
       <div className="flex flex-wrap gap-2 mb-3">
         <select value={filtroEstado} onChange={(e) => setFiltroEstado(e.target.value)} className="bg-zinc-900 border border-zinc-800 text-xs px-3 py-2 text-white">
-          <option value="">Todos los estados</option>
+          <option value="">Activas (sin exportadas)</option>
           <option value="borrador">Borrador</option>
           <option value="lista">Lista</option>
           <option value="exportada">Exportada</option>
@@ -354,7 +359,7 @@ export default function VistaFacturasOdoo({ usuario, data, onVolver }) {
                   </td>
                   <td className="p-2 whitespace-nowrap text-[11px]">{f.ncf || '—'}{f.tipoNcf ? <span className="text-zinc-600"> ({f.tipoNcf})</span> : ''}</td>
                   <td className="p-2 whitespace-nowrap text-[11px]">{NOMBRE_EMPRESA[f.empresa] || <span className="text-amber-500">—</span>}</td>
-                  <td className="p-2 text-right font-bold whitespace-nowrap">{fmtRD(f.monto)}</td>
+                  <td className="p-2 text-right font-bold whitespace-nowrap">{fmtMoneda(f.monto, f.moneda)}{f.moneda && f.moneda !== 'DOP' ? <span className="text-[9px] text-yellow-500 ml-1">{f.moneda}</span> : ''}</td>
                   <td className="p-2 text-center">
                     {/* v8.27.48: si tiene error en un campo, badge rojo (y bloquea el export) */}
                     <div className="inline-flex items-center gap-1">

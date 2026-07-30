@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Receipt, Loader2, Edit2, Trash2, Download, Eye, FileText, ArrowLeft, Check, Images, AlertTriangle } from 'lucide-react';
+import { Plus, Receipt, Loader2, Edit2, Trash2, Download, Eye, FileText, ArrowLeft, Check, Images, AlertTriangle, Paperclip } from 'lucide-react';
 import * as db from '../../lib/db';
 import { toast } from '../../lib/toast';
 import { comprimirImagen } from '../../lib/imports';
@@ -40,6 +40,7 @@ export default function VistaFacturasOdoo({ usuario, data, onVolver }) {
   const [soloMias, setSoloMias] = useState(false);
   const [exportando, setExportando] = useState(null); // {hechas, total} | null
   const [masiva, setMasiva] = useState(null); // v8.27.41: carga masiva {hechas, total, errores} | null
+  const [adjuntando, setAdjuntando] = useState(null); // v8.27.57: adjuntar fotos a Odoo
 
   // v8.27.41: carga masiva — elige muchas fotos; la IA parsea cada una (incluida la
   // cuenta analítica escrita a mano en azul) y crea BORRADORES para revisar.
@@ -187,6 +188,41 @@ export default function VistaFacturasOdoo({ usuario, data, onVolver }) {
     } finally { setExportando(null); }
   };
 
+  // v8.27.57: adjunta a Odoo la foto de cada factura YA exportada, casándola por NCF (ref).
+  // Escribe en Odoo (solo ir.attachment). Corre después de importar el CSV.
+  const blobABase64 = (blob) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob); });
+  const adjuntarFotos = async () => {
+    const conFoto = facturas.filter((f) => f.estado === 'exportada' && f.fotoPath && f.ncf);
+    if (conFoto.length === 0) { toast.warning('No hay facturas exportadas con foto y NCF. Primero exporta e importa en Odoo.'); return; }
+    if (!confirm(`Adjuntar ${conFoto.length} foto(s) a sus facturas en Odoo (casadas por NCF)?\n\nEsto escribe adjuntos en Odoo. Requiere que ya hayas importado el CSV.`)) return;
+    setAdjuntando({ hechas: 0, total: conFoto.length });
+    let adjuntadas = 0, noEnc = 0, err = 0;
+    for (let i = 0; i < conFoto.length; i++) {
+      const f = conFoto[i];
+      try {
+        const url = await db.obtenerUrlFirmadaFacturaOdoo(f.fotoPath, 600);
+        const res = url && (await fetch(url));
+        if (!res || !res.ok) { err++; }
+        else {
+          const blob = await res.blob();
+          const dataUrl = await blobABase64(blob);
+          const ext = (String(f.fotoPath).match(/\.([a-z0-9]+)$/i) || [null, 'jpg'])[1];
+          const rr = await fetch('/api/odoo/adjuntar-foto', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ empresa: f.empresa, ref: f.ncf, base64: dataUrl, filename: `${(f.ncf || f.id)}.${ext}`, mimetype: blob.type || 'image/jpeg' }),
+          });
+          const j = await rr.json();
+          if (j.ok && j.adjuntado) adjuntadas++;
+          else if (j.ok && /no encontrada/.test(j.motivo || '')) noEnc++;
+          else if (!j.ok) err++;
+        }
+      } catch (e) { err++; }
+      setAdjuntando({ hechas: i + 1, total: conFoto.length });
+    }
+    setAdjuntando(null);
+    toast.success(`Fotos a Odoo: ${adjuntadas} adjuntada(s)${noEnc ? ` · ${noEnc} sin factura en Odoo (¿ya importaste?)` : ''}${err ? ` · ${err} error` : ''}.`, { duration: 10000 });
+  };
+
   const BADGE = {
     borrador: 'bg-zinc-800 text-zinc-400',
     lista: 'bg-green-900/40 text-green-400 border border-green-800',
@@ -214,6 +250,17 @@ export default function VistaFacturasOdoo({ usuario, data, onVolver }) {
           </button>
         </div>
       </div>
+
+      {/* v8.27.57: adjuntar a Odoo las fotos de las facturas ya exportadas (por NCF) */}
+      {facturas.some((f) => f.estado === 'exportada' && f.fotoPath && f.ncf) && (
+        <div className="mb-3">
+          <button onClick={adjuntarFotos} disabled={!!adjuntando}
+            className="bg-zinc-900 border border-blue-800 hover:bg-blue-950/40 disabled:opacity-50 text-blue-300 text-xs font-bold px-3 py-2 flex items-center gap-2">
+            {adjuntando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Paperclip className="w-4 h-4" />}
+            {adjuntando ? `Adjuntando fotos a Odoo… ${adjuntando.hechas}/${adjuntando.total}` : 'Adjuntar fotos a Odoo (después de importar)'}
+          </button>
+        </div>
+      )}
 
       {/* v8.27.41: progreso de la carga masiva */}
       {masiva && (

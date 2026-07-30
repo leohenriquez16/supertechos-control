@@ -249,11 +249,13 @@ export default function VistaFacturasOdoo({ usuario, data, onVolver }) {
   // Escribe en Odoo (solo ir.attachment). Corre después de importar el CSV.
   const blobABase64 = (blob) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob); });
   const adjuntarFotos = async () => {
-    const conFoto = facturas.filter((f) => f.estado === 'exportada' && f.fotoPath && f.ncf);
-    if (conFoto.length === 0) { toast.warning('No hay facturas exportadas con foto y NCF. Primero exporta e importa en Odoo.'); return; }
-    if (!confirm(`Adjuntar ${conFoto.length} foto(s) a sus facturas en Odoo (casadas por NCF)?\n\nEsto escribe adjuntos en Odoo. Requiere que ya hayas importado el CSV.`)) return;
+    // v8.27.62: solo las PENDIENTES (sin foto ya adjuntada) → nunca reescribe las que ya están.
+    const conFoto = facturas.filter((f) => f.estado === 'exportada' && f.fotoPath && f.ncf && !f.fotoOdooAt);
+    if (conFoto.length === 0) { toast.info('No hay fotos pendientes por adjuntar (las exportadas ya tienen su foto).'); return; }
+    if (!confirm(`Adjuntar ${conFoto.length} foto(s) PENDIENTE(S) a sus facturas en Odoo (casadas por NCF)?\n\nSolo las que aún no tienen foto. Requiere que ya hayas importado el CSV.`)) return;
     setAdjuntando({ hechas: 0, total: conFoto.length });
-    let adjuntadas = 0, noEnc = 0, err = 0;
+    let adjuntadas = 0, yaEstaban = 0, noEnc = 0, err = 0;
+    const ahora = new Date().toISOString();
     for (let i = 0; i < conFoto.length; i++) {
       const f = conFoto[i];
       try {
@@ -269,7 +271,8 @@ export default function VistaFacturasOdoo({ usuario, data, onVolver }) {
             body: JSON.stringify({ empresa: f.empresa, ref: f.ncf, base64: dataUrl, filename: `${(f.ncf || f.id)}.${ext}`, mimetype: blob.type || 'image/jpeg' }),
           });
           const j = await rr.json();
-          if (j.ok && j.adjuntado) adjuntadas++;
+          if (j.ok && j.adjuntado) { adjuntadas++; try { await db.actualizarFacturaOdoo(f.id, { fotoOdooAt: ahora }); } catch { /* noop */ } }
+          else if (j.ok && /ya estaba/.test(j.motivo || '')) { yaEstaban++; try { await db.actualizarFacturaOdoo(f.id, { fotoOdooAt: ahora }); } catch { /* noop */ } }
           else if (j.ok && /no encontrada/.test(j.motivo || '')) noEnc++;
           else if (!j.ok) err++;
         }
@@ -277,7 +280,8 @@ export default function VistaFacturasOdoo({ usuario, data, onVolver }) {
       setAdjuntando({ hechas: i + 1, total: conFoto.length });
     }
     setAdjuntando(null);
-    toast.success(`Fotos a Odoo: ${adjuntadas} adjuntada(s)${noEnc ? ` · ${noEnc} sin factura en Odoo (¿ya importaste?)` : ''}${err ? ` · ${err} error` : ''}.`, { duration: 10000 });
+    await cargar();
+    toast.success(`Fotos a Odoo: ${adjuntadas} nueva(s)${yaEstaban ? ` · ${yaEstaban} ya estaban` : ''}${noEnc ? ` · ${noEnc} sin factura en Odoo` : ''}${err ? ` · ${err} error` : ''}.`, { duration: 10000 });
   };
 
   // v8.27.61: verifica en Odoo que cada factura exportada realmente entró (casa por NCF).
@@ -301,9 +305,11 @@ export default function VistaFacturasOdoo({ usuario, data, onVolver }) {
         if (info && info.found) {
           enOdoo++;
           if (!info.adjuntos) sinFoto.push(f.ncf);
-          if (f.odooMoveId !== String(info.moveId)) {
-            try { await db.actualizarFacturaOdoo(f.id, { odooMoveId: String(info.moveId), verificadaOdooAt: ahora }); } catch { /* noop */ }
-          }
+          // v8.27.62: sincroniza el estado real de Odoo (move + si ya tiene foto).
+          const cambios = {};
+          if (f.odooMoveId !== String(info.moveId)) { cambios.odooMoveId = String(info.moveId); cambios.verificadaOdooAt = ahora; }
+          if (info.adjuntos > 0 && !f.fotoOdooAt) cambios.fotoOdooAt = ahora;
+          if (Object.keys(cambios).length) { try { await db.actualizarFacturaOdoo(f.id, cambios); } catch { /* noop */ } }
         } else { noEstan.push(f.ncf); }
       }
       await cargar();
@@ -369,13 +375,13 @@ export default function VistaFacturasOdoo({ usuario, data, onVolver }) {
             {verificando ? <Loader2 className="w-4 h-4 animate-spin" /> : <ClipboardCheck className="w-4 h-4" />}
             {verificando ? 'Verificando en Odoo…' : 'Verificar en Odoo'}
           </button>
-          {facturas.some((f) => f.estado === 'exportada' && f.fotoPath && f.ncf) && (
+          {(() => { const pend = facturas.filter((f) => f.estado === 'exportada' && f.fotoPath && f.ncf && !f.fotoOdooAt).length; return pend > 0 && (
             <button onClick={adjuntarFotos} disabled={!!adjuntando}
               className="bg-zinc-900 border border-blue-800 hover:bg-blue-950/40 disabled:opacity-50 text-blue-300 text-xs font-bold px-3 py-2 flex items-center gap-2">
               {adjuntando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Paperclip className="w-4 h-4" />}
-              {adjuntando ? `Adjuntando fotos… ${adjuntando.hechas}/${adjuntando.total}` : 'Adjuntar fotos a Odoo'}
+              {adjuntando ? `Adjuntando fotos… ${adjuntando.hechas}/${adjuntando.total}` : `Adjuntar fotos pendientes (${pend})`}
             </button>
-          )}
+          ); })()}
         </div>
       )}
 
@@ -489,6 +495,8 @@ export default function VistaFacturasOdoo({ usuario, data, onVolver }) {
                         : erroresFacturaOdoo(f).length === 0 && <span className={`text-[10px] px-2 py-0.5 rounded-full ${BADGE[f.estado] || BADGE.borrador}`}>{f.estado}</span>}
                       {/* v8.27.61: confirmada en Odoo (verificada por NCF) */}
                       {f.odooMoveId && <span title={`Confirmada en Odoo${f.verificadaOdooAt ? ' · ' + new Date(f.verificadaOdooAt).toLocaleDateString('es-DO') : ''}`} className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-900/50 text-green-300 border border-green-700 inline-flex items-center gap-0.5"><Check className="w-3 h-3" /> Odoo</span>}
+                      {/* v8.27.62: foto ya adjuntada en Odoo */}
+                      {f.fotoOdooAt && <span title="Foto adjuntada en Odoo" className="text-blue-400"><Paperclip className="w-3 h-3" /></span>}
                     </div>
                   </td>
                   <td className="p-2">

@@ -145,7 +145,7 @@ export default function VistaFacturasOdoo({ usuario, data, onVolver }) {
       // v8.27.51: traer de Odoo (read-only) cuentas analíticas + productos + proveedores
       // (por los RNC presentes) para resolver TODO a valores EXACTOS y que el import
       // auto-mapee y matchee. Si falla, se exporta con lo que haya (sin bloquear).
-      let cuentasAnaliticas = [], productos = [], proveedores = [], cuentasProducto = {}, cuentaDefault = {};
+      let cuentasAnaliticas = [], productos = [], proveedores = [], cuentasProducto = {}, cuentaDefault = {}, impuestos = {};
       try {
         const rncs = [...new Set(aExportar.map((f) => (f.rnc || '')).filter(Boolean))];
         const r = await fetch('/api/odoo/import-refs', {
@@ -155,14 +155,14 @@ export default function VistaFacturasOdoo({ usuario, data, onVolver }) {
         const j = await r.json();
         if (r.ok && j.ok) {
           cuentasAnaliticas = j.cuentas || []; productos = j.productos || []; proveedores = j.proveedores || [];
-          cuentasProducto = j.cuentasProducto || {}; cuentaDefault = j.cuentaDefault || {};
+          cuentasProducto = j.cuentasProducto || {}; cuentaDefault = j.cuentaDefault || {}; impuestos = j.impuestos || {};
         } else toast.warning('No se pudieron leer las referencias de Odoo; el CSV puede requerir mapeo manual.', { duration: 7000 });
       } catch { toast.warning('No se pudieron leer las referencias de Odoo; el CSV puede requerir mapeo manual.', { duration: 7000 }); }
 
       const { blob, counts } = await generarZipFacturasOdoo({
         facturas: aExportar,
         categorias: data?.categoriasCajaChica || [],
-        cuentasAnaliticas, productos, proveedores, cuentasProducto, cuentaDefault,
+        cuentasAnaliticas, productos, proveedores, cuentasProducto, cuentaDefault, impuestos,
         onProgreso: (hechas, total) => setExportando({ hechas, total }),
       });
       const hoy = new Date().toISOString().split('T')[0];

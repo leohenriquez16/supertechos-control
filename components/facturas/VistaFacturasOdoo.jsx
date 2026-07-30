@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Receipt, Loader2, Edit2, Trash2, Download, Eye, FileText, ArrowLeft, Check, Images, AlertTriangle, Paperclip } from 'lucide-react';
+import { Plus, Receipt, Loader2, Edit2, Trash2, Download, Eye, FileText, ArrowLeft, Check, Images, AlertTriangle, Paperclip, Mail, ClipboardCheck } from 'lucide-react';
 import * as db from '../../lib/db';
 import { toast } from '../../lib/toast';
+import { notificarEvento } from '../../lib/email';
 import { comprimirImagen } from '../../lib/imports';
 import { NOMBRE_EMPRESA, detectarTipoNcf } from '../../lib/facturasOdooMap';
 import { validarRNC, validarNCF } from '../../lib/validacionFiscal';
@@ -44,6 +45,8 @@ export default function VistaFacturasOdoo({ usuario, data, onVolver }) {
   const [exportando, setExportando] = useState(null); // {hechas, total} | null
   const [masiva, setMasiva] = useState(null); // v8.27.41: carga masiva {hechas, total, errores} | null
   const [adjuntando, setAdjuntando] = useState(null); // v8.27.57: adjuntar fotos a Odoo
+  const [revisando, setRevisando] = useState(false); // v8.27.60: revisión secuencial de borradores
+  const [avisando, setAvisando] = useState(false);   // v8.27.60: enviando aviso a Felvison
 
   // v8.27.41: carga masiva — elige muchas fotos; la IA parsea cada una (incluida la
   // cuenta analítica escrita a mano en azul) y crea BORRADORES para revisar.
@@ -112,6 +115,54 @@ export default function VistaFacturasOdoo({ usuario, data, onVolver }) {
 
   const totalMonto = visibles.reduce((s, f) => s + (Number(f.monto) || 0), 0);
   const nLista = facturas.filter((f) => f.estado === 'lista').length;
+  // v8.27.60: revisión de borradores → todas listas → avisar a Felvison.
+  const nBorradores = facturas.filter((f) => f.estado === 'borrador').length;
+  const todasListas = facturas.length > 0 && nLista > 0 && nBorradores === 0;
+
+  // Abre el primer borrador para revisar; al guardar avanza al siguiente (ver onGuardadoFactura).
+  const iniciarRevision = () => {
+    const primero = facturas.find((f) => f.estado === 'borrador');
+    if (!primero) { toast.info('No hay borradores para revisar.'); return; }
+    setRevisando(true); setModal(primero);
+  };
+
+  // Al guardar una factura: recarga y, si estamos revisando, abre el siguiente borrador.
+  const onGuardadoFactura = async () => {
+    let lista = [];
+    try { lista = await db.listarFacturasOdoo({}); setFacturas(lista); } catch { /* noop */ }
+    if (revisando) {
+      const actualId = (modal && modal.id) || null;
+      const sig = lista.find((f) => f.estado === 'borrador' && f.id !== actualId);
+      if (sig) { setModal(sig); return; }
+      setRevisando(false); setModal(null);
+      toast.success('✅ Revisión completa. Todas las facturas están listas para importar.', { duration: 7000 });
+      return;
+    }
+    setModal(null);
+  };
+
+  // Avisa a Felvison por correo que las facturas están listas para importar.
+  const avisarFelvison = async () => {
+    const stListas = facturas.filter((f) => f.estado === 'lista');
+    if (stListas.length === 0) { toast.warning('No hay facturas listas.'); return; }
+    setAvisando(true);
+    try {
+      const r = await notificarEvento('facturas_listas_odoo', {
+        titulo_custom: 'Facturas listas para importar a Odoo',
+        mensaje: `Hay ${stListas.length} factura(s) de gasto revisadas y listas para importar en Odoo.`,
+        detalles: {
+          'Facturas listas': stListas.length,
+          'Super Techos': stListas.filter((f) => f.empresa === 'super_techos').length,
+          'Prouco': stListas.filter((f) => f.empresa === 'prouco').length,
+          'Revisado por': usuario?.nombre || '',
+        },
+        silencioso: true,
+      });
+      if (r?.ok) toast.success('Aviso enviado a Felvison por correo.');
+      else toast.error('No se pudo enviar el correo: ' + (r?.error || 'falta configurar el destinatario'));
+    } catch (e) { toast.error('Error enviando el correo: ' + (e.message || e)); }
+    finally { setAvisando(false); }
+  };
 
   const verFoto = async (f) => {
     if (!f.fotoPath) { toast.info('Esta factura no tiene foto.'); return; }
@@ -250,11 +301,30 @@ export default function VistaFacturasOdoo({ usuario, data, onVolver }) {
             <Images className="w-4 h-4" /> Carga masiva
             <input type="file" accept="image/*,application/pdf" multiple className="hidden" disabled={!!masiva} onChange={(e) => { onCargaMasiva(e.target.files); e.target.value = ''; }} />
           </label>
+          {/* v8.27.60: revisar borradores en secuencia (aprobar → siguiente) */}
+          {nBorradores > 0 && (
+            <button onClick={iniciarRevision} disabled={!!masiva} className="bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-white text-xs font-black uppercase px-3 py-2.5 flex items-center gap-1" title="Revisa los borradores uno por uno">
+              <ClipboardCheck className="w-4 h-4" /> Revisar ({nBorradores})
+            </button>
+          )}
           <button onClick={() => setModal('nueva')} disabled={!!masiva} className="bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-xs font-black uppercase px-4 py-2.5 flex items-center gap-1">
             <Plus className="w-4 h-4" /> Subir factura
           </button>
         </div>
       </div>
+
+      {/* v8.27.60: todas revisadas → listas para importar → avisar a Felvison */}
+      {todasListas && (
+        <div className="mb-4 bg-green-950/40 border border-green-800 rounded-card p-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="text-sm text-green-300 font-bold flex items-center gap-2">
+            <Check className="w-5 h-5 shrink-0" /> Todas revisadas — {nLista} factura(s) lista(s) para importar en Odoo.
+          </div>
+          <button onClick={avisarFelvison} disabled={avisando}
+            className="bg-green-700 hover:bg-green-600 disabled:opacity-50 text-white text-xs font-bold px-3 py-2 flex items-center gap-1">
+            {avisando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />} Avisar a Felvison
+          </button>
+        </div>
+      )}
 
       {/* v8.27.57: adjuntar a Odoo las fotos de las facturas ya exportadas (por NCF) */}
       {facturas.some((f) => f.estado === 'exportada' && f.fotoPath && f.ncf) && (
@@ -400,8 +470,9 @@ export default function VistaFacturasOdoo({ usuario, data, onVolver }) {
           usuario={usuario}
           categorias={data?.categoriasCajaChica || []}
           facturaEditar={modal === 'nueva' ? null : modal}
-          onCerrar={() => setModal(null)}
-          onGuardado={() => { setModal(null); cargar(); }}
+          revisando={revisando}
+          onCerrar={() => { setModal(null); setRevisando(false); }}
+          onGuardado={onGuardadoFactura}
         />
       )}
     </div>

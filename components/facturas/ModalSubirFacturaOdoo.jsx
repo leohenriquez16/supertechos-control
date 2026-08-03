@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Camera, Loader2, X, Sparkles, AlertTriangle, Check, FileText } from 'lucide-react';
 import * as db from '../../lib/db';
 import { toast } from '../../lib/toast';
@@ -44,6 +44,39 @@ export default function ModalSubirFacturaOdoo({ usuario, categorias = [], factur
     moneda: facturaEditar?.moneda || 'DOP', // v8.27.42: DOP | USD | EUR
     reembolsable: facturaEditar?.reembolsable || false,
   });
+
+  // v8.27.63: autocompletar proveedor con la lista de caja chica + validar el RNC contra Odoo.
+  const [proveedoresCC, setProveedoresCC] = useState([]); // {nombre, rnc}
+  const [validProv, setValidProv] = useState(null); // { porRnc, porNombre } | null
+  useEffect(() => {
+    let vivo = true;
+    db.listarProveedoresCajaChica({ orden: 'nombre' })
+      .then((l) => { if (vivo) setProveedoresCC(l || []); })
+      .catch(() => {});
+    return () => { vivo = false; };
+  }, []);
+  // Cuando el usuario elige/escribe un proveedor conocido de caja chica, autocompletar su RNC.
+  const onProveedorChange = (v) => {
+    const hit = proveedoresCC.find((p) => (p.nombre || '').trim().toLowerCase() === (v || '').trim().toLowerCase());
+    setDatos((prev) => ({ ...prev, proveedor: v, ...(hit && hit.rnc && !prev.rnc ? { rnc: hit.rnc } : {}) }));
+  };
+  // Valida contra Odoo (debounce) cada vez que cambia RNC o proveedor.
+  useEffect(() => {
+    const rnc = datos.rnc, nombre = datos.proveedor;
+    if (!rnc && !nombre) { setValidProv(null); return; }
+    let vivo = true;
+    const t = setTimeout(async () => {
+      try {
+        const r = await fetch('/api/odoo/validar-proveedor', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rnc, nombre }),
+        });
+        const j = await r.json();
+        if (vivo && j.ok) setValidProv({ porRnc: j.porRnc, porNombre: j.porNombre || [] });
+      } catch { /* silencioso */ }
+    }, 600);
+    return () => { vivo = false; clearTimeout(t); };
+  }, [datos.rnc, datos.proveedor]);
 
   // v8.27.44: parseo con IA reutilizable (para subir y para "volver a leer").
   const procesarConIA = async (dataUrl, pdf) => {
@@ -244,7 +277,53 @@ export default function ModalSubirFacturaOdoo({ usuario, categorias = [], factur
                 className="w-full bg-zinc-950 border-2 border-green-800 focus:border-green-500 outline-none px-3 py-2 text-sm font-bold text-right text-green-400" />
             </Campo>
 
-            <Campo label="Proveedor"><Input value={datos.proveedor} onChange={(v) => setDatos({ ...datos, proveedor: v })} placeholder="Ferretería, gasolinera, etc." /></Campo>
+            {/* v8.27.63: proveedor con autocompletado de la lista de caja chica */}
+            <Campo label="Proveedor">
+              <input value={datos.proveedor} onChange={(e) => onProveedorChange(e.target.value)} list="proveedores-cc" placeholder="Ferretería, gasolinera, etc."
+                className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm" />
+              <datalist id="proveedores-cc">
+                {proveedoresCC.map((p) => <option key={p.id} value={p.nombre}>{p.rnc ? `RNC ${p.rnc}` : ''}</option>)}
+              </datalist>
+            </Campo>
+
+            {/* v8.27.63: validación del proveedor contra Odoo (cruza RNC ↔ nombre) */}
+            {(() => {
+              if (!validProv) return null;
+              const rncD = (datos.rnc || '').replace(/\D/g, '');
+              const pr = validProv.porRnc;
+              const pn = (validProv.porNombre || []).filter((x) => (x.vat || '').replace(/\D/g, '') !== rncD);
+              if (pr) {
+                const mismoNombre = (pr.name || '').trim().toLowerCase() === (datos.proveedor || '').trim().toLowerCase();
+                return (
+                  <div className="bg-green-950/30 border border-green-800 p-2 text-[11px] text-green-300 flex items-start gap-2">
+                    <Check className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                    <div className="flex-1">Proveedor en Odoo: <b>{pr.name}</b> (RNC {pr.vat}).
+                      {!mismoNombre && <button type="button" onClick={() => setDatos({ ...datos, proveedor: pr.name })} className="ml-1 underline text-green-200 hover:text-white">Usar este nombre</button>}
+                    </div>
+                  </div>
+                );
+              }
+              if (pn.length > 0) {
+                const s = pn[0];
+                return (
+                  <div className="bg-amber-950/30 border border-amber-700 p-2 text-[11px] text-amber-300 flex items-start gap-2">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                    <div className="flex-1">El RNC <b>{datos.rnc || '(vacío)'}</b> no está en Odoo. Por el nombre coincide: <b>{s.name}</b> (RNC {s.vat}).
+                      <button type="button" onClick={() => setDatos({ ...datos, proveedor: s.name, rnc: s.vat })} className="ml-1 underline text-amber-100 hover:text-white">Usar este proveedor y RNC</button>
+                    </div>
+                  </div>
+                );
+              }
+              if (rncD) {
+                return (
+                  <div className="bg-red-950/30 border border-red-800 p-2 text-[11px] text-red-300 flex items-start gap-2">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                    <div className="flex-1">⚠ Este RNC y nombre <b>no están en Odoo</b>. Revísalos (la IA pudo leerlos mal) o se creará un proveedor nuevo al importar.</div>
+                  </div>
+                );
+              }
+              return null;
+            })()}
 
             <div className="grid grid-cols-2 gap-3">
               <Campo label="RNC / Cédula">

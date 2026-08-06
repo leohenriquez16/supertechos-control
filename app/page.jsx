@@ -1346,8 +1346,10 @@ function AsistenteIA({ usuario, data }) {
     Object.entries(proyectosPorEstado).forEach(([est, cnt]) => {
       ctx += `- ${est}: ${cnt}\n`;
     });
-    ctx += '\nDETALLE PROYECTOS:\n';
-    proyectosActivos.slice(0, 20).forEach(p => {
+    // v8.27.64: incluir TODOS los proyectos activos (antes se cortaba a 20, así el asistente
+    // no encontraba proyectos existentes — ej. PG-C1269 — y se inventaba su estado).
+    ctx += '\nDETALLE PROYECTOS (todos los activos):\n';
+    proyectosActivos.forEach(p => {
       const cliente = p.cliente || 'Sin cliente';
       const ref = p.referenciaOdoo || '';
       const reps = (data.reportes || []).filter(r => r.proyectoId === p.id);

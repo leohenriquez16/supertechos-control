@@ -28,6 +28,7 @@ INSTRUCCIONES:
 - Responde en español dominicano, de forma concisa y natural
 - Usa números específicos cuando los tengas
 - Si no tienes la información, dilo claramente (no inventes datos)
+- Si te preguntan por un proyecto/cliente que no aparece en el contexto, di simplemente que no lo ves en los datos actuales. NUNCA afirmes que está "finalizado" o "archivado" si no lo sabes — no lo adivines.
 - Formato: párrafos cortos o listas simples, NO uses markdown complicado
 - Para cantidades de dinero, usa formato RD$ X,XXX
 - Para m², usa "m²" sin decimales excesivos

@@ -184,14 +184,18 @@ export default function ModalSubirFacturaOdoo({ usuario, categorias = [], factur
         {paso === 'foto' && (
           <div className="space-y-3">
             <div className="text-[10px] text-zinc-500">Toma una foto clara de la factura. La IA extrae proveedor, RNC, NCF, fecha y monto automáticamente.</div>
-            <div className="relative">
-              <input type="file" accept="image/*,application/pdf" onChange={(e) => onFile(e.target.files?.[0])} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
-              <div className="border-2 border-dashed border-zinc-700 hover:border-red-600 p-8 text-center transition">
-                <Camera className="w-10 h-10 text-zinc-500 mx-auto mb-2" />
-                <div className="text-sm font-bold">Toca para subir factura</div>
-                <div className="text-[10px] text-zinc-500 mt-1">desde cámara o galería</div>
-              </div>
-            </div>
+            {/* v8.27.67 (ticket Yamel "fotos directo"): cámara directa como opción principal;
+                galería/archivo (incluye PDF desde computadora) como secundaria. */}
+            <label className="block border-2 border-dashed border-zinc-700 hover:border-red-600 p-6 text-center transition cursor-pointer">
+              <input type="file" accept="image/*" capture="environment" onChange={(e) => onFile(e.target.files?.[0])} className="hidden" />
+              <Camera className="w-10 h-10 text-red-500 mx-auto mb-2" />
+              <div className="text-sm font-bold">Tomar foto de la factura</div>
+              <div className="text-[10px] text-zinc-500 mt-1">abre la cámara directo</div>
+            </label>
+            <label className="block w-full text-center text-[11px] text-zinc-400 hover:text-white underline cursor-pointer">
+              <input type="file" accept="image/*,application/pdf" onChange={(e) => onFile(e.target.files?.[0])} className="hidden" />
+              Elegir de la galería o subir PDF
+            </label>
             <button onClick={() => setPaso('confirmar')} type="button" className="w-full text-[11px] text-zinc-500 hover:text-yellow-400 underline">
               Llenar manualmente sin foto
             </button>

@@ -316,8 +316,15 @@ function ModalNuevoTicket({ usuario, onCerrar, onCreado }) {
                 <button onClick={() => setShots(arr => arr.filter((_, j) => j !== i))} className="absolute -top-1.5 -right-1.5 bg-red-600 rounded-full w-4 h-4 flex items-center justify-center"><X className="w-2.5 h-2.5 text-white" /></button>
               </div>
             ))}
-            <label className="w-16 h-16 rounded-card border-2 border-dashed border-zinc-700 flex flex-col items-center justify-center text-zinc-500 cursor-pointer hover:border-red-600">
+            {/* v8.27.67: cámara directa + galería */}
+            <label title="Tomar foto (cámara)" className="w-16 h-16 rounded-card border-2 border-dashed border-zinc-700 flex flex-col items-center justify-center text-red-500 cursor-pointer hover:border-red-600">
               <Camera className="w-5 h-5" />
+              <span className="text-[8px] mt-0.5">Cámara</span>
+              <input type="file" accept="image/*" capture="environment" className="hidden" onChange={e => onFiles(e.target.files)} />
+            </label>
+            <label title="Elegir de la galería" className="w-16 h-16 rounded-card border-2 border-dashed border-zinc-700 flex flex-col items-center justify-center text-zinc-500 cursor-pointer hover:border-red-600">
+              <ImageIcon className="w-5 h-5" />
+              <span className="text-[8px] mt-0.5">Galería</span>
               <input type="file" accept="image/*" multiple className="hidden" onChange={e => onFiles(e.target.files)} />
             </label>
           </div>

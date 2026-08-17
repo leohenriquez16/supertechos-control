@@ -59,6 +59,8 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
   const [filtroProyecto, setFiltroProyecto] = useState('');
   const [soloIncompletos, setSoloIncompletos] = useState(false); // v8.17.6
   const [busqueda, setBusqueda] = useState(''); // v8.17.8: buscador libre en Movimientos
+  const [fechaDesde, setFechaDesde] = useState(''); // v8.27.67: filtro de fechas en Movimientos
+  const [fechaHasta, setFechaHasta] = useState('');
   const [modalEntrega, setModalEntrega] = useState(false);
   const [modalCuadre, setModalCuadre] = useState(false);
   const [modalExport, setModalExport] = useState(false);
@@ -403,6 +405,9 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
       if (filtroPersona && m.personaId !== filtroPersona) return false;
       if (filtroProyecto && m.proyectoId !== filtroProyecto) return false;
       if (soloIncompletos && !evaluarDatosIncompletos(m).incompleto) return false;
+      // v8.27.67: filtro por rango de fechas (fecha del movimiento, YYYY-MM-DD)
+      if (fechaDesde && (m.fecha || '') < fechaDesde) return false;
+      if (fechaHasta && (m.fecha || '') > fechaHasta) return false;
       if (q) {
         // v8.17.8: busca en concepto, proveedor, RNC, NCF, nombre persona, ref proyecto, monto
         const persona = data.personal.find(p => p.id === m.personaId);
@@ -416,7 +421,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
       }
       return true;
     });
-  }, [movimientos, filtroPersona, filtroProyecto, soloIncompletos, busqueda, data.personal, data.proyectos]);
+  }, [movimientos, filtroPersona, filtroProyecto, soloIncompletos, busqueda, fechaDesde, fechaHasta, data.personal, data.proyectos]);
 
   // v8.17.30: sort para la tabla desktop. Devuelve copia ordenada según sortMov.
   // (movimientosAgrupados sigue siendo para móvil — agrupa por fecha y mantiene orden desc.)
@@ -932,11 +937,18 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
                 <option value="">Todos los proyectos</option>
                 {data.proyectos.filter(p => !p.archivado).map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo || p.cliente}</option>)}
               </select>
+              {/* v8.27.67: filtro por rango de fechas */}
+              <label className="flex items-center gap-1 text-[10px] text-zinc-500">Desde
+                <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1 text-white" />
+              </label>
+              <label className="flex items-center gap-1 text-[10px] text-zinc-500">Hasta
+                <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1 text-white" />
+              </label>
               <label className={`flex items-center gap-1 px-2 py-1 cursor-pointer border ${soloIncompletos ? 'bg-amber-900/30 border-amber-700 text-amber-300' : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-amber-300'}`}>
                 <input type="checkbox" checked={soloIncompletos} onChange={e => setSoloIncompletos(e.target.checked)} className="w-3 h-3 accent-amber-500" />
                 <span className="text-[10px] font-bold uppercase tracking-wider">⚠ Faltan datos {cantIncompletos > 0 && `(${cantIncompletos})`}</span>
               </label>
-              {(filtroPersona || filtroProyecto || soloIncompletos || busqueda) && <button onClick={() => { setFiltroPersona(''); setFiltroProyecto(''); setSoloIncompletos(false); setBusqueda(''); }} className="text-red-400">Limpiar</button>}
+              {(filtroPersona || filtroProyecto || soloIncompletos || busqueda || fechaDesde || fechaHasta) && <button onClick={() => { setFiltroPersona(''); setFiltroProyecto(''); setSoloIncompletos(false); setBusqueda(''); setFechaDesde(''); setFechaHasta(''); }} className="text-red-400">Limpiar</button>}
               <div className="ml-auto text-[10px] text-zinc-500">{movimientosFiltrados.length} de {movimientos.length}</div>
               {/* v8.17.32: column picker + viewer toggle (solo desktop)
                   v8.17.36: + toggle global de edición */}

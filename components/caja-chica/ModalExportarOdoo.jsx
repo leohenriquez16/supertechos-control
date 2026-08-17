@@ -94,13 +94,14 @@ export default function ModalExportarOdoo({ data, onCerrar }) {
         await descargarFacturasSeparadasZIP({
           csvSuperTechos: resultado.csvSuperTechos,
           csvProuco: resultado.csvProuco,
+          csvSinEmpresa: resultado.csvSinEmpresa, // v8.27.71: ya no se pierden
           csvSinComprobante: resultado.csvSinComprobante,
           fechaInicio, fechaFin,
         });
         const { counts, sinAsignar } = resultado;
         const msg = `ZIP descargado · ST: ${counts.superTechos} · Prouco: ${counts.prouco} · Sin compr.: ${counts.sinComprobante}`;
         if (sinAsignar.length > 0) {
-          setTimeout(() => toast.warning(`${msg} · ⚠ ${sinAsignar.length} factura${sinAsignar.length !== 1 ? 's' : ''} sin empresa asignada (no incluidas)`, { duration: 10000 }), 200);
+          setTimeout(() => toast.warning(`${msg} · ⚠ ${sinAsignar.length} factura${sinAsignar.length !== 1 ? 's' : ''} sin empresa: van en el CSV "SIN-EMPRESA-REVISAR" del ZIP. Asígnales empresa en Movimientos y re-exporta.`, { duration: 11000 }), 200);
         } else {
           setTimeout(() => toast.success(msg), 200);
         }

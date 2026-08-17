@@ -114,12 +114,27 @@ export default function TabFotos({ usuario, proyecto }) {
         <div className="bg-zinc-900 border-2 border-red-600 p-4 space-y-3">
           <div className="flex justify-between items-center"><div className="text-xs tracking-widest uppercase font-bold text-red-500">Subir fotos</div><button onClick={() => setShowUpload(false)} className="text-zinc-500"><X className="w-4 h-4" /></button></div>
           <Campo label="Fecha"><Input type="date" value={fechaSubida} onChange={v => setFechaSubida(v)} /></Campo>
-          <div className="relative">
-            <input type="file" accept="image/*" multiple onChange={e => subir(Array.from(e.target.files))} disabled={subiendo} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
-            <div className={`border-2 border-dashed p-5 text-center ${subiendo ? 'border-red-600 bg-red-600/10' : 'border-zinc-700'}`}>
-              {subiendo ? <div><Loader2 className="w-8 h-8 text-red-600 animate-spin mx-auto" /><div className="text-xs mt-2">Comprimiendo y subiendo...</div></div> : <div><Camera className="w-8 h-8 text-zinc-500 mx-auto mb-2" /><div className="text-xs font-bold">Toca para elegir (puedes seleccionar varias)</div><div className="text-[10px] text-zinc-500 mt-1">Se comprimen automático para ahorrar espacio</div></div>}
+          {/* v8.27.67 (ticket Yamel "fotos directo"): cámara directa + galería como opciones */}
+          {subiendo ? (
+            <div className="border-2 border-dashed border-red-600 bg-red-600/10 p-5 text-center">
+              <Loader2 className="w-8 h-8 text-red-600 animate-spin mx-auto" /><div className="text-xs mt-2">Comprimiendo y subiendo...</div>
             </div>
-          </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              <label className="border-2 border-dashed border-zinc-700 hover:border-red-600 p-4 text-center cursor-pointer">
+                <input type="file" accept="image/*" capture="environment" onChange={e => subir(Array.from(e.target.files))} className="hidden" />
+                <Camera className="w-7 h-7 text-red-500 mx-auto mb-1" />
+                <div className="text-xs font-bold">Tomar foto</div>
+                <div className="text-[10px] text-zinc-500">cámara directo</div>
+              </label>
+              <label className="border-2 border-dashed border-zinc-700 hover:border-red-600 p-4 text-center cursor-pointer">
+                <input type="file" accept="image/*" multiple onChange={e => subir(Array.from(e.target.files))} className="hidden" />
+                <Camera className="w-7 h-7 text-zinc-500 mx-auto mb-1" />
+                <div className="text-xs font-bold">Galería</div>
+                <div className="text-[10px] text-zinc-500">varias a la vez</div>
+              </label>
+            </div>
+          )}
         </div>
       )}
 

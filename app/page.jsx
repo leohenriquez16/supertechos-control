@@ -1268,8 +1268,10 @@ export default function App() {
         })} /></div>;
         })()}
 
-        {/* v8.9.20: Asistente IA para admin */}
-        {esAdmin && <AsistenteIA usuario={usuario} data={data} />}
+        {/* v8.9.20: Asistente IA para admin.
+            v8.27.70: abierto a TODOS como asistente de ayuda del ERP — los no-admin
+            reciben SOLO el manual de uso (sin datos del negocio). */}
+        <AsistenteIA usuario={usuario} data={data} esAdmin={esAdmin} />
       </div></main>
     </div>
   );
@@ -1278,7 +1280,7 @@ export default function App() {
 // ============================================================
 // v8.9.20: ASISTENTE IA - botón flotante + chat con voz
 // ============================================================
-function AsistenteIA({ usuario, data }) {
+function AsistenteIA({ usuario, data, esAdmin = false }) {
   const [abierto, setAbierto] = useState(false);
   const [mensajes, setMensajes] = useState([]); // [{role, content}]
   const [pregunta, setPregunta] = useState('');
@@ -1425,7 +1427,8 @@ function AsistenteIA({ usuario, data }) {
     setPregunta('');
 
     try {
-      const contexto = construirContexto();
+      // v8.27.70: contexto del negocio SOLO para admin; no-admin recibe solo el manual.
+      const contexto = esAdmin ? construirContexto() : null;
       const res = await fetch('/api/asistente', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1433,6 +1436,9 @@ function AsistenteIA({ usuario, data }) {
           pregunta: p,
           contexto,
           historial: mensajes,
+          esAdmin,
+          nombreUsuario: usuario?.nombre || '',
+          rolUsuario: (usuario?.roles || [])[0] || '',
         }),
       });
 
@@ -1505,11 +1511,17 @@ function AsistenteIA({ usuario, data }) {
     rec.start();
   };
 
-  const preguntasSugeridas = [
+  // v8.27.70: sugerencias según el rol — admin ve negocio; los demás, ayuda de uso.
+  const preguntasSugeridas = esAdmin ? [
     '¿Cómo va todo?',
     '¿Qué proyectos están atrasados?',
     '¿Cuál es mi top del mes?',
-    '¿Hay incidentes sin enviar?',
+    '¿Cómo funciona el modo de pago Día + m²?',
+  ] : [
+    '¿Cómo reporto un avance con audio?',
+    '¿Cómo reporto un gasto de caja chica?',
+    '¿Cómo cierro la jornada del día?',
+    '¿Cómo reporto un error del sistema?',
   ];
 
   return (
@@ -1564,7 +1576,9 @@ function AsistenteIA({ usuario, data }) {
               <div className="text-center space-y-3 py-4">
                 <div className="text-4xl">👋</div>
                 <div className="text-sm text-zinc-400">
-                  Hola Leo, pregúntame lo que necesites sobre tu negocio.
+                  {esAdmin
+                    ? 'Hola Leo, pregúntame lo que necesites sobre tu negocio o cómo usar el ERP.'
+                    : `Hola ${String(usuario?.nombre || '').split(' ')[0]}, pregúntame cómo hacer cualquier cosa en el sistema.`}
                 </div>
                 <div className="space-y-1 mt-4">
                   <div className="text-[10px] text-zinc-500 uppercase tracking-widest">Sugerencias</div>

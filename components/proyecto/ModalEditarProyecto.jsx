@@ -155,11 +155,12 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
     try {
       const nuevoModo = modo === 'heredar' ? null : modo;
       await db.guardarPagoPersonaProyecto(proyecto.id, mid, { modoPago: nuevoModo });
-      // "Por día" y "heredar" se propagan a los ayudantes de su brigada;
+      // "Por día", "Día + m²" y "heredar" se propagan a los ayudantes de su brigada;
       // en los modos por m²/tarea el maestro cubre (o se configura) a su gente.
-      if (modo === 'dia' || modo === 'heredar') {
+      // v8.27.69: los ayudantes de una brigada "dia_m2" cobran POR DÍA (los m² van al maestro).
+      if (modo === 'dia' || modo === 'heredar' || modo === 'dia_m2') {
         for (const a of ayudantesDeBrigada(mid)) {
-          await db.guardarPagoPersonaProyecto(proyecto.id, a.id, { modoPago: nuevoModo });
+          await db.guardarPagoPersonaProyecto(proyecto.id, a.id, { modoPago: modo === 'dia_m2' ? 'dia' : nuevoModo });
         }
       }
       setCostosDia(await db.listarCostosDia(proyecto.id));
@@ -971,12 +972,20 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
                       >
                         <option value="heredar">— modo general de la obra —</option>
                         <option value="dia">Por día (él + su brigada)</option>
+                        <option value="dia_m2">Día + m² (ambos) — pisos</option>
                         <option value="m2_fijo">M² fijo (precio propio)</option>
                         <option value="m2">Por m² por tarea</option>
                         <option value="tarea">Por tarea</option>
                       </select>
                     </div>
-                    {modoSel === 'm2_fijo' && (
+                    {/* v8.27.69 (ticket Miguel "pisos"): modo combinado — el maestro cobra días
+                        + m² producidos; sus ayudantes cobran por día. */}
+                    {modoSel === 'dia_m2' && (
+                      <div className="text-[9px] text-teal-300 bg-teal-950/30 border border-teal-800 rounded-card px-2 py-1">
+                        El maestro cobra sus días de asistencia MÁS los m² producidos (precio abajo). Sus ayudantes cobran por día.
+                      </div>
+                    )}
+                    {(modoSel === 'm2_fijo' || modoSel === 'dia_m2') && (
                       <div className="flex items-center gap-2 justify-end">
                         <span className="text-[9px] text-zinc-500">RD$/m² de este maestro</span>
                         <input
@@ -989,7 +998,7 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
                         />
                       </div>
                     )}
-                    {modoSel === 'dia' && (
+                    {(modoSel === 'dia' || modoSel === 'dia_m2') && (
                       <div className="space-y-1 pt-1 border-t border-zinc-800/60">
                         {[m, ...ayus].map(p => (
                           <div key={p.id} className="flex items-center gap-2">

@@ -106,6 +106,7 @@ const MODO_BADGE = {
   dia:     { label: 'Día',      cls: 'bg-emerald-900/40 border-emerald-700 text-emerald-300' },
   m2:      { label: 'm²',       cls: 'bg-sky-900/40 border-sky-700 text-sky-300' },
   m2_fijo: { label: 'm² fijo',  cls: 'bg-purple-900/40 border-purple-700 text-purple-300' },
+  dia_m2:  { label: 'Día+m²',   cls: 'bg-teal-900/40 border-teal-700 text-teal-300' }, // v8.27.69
   tarea:   { label: 'Tarea',    cls: 'bg-orange-900/40 border-orange-700 text-orange-300' },
   ajuste:  { label: 'Ajuste',   cls: 'bg-zinc-800 border-zinc-700 text-zinc-400' },
 };
@@ -183,7 +184,7 @@ function imprimirReciboNomina(d, corte, data) {
 <table>
   <tr><th style="width: 30%;">Persona</th><td><b>${d.personaNombre}</b> <span style="color:#888">(${rol})</span></td></tr>
   <tr><th>Proyecto</th><td>${label}</td></tr>
-  <tr><th>Modo de pago</th><td style="text-transform:capitalize;">${d.modoPago === 'dia' ? `Por día · ${d.diasTrabajados} días${d.diasDobles ? ` (${d.diasDobles} doble)` : ''}` : d.modoPago === 'm2' ? `Por m² · ${fmt(d.m2Producidos)} m²` : d.modoPago === 'm2_fijo' ? `m² fijo sistema · ${fmt(typeof d.m2Efectivo === 'number' ? d.m2Efectivo : d.m2Producidos)} m²` : d.modoPago === 'tarea' ? `Por tarea · ${fmt(d.m2Producidos)} m²` : 'Ajuste'}</td></tr>
+  <tr><th>Modo de pago</th><td style="text-transform:capitalize;">${d.modoPago === 'dia' ? `Por día · ${d.diasTrabajados} días${d.diasDobles ? ` (${d.diasDobles} doble)` : ''}` : d.modoPago === 'dia_m2' ? `Día + m² · ${d.diasTrabajados} días${d.diasDobles ? ` (${d.diasDobles} doble)` : ''} + ${fmt(typeof d.m2Efectivo === 'number' ? d.m2Efectivo : d.m2Producidos)} m²` : d.modoPago === 'm2' ? `Por m² · ${fmt(d.m2Producidos)} m²` : d.modoPago === 'm2_fijo' ? `m² fijo sistema · ${fmt(typeof d.m2Efectivo === 'number' ? d.m2Efectivo : d.m2Producidos)} m²` : d.modoPago === 'tarea' ? `Por tarea · ${fmt(d.m2Producidos)} m²` : 'Ajuste'}</td></tr>
 </table>
 <table style="margin-top: 20px;">
   <tr><th style="width: 40%;">Concepto</th><th class="right">Monto RD$</th></tr>
@@ -234,6 +235,7 @@ function imprimirCorteCompleto({ corte, vistaDetalle, resumenPersonas, resumenPr
   const m2Mostrar = (r) => typeof r.m2Efectivo === 'number' ? r.m2Efectivo : r.m2Producidos;
   const desglosePago = (r) =>
     r.modoPago === 'dia' ? `${r.diasTrabajados} día${r.diasTrabajados !== 1 ? 's' : ''}${r.diasDobles ? ` (${r.diasDobles} dobles)` : ''}`
+    : r.modoPago === 'dia_m2' ? `${r.diasTrabajados} día${r.diasTrabajados !== 1 ? 's' : ''}${r.diasDobles ? ` (${r.diasDobles} dobles)` : ''} + ${fmtNum(m2Mostrar(r))} m²`
     : r.modoPago === 'm2_fijo' ? `${fmtNum(m2Mostrar(r))} m²`
     : (r.modoPago === 'm2' || r.modoPago === 'tarea') ? `${fmtNum(r.m2Producidos)} m²`
     : 'Ajuste';
@@ -1171,7 +1173,9 @@ export async function calcularDetalle(jornadas, data, corte, ajustesLista) {
   };
   const bucketsDiaPorPersona = {};
   Object.values(buckets).forEach(b => {
-    if (modoDeBucket(b) !== 'dia') return;
+    const modo = modoDeBucket(b);
+    // v8.27.69: 'dia_m2' también paga días → entra a la dedup de fechas.
+    if (modo !== 'dia' && modo !== 'dia_m2') return;
     (bucketsDiaPorPersona[b.personaId] = bucketsDiaPorPersona[b.personaId] || []).push(b);
   });
   Object.values(bucketsDiaPorPersona).forEach(lista => {
@@ -1199,20 +1203,12 @@ export async function calcularDetalle(jornadas, data, corte, ajustesLista) {
     const ov = costosDiaMap[proy.id]?.[b.personaId] || {};
     const modoPersona = ov.modoPago || proy.modoPagoManoObra;
     const precioFijoPersona = (ov.precioM2 != null && ov.precioM2 > 0) ? ov.precioM2 : (proy.precioM2FijoMaestro || 0);
-    let montoBase = 0;
-    if (modoPersona === 'dia') {
-      const costoDia = ov.costoDia || 0;
-      montoBase = diasEfectivos * costoDia;
-    } else if (modoPersona === 'm2_fijo') {
-      // v8.19.20: el precio fijo cubre el SISTEMA COMPLETO. Si un avance solo
-      // reportó parte de las tareas, el maestro cobra el peso% de cada tarea
-      // sobre el precio. Antes era b.m2 × precio (doble cobro al reportar
-      // varios pasos sobre la misma área).
+    // v8.19.20: el precio fijo cubre el SISTEMA COMPLETO. Si un avance solo reportó
+    // parte de las tareas, el maestro cobra el peso% de cada tarea sobre el precio.
+    // v8.26.8: multi-sistema — los pesos se buscan en TODOS los sistemas del proyecto.
+    // v8.27.69: extraído a función para reusarlo en el modo combinado 'dia_m2'.
+    const calcMontoM2Fijo = () => {
       const precioFijo = precioFijoPersona;
-      // v8.26.8: multi-sistema — los pesos se buscan en TODOS los sistemas que
-      // usa el proyecto (principal + el de cada área). Antes solo se miraba el
-      // sistema principal: las tareas de un segundo sistema tenían peso 0 y el
-      // maestro cobraba RD$0 aunque el avance estuviera reportado.
       const sistemaIds = [...new Set([proy.sistema, ...(proy.areas || []).map(a => a.sistemaId).filter(Boolean)])];
       const pesoMap = {};
       const tareasConPeso = new Set(); // tareas cuyo sistema SÍ tiene pesos configurados
@@ -1225,21 +1221,35 @@ export async function calcularDetalle(jornadas, data, corte, ajustesLista) {
           if (totalPesoSis > 0) tareasConPeso.add(t.id);
         });
       });
+      let monto = 0;
       if (Object.keys(pesoMap).length > 0 && b.tareaReportes) {
-        montoBase = 0;
         Object.entries(b.tareaReportes).forEach(([tid, m2]) => {
           if (tareasConPeso.has(tid)) {
-            montoBase += m2 * precioFijo * ((pesoMap[tid] || 0) / 100);
+            monto += m2 * precioFijo * ((pesoMap[tid] || 0) / 100);
           } else if (pesoMap[tid] !== undefined) {
             // Tarea de un sistema sin pesos definidos → comportamiento anterior (sin ponderar).
-            montoBase += m2 * precioFijo;
+            monto += m2 * precioFijo;
           }
           // Tarea desconocida (no está en ningún sistema del proyecto) → no paga, igual que antes.
         });
       } else {
         // Fallback: ningún sistema con tareas definidas → comportamiento anterior.
-        montoBase = b.m2 * precioFijo;
+        monto = b.m2 * precioFijo;
       }
+      return monto;
+    };
+    let montoBase = 0;
+    if (modoPersona === 'dia') {
+      const costoDia = ov.costoDia || 0;
+      montoBase = diasEfectivos * costoDia;
+    } else if (modoPersona === 'm2_fijo') {
+      montoBase = calcMontoM2Fijo();
+    } else if (modoPersona === 'dia_m2') {
+      // v8.27.69 (ticket Miguel "pisos: m² y días a la misma brigada"): modo COMBINADO —
+      // cobra los días de asistencia (RD$/día propio) MÁS los m² producidos (precio m²
+      // fijo propio, ponderado por peso de tarea). Antes había que meter los m² como
+      // ajuste manual.
+      montoBase = diasEfectivos * (ov.costoDia || 0) + calcMontoM2Fijo();
     } else if (modoPersona === 'm2') {
       const precios = proy.preciosTareasM2 || {};
       const idxPk = paqueteIndex[proy.id] || {};
@@ -1265,6 +1275,9 @@ export async function calcularDetalle(jornadas, data, corte, ajustesLista) {
     let m2Efectivo = b.m2;
     if (modoPersona === 'm2_fijo' && precioFijoPersona > 0) {
       m2Efectivo = montoBase / precioFijoPersona;
+    } else if (modoPersona === 'dia_m2' && precioFijoPersona > 0) {
+      // v8.27.69: solo la parte de m² (sin los días) dividida por el precio.
+      m2Efectivo = (montoBase - diasEfectivos * (ov.costoDia || 0)) / precioFijoPersona;
     }
     filas.push({
       id: 'd_' + corte.id + '_' + b.personaId + '_' + b.proyectoId,
@@ -1584,7 +1597,7 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
                     <MiniBar value={rp.total} max={maxPers} color="bg-green-500/50" />
                     <div className="mt-2 space-y-1">{rp.proyectos.map(r => (
                       <div key={r.id} className="bg-zinc-950 border border-zinc-800 rounded-card p-2 text-[10px] flex justify-between items-center gap-2">
-                        <div className="flex-1 min-w-0"><div className="font-bold truncate">{r.proyectoNombre}</div><div className="text-zinc-500 uppercase flex items-center gap-1 mt-0.5"><ModoBadge modo={r.modoPago} /> {r.modoPago === 'dia' ? `${r.diasTrabajados}d${r.diasDobles ? ` (${r.diasDobles}×2)` : ''}` : r.modoPago === 'm2_fijo' ? `${formatNum(typeof r.m2Efectivo === 'number' ? r.m2Efectivo : r.m2Producidos)} m²` : r.modoPago === 'm2' || r.modoPago === 'tarea' ? `${formatNum(r.m2Producidos)} m²` : 'Ajuste'}</div></div>
+                        <div className="flex-1 min-w-0"><div className="font-bold truncate">{r.proyectoNombre}</div><div className="text-zinc-500 uppercase flex items-center gap-1 mt-0.5"><ModoBadge modo={r.modoPago} /> {r.modoPago === 'dia' ? `${r.diasTrabajados}d${r.diasDobles ? ` (${r.diasDobles}×2)` : ''}` : r.modoPago === 'dia_m2' ? `${r.diasTrabajados}d + ${formatNum(typeof r.m2Efectivo === 'number' ? r.m2Efectivo : r.m2Producidos)} m²` : r.modoPago === 'm2_fijo' ? `${formatNum(typeof r.m2Efectivo === 'number' ? r.m2Efectivo : r.m2Producidos)} m²` : r.modoPago === 'm2' || r.modoPago === 'tarea' ? `${formatNum(r.m2Producidos)} m²` : 'Ajuste'}</div></div>
                         <div className="text-green-400 font-bold">{formatRD(r.montoTotal)}</div>
                       </div>
                     ))}</div>
@@ -1776,7 +1789,7 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
                     <MiniBar value={rp.total} max={maxProy} color="bg-green-500/50" />
                     <div className="mt-2 space-y-1">{rp.personas.map(r => (
                       <div key={r.id} className="bg-zinc-950 border border-zinc-800 rounded-card p-2 text-[10px] flex justify-between items-center">
-                        <div className="flex-1 min-w-0"><div className="font-bold truncate">{r.personaNombre}</div><div className="text-zinc-500 uppercase">{r.modoPago === 'dia' ? `${r.diasTrabajados} días` : r.modoPago === 'm2' || r.modoPago === 'm2_fijo' || r.modoPago === 'tarea' ? `${formatNum(r.m2Producidos)} m²` : 'Ajuste'}</div></div>
+                        <div className="flex-1 min-w-0"><div className="font-bold truncate">{r.personaNombre}</div><div className="text-zinc-500 uppercase">{r.modoPago === 'dia' ? `${r.diasTrabajados} días` : r.modoPago === 'dia_m2' ? `${r.diasTrabajados}d + ${formatNum(typeof r.m2Efectivo === 'number' ? r.m2Efectivo : r.m2Producidos)} m²` : r.modoPago === 'm2' || r.modoPago === 'm2_fijo' || r.modoPago === 'tarea' ? `${formatNum(r.m2Producidos)} m²` : 'Ajuste'}</div></div>
                         <div className="text-green-400 font-bold">{formatRD(r.montoTotal)}</div>
                       </div>
                     ))}</div>
@@ -1942,7 +1955,7 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
                         <div key={r.id} className="flex justify-between items-center text-[10px] border-t border-zinc-900 pt-1">
                           <div className="flex-1 min-w-0">
                             <div className="font-bold truncate">{r.personaNombre}</div>
-                            <div className="text-zinc-500 uppercase">{r.modoPago === 'dia' ? `${r.diasTrabajados} días${r.diasDobles ? ` (${r.diasDobles} dobles)` : ''}` : r.modoPago === 'm2' ? `${formatNum(r.m2Producidos)} m²` : 'Ajuste'}</div>
+                            <div className="text-zinc-500 uppercase">{r.modoPago === 'dia' ? `${r.diasTrabajados} días${r.diasDobles ? ` (${r.diasDobles} dobles)` : ''}` : r.modoPago === 'dia_m2' ? `${r.diasTrabajados}d + ${formatNum(typeof r.m2Efectivo === 'number' ? r.m2Efectivo : r.m2Producidos)} m²` : r.modoPago === 'm2' ? `${formatNum(r.m2Producidos)} m²` : 'Ajuste'}</div>
                           </div>
                           <div className="text-green-400 font-bold">{formatRD(r.montoTotal)}</div>
                         </div>
@@ -1961,7 +1974,7 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
               <div>
                 <div className="font-bold text-sm">{d.personaNombre}</div>
                 <div className="text-[10px] text-red-400 uppercase">{d.proyectoNombre}</div>
-                <div className="text-[10px] text-zinc-500 uppercase">{d.modoPago === 'dia' ? `${d.diasTrabajados} días${d.diasDobles ? ` (${d.diasDobles} doble)` : ''}` : d.modoPago === 'm2' ? `${formatNum(d.m2Producidos)} m²` : 'Ajuste'}</div>
+                <div className="text-[10px] text-zinc-500 uppercase">{d.modoPago === 'dia' ? `${d.diasTrabajados} días${d.diasDobles ? ` (${d.diasDobles} doble)` : ''}` : d.modoPago === 'dia_m2' ? `${d.diasTrabajados}d + ${formatNum(typeof d.m2Efectivo === 'number' ? d.m2Efectivo : d.m2Producidos)} m²` : d.modoPago === 'm2' ? `${formatNum(d.m2Producidos)} m²` : 'Ajuste'}</div>
               </div>
               <div className="flex items-start gap-2">
                 <div className="text-right"><div className="text-lg font-black text-green-400">{formatRD(d.montoTotal)}</div></div>

@@ -1490,6 +1490,16 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
     cargar();
   };
 
+  // v8.27.66 (ticket Miguel "borrar/editar ajustes"): eliminar un ajuste del periodo
+  // mientras el corte está ABIERTO (aún no asociado a un pago). Para "editar" se borra
+  // y se crea de nuevo. En cortes cerrados hay que reabrir primero.
+  const borrarAjuste = async (a) => {
+    const p = data.personal.find(x => x.id === a.personaId);
+    if (!confirm(`¿Eliminar el ajuste de ${p?.nombre || 'persona'} (${a.tipo} ${formatRD(a.monto)}${a.concepto ? ` · ${a.concepto}` : ''})?`)) return;
+    try { await db.eliminarAjuste(a.id); await cargar(); }
+    catch (e) { alert('Error: ' + (e.message || e)); }
+  };
+
   if (loading) return <div className="text-center py-8"><Loader2 className="w-6 h-6 text-red-500 animate-spin mx-auto" /></div>;
 
   return (
@@ -2042,7 +2052,19 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
       {ajustes.length > 0 && (
         <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
           <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2">Ajustes del periodo</div>
-          <div className="space-y-1">{ajustes.map(a => { const p = data.personal.find(x => x.id === a.personaId); return (<div key={a.id} className="text-xs flex justify-between"><span>{p?.nombre} · <span className="text-zinc-500">{a.tipo}</span> · {a.concepto}</span><span className={a.tipo === 'adelanto' || a.tipo === 'descuento' ? 'text-red-400' : 'text-green-400'}>{(a.tipo === 'adelanto' || a.tipo === 'descuento') ? '-' : '+'}{formatRD(a.monto)}</span></div>); })}</div>
+          <div className="space-y-1">{ajustes.map(a => { const p = data.personal.find(x => x.id === a.personaId); return (
+            <div key={a.id} className="text-xs flex items-center justify-between gap-2">
+              <span className="min-w-0 truncate">{p?.nombre} · <span className="text-zinc-500">{a.tipo}</span> · {a.concepto}</span>
+              <span className="flex items-center gap-2 shrink-0">
+                <span className={a.tipo === 'adelanto' || a.tipo === 'descuento' ? 'text-red-400' : 'text-green-400'}>{(a.tipo === 'adelanto' || a.tipo === 'descuento') ? '-' : '+'}{formatRD(a.monto)}</span>
+                {/* v8.27.66: borrar ajuste mientras el corte está abierto (ticket Miguel) */}
+                {corte.estado === 'abierto' && (
+                  <button onClick={() => borrarAjuste(a)} title="Eliminar ajuste" className="p-1 text-zinc-500 hover:text-red-400 hover:bg-zinc-800 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
+                )}
+              </span>
+            </div>
+          ); })}</div>
+          {corte.estado === 'abierto' && <div className="text-[10px] text-zinc-600 mt-2">Para corregir un ajuste: elimínalo y créalo de nuevo con el monto correcto.</div>}
         </div>
       )}
 
@@ -2080,6 +2102,16 @@ function ModalAjuste({ personal, proyectos = [], onCerrar, onCrear, fechaMin, fe
   const [monto, setMonto] = useState('');
   const [concepto, setConcepto] = useState('');
   const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
+  // v8.27.66: guard anti doble-envío — un doble-tap en "Registrar" creaba el ajuste DOS
+  // veces (así se duplicó el de Iranny, ticket de Miguel).
+  const [guardando, setGuardando] = useState(false);
+  const registrar = async () => {
+    if (guardando || !personaId || !monto) return;
+    setGuardando(true);
+    try {
+      await onCrear({ personaId, proyectoId: proyectoId === '__reclamacion__' ? null : (proyectoId || null), esReclamacion: proyectoId === '__reclamacion__', tipo, monto: parseFloat(monto), concepto, fecha });
+    } finally { setGuardando(false); }
+  };
   const elegibles = personal.filter(p => tieneRol(p, 'maestro') || tieneRol(p, 'ayudante') || tieneRol(p, 'supervisor'));
   const proyectosActivos = (proyectos || []).filter(p => !p.archivado).sort((a, b) => labelProyecto(a).localeCompare(labelProyecto(b)));
   return (
@@ -2092,7 +2124,7 @@ function ModalAjuste({ personal, proyectos = [], onCerrar, onCrear, fechaMin, fe
         <Campo label="Monto (RD$)"><Input type="number" value={monto} onChange={setMonto} /></Campo>
         <Campo label="Concepto"><Input value={concepto} onChange={setConcepto} placeholder="Descripción breve" /></Campo>
         <Campo label="Fecha"><Input type="date" value={fecha} onChange={setFecha} /></Campo>
-        <div className="flex gap-2"><button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button><button onClick={() => personaId && monto && onCrear({ personaId, proyectoId: proyectoId === '__reclamacion__' ? null : (proyectoId || null), esReclamacion: proyectoId === '__reclamacion__', tipo, monto: parseFloat(monto), concepto, fecha })} disabled={!personaId || !monto} className="flex-1 bg-red-600 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-3"><Save className="w-3 h-3 inline mr-1" /> Registrar</button></div>
+        <div className="flex gap-2"><button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button><button onClick={registrar} disabled={!personaId || !monto || guardando} className="flex-1 bg-red-600 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-3">{guardando ? <Loader2 className="w-3 h-3 inline mr-1 animate-spin" /> : <Save className="w-3 h-3 inline mr-1" />} {guardando ? 'Guardando…' : 'Registrar'}</button></div>
       </div>
     </div>
   );

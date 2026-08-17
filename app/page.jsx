@@ -10647,7 +10647,10 @@ function ProduccionPropia({ persona }) {
 // Control diario de llegada/salida con GPS no bloqueante
 // ============================================================
 function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onEliminarJornada }) {
-  const hoy = new Date().toISOString().split('T')[0];
+  // v8.27.65: fecha en hora LOCAL de RD (antes usaba UTC → a las 8 PM local el día "avanzaba"
+  // y la jornada abierta desaparecía de la vista, pareciendo que se cerró sola).
+  const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo' }).format(new Date());
+  const ayer = (() => { const d = new Date(hoy + 'T12:00:00'); d.setDate(d.getDate() - 1); return d.toISOString().split('T')[0]; })();
   const [jornadaHoy, setJornadaHoy] = useState(null);
   const [historial, setHistorial] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -10672,13 +10675,17 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
   const recargar = async () => {
     setLoading(true);
     try {
-      const [hoyJ, hist] = await Promise.all([
+      const [abierta, hoyJ, hist] = await Promise.all([
+        db.obtenerJornadaAbiertaProyecto(proyecto.id),
         db.obtenerJornadaHoy(proyecto.id, hoy),
         db.listarJornadasProyecto(proyecto.id),
       ]);
-      setJornadaHoy(hoyJ);
+      // v8.27.65: si hay una jornada ABIERTA de hoy o de ayer (turno que cruzó medianoche),
+      // se muestra esa para que el encargado pueda finalizarla a mano; si no, la de hoy.
+      const jornadaActual = (abierta && !abierta.horaFin && (abierta.fecha === hoy || abierta.fecha === ayer)) ? abierta : hoyJ;
+      setJornadaHoy(jornadaActual);
       setHistorial(hist);
-      if (hoyJ) setPersonasSel(hoyJ.personasPresentesIds || []);
+      if (jornadaActual) setPersonasSel(jornadaActual.personasPresentesIds || []);
       else setPersonasSel([proyecto.maestroId, ...(proyecto.ayudantesIds || [])].filter(Boolean));
     } catch (e) { console.error(e); }
     setLoading(false);

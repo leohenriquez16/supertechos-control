@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Camera, ChevronLeft, ChevronRight, Loader2, Trash2, X } from 'lucide-react';
+import { Camera, ChevronLeft, ChevronRight, Loader2, Trash2, X, Printer } from 'lucide-react';
 import * as db from '../../../lib/db';
 import { comprimirImagen } from '../../../lib/imports';
 import { formatFechaLarga } from '../../../lib/helpers/formato';
@@ -19,6 +19,180 @@ export default function TabFotos({ usuario, proyecto }) {
   const [fotoData, setFotoData] = useState(null);
   const [fechaSubida, setFechaSubida] = useState(new Date().toISOString().split('T')[0]);
   const [showUpload, setShowUpload] = useState(false);
+  const [generandoReporte, setGenerandoReporte] = useState(null); // v8.27.78: {hechas, total} | null
+  const [reporteListo, setReporteListo] = useState(null); // v8.27.78: {base64, filename, sizeMB, nFotos}
+  const [enviandoCorreo, setEnviandoCorreo] = useState(false);
+  // contacto de reportes del cliente (editable aquí mismo si falta)
+  const [contactoReportes, setContactoReportes] = useState({ email: proyecto.contactoClienteEmail || '', telefono: proyecto.contactoClienteTelefono || '' });
+  const esAdmin = tieneRol(usuario, 'admin');
+
+  // v8.27.78: si la obra no tiene el dato, se pide AQUÍ y se guarda en el proyecto.
+  const pedirContacto = async (tipo) => {
+    const label = tipo === 'email'
+      ? '¿A qué CORREO del cliente se envían los reportes de esta obra?'
+      : '¿Cuál es el WHATSAPP del cliente para los reportes? (ej. 809-555-1234)';
+    const v = prompt(label, contactoReportes[tipo] || '');
+    if (v === null) return null;
+    const limpio = v.trim();
+    if (!limpio) return null;
+    try {
+      await db.guardarContactoReportesProyecto(proyecto.id, tipo === 'email' ? { email: limpio } : { telefono: limpio });
+      setContactoReportes(prev => ({ ...prev, [tipo]: limpio }));
+    } catch (e) { alert('No se pudo guardar el contacto: ' + (e.message || e)); }
+    return limpio;
+  };
+
+  // Envío por correo — VALIDADO: solo admin ve el botón y confirma antes de enviar.
+  const enviarReportePorCorreo = async () => {
+    if (!reporteListo) return;
+    let email = contactoReportes.email || await pedirContacto('email');
+    if (!email) return;
+    const ref = proyecto.referenciaOdoo || proyecto.cliente;
+    if (!confirm(`Enviar el reporte fotográfico (${reporteListo.nFotos} fotos, ${reporteListo.sizeMB}MB) a:\n\n${email}\n\nAsunto: Reporte fotográfico — ${ref}`)) return;
+    setEnviandoCorreo(true);
+    try {
+      const res = await fetch('/api/email/reporte-cliente', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          para: email,
+          asunto: `Reporte fotográfico de su obra — ${ref}`,
+          mensaje: `Saludos,\n\nLe compartimos el reporte fotográfico del avance de su obra ${ref}${proyecto.referenciaProyecto ? ` (${proyecto.referenciaProyecto})` : ''}.\n\nQuedamos atentos a cualquier consulta.\n\nSuper Techos, SRL`,
+          pdfBase64: reporteListo.base64,
+          filename: reporteListo.filename,
+        }),
+      });
+      const j = await res.json();
+      if (j.ok) alert('✅ Reporte enviado por correo a ' + email);
+      else alert('No se pudo enviar: ' + (j.error || 'error'));
+    } catch (e) { alert('Error enviando: ' + (e.message || e)); }
+    setEnviandoCorreo(false);
+  };
+
+  // WhatsApp del cliente: abre el chat con el mensaje listo (el PDF ya quedó descargado
+  // — se adjunta con el clip; WhatsApp no permite adjuntar automático desde la web).
+  const abrirWhatsAppCliente = async () => {
+    let tel = contactoReportes.telefono || await pedirContacto('telefono');
+    if (!tel) return;
+    let dig = String(tel).replace(/\D/g, '');
+    if (dig.length === 10) dig = '1' + dig; // RD sin el 1
+    const ref = proyecto.referenciaOdoo || proyecto.cliente;
+    const texto = encodeURIComponent(`Saludos 👋 Le compartimos el reporte fotográfico del avance de su obra ${ref}. Se lo adjuntamos a continuación.`);
+    window.open(`https://wa.me/${dig}?text=${texto}`, '_blank');
+  };
+
+  // v8.27.78: re-comprime una foto para el reporte (canvas → JPEG). Mantiene proporción.
+  const recomprimirFoto = (dataUrl, maxDim, calidad) => new Promise((res) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const esc = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * esc)), h = Math.max(1, Math.round(img.height * esc));
+        const c = document.createElement('canvas'); c.width = w; c.height = h;
+        c.getContext('2d').drawImage(img, 0, 0, w, h);
+        res(c.toDataURL('image/jpeg', calidad));
+      } catch { res(dataUrl); }
+    };
+    img.onerror = () => res(dataUrl);
+    img.src = dataUrl;
+  });
+
+  // v8.27.78: REPORTE FOTOGRÁFICO imprimible — fotos del proyecto (máx 60, las más
+  // recientes) agrupadas por fecha, en grande, con encabezado del proyecto.
+  // Las imágenes se RE-COMPRIMEN con presupuesto total ≤ ~2.6MB para que el PDF final
+  // quede bajo 3MB y se pueda enviar por WhatsApp.
+  const generarReporteFotografico = async () => {
+    const MAX = 60;
+    const lista = fotos.slice(0, MAX); // ya vienen ordenadas desc por fecha
+    if (lista.length === 0) { alert('Este proyecto no tiene fotos.'); return; }
+    setGenerandoReporte({ hechas: 0, total: lista.length });
+    try {
+      // Cargar los datos (base64) en lotes de 6
+      const conData = [];
+      for (let i = 0; i < lista.length; i += 6) {
+        const lote = await Promise.all(lista.slice(i, i + 6).map(async f => {
+          try { return { ...f, dataUrl: await db.obtenerFoto(f.id) }; }
+          catch { return null; }
+        }));
+        conData.push(...lote.filter(Boolean));
+        setGenerandoReporte({ hechas: Math.min(i + 6, lista.length), total: lista.length });
+      }
+
+      // Re-comprimir con presupuesto: hasta 3 pasadas bajando tamaño/calidad hasta caber en ~2.6MB
+      const BUDGET = 2.6 * 1024 * 1024;
+      const pasadas = conData.length > 36
+        ? [[720, 0.55], [560, 0.45], [460, 0.38]]
+        : [[900, 0.62], [700, 0.5], [540, 0.42]];
+      for (const [maxDim, calidad] of pasadas) {
+        for (let i = 0; i < conData.length; i++) {
+          conData[i].dataUrl = await recomprimirFoto(conData[i].dataUrl, maxDim, calidad);
+        }
+        const totalBytes = conData.reduce((s, f) => s + f.dataUrl.length * 0.75, 0);
+        if (totalBytes <= BUDGET) break;
+      }
+      // Agrupar por fecha ascendente (cronológico para el cliente)
+      const porDia = {};
+      conData.forEach(f => { const d = f.fecha || (f.createdAt || '').slice(0, 10); (porDia[d] = porDia[d] || []).push(f); });
+      const dias = Object.keys(porDia).sort();
+
+      // ==== Generar PDF real (jsPDF) — alineado y bajo 3MB para WhatsApp/correo ====
+      const { jsPDF } = await import('jspdf');
+      const doc = new jsPDF({ unit: 'mm', format: 'a4', compress: true });
+      const PW = 210, PH = 297, M = 12, GAP = 6;
+      const COLW = (PW - M * 2 - GAP) / 2;          // 2 columnas
+      const IMGH = COLW * 3 / 4;                     // 4:3
+      let y = 0;
+      const encabezado = () => {
+        doc.setFillColor(204, 0, 0); doc.rect(0, 0, PW, 4, 'F');
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(24, 24, 27);
+        doc.text('REPORTE FOTOGRÁFICO DE OBRA', M, 16);
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(113, 113, 122);
+        const sub = [proyecto.referenciaOdoo, proyecto.cliente, proyecto.referenciaProyecto].filter(Boolean).join(' · ');
+        doc.text(doc.splitTextToSize(sub, PW - M * 2), M, 22);
+        doc.setFontSize(9);
+        doc.text(`SUPER TECHOS · ${conData.length} fotos · ${new Date().toLocaleDateString('es-DO', { day: 'numeric', month: 'long', year: 'numeric' })}`, M, 29);
+        doc.setDrawColor(228, 228, 231); doc.line(M, 32, PW - M, 32);
+        y = 38;
+      };
+      const pieYNueva = () => {
+        doc.setFontSize(8); doc.setTextColor(161, 161, 170);
+        doc.text(`Super Techos · Control de Obras — pág. ${doc.getNumberOfPages()}`, M, PH - 6);
+        doc.addPage(); y = M + 4;
+      };
+      encabezado();
+      for (const d of dias) {
+        // título del día (nunca huérfano: si no cabe el título + una fila, salta de página)
+        if (y + 8 + IMGH > PH - 12) pieYNueva();
+        doc.setFillColor(204, 0, 0); doc.rect(M, y - 3.2, 1.4, 4.6, 'F');
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(63, 63, 70);
+        doc.text(`${formatFechaLarga(d).toUpperCase()}  ·  ${porDia[d].length} foto${porDia[d].length !== 1 ? 's' : ''}`, M + 3.5, y);
+        y += 5;
+        const fs = porDia[d];
+        for (let i = 0; i < fs.length; i += 2) {
+          if (y + IMGH > PH - 12) pieYNueva();
+          for (let c = 0; c < 2 && i + c < fs.length; c++) {
+            const x = M + c * (COLW + GAP);
+            try { doc.addImage(fs[i + c].dataUrl, 'JPEG', x, y, COLW, IMGH, undefined, 'FAST'); } catch { /* foto corrupta: salta */ }
+            doc.setDrawColor(228, 228, 231); doc.rect(x, y, COLW, IMGH);
+          }
+          y += IMGH + GAP;
+        }
+        y += 4;
+      }
+      doc.setFontSize(8); doc.setTextColor(161, 161, 170);
+      doc.text(`Super Techos · Control de Obras — pág. ${doc.getNumberOfPages()}`, M, PH - 6);
+
+      const ref = (proyecto.referenciaOdoo || proyecto.cliente || 'obra').replace(/[^\w-]/g, '_');
+      const filename = `Reporte-Fotografico-${ref}-${new Date().toISOString().split('T')[0]}.pdf`;
+      const blob = doc.output('blob');
+      const base64 = doc.output('datauristring').split(',')[1];
+      // Descargar de una vez (para adjuntar por WhatsApp)
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 200);
+      setReporteListo({ base64, filename, sizeMB: (blob.size / 1024 / 1024).toFixed(1), nFotos: conData.length });
+    } finally { setGenerandoReporte(null); }
+  };
 
   const cargar = async () => {
     setLoading(true);
@@ -108,6 +282,37 @@ export default function TabFotos({ usuario, proyecto }) {
 
   return (
     <div className="space-y-4">
+      {/* v8.27.78: reporte fotográfico PDF del proyecto (≤3MB, listo para WhatsApp/correo) */}
+      {fotos.length > 0 && (
+        <div className="space-y-2">
+          <button onClick={generarReporteFotografico} disabled={!!generandoReporte}
+            className="w-full bg-zinc-900 border border-zinc-700 hover:border-red-600 py-2.5 flex items-center justify-center gap-2 text-xs font-bold uppercase text-zinc-300 disabled:opacity-60">
+            {generandoReporte ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
+            {generandoReporte ? `Preparando fotos… ${generandoReporte.hechas}/${generandoReporte.total}` : `Reporte fotográfico PDF (${Math.min(fotos.length, 60)} fotos)`}
+          </button>
+          {reporteListo && (
+            <div className="bg-zinc-900 border border-green-800 rounded-card p-2.5 space-y-2">
+              <div className="text-[11px] text-green-300 font-bold">✅ PDF descargado — {reporteListo.filename} ({reporteListo.sizeMB}MB)</div>
+              <div className="flex flex-wrap gap-2">
+                {esAdmin && (
+                  <button onClick={enviarReportePorCorreo} disabled={enviandoCorreo}
+                    className="flex-1 min-w-[140px] bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white text-[11px] font-bold uppercase py-2 flex items-center justify-center gap-1">
+                    {enviandoCorreo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : '📧'} Enviar al cliente{contactoReportes.email ? ` (${contactoReportes.email})` : ''}
+                  </button>
+                )}
+                <button onClick={abrirWhatsAppCliente}
+                  className="flex-1 min-w-[140px] bg-green-700 hover:bg-green-600 text-white text-[11px] font-bold uppercase py-2 flex items-center justify-center gap-1">
+                  🟢 WhatsApp del cliente
+                </button>
+              </div>
+              <div className="text-[10px] text-zinc-500">
+                {esAdmin ? 'El correo lo envía el ERP tras tu confirmación. ' : 'El envío por correo lo hace un admin. '}
+                En WhatsApp: se abre el chat con el mensaje listo — adjunta el PDF descargado con el clip 📎.
+              </div>
+            </div>
+          )}
+        </div>
+      )}
       {!showUpload ? (
         <button onClick={() => setShowUpload(true)} className="w-full bg-zinc-900 border-2 border-dashed border-zinc-700 hover:border-red-600 py-4 flex flex-col items-center gap-1 text-sm font-bold uppercase text-zinc-400"><Camera className="w-6 h-6" /> Subir Fotos</button>
       ) : (

@@ -81,6 +81,7 @@ import VistaPropiedadesEmpresa from '../components/propiedades/VistaPropiedadesE
 import VistaContabilidad from '../components/contabilidad/VistaContabilidad';
 // v8.10.13: VistaNomina extraída
 import VistaNomina from '../components/nomina/VistaNomina';
+import VistaProduccion from '../components/dashboard/VistaProduccion'; // v8.27.73
 // v8.19.1: Módulo Levantamientos (surveys)
 import ModuloSurveys from '../components/surveys/ModuloSurveys';
 import ModuloSolicitudes from '../components/solicitudes/ModuloSolicitudes';
@@ -619,6 +620,8 @@ export default function App() {
       { id: 'gotera', label: 'Gotera', icon: CloudRain, vista: 'gotera' },
     ]},
     { seccion: 'FINANZAS', items: [
+      // v8.27.73: dashboard de producción RD$ (día/semana/quincena/mes, histórico limpio)
+      { id: 'produccion', label: 'Producción', icon: TrendingUp, vista: 'produccion' },
       { id: 'nomina', label: 'Nómina', icon: Wallet, vista: 'nomina' },
       { id: 'cajaChica', label: 'Caja Chica', icon: CreditCard, vista: 'cajaChica' },
       // v8.27.36: Facturas — captura de facturas de gasto para exportar a Odoo.
@@ -769,6 +772,7 @@ export default function App() {
           </div>
         )}
         {vista === 'tareas' && <VistaTareas usuario={usuario} data={data} onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }} onCompletarTarea={async (id) => withSync(async () => { await db.completarTarea(id, usuario.id); })} onCrearTarea={async (t) => withSync(async () => { await db.crearTarea(t); })} onEliminarTarea={async (id) => withSync(async () => { await db.eliminarTarea(id); })} />}
+        {esAdmin && vista === 'produccion' && <VistaProduccion usuario={usuario} data={data} onVolver={volverAtras} />}
         {esAdmin && vista === 'nomina' && <VistaNomina usuario={usuario} data={data} onVolver={volverAtras} onRecargarGlobal={recargar} onVerProyecto={(p, tabDestino) => navegarA('proyecto', { proyectoActivo: p, tab: tabDestino || 'avance' })} />}
         {esAdmin && vista === 'galeria' && <GaleriaGlobal usuario={usuario} data={data} onVolver={() => setVista('dashboard')} />}
         {esAdmin && vista === 'equipoGlobal' && <VistaEquipoGlobal data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}

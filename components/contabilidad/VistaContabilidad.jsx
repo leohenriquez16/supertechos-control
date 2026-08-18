@@ -608,8 +608,16 @@ function CuentasPendientes({ tipo, empresa, setEmpresa }) {
                       <td className="px-3 py-2 font-mono text-zinc-400">{f.ncf || f.documento || '—'}</td>
                       <td className="px-3 py-2 text-zinc-400 whitespace-nowrap">{f.fecha || '—'}</td>
                       <td className={`px-3 py-2 whitespace-nowrap font-bold ${colorV}`}>{f.vence || '—'}{d > 0 && <span className="ml-1 text-[9px]">({d}d)</span>}</td>
-                      <td className="px-3 py-2 text-right text-zinc-300 tabular-nums">{formatRD(f.total)}</td>
-                      <td className={`px-3 py-2 text-right font-bold tabular-nums ${esCxc ? 'text-green-400' : 'text-red-400'}`}>{formatRD(f.pendiente)}</td>
+                      {/* v8.27.76: facturas en USD — se muestran convertidas a RD$ con su monto
+                          original al lado (antes el número USD salía como si fuera RD$). */}
+                      <td className="px-3 py-2 text-right text-zinc-300 tabular-nums">
+                        {formatRD(f.total)}
+                        {f.moneda === 'USD' && <span className="block text-[9px] text-yellow-500">US${Number(f.totalOriginal).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>}
+                      </td>
+                      <td className={`px-3 py-2 text-right font-bold tabular-nums ${esCxc ? 'text-green-400' : 'text-red-400'}`}>
+                        {formatRD(f.pendiente)}
+                        {f.moneda === 'USD' && <span className="block text-[9px] text-yellow-500 font-normal">US${Number(f.pendienteOriginal).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>}
+                      </td>
                     </tr>
                   );
                 })}

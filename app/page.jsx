@@ -55,6 +55,7 @@ import { BadgeEmpresa } from '../components/common/Badge';
 import ModalEditarReporte from '../components/proyecto/modales/ModalEditarReporte';
 // v8.10.4: ModalReporteAvancePDF extraído (incluye ReportePDFContenido)
 import ModalReporteAvancePDF from '../components/proyecto/modales/ModalReporteAvancePDF';
+import ModalReporteFinalPDF from '../components/proyecto/modales/ModalReporteFinalPDF'; // v8.27.79
 // v8.10.5: Tabs simples extraídas
 import TabFotos from '../components/proyecto/tabs/TabFotos';
 import TabUnidades from '../components/proyecto/tabs/TabUnidades';
@@ -4880,6 +4881,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
   const [modalEstado, setModalEstado] = useState(false);
   const [modalEditar, setModalEditar] = useState(false);
   const [modalReporte, setModalReporte] = useState(false);
+  const [modalReporteFinal, setModalReporteFinal] = useState(false); // v8.27.79
   const [modalPausa, setModalPausa] = useState(false); // v8.9.13
   const [modalCubicaciones, setModalCubicaciones] = useState(false); // v8.19.98
   const pausaActiv = pausaActiva(proyecto);
@@ -4925,6 +4927,8 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
           {puedeCambiarEstado && <button onClick={() => setModalEstado(true)} className="text-[10px] text-zinc-400 hover:text-red-500 underline">cambiar</button>}
           {esAdmin && <button onClick={() => setModalCubicaciones(true)} className="ml-auto text-xs text-zinc-400 hover:text-red-500 flex items-center gap-1"><DollarSign className="w-3 h-3" /> Cubicaciones</button>}
           {esAdmin && <button onClick={() => setModalReporte(true)} className="text-xs text-zinc-400 hover:text-red-500 flex items-center gap-1"><FileText className="w-3 h-3" /> Reporte PDF</button>}
+          {/* v8.27.79: acta de entrega / cierre de obra */}
+          {esAdmin && <button onClick={() => setModalReporteFinal(true)} className="text-xs text-zinc-400 hover:text-green-500 flex items-center gap-1"><CircleCheck className="w-3 h-3" /> Reporte final</button>}
           {esAdmin && !pausaActiv && <button onClick={() => setModalPausa(true)} className="text-xs text-zinc-400 hover:text-yellow-500 flex items-center gap-1">⏸️ Pausar</button>}
           {esAdmin && <button onClick={() => setModalEditar(true)} className="text-xs text-zinc-400 hover:text-red-500 flex items-center gap-1"><Edit2 className="w-3 h-3" /> Editar</button>}
         </div>
@@ -4939,6 +4943,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
       {modalEstado && <ModalCambiarEstado proyecto={proyecto} usuario={usuario} personal={data.personal} sistema={sistema} onCerrar={() => setModalEstado(false)} onConfirmar={async (estadoNuevo, nota, datosExtra) => { await onCambiarEstado(proyecto.id, estadoNuevo, nota, datosExtra); setModalEstado(false); }} />}
       {modalEditar && <ModalEditarProyecto proyecto={proyecto} data={data} usuario={usuario} onCerrar={() => setModalEditar(false)} onGuardar={onActualizarProyecto} onArchivar={onArchivarProyecto} onEliminar={onEliminarProyecto} />}
       {modalReporte && <ModalReporteAvancePDF proyecto={proyecto} sistema={sistema} data={data} usuario={usuario} onCerrar={() => setModalReporte(false)} />}
+      {modalReporteFinal && <ModalReporteFinalPDF proyecto={proyecto} sistema={sistema} data={data} usuario={usuario} onCerrar={() => setModalReporteFinal(false)} />}
       {modalCubicaciones && <CubicacionesProyecto proyecto={proyecto} usuario={usuario} esAdmin={esAdmin} data={data} onCerrar={() => setModalCubicaciones(false)} onRecargar={onRecargar} />}
       {modalPausa && <ModalPausarProyecto proyecto={proyecto} onCerrar={() => setModalPausa(false)} onConfirmar={async (fechaInicio, motivo) => {
         const nuevasPausas = [...(proyecto.pausas || []), {

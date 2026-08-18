@@ -8,10 +8,76 @@
 //
 // Carga internamente las fotos de la visita y sus signed URLs.
 
+import { jsPDF } from 'jspdf';
 import { listarFotosVisita, getSignedUrlFotoSurvey, SERVICE_LINES } from '../../lib/surveys';
 import { membreteHTML, MEMBRETE_CSS } from '../../lib/membrete';
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+// v8.27.81: carga html2canvas (CDN, mismo patrón que pdf-lib) para rasterizar el
+// informe y bajarlo como PDF directo a Descargas.
+function cargarHtml2Canvas() {
+  return new Promise((resolve, reject) => {
+    if (typeof window !== 'undefined' && window.html2canvas) return resolve(window.html2canvas);
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+    s.onload = () => resolve(window.html2canvas);
+    s.onerror = () => reject(new Error('No se pudo cargar html2canvas'));
+    document.head.appendChild(s);
+  });
+}
+
+// Reemplaza cada URL http(s) de <img src="..."> por un data URI (base64) para que
+// el canvas no quede "tainted" por CORS al rasterizar. Todas las fuentes de imagen
+// (Supabase firmado, Mapbox, Yandex) permiten CORS. Si una falla, deja el src tal cual.
+async function inlineImagenes(html) {
+  const urls = [...new Set([...html.matchAll(/src="(https?:\/\/[^"]+)"/g)].map(m => m[1]))];
+  for (const escapedUrl of urls) {
+    const realUrl = escapedUrl.replace(/&amp;/g, '&');
+    try {
+      const blob = await (await fetch(realUrl)).blob();
+      const dataUri = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result); r.onerror = rej;
+        r.readAsDataURL(blob);
+      });
+      html = html.split(escapedUrl).join(dataUri);
+    } catch { /* imagen que no carga: se queda con el src original */ }
+  }
+  return html;
+}
+
+// Rasteriza el HTML del informe en un iframe oculto y lo descarga como PDF A4.
+async function descargarPdfDesdeHtml(html, nombreArchivo) {
+  const inlined = await inlineImagenes(html);
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:fixed;left:-99999px;top:0;width:800px;height:10px;border:0;';
+  document.body.appendChild(iframe);
+  try {
+    const doc = iframe.contentDocument;
+    doc.open(); doc.write(inlined); doc.close();
+    await new Promise((r) => { if (doc.readyState === 'complete') r(); else iframe.onload = () => r(); });
+    await new Promise((r) => setTimeout(r, 400)); // asentar layout/fuentes
+    const html2canvas = await cargarHtml2Canvas();
+    const canvas = await html2canvas(doc.body, { scale: 2, backgroundColor: '#ffffff', useCORS: true, windowWidth: 800, width: 800 });
+    const imgData = canvas.toDataURL('image/jpeg', 0.92);
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const pageW = 210, pageH = 297;
+    const imgH = (canvas.height * pageW) / canvas.width;
+    let heightLeft = imgH, position = 0;
+    pdf.addImage(imgData, 'JPEG', 0, position, pageW, imgH);
+    heightLeft -= pageH;
+    while (heightLeft > 0) {
+      position -= pageH;
+      pdf.addPage();
+      pdf.addImage(imgData, 'JPEG', 0, position, pageW, imgH);
+      heightLeft -= pageH;
+    }
+    pdf.save(nombreArchivo);
+  } finally {
+    setTimeout(() => { try { document.body.removeChild(iframe); } catch {} }, 100);
+  }
+}
 
 function fmtFecha(iso) {
   if (!iso) return '—';
@@ -113,8 +179,12 @@ export async function imprimirLevantamiento({ proyecto, site, visit, areas = [],
   let fachadaUrl = '';
   const ff = (visit?.general_data || {}).foto_frontal;
   if (Array.isArray(ff) && ff[0]) {
-    if (ff[0].signedUrl) fachadaUrl = ff[0].signedUrl;
-    else if (ff[0].storage_path) { try { fachadaUrl = await getSignedUrlFotoSurvey(ff[0].storage_path, 3600); } catch { fachadaUrl = ''; } }
+    // v8.27.81: regenerar un signed URL FRESCO desde storage_path. El signedUrl
+    // guardado en general_data se firma al capturar la foto y ya suele estar
+    // vencido → la imagen de fachada salía rota (icono ❓). Solo si no hay
+    // storage_path usamos el signedUrl guardado como último recurso.
+    if (ff[0].storage_path) { try { fachadaUrl = await getSignedUrlFotoSurvey(ff[0].storage_path, 3600); } catch { fachadaUrl = ''; } }
+    if (!fachadaUrl && ff[0].signedUrl) fachadaUrl = ff[0].signedUrl;
   }
   if (!fachadaUrl) {
     const ffp = fotosConUrl.find(f => f.photoType === 'foto_frontal' || /fachada|frontal|frente/i.test(f.caption || ''));
@@ -125,9 +195,12 @@ export async function imprimirLevantamiento({ proyecto, site, visit, areas = [],
   const MAPBOX = (typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_MAPBOX_TOKEN) || '';
   let mapaUrl = '';
   if (lat != null && lng != null) {
+    // v8.27.81: si hay token de Mapbox usamos la capa satelital HD; si no, caemos
+    // a un mapa estático de Yandex SIN token (con rótulos en español) para que el
+    // mapa SIEMPRE cargue con las coordenadas. Nota: Yandex usa orden lon,lat.
     mapaUrl = MAPBOX
       ? `https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/static/pin-l+CC0000(${lng},${lat})/${lng},${lat},16,0/640x320@2x?access_token=${MAPBOX}`
-      : '';
+      : `https://static-maps.yandex.ru/1.x/?ll=${lng},${lat}&z=16&size=600,300&l=map&lang=es_ES&pt=${lng},${lat},pm2rdm`;
   }
 
   // --- Secciones generales (visit.general_data) — se omiten si no tienen datos ---
@@ -169,11 +242,11 @@ export async function imprimirLevantamiento({ proyecto, site, visit, areas = [],
     .cabecera-visual { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; page-break-inside: avoid; }
     .cv-item { margin: 0; }
     .cv-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #777; margin-bottom: 3px; font-weight: 700; }
-    .cv-item img { width: 100%; height: 210px; object-fit: cover; border-radius: 8px; border: 1px solid #ddd; }
-    /* v8.27.72 (ticket Edwin): la foto de fachada suele ser VERTICAL — con cover se
-       recortaba a una franja "panorámica". contain muestra la foto completa. */
-    .cv-item img.cv-fachada { object-fit: contain; background: #f4f4f2; }
-    .cv-ph { width: 100%; height: 210px; border: 1px dashed #ccc; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #999; font-size: 11px; background: #fafafa; text-align: center; }
+    .cv-item img { width: 100%; height: 300px; object-fit: cover; border-radius: 8px; border: 1px solid #ddd; }
+    /* v8.27.81: la foto de fachada LLENA el recuadro (cover). Se usa una altura
+       mayor (300px) para que una foto vertical se recorte lo menos posible. */
+    .cv-item img.cv-fachada { object-fit: cover; background: #f4f4f2; }
+    .cv-ph { width: 100%; height: 300px; border: 1px dashed #ccc; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #999; font-size: 11px; background: #fafafa; text-align: center; }
     .resumen { display: flex; gap: 10px; margin-bottom: 16px; }
     .kpi { flex: 1; border: 1px solid #ddd; border-radius: 8px; padding: 8px 12px; }
     .kpi .n { font-size: 18px; font-weight: 800; color: #CC0000; }
@@ -244,10 +317,17 @@ export async function imprimirLevantamiento({ proyecto, site, visit, areas = [],
     <div class="footer">Generado por Super Techos Control · ${fmtFecha(new Date().toISOString())} · Documento autocontenido del levantamiento</div>
   </body></html>`;
 
-  const w = window.open('', '_blank');
-  if (!w) { alert('Permite las ventanas emergentes para generar el PDF.'); return; }
-  w.document.write(html);
-  w.document.close();
-  // Esperar a que carguen las imágenes antes de imprimir.
-  w.onload = () => { setTimeout(() => { w.focus(); w.print(); }, 600); };
+  // v8.27.81: baja el PDF directo a Descargas (sin diálogo de imprimir). Si el
+  // rasterizado falla por lo que sea, cae al método anterior (ventana + print).
+  const nombreArchivo = `Levantamiento-${esc(site?.external_code || site?.name || proyecto?.name || 'tecnico').replace(/[^a-zA-Z0-9]+/g, '-')}.pdf`;
+  try {
+    await descargarPdfDesdeHtml(html, nombreArchivo);
+  } catch (e) {
+    console.warn('Auto-descarga PDF falló, uso window.print():', e?.message || e);
+    const w = window.open('', '_blank');
+    if (!w) { alert('Permite las ventanas emergentes para generar el PDF.'); return; }
+    w.document.write(html);
+    w.document.close();
+    w.onload = () => { setTimeout(() => { w.focus(); w.print(); }, 600); };
+  }
 }

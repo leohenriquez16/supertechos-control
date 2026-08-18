@@ -4716,7 +4716,7 @@ function VistaLista({ proyectos, data, densidad = 'detallado', dx, onVerProyecto
                       {p.ubicacionLat != null && p.ubicacionLng != null && (
                         <div className="flex-shrink-0 relative overflow-hidden border border-zinc-700" style={{ width: 64, height: 64, borderRadius: 3 }}>
                           <img
-                            src={`https://staticmap.openstreetmap.de/staticmap.php?center=${p.ubicacionLat},${p.ubicacionLng}&zoom=15&size=128x128&maptype=mapnik&markers=${p.ubicacionLat},${p.ubicacionLng},red`}
+                            src={`https://static-maps.yandex.ru/1.x/?ll=${p.ubicacionLng},${p.ubicacionLat}&z=15&size=128,128&l=map&lang=es_ES&pt=${p.ubicacionLng},${p.ubicacionLat},pm2rdm`}
                             alt="Mapa"
                             width={64}
                             height={64}

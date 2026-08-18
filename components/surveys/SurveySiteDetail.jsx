@@ -566,7 +566,7 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
       <FotosDelLevantamiento site={site} proyecto={proyecto} usuario={usuario} />
 
       {/* Chatter tipo Odoo: quién creó, cambios de estado y notas */}
-      <ChatterPanel entityType="levantamiento" entityId={proyecto?.id} usuario={usuario} />
+      <ChatterPanel entityType="levantamiento" entityId={proyecto?.id} usuario={usuario} anclaFecha={proyecto?.created_at} anclaTitulo="Solicitud recibida" />
 
       {/* v8.22.6: eliminación con autorización del owner — al final, debajo del chatter */}
       {(esOwner || esAdmin) && (

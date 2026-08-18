@@ -13,7 +13,8 @@ import { calcularDetalle } from '../nomina/VistaNomina';
 export default function MiProduccionCard({ usuario, data }) {
   const [loading, setLoading] = useState(true);
   const [corte, setCorte] = useState(null);
-  const [mio, setMio] = useState(null); // { dias, m2, monto, porProyecto }
+  const [mio, setMio] = useState(null); // { dias, m2, monto, misDias, porProyecto }
+  const [verDias, setVerDias] = useState(false); // v8.27.72: desplegar días reportados
 
   useEffect(() => {
     let cancel = false;
@@ -33,9 +34,18 @@ export default function MiProduccionCard({ usuario, data }) {
         const dias = mias.reduce((s, f) => s + (f.diasTrabajados || 0), 0);
         const m2 = mias.reduce((s, f) => s + (f.m2Producidos || 0), 0);
         const monto = mias.reduce((s, f) => s + (f.montoTotal || 0), 0);
+        // v8.27.72 (ticket "ver los días reportados"): lista de FECHAS con asistencia del
+        // usuario en el corte, con su obra — para que el maestro verifique día por día.
+        const misDias = (jornadas || [])
+          .filter(j => (j.personasPresentesIds || []).includes(usuario.id))
+          .map(j => {
+            const proy = (data.proyectos || []).find(p => p.id === j.proyectoId);
+            return { fecha: j.fecha, proyecto: proy?.referenciaOdoo || proy?.cliente || '—', diaDoble: !!j.diaDoble };
+          })
+          .sort((a, b) => a.fecha.localeCompare(b.fecha));
         if (!cancel) {
           setCorte(abierto);
-          setMio({ dias, m2, monto, porProyecto: mias.sort((a, b) => b.montoTotal - a.montoTotal) });
+          setMio({ dias, m2, monto, misDias, porProyecto: mias.sort((a, b) => b.montoTotal - a.montoTotal) });
           setLoading(false);
         }
       } catch (e) { console.warn('MiProduccionCard:', e?.message); if (!cancel) setLoading(false); }
@@ -74,6 +84,12 @@ export default function MiProduccionCard({ usuario, data }) {
           <div className="text-[10px] text-zinc-500 mt-0.5">
             {mio.dias} día{mio.dias !== 1 ? 's' : ''} trabajado{mio.dias !== 1 ? 's' : ''}
             {mio.m2 > 0 ? ` · ${formatNum(mio.m2)} m² producidos` : ''}
+            {/* v8.27.72: ver el detalle de fechas reportadas */}
+            {(mio.misDias || []).length > 0 && (
+              <button onClick={() => setVerDias(v => !v)} className="ml-2 underline text-zinc-400 hover:text-white">
+                {verDias ? 'ocultar días' : 'ver mis días'}
+              </button>
+            )}
           </div>
         </div>
         <div className="text-right shrink-0">
@@ -82,6 +98,20 @@ export default function MiProduccionCard({ usuario, data }) {
           <div className="text-[10px] text-zinc-500">se actualiza con cada jornada / avance</div>
         </div>
       </div>
+
+      {/* v8.27.72 (ticket Yamel/Miguel H.): días reportados, uno por uno con su obra */}
+      {verDias && (mio.misDias || []).length > 0 && (
+        <div className="border-t border-zinc-800 pt-2">
+          <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold mb-1">Mis días reportados ({mio.misDias.length})</div>
+          <div className="flex flex-wrap gap-1">
+            {mio.misDias.map((d, i) => (
+              <span key={i} className={`text-[10px] px-2 py-1 border rounded-card ${d.diaDoble ? 'bg-amber-900/30 border-amber-700 text-amber-300' : 'bg-zinc-950 border-zinc-800 text-zinc-300'}`}>
+                {formatFechaCorta(d.fecha)} · {d.proyecto}{d.diaDoble ? ' ×2' : ''}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {mio.porProyecto.length === 0 ? (
         <div className="text-[11px] text-zinc-500 italic border-t border-zinc-800 pt-2">
@@ -99,6 +129,8 @@ export default function MiProduccionCard({ usuario, data }) {
                   <div className="text-zinc-500 text-[10px] shrink-0">
                     {p.modoPago === 'dia'
                       ? `${p.diasTrabajados}d${p.diasDobles ? ` (${p.diasDobles}×2)` : ''}`
+                      : p.modoPago === 'dia_m2'
+                        ? `${p.diasTrabajados}d + ${formatNum(typeof p.m2Efectivo === 'number' ? p.m2Efectivo : p.m2Producidos)} m²`
                       : (p.modoPago === 'm2' || p.modoPago === 'm2_fijo' || p.modoPago === 'tarea')
                         ? `${formatNum(p.m2Producidos)} m²`
                         : 'ajuste'}

@@ -136,7 +136,19 @@ export default function ModuloSolicitudes({ usuario, onRecargar }) {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 mt-3 text-sm">
                 <div className="flex items-center gap-1.5"><Phone className="w-3.5 h-3.5 text-zinc-500" /> {s.contacto_telefono}</div>
-                {s.contacto_email && <div className="flex items-center gap-1.5 min-w-0"><Mail className="w-3.5 h-3.5 text-zinc-500 flex-none" /> <span className="truncate">{s.contacto_email}</span></div>}
+                {s.contacto_email && (
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <Mail className="w-3.5 h-3.5 text-zinc-500 flex-none" />
+                    <span className="truncate">{s.contacto_email}</span>
+                    {/* v8.27.72 (ticket Edwin): escribirle al cliente con el correo prellenado
+                        (útil cuando el contacto de la solicitud no corresponde y hay que verificar) */}
+                    <a
+                      href={`mailto:${s.contacto_email}?subject=${encodeURIComponent(`Super Techos — Su solicitud de levantamiento ${s.ticket}`)}&body=${encodeURIComponent(`Saludos ${s.cliente_nombre || ''},\n\nRecibimos su solicitud de levantamiento (${s.ticket}) para ${s.locacion_nombre || s.direccion || 'su inmueble'}.\n\nPara coordinar la visita necesitamos confirmar algunos datos de contacto. ¿Nos confirma el nombre y teléfono de la persona responsable?\n\nGracias,\nSuper Techos`)}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="flex-none text-[10px] font-bold text-blue-400 hover:text-blue-300 border border-blue-800 hover:border-blue-600 px-1.5 py-0.5 rounded"
+                    >✉ Escribir</a>
+                  </div>
+                )}
                 <div className="sm:col-span-2 flex items-start gap-1.5">
                   <MapPin className="w-3.5 h-3.5 text-zinc-500 flex-none mt-0.5" />
                   <span>{s.locacion_nombre ? <b>{s.locacion_nombre} — </b> : ''}{s.direccion || '(pin en mapa)'}{s.punto_referencia ? <span className="text-zinc-500"> · ref: {s.punto_referencia}</span> : ''}

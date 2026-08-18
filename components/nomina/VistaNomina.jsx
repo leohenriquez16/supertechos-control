@@ -1127,7 +1127,9 @@ export async function calcularDetalle(jornadas, data, corte, ajustesLista) {
     return total;
   };
   // m² del maestro en cada proyecto - respeta maestroAreaId si está asignado
-  (data.reportes || []).filter(r => r.fecha >= corte.fechaInicio && r.fecha <= corte.fechaFin).forEach(r => {
+  // v8.27.77: se excluyen los reportes marcados como duplicados (excluirNomina) —
+  // trabajo ya pagado en un corte anterior que se volvió a reportar (ticket Miguel).
+  (data.reportes || []).filter(r => r.fecha >= corte.fechaInicio && r.fecha <= corte.fechaFin && !r.excluirNomina).forEach(r => {
     const proy = data.proyectos.find(p => p.id === r.proyectoId);
     if (!proy) return;
     const area = (proy.areas || []).find(a => a.id === r.areaId);
@@ -1461,6 +1463,35 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
   // que el dashboard también pueda computar el live total del corte abierto.
 
   const totalCorte = detalle.reduce((s, d) => s + (d.montoTotal || 0), 0);
+
+  // v8.27.77 (ticket Miguel "m² duplicados entre quincenas"): detectar reportes del corte
+  // que parecen REPETIR trabajo ya reportado antes del corte (misma obra + área + tarea y
+  // mismos m² ±1%, con un reporte previo en los 31 días anteriores al inicio del corte).
+  // El admin decide: "Excluir del pago" marca reportes.excluir_nomina y se recalcula.
+  const sospechosos = React.useMemo(() => {
+    const enCorte = (data.reportes || []).filter(r => r.fecha >= corte.fechaInicio && r.fecha <= corte.fechaFin && (r.m2 > 0));
+    const desde = (() => { const d = new Date(corte.fechaInicio + 'T12:00:00'); d.setDate(d.getDate() - 31); return d.toISOString().split('T')[0]; })();
+    const previos = (data.reportes || []).filter(r => r.fecha >= desde && r.fecha < corte.fechaInicio && (r.m2 > 0));
+    const out = [];
+    enCorte.forEach(r => {
+      const gemelo = previos.find(p => p.proyectoId === r.proyectoId && p.areaId === r.areaId && p.tareaId === r.tareaId
+        && Math.abs((p.m2 || 0) - (r.m2 || 0)) <= Math.max(1, (r.m2 || 0) * 0.01));
+      if (gemelo) {
+        const proy = data.proyectos.find(p => p.id === r.proyectoId);
+        out.push({ r, gemelo, proyRef: proy ? `${proy.referenciaOdoo || ''} ${proy.cliente || ''}`.trim() : r.proyectoId });
+      }
+    });
+    return out;
+  }, [data.reportes, data.proyectos, corte.fechaInicio, corte.fechaFin]);
+  const excluidosCorte = React.useMemo(() =>
+    (data.reportes || []).filter(r => r.fecha >= corte.fechaInicio && r.fecha <= corte.fechaFin && r.excluirNomina),
+  [data.reportes, corte.fechaInicio, corte.fechaFin]);
+  const toggleExclusion = async (rep, excluir) => {
+    const accion = excluir ? 'EXCLUIR del pago' : 'restaurar al pago';
+    if (!confirm(`¿${accion} el reporte del ${rep.fecha} (${formatNum(rep.m2)} m²)?`)) return;
+    try { await db.marcarExclusionNominaReporte(rep.id, excluir); await recargarTodo(); }
+    catch (e) { alert('Error: ' + (e.message || e)); }
+  };
 
   const guardarDetalle = async () => {
     await db.guardarDetalleCorte(detalle);
@@ -2061,6 +2092,37 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
           </div>
         ))}
       </div>
+
+      {/* v8.27.77: posibles m² duplicados de la quincena anterior (ticket Miguel) */}
+      {corte.estado === 'abierto' && (sospechosos.filter(s => !s.r.excluirNomina).length > 0 || excluidosCorte.length > 0) && (
+        <div className="bg-amber-950/20 border border-amber-800 rounded-card p-3 space-y-2">
+          <div className="text-[11px] tracking-widest uppercase text-amber-300 font-bold">⚠ Posibles m² duplicados de la quincena anterior</div>
+          <div className="text-[10px] text-zinc-500">Reportes de este corte con la MISMA obra, área, tarea y m² que un reporte de los 31 días anteriores. Si ese trabajo ya se pagó, exclúyelo — el corte se recalcula al momento.</div>
+          {sospechosos.filter(s => !s.r.excluirNomina).map(({ r, gemelo, proyRef }) => (
+            <div key={r.id} className="flex items-center justify-between gap-2 bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1.5 text-xs">
+              <div className="min-w-0">
+                <div className="font-bold truncate">{proyRef}</div>
+                <div className="text-[10px] text-zinc-500">{formatFechaCorta(r.fecha)} · {formatNum(r.m2)} m² — ya reportado igual el {formatFechaCorta(gemelo.fecha)}</div>
+              </div>
+              <button onClick={() => toggleExclusion(r, true)} className="shrink-0 text-[10px] font-bold uppercase px-2 py-1 bg-amber-700 hover:bg-amber-600 text-white rounded-card">Excluir del pago</button>
+            </div>
+          ))}
+          {excluidosCorte.length > 0 && (
+            <div className="pt-1 border-t border-amber-900/40">
+              <div className="text-[10px] text-zinc-500 mb-1">Excluidos de este corte ({excluidosCorte.length}):</div>
+              {excluidosCorte.map(r => {
+                const proy = data.proyectos.find(p => p.id === r.proyectoId);
+                return (
+                  <div key={r.id} className="flex items-center justify-between gap-2 text-[11px] text-zinc-400 py-0.5">
+                    <span className="truncate line-through">{proy?.referenciaOdoo || r.proyectoId} · {formatFechaCorta(r.fecha)} · {formatNum(r.m2)} m²</span>
+                    <button onClick={() => toggleExclusion(r, false)} className="shrink-0 text-[10px] underline hover:text-white">restaurar</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {ajustes.length > 0 && (
         <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">

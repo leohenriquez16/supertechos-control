@@ -8,6 +8,10 @@
 //  - entityId   : id de la entidad
 //  - usuario    : { id, nombre } (autor de las notas)
 //  - titulo     : opcional (default "Seguimiento")
+//  - anclaFecha : opcional — fecha (ISO) del origen de la entidad. Si viene, se
+//                 muestra SIEMPRE una entrada base al fondo del timeline (aunque
+//                 no exista evento de creación en el chatter, p.ej. registros viejos).
+//  - anclaTitulo: opcional — texto del ancla (default "Solicitud recibida").
 
 import React, { useEffect, useState, useCallback } from 'react';
 import { MessageSquare, Loader2, Send, CheckCircle2, PlusCircle, RefreshCw, FileText, Clock } from 'lucide-react';
@@ -46,7 +50,7 @@ function IconoEvento({ evento }) {
   return <Clock className="w-3.5 h-3.5 text-zinc-500" />;
 }
 
-export default function ChatterPanel({ entityType, entityId, usuario, titulo = 'Seguimiento' }) {
+export default function ChatterPanel({ entityType, entityId, usuario, titulo = 'Seguimiento', anclaFecha = null, anclaTitulo = 'Solicitud recibida' }) {
   const [mensajes, setMensajes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [nota, setNota] = useState('');
@@ -109,7 +113,7 @@ export default function ChatterPanel({ entityType, entityId, usuario, titulo = '
       <div className="p-3">
         {loading ? (
           <div className="flex items-center gap-2 text-zinc-500 text-xs py-3"><Loader2 className="w-4 h-4 animate-spin" /> Cargando…</div>
-        ) : mensajes.length === 0 ? (
+        ) : (mensajes.length === 0 && !anclaFecha) ? (
           <div className="text-xs text-zinc-500 py-2">Sin actividad todavía.</div>
         ) : (
           <ul className="space-y-3">
@@ -132,6 +136,21 @@ export default function ChatterPanel({ entityType, entityId, usuario, titulo = '
                 </div>
               </li>
             ))}
+            {/* Ancla base: origen de la entidad (fecha de recepción de la solicitud). Siempre al fondo. */}
+            {anclaFecha && (
+              <li className="flex gap-2.5">
+                <div className="w-7 h-7 rounded-full bg-green-900/30 border border-green-800/60 flex items-center justify-center shrink-0">
+                  <PlusCircle className="w-3.5 h-3.5 text-green-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <span className="text-xs font-bold text-zinc-200">{anclaTitulo}</span>
+                    <span className="text-[10px] text-zinc-500" title={fechaCompleta(anclaFecha)}>{tiempoRelativo(anclaFecha)}</span>
+                  </div>
+                  <div className="text-sm mt-0.5 text-zinc-400">{fechaCompleta(anclaFecha)}</div>
+                </div>
+              </li>
+            )}
           </ul>
         )}
       </div>

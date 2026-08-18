@@ -82,10 +82,12 @@ export default function VistaProduccion({ usuario, data, onVolver }) {
       }
       const precio = Number(area?.precioVentaM2) > 0 ? Number(area.precioVentaM2) : (Number(sis?.precio_m2) || 0);
       const maestroId = area?.maestroAreaId || proy.maestroId || null;
+      // v8.27.75: etiqueta completa — referencia + cliente + locación (para saber cuál es)
+      const etiqueta = [proy.referenciaOdoo, proy.cliente, proy.referenciaProyecto].filter(Boolean).join(' · ');
       out.push({
         fecha: r.fecha, retro: !!r.retroactivo,
         rd: r.m2 * precio * peso, m2p: r.m2 * peso,
-        proyectoId: proy.id, proyectoRef: proy.referenciaOdoo || proy.cliente,
+        proyectoId: proy.id, proyectoRef: etiqueta || proy.cliente || proy.id,
         maestroId,
       });
     });

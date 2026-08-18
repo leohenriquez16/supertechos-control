@@ -12,6 +12,35 @@ const safe = (s) => String(s ?? '').replace(/[—–]/g, '-').replace(/[^\x00-\x
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+// v8.27.80: pdf-lib IGNORA la orientación EXIF, así que las fotos de teléfono
+// (que llevan un flag de rotación que el navegador sí respeta al mostrarlas)
+// salían giradas/de lado en el informe. Solución: redibujar cada foto en un
+// canvas — el navegador aplica la orientación EXIF al pintar — y re-codificar a
+// JPEG ya "derecho" y sin EXIF antes de incrustarla. De paso acota el tamaño.
+// Se carga desde un blob URL (mismo origen) para no ensuciar el canvas por CORS.
+async function fotoNormalizadaJpg(url, maxLado = 1600, quality = 0.72) {
+  const buf = await (await fetch(url)).arrayBuffer();
+  const objUrl = URL.createObjectURL(new Blob([buf]));
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const im = new Image();
+      im.onload = () => resolve(im);
+      im.onerror = reject;
+      im.src = objUrl;
+    });
+    let w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+    const s = Math.min(1, maxLado / Math.max(w, h));
+    w = Math.max(1, Math.round(w * s)); h = Math.max(1, Math.round(h * s));
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+    const outBlob = await new Promise((res) => canvas.toBlob(res, 'image/jpeg', quality));
+    return { bytes: new Uint8Array(await outBlob.arrayBuffer()), width: w, height: h };
+  } finally {
+    URL.revokeObjectURL(objUrl);
+  }
+}
+
 function fmtFecha(iso) {
   if (!iso) return '—';
   try {
@@ -98,15 +127,13 @@ export async function imprimirInformeFotografico({ proyecto, site, usuario }) {
     for (const f of g.fotos) {
       if (cy - SLOT_H < M) nuevaPagina(`${g.titulo} (cont.)`);
       try {
-        const bytes = await (await fetch(f.url)).arrayBuffer();
-        let img = null;
-        try { img = await pdf.embedJpg(bytes); } catch { try { img = await pdf.embedPng(bytes); } catch { img = null; } }
-        if (img) {
-          const s = Math.min(W / img.width, IMG_MAX_H / img.height);
-          const iw = img.width * s, ih = img.height * s;
-          page.drawImage(img, { x: M + (W - iw) / 2, y: cy - ih, width: iw, height: ih });
-          cy -= ih + 4;
-        }
+        // Normaliza orientación EXIF + tamaño; el resultado es siempre JPEG.
+        const { bytes, width, height } = await fotoNormalizadaJpg(f.url);
+        const img = await pdf.embedJpg(bytes);
+        const s = Math.min(W / width, IMG_MAX_H / height);
+        const iw = width * s, ih = height * s;
+        page.drawImage(img, { x: M + (W - iw) / 2, y: cy - ih, width: iw, height: ih });
+        cy -= ih + 4;
       } catch (e) { /* foto que no carga: la saltamos */ }
       if (f.caption) { page.drawText(safe(f.caption).slice(0, 95), { x: M, y: cy - 9, size: 8, font, color: GRIS }); cy -= 13; }
       cy -= 12;

@@ -747,10 +747,11 @@ function FotosDelLevantamiento({ site, proyecto, usuario }) {
       ) : todas.length === 0 ? (
         <div className="text-xs text-zinc-500">Aún no hay fotos en este levantamiento.</div>
       ) : (
-        <div className="grid grid-cols-4 sm:grid-cols-8 gap-1.5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
           {todas.map((f, i) => (
-            <button key={i} onClick={() => setVisor(i)} title={f.caption}>
-              <img src={f.url} alt="" className="w-full h-16 object-cover rounded border border-zinc-800 hover:border-red-600" />
+            <button key={i} onClick={() => setVisor(i)} title={f.caption} className="group relative">
+              <img src={f.url} alt="" className="w-full h-40 sm:h-44 object-cover rounded-card border border-zinc-800 group-hover:border-red-600 transition-colors" />
+              {f.caption && <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent text-white text-[10px] px-2 py-1 truncate text-left rounded-b-card">{f.caption}</div>}
             </button>
           ))}
         </div>

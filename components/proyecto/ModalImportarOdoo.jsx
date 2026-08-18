@@ -108,6 +108,13 @@ export default function ModalImportarOdoo({ usuario, sistemas, proyectos = [], o
     try {
       // Mapear la cotización a un payload de proyecto
       const cot = seleccionada;
+      // v8.27.73: cotización en USD → convertir a RD$ con la tasa de Odoo
+      const esUSD = (cot.moneda || 'DOP') === 'USD';
+      if (esUSD && !(cot.tasaUsd > 0)) {
+        setError('Esta cotización está en USD pero no se pudo leer la tasa de cambio de Odoo. Intenta de nuevo o crea el proyecto manual.');
+        setCreando(false);
+        return;
+      }
 
       // Buscar o crear el cliente local a partir del partner de Odoo
       let clienteIdLocal = null;
@@ -206,7 +213,14 @@ export default function ModalImportarOdoo({ usuario, sistemas, proyectos = [], o
         empresaEjecutora: cot.empresaEmisora || null,
         // v8.17.63: monto total firmado en la cotización Odoo. Es el "valor cotizado"
         // del proyecto — se prioriza sobre el cálculo derivado m²×precio_m2.
-        valorCotizacion: cot.montoTotal != null ? Number(cot.montoTotal) : null,
+        // v8.27.73: si la cotización está en USD, se CONVIERTE a RD$ con la tasa de Odoo
+        // del día (antes el número USD quedaba como si fueran pesos). Se guarda la moneda
+        // de origen y la tasa usada para trazabilidad.
+        valorCotizacion: cot.montoTotal != null
+          ? (esUSD ? Math.round(Number(cot.montoTotal) * (cot.tasaUsd || 0) * 100) / 100 : Number(cot.montoTotal))
+          : null,
+        monedaOrigen: esUSD ? 'USD' : null,
+        tasaUsd: esUSD ? (cot.tasaUsd || null) : null,
       };
 
       // Si no hay áreas válidas y tampoco hay áreas generales, crear una por defecto
@@ -231,6 +245,12 @@ export default function ModalImportarOdoo({ usuario, sistemas, proyectos = [], o
   const formatMonto = (n) => {
     if (!n) return 'RD$0';
     return 'RD$' + Number(n).toLocaleString('es-DO', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  };
+  // v8.27.73: mostrar la moneda real de la cotización (USD se convierte al importar)
+  const formatMontoCot = (cot) => {
+    if ((cot.moneda || 'DOP') !== 'USD') return formatMonto(cot.montoTotal);
+    const rd = cot.tasaUsd > 0 ? ` ≈ ${formatMonto(cot.montoTotal * cot.tasaUsd)}` : '';
+    return `US$${Number(cot.montoTotal || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}${rd}`;
   };
 
   return (
@@ -317,7 +337,7 @@ export default function ModalImportarOdoo({ usuario, sistemas, proyectos = [], o
                       </div>
                       <div className="text-sm font-bold truncate">{cot.cliente}</div>
                       <div className="text-[10px] text-zinc-500">
-                        {cot.areas.length} {cot.areas.length === 1 ? 'área' : 'áreas'} · {formatMonto(cot.montoTotal)}
+                        {cot.areas.length} {cot.areas.length === 1 ? 'área' : 'áreas'} · {formatMontoCot(cot)}
                         {cot.fechaOrden && ` · ${new Date(cot.fechaOrden).toLocaleDateString('es-DO', { day: 'numeric', month: 'short' })}`}
                       </div>
                     </div>
@@ -356,7 +376,7 @@ export default function ModalImportarOdoo({ usuario, sistemas, proyectos = [], o
               <div className="grid grid-cols-2 gap-2 text-sm">
                 <div><span className="text-zinc-500">Cliente:</span> <span className="font-bold">{seleccionada.cliente}</span></div>
                 <div><span className="text-zinc-500">Ref Odoo:</span> <span className="font-bold text-purple-400">{seleccionada.referencia}</span></div>
-                <div><span className="text-zinc-500">Monto:</span> <span className="font-bold text-green-400">{formatMonto(seleccionada.montoTotal)}</span></div>
+                <div><span className="text-zinc-500">Monto:</span> <span className="font-bold text-green-400">{formatMontoCot(seleccionada)}</span>{(seleccionada.moneda||'DOP')==='USD' && <span className="ml-1 text-[9px] px-1.5 py-0.5 rounded bg-yellow-900/40 border border-yellow-700 text-yellow-300 font-bold">USD → se importa en RD$ (tasa {seleccionada.tasaUsd || '?'})</span>}</div>
                 {seleccionada.referencias && <div><span className="text-zinc-500">Ref:</span> <span className="font-bold">{seleccionada.referencias}</span></div>}
                 {/* v8.17.45: empresa detectada desde Odoo (super_techos / prouco / null) */}
                 <div className="col-span-2">

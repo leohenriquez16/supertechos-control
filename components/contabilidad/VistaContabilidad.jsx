@@ -12,6 +12,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   ArrowLeft, FileText, Download, AlertTriangle, Loader2, Plus, Trash2,
   Calculator, ChevronLeft, ChevronRight, Ban, ListOrdered, X,
+  Filter, ChevronDown, Layers,
 } from 'lucide-react';
 import * as db from '../../lib/db';
 import { toast } from '../../lib/toast';
@@ -500,15 +501,21 @@ function SecuenciasNcf({ usuario }) {
 // ────────────────────────────────────────────────────────────
 // Selector de empresa compartido (CxC/CxP/Catálogo)
 // ────────────────────────────────────────────────────────────
-function SelectorEmpresa({ empresa, setEmpresa }) {
+function SelectorEmpresa({ empresa, setEmpresa, ambas = false, setAmbas = null }) {
   return (
     <div className="flex gap-2">
       {Object.entries(EMPRESAS_RECEPTORAS).map(([key, info]) => (
-        <button key={key} onClick={() => setEmpresa(key)}
-          className={`px-3 py-1.5 rounded-card text-xs font-bold border ${empresa === key ? `${info.color} text-white border-transparent` : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'}`}>
+        <button key={key} onClick={() => { setEmpresa(key); setAmbas && setAmbas(false); }}
+          className={`px-3 py-1.5 rounded-card text-xs font-bold border ${empresa === key && !ambas ? `${info.color} text-white border-transparent` : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'}`}>
           {info.label}
         </button>
       ))}
+      {setAmbas && (
+        <button onClick={() => setAmbas(true)}
+          className={`px-3 py-1.5 rounded-card text-xs font-bold border ${ambas ? 'bg-zinc-200 text-zinc-900 border-transparent' : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'}`}>
+          Ambas
+        </button>
+      )}
     </div>
   );
 }
@@ -516,11 +523,26 @@ function SelectorEmpresa({ empresa, setEmpresa }) {
 // ────────────────────────────────────────────────────────────
 // Tab: Cuentas por Cobrar / Pagar (v8.26.1 — leídas de Odoo, Fase 3 las hace nativas)
 // ────────────────────────────────────────────────────────────
+function FiltroChip({ label, onX }) {
+  return (
+    <span className="inline-flex items-center gap-1 bg-zinc-800 border border-zinc-700 rounded-full pl-2.5 pr-1 py-0.5 text-[11px] text-zinc-200">
+      {label}
+      <button onClick={onX} className="text-zinc-500 hover:text-white"><X className="w-3 h-3" /></button>
+    </span>
+  );
+}
+
 function CuentasPendientes({ tipo, empresa, setEmpresa }) {
   const [loading, setLoading] = useState(false);
   const [facturas, setFacturas] = useState(null);
   const [error, setError] = useState(null);
   const [busqueda, setBusqueda] = useState('');
+  // v8.27.83: filtro tipo Odoo (rango de vencimiento clickeable + filtros + agrupar por)
+  const [bucketSel, setBucketSel] = useState(null);   // rango de aging seleccionado
+  const [filtros, setFiltros] = useState(() => new Set()); // 'vencidas' | 'usd'
+  const [agrupar, setAgrupar] = useState(null);        // null | 'tercero' | 'moneda' | 'bucket' | 'empresa'
+  const [menuFiltro, setMenuFiltro] = useState(false);
+  const [ambas, setAmbas] = useState(false);           // ver Super Techos + Prouco juntas
   const esCxc = tipo === 'cxc';
   const hoyStr = new Date().toISOString().split('T')[0];
 
@@ -529,40 +551,100 @@ function CuentasPendientes({ tipo, empresa, setEmpresa }) {
     (async () => {
       setLoading(true); setError(null); setFacturas(null);
       try {
-        const res = await fetch(`/api/contabilidad/pendientes-odoo?empresa=${empresa}&tipo=${tipo}`);
-        const json = await res.json();
+        // Ambas: consulta las dos empresas en paralelo y etiqueta cada factura con la suya.
+        const keys = ambas ? Object.keys(EMPRESAS_RECEPTORAS) : [empresa];
+        const lotes = await Promise.all(keys.map(async (k) => {
+          const res = await fetch(`/api/contabilidad/pendientes-odoo?empresa=${k}&tipo=${tipo}`);
+          const json = await res.json();
+          if (!json.ok) throw new Error(json.error || 'Error consultando Odoo');
+          return (json.facturas || []).map(f => ({ ...f, _emp: k }));
+        }));
         if (cancel) return;
-        if (!json.ok) { setError(json.error || 'Error consultando Odoo'); }
-        else setFacturas(json.facturas || []);
+        setFacturas(lotes.flat());
       } catch (e) { if (!cancel) setError(e?.message || String(e)); }
       if (!cancel) setLoading(false);
     })();
     return () => { cancel = true; };
-  }, [empresa, tipo]);
+  }, [empresa, tipo, ambas]);
 
   const diasVencida = (f) => f.vence ? Math.floor((new Date(hoyStr) - new Date(f.vence)) / 86400000) : 0;
-  const lista = (facturas || []).filter(f => {
-    if (!busqueda.trim()) return true;
-    const q = busqueda.toLowerCase();
-    return (f.tercero || '').toLowerCase().includes(q) || (f.ncf || '').toLowerCase().includes(q) || (f.documento || '').toLowerCase().includes(q);
-  });
 
   // Aging buckets sobre el saldo pendiente
-  const buckets = [
+  const BUCKETS = [
     { k: 'corriente', label: 'Corriente', test: d => d <= 0, color: '#16a34a' },
     { k: 'b30', label: '1–30 días', test: d => d >= 1 && d <= 30, color: '#eab308' },
     { k: 'b60', label: '31–60', test: d => d >= 31 && d <= 60, color: '#f97316' },
     { k: 'b90', label: '61–90', test: d => d >= 61 && d <= 90, color: '#ef4444' },
     { k: 'b90p', label: '+90 días', test: d => d > 90, color: '#b91c1c' },
-  ].map(b => ({ ...b, total: (facturas || []).reduce((s, f) => s + (b.test(diasVencida(f)) ? f.pendiente : 0), 0) }));
+  ];
+  const bucketDe = (f) => (BUCKETS.find(b => b.test(diasVencida(f))) || BUCKETS[0]).k;
+  const buckets = BUCKETS.map(b => ({ ...b, total: (facturas || []).reduce((s, f) => s + (b.test(diasVencida(f)) ? f.pendiente : 0), 0) }));
   const totalPendiente = (facturas || []).reduce((s, f) => s + f.pendiente, 0);
+
+  // Lista con búsqueda + rango (aging) + filtros
+  const lista = (facturas || []).filter(f => {
+    if (busqueda.trim()) {
+      const q = busqueda.toLowerCase();
+      if (!((f.tercero || '').toLowerCase().includes(q) || (f.ncf || '').toLowerCase().includes(q) || (f.documento || '').toLowerCase().includes(q))) return false;
+    }
+    if (bucketSel && bucketDe(f) !== bucketSel) return false;
+    if (filtros.has('vencidas') && diasVencida(f) <= 0) return false;
+    if (filtros.has('usd') && f.moneda !== 'USD') return false;
+    return true;
+  });
+  const totalListado = lista.reduce((s, f) => s + f.pendiente, 0);
+
+  // Agrupación estilo Odoo ("Agrupar por")
+  const grupos = (() => {
+    if (!agrupar) return null;
+    const map = new Map();
+    for (const f of lista) {
+      let key, titulo;
+      if (agrupar === 'tercero') { key = f.tercero || '—'; titulo = f.tercero || 'Sin tercero'; }
+      else if (agrupar === 'moneda') { key = f.moneda || 'RD$'; titulo = f.moneda === 'USD' ? 'USD (US$)' : 'Peso (RD$)'; }
+      else if (agrupar === 'empresa') { key = f._emp || 'super_techos'; titulo = (EMPRESAS_RECEPTORAS[key] || {}).label || key; }
+      else { key = bucketDe(f); titulo = (BUCKETS.find(b => b.k === key) || {}).label || key; }
+      if (!map.has(key)) map.set(key, { titulo, filas: [], subtotal: 0 });
+      const g = map.get(key); g.filas.push(f); g.subtotal += f.pendiente;
+    }
+    return [...map.values()].sort((a, b) => b.subtotal - a.subtotal);
+  })();
+
+  const toggleFiltro = (k) => setFiltros(prev => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  const hayFiltros = !!bucketSel || filtros.size > 0 || !!agrupar;
+  const limpiarFiltros = () => { setBucketSel(null); setFiltros(new Set()); setAgrupar(null); };
+
+  const renderFila = (f) => {
+    const d = diasVencida(f);
+    const colorV = d <= 0 ? 'text-zinc-400' : d <= 30 ? 'text-yellow-400' : d <= 90 ? 'text-orange-400' : 'text-red-400';
+    const empInfo = EMPRESAS_RECEPTORAS[f._emp];
+    return (
+      <tr key={`${f._emp || ''}${f.id}`} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
+        <td className="px-3 py-2 font-medium text-white max-w-[240px] truncate">
+          {ambas && empInfo && <span className={`inline-block align-middle mr-1.5 px-1.5 py-0.5 rounded text-[9px] font-black text-white ${empInfo.color}`}>{empInfo.short}</span>}
+          {f.tercero || '—'}
+        </td>
+        <td className="px-3 py-2 font-mono text-zinc-400">{f.ncf || f.documento || '—'}</td>
+        <td className="px-3 py-2 text-zinc-400 whitespace-nowrap">{f.fecha || '—'}</td>
+        <td className={`px-3 py-2 whitespace-nowrap font-bold ${colorV}`}>{f.vence || '—'}{d > 0 && <span className="ml-1 text-[9px]">({d}d)</span>}</td>
+        <td className="px-3 py-2 text-right text-zinc-300 tabular-nums">
+          {formatRD(f.total)}
+          {f.moneda === 'USD' && <span className="block text-[9px] text-yellow-500">US${Number(f.totalOriginal).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>}
+        </td>
+        <td className={`px-3 py-2 text-right font-bold tabular-nums ${esCxc ? 'text-green-400' : 'text-red-400'}`}>
+          {formatRD(f.pendiente)}
+          {f.moneda === 'USD' && <span className="block text-[9px] text-yellow-500 font-normal">US${Number(f.pendienteOriginal).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>}
+        </td>
+      </tr>
+    );
+  };
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2 bg-zinc-900 border border-zinc-800 rounded-card p-3">
-        <SelectorEmpresa empresa={empresa} setEmpresa={setEmpresa} />
+        <SelectorEmpresa empresa={empresa} setEmpresa={setEmpresa} ambas={ambas} setAmbas={setAmbas} />
         <div className="text-right">
-          <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">{esCxc ? 'Por cobrar' : 'Por pagar'} total</div>
+          <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">{esCxc ? 'Por cobrar' : 'Por pagar'} total{ambas ? ' · ambas' : ''}</div>
           <div className={`text-xl font-black ${esCxc ? 'text-green-400' : 'text-red-400'}`}>{formatRD(totalPendiente)}</div>
         </div>
       </div>
@@ -572,18 +654,82 @@ function CuentasPendientes({ tipo, empresa, setEmpresa }) {
 
       {facturas && !loading && (
         <>
-          {/* Aging */}
+          {/* Aging — cada rango es clickeable para filtrar las pendientes de ese vencimiento */}
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-            {buckets.map(b => (
-              <div key={b.k} className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
-                <div className="text-[9px] uppercase tracking-widest font-bold" style={{ color: b.color }}>{b.label}</div>
-                <div className="text-sm font-black mt-1" style={{ color: b.total > 0 ? b.color : '#52525b' }}>{formatRD(b.total)}</div>
-              </div>
-            ))}
+            {buckets.map(b => {
+              const activo = bucketSel === b.k;
+              return (
+                <button key={b.k} type="button" onClick={() => setBucketSel(activo ? null : b.k)}
+                  title={`Ver pendientes de ${b.label}`}
+                  className={`text-left bg-zinc-900 rounded-card p-3 transition-colors ${activo ? 'border-2' : 'border border-zinc-800 hover:border-zinc-600'}`}
+                  style={activo ? { borderColor: b.color } : undefined}>
+                  <div className="text-[9px] uppercase tracking-widest font-bold" style={{ color: b.color }}>{b.label}</div>
+                  <div className="text-sm font-black mt-1" style={{ color: b.total > 0 ? b.color : '#52525b' }}>{formatRD(b.total)}</div>
+                </button>
+              );
+            })}
           </div>
 
-          <input value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder={`Buscar ${esCxc ? 'cliente' : 'proveedor'} / NCF…`}
-            className="w-full bg-zinc-950 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm" />
+          {/* Búsqueda + filtro tipo Odoo (Filtros / Agrupar por) */}
+          <div className="flex flex-wrap items-center gap-2">
+            <input value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder={`Buscar ${esCxc ? 'cliente' : 'proveedor'} / NCF…`}
+              className="flex-1 min-w-[200px] bg-zinc-950 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm" />
+            <div className="relative">
+              <button type="button" onClick={() => setMenuFiltro(v => !v)}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-card border-2 text-sm font-bold ${hayFiltros ? 'border-red-600 text-red-300 bg-red-950/30' : 'border-zinc-800 text-zinc-300 bg-zinc-950 hover:border-zinc-600'}`}>
+                <Filter className="w-3.5 h-3.5" /> Filtros{hayFiltros ? ` (${(bucketSel ? 1 : 0) + filtros.size + (agrupar ? 1 : 0)})` : ''} <ChevronDown className="w-3.5 h-3.5" />
+              </button>
+              {menuFiltro && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setMenuFiltro(false)} />
+                  <div className="absolute right-0 mt-1 z-20 w-80 bg-zinc-900 border border-zinc-700 rounded-card shadow-xl p-3 grid grid-cols-2 gap-x-3 gap-y-1">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold flex items-center gap-1 mb-1.5"><Filter className="w-3 h-3 text-red-500" /> Filtros</div>
+                      <label className="flex items-center gap-2 py-1 text-sm text-zinc-200 cursor-pointer">
+                        <input type="checkbox" checked={filtros.has('vencidas')} onChange={() => toggleFiltro('vencidas')} className="accent-red-600" /> Vencidas
+                      </label>
+                      <label className="flex items-center gap-2 py-1 text-sm text-zinc-200 cursor-pointer">
+                        <input type="checkbox" checked={filtros.has('usd')} onChange={() => toggleFiltro('usd')} className="accent-red-600" /> En USD
+                      </label>
+                      <div className="text-[10px] text-zinc-500 mt-2 mb-0.5">Rango de vencimiento</div>
+                      {BUCKETS.map(b => (
+                        <label key={b.k} className="flex items-center gap-2 py-0.5 text-sm text-zinc-200 cursor-pointer">
+                          <input type="radio" name={`bucket-${tipo}`} checked={bucketSel === b.k} onChange={() => setBucketSel(b.k)} className="accent-red-600" /> {b.label}
+                        </label>
+                      ))}
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold flex items-center gap-1 mb-1.5"><Layers className="w-3 h-3 text-red-500" /> Agrupar por</div>
+                      {[{ k: 'tercero', l: esCxc ? 'Cliente' : 'Proveedor' }, { k: 'bucket', l: 'Vencimiento' }, { k: 'moneda', l: 'Moneda' }, ...(ambas ? [{ k: 'empresa', l: 'Empresa' }] : [])].map(o => (
+                        <label key={o.k} className="flex items-center gap-2 py-1 text-sm text-zinc-200 cursor-pointer">
+                          <input type="radio" name={`agrupar-${tipo}`} checked={agrupar === o.k} onChange={() => setAgrupar(o.k)} className="accent-red-600" /> {o.l}
+                        </label>
+                      ))}
+                      <label className="flex items-center gap-2 py-1 text-sm text-zinc-400 cursor-pointer">
+                        <input type="radio" name={`agrupar-${tipo}`} checked={!agrupar} onChange={() => setAgrupar(null)} className="accent-red-600" /> Sin agrupar
+                      </label>
+                    </div>
+                    <div className="col-span-2 border-t border-zinc-800 mt-1 pt-2 flex justify-between items-center">
+                      <button onClick={limpiarFiltros} className="text-xs text-zinc-400 hover:text-white">Limpiar</button>
+                      <button onClick={() => setMenuFiltro(false)} className="text-xs font-bold text-red-400 hover:text-red-300">Listo</button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Chips de filtros activos */}
+          {hayFiltros && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {bucketSel && <FiltroChip label={`Vence: ${(BUCKETS.find(b => b.k === bucketSel) || {}).label}`} onX={() => setBucketSel(null)} />}
+              {filtros.has('vencidas') && <FiltroChip label="Vencidas" onX={() => toggleFiltro('vencidas')} />}
+              {filtros.has('usd') && <FiltroChip label="En USD" onX={() => toggleFiltro('usd')} />}
+              {agrupar && <FiltroChip label={`Agrupado: ${agrupar === 'tercero' ? (esCxc ? 'Cliente' : 'Proveedor') : agrupar === 'bucket' ? 'Vencimiento' : agrupar === 'empresa' ? 'Empresa' : 'Moneda'}`} onX={() => setAgrupar(null)} />}
+              <button onClick={limpiarFiltros} className="text-[11px] text-zinc-500 hover:text-white ml-1">Limpiar todo</button>
+              <span className="text-[11px] text-zinc-500 ml-auto">{lista.length} de {facturas.length} · {formatRD(totalListado)}</span>
+            </div>
+          )}
 
           <div className="bg-zinc-900 border border-zinc-800 rounded-card overflow-x-auto">
             <table className="w-full text-xs">
@@ -599,28 +745,16 @@ function CuentasPendientes({ tipo, empresa, setEmpresa }) {
               </thead>
               <tbody>
                 {lista.length === 0 && <tr><td colSpan={6} className="px-3 py-6 text-center text-zinc-500">Sin facturas pendientes 🎉</td></tr>}
-                {lista.map(f => {
-                  const d = diasVencida(f);
-                  const colorV = d <= 0 ? 'text-zinc-400' : d <= 30 ? 'text-yellow-400' : d <= 90 ? 'text-orange-400' : 'text-red-400';
-                  return (
-                    <tr key={f.id} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
-                      <td className="px-3 py-2 font-medium text-white max-w-[220px] truncate">{f.tercero || '—'}</td>
-                      <td className="px-3 py-2 font-mono text-zinc-400">{f.ncf || f.documento || '—'}</td>
-                      <td className="px-3 py-2 text-zinc-400 whitespace-nowrap">{f.fecha || '—'}</td>
-                      <td className={`px-3 py-2 whitespace-nowrap font-bold ${colorV}`}>{f.vence || '—'}{d > 0 && <span className="ml-1 text-[9px]">({d}d)</span>}</td>
-                      {/* v8.27.76: facturas en USD — se muestran convertidas a RD$ con su monto
-                          original al lado (antes el número USD salía como si fuera RD$). */}
-                      <td className="px-3 py-2 text-right text-zinc-300 tabular-nums">
-                        {formatRD(f.total)}
-                        {f.moneda === 'USD' && <span className="block text-[9px] text-yellow-500">US${Number(f.totalOriginal).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>}
-                      </td>
-                      <td className={`px-3 py-2 text-right font-bold tabular-nums ${esCxc ? 'text-green-400' : 'text-red-400'}`}>
-                        {formatRD(f.pendiente)}
-                        {f.moneda === 'USD' && <span className="block text-[9px] text-yellow-500 font-normal">US${Number(f.pendienteOriginal).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>}
-                      </td>
+                {!grupos && lista.map(renderFila)}
+                {grupos && grupos.map(g => (
+                  <React.Fragment key={g.titulo}>
+                    <tr className="bg-zinc-950/70">
+                      <td colSpan={5} className="px-3 py-1.5 text-[11px] font-bold text-zinc-300">{g.titulo} <span className="text-zinc-500 font-normal">({g.filas.length})</span></td>
+                      <td className={`px-3 py-1.5 text-right font-black tabular-nums ${esCxc ? 'text-green-400' : 'text-red-400'}`}>{formatRD(g.subtotal)}</td>
                     </tr>
-                  );
-                })}
+                    {g.filas.map(renderFila)}
+                  </React.Fragment>
+                ))}
               </tbody>
             </table>
           </div>

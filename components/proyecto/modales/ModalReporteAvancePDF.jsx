@@ -187,14 +187,39 @@ export default function ModalReporteAvancePDF({ proyecto, sistema, data, usuario
   });
   // v8.25.47: NO sumar el m² crudo de cada tarea (son capas sobre la misma superficie,
   // inflaba el total). Se pondera por el peso de la tarea → m² de superficie avanzada.
-  const totalM2Periodo = reportesPeriodo.reduce((s, r) => {
+  // v8.27.72 (ticket Miguel "Revisar informe"): reportes con tareas VIEJAS (ids que ya no
+  // existen en el sistema actual) caían al peso 1 (100%) y cada capa sumaba completa — el
+  // avance del periodo salía inflado (ej. 1,100 m² en una obra de 367). Ahora:
+  //  (1) el peso de la tarea se busca en TODOS los sistemas del proyecto;
+  //  (2) el avance ponderado de cada ÁREA se topa a su tamaño en m².
+  const pesoMapGlobal = {};
+  {
+    const sistemaIds = [...new Set([proyecto.sistema, ...(proyecto.areas || []).map(a => a.sistemaId).filter(Boolean)])];
+    sistemaIds.forEach(sid => {
+      const sis = data.sistemas && data.sistemas[sid];
+      (sis?.tareas || []).forEach(t => { if (pesoMapGlobal[t.id] === undefined) pesoMapGlobal[t.id] = (Number(t.peso) || 0) / 100; });
+    });
+  }
+  const pesoDeTarea = (r, sisR) => {
+    if (pesoMapGlobal[r.tareaId] !== undefined) return pesoMapGlobal[r.tareaId];
+    const tarea = (sisR?.tareas || []).find(t => t.id === r.tareaId);
+    return tarea ? (Number(tarea.peso) || 0) / 100 : 1; // desconocida → 1, pero el tope por área la contiene
+  };
+  const m2PonderadoPorArea = {};
+  let m2PeriodoSinArea = 0;
+  reportesPeriodo.forEach(r => {
     const area = (proyecto.areas || []).find(a => a.id === r.areaId);
     const sisR = (data.sistemas && data.sistemas[area?.sistemaId || proyecto.sistema]) || sistema;
     const m2 = getM2Reporte(r, sisR);
-    const tarea = (sisR?.tareas || []).find(t => t.id === r.tareaId);
-    const peso = tarea ? (Number(tarea.peso) || 0) / 100 : 1;
-    return s + m2 * peso;
-  }, 0);
+    const aporte = m2 * pesoDeTarea(r, sisR);
+    if (area) m2PonderadoPorArea[area.id] = (m2PonderadoPorArea[area.id] || 0) + aporte;
+    else m2PeriodoSinArea += aporte;
+  });
+  const totalM2Periodo = Object.entries(m2PonderadoPorArea).reduce((s, [areaId, m2]) => {
+    const area = (proyecto.areas || []).find(a => a.id === areaId);
+    const cap = Number(area?.m2) || 0;
+    return s + (cap > 0 ? Math.min(m2, cap) : m2);
+  }, m2PeriodoSinArea);
 
   // v8.25.42: RD$ producido EN EL PERIODO seleccionado (m² × precio venta × peso de la
   // tarea/100), igual que produccionRD pero solo con los reportes del rango de fechas.
@@ -203,8 +228,7 @@ export default function ModalReporteAvancePDF({ proyecto, sistema, data, usuario
     if (!area) return s;
     const sisR = (data.sistemas && data.sistemas[area.sistemaId || proyecto.sistema]) || sistema;
     const m2 = getM2Reporte(r, sisR);
-    const tarea = (sisR?.tareas || []).find(t => t.id === r.tareaId);
-    const peso = tarea ? (Number(tarea.peso) || 0) / 100 : 1;
+    const peso = pesoDeTarea(r, sisR); // v8.27.72: peso multi-sistema
     const precio = getPrecioVentaArea(area, sisR) || 0;
     return s + m2 * precio * peso;
   }, 0);
@@ -215,8 +239,7 @@ export default function ModalReporteAvancePDF({ proyecto, sistema, data, usuario
     if (!area) return s;
     const sisR = (data.sistemas && data.sistemas[area.sistemaId || proyecto.sistema]) || sistema;
     const m2 = getM2Reporte(r, sisR);
-    const tarea = (sisR?.tareas || []).find(t => t.id === r.tareaId);
-    const peso = tarea ? (Number(tarea.peso) || 0) / 100 : 1;
+    const peso = pesoDeTarea(r, sisR); // v8.27.72: peso multi-sistema
     return s + m2 * (Number(sisR?.costo_mo_m2) || 0) * peso;
   }, 0);
 

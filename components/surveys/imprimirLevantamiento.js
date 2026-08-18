@@ -170,6 +170,9 @@ export async function imprimirLevantamiento({ proyecto, site, visit, areas = [],
     .cv-item { margin: 0; }
     .cv-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #777; margin-bottom: 3px; font-weight: 700; }
     .cv-item img { width: 100%; height: 210px; object-fit: cover; border-radius: 8px; border: 1px solid #ddd; }
+    /* v8.27.72 (ticket Edwin): la foto de fachada suele ser VERTICAL — con cover se
+       recortaba a una franja "panorámica". contain muestra la foto completa. */
+    .cv-item img.cv-fachada { object-fit: contain; background: #f4f4f2; }
     .cv-ph { width: 100%; height: 210px; border: 1px dashed #ccc; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #999; font-size: 11px; background: #fafafa; text-align: center; }
     .resumen { display: flex; gap: 10px; margin-bottom: 16px; }
     .kpi { flex: 1; border: 1px solid #ddd; border-radius: 8px; padding: 8px 12px; }
@@ -218,7 +221,7 @@ export async function imprimirLevantamiento({ proyecto, site, visit, areas = [],
     <div class="cabecera-visual">
       <figure class="cv-item">
         <div class="cv-label">Fachada / frente</div>
-        ${fachadaUrl ? `<img src="${esc(fachadaUrl)}" />` : `<div class="cv-ph">Sin foto de fachada</div>`}
+        ${fachadaUrl ? `<img class="cv-fachada" src="${esc(fachadaUrl)}" />` : `<div class="cv-ph">Sin foto de fachada</div>`}
       </figure>
       <figure class="cv-item">
         <div class="cv-label">Ubicación</div>

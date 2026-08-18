@@ -57,8 +57,8 @@ export default function ModalReporteAvancePDF({ proyecto, sistema, data, usuario
     (async () => {
       setCargandoFotos(true);
       try {
-        // Cantidades segun tipo: diario 4, semanal 10, quincenal 12, custom hasta 12
-        const maxFotos = tipo === 'diario' ? 4 : tipo === 'semanal' ? 10 : 12;
+        // Cantidades segun tipo: diario 6 (v8.27.78: se muestran en grande), semanal 10, quincenal 12
+        const maxFotos = tipo === 'diario' ? 6 : tipo === 'semanal' ? 10 : 12;
         const todasFotos = await db.listarFotosProyecto(proyecto.id);
         // Filtrar por rango de fechas (usa fecha o created_at)
         const enRango = (todasFotos || []).filter(f => {
@@ -770,13 +770,15 @@ function ReportePDFContenido({ proyecto, sistema, data, tipo, fechaInicio, fecha
                 Cargando fotos del periodo...
               </div>
             ) : fotosCargadas && fotosCargadas.length > 0 ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
+              // v8.27.78: en el reporte DIARIO las fotos del día van GRANDES (2 por fila,
+              // formato 4:3); en semanal/quincenal se mantiene la cuadrícula compacta.
+              <div style={{ display: 'grid', gridTemplateColumns: tipo === 'diario' ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: tipo === 'diario' ? '12px' : '8px' }}>
                 {fotosCargadas.map((f, i) => {
                   const fechaStr = (f.fecha || f.created_at || '').slice(0, 10);
                   const fechaMostrar = fechaStr ? formatFechaCorta(fechaStr) : '';
                   return (
-                    <div key={f.id || i} style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                      <div style={{ aspectRatio: '1', background: '#f4f4f5', border: '1px solid #e4e4e7', overflow: 'hidden' }}>
+                    <div key={f.id || i} style={{ display: 'flex', flexDirection: 'column', gap: '2px', pageBreakInside: 'avoid' }}>
+                      <div style={{ aspectRatio: tipo === 'diario' ? '4 / 3' : '1', background: '#f4f4f5', border: '1px solid #e4e4e7', overflow: 'hidden', borderRadius: tipo === 'diario' ? '6px' : '0' }}>
                         <img src={f.dataUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                       </div>
                       {fechaMostrar && (

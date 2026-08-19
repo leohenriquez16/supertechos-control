@@ -9,7 +9,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Loader2, Plus, MapPin, Building, ChevronRight, ArrowLeft, List, Map as MapIcon, LayoutGrid, Search, User as UserIcon, Calendar, Mail, MessageCircle, Clock, ArrowLeftRight, Tag as TagIcon } from 'lucide-react';
-import { listarProyectosSurveys, listarSitesProyectoSurvey, listarTodosLosSitesSurvey, crearSiteSurvey, COMPANIES, PROJECT_STATUS, SITE_STATUS, SERVICE_LINES, ESCALERA, setEtapaSurvey } from '../../lib/surveys';
+import { listarProyectosSurveys, listarSitesProyectoSurvey, listarTodosLosSitesSurvey, crearSiteSurvey, COMPANIES, PROJECT_STATUS, SITE_STATUS, SERVICE_LINES, ESCALERA, setEtapaSurvey, actualizarSiteSurvey } from '../../lib/surveys';
 import * as db from '../../lib/db';
 import MapaLeaflet from '../common/MapaLeaflet';
 import MapaPickerModal from '../common/MapaPickerModal';
@@ -99,11 +99,35 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto, onRec
   const [recs, setRecs] = useState([]); // v8.19.85: reclamaciones para el calendario
   // v8.25.16: arrastrar tarjetas entre etapas del Kanban.
   const [dragId, setDragId] = useState(null);
+  // v8.27.84: al pasar a "Cotización Realizada" se obliga a registrar el # de cotización.
+  const [modalCotiz, setModalCotiz] = useState(null); // { projectId, etapa }
+  const [cotizInput, setCotizInput] = useState('');
+  const [guardandoCotiz, setGuardandoCotiz] = useState(false);
+  const aplicarEtapaKanban = async (projectId, etapa) => {
+    setProyectos(prev => prev.map(x => x.id === projectId ? { ...x, odoo_stage: etapa, stage_changed_at: new Date().toISOString() } : x));
+    try { await setEtapaSurvey(projectId, etapa); } catch (err) { alert('No se pudo cambiar la etapa: ' + (err?.message || err)); setReloadKey(k => k + 1); }
+  };
   const cambiarEtapa = async (projectId, etapa) => {
     const p = proyectos.find(x => x.id === projectId);
     if (!p || estadoDe(p) === etapa) return;
-    setProyectos(prev => prev.map(x => x.id === projectId ? { ...x, odoo_stage: etapa, stage_changed_at: new Date().toISOString() } : x));
-    try { await setEtapaSurvey(projectId, etapa); } catch (err) { alert('No se pudo cambiar la etapa: ' + (err?.message || err)); setReloadKey(k => k + 1); }
+    if (etapa === 'Cotizacion Realizada' && !cotizNum(siteDeProy[projectId]?.referencia_odoo)) {
+      setCotizInput(''); setModalCotiz({ projectId, etapa }); return;
+    }
+    await aplicarEtapaKanban(projectId, etapa);
+  };
+  const guardarCotizYAvanzar = async () => {
+    const val = cotizInput.trim();
+    const st = siteDeProy[modalCotiz?.projectId];
+    if (!val || !st?.id) return;
+    setGuardandoCotiz(true);
+    try {
+      await actualizarSiteSurvey(st.id, { referenciaOdoo: val });
+      setSites(prev => prev.map(s => s.id === st.id ? { ...s, referencia_odoo: val } : s));
+      const { projectId, etapa } = modalCotiz;
+      setModalCotiz(null);
+      await aplicarEtapaKanban(projectId, etapa);
+    } catch (e) { alert('No se pudo guardar el número de cotización: ' + (e?.message || e)); }
+    setGuardandoCotiz(false);
   };
   const esAdmin = (usuario?.roles || []).includes('admin') || (usuario?.roles || []).includes('owner');
   // v8.25.9: el supervisor solo ve etapas operativas (hasta "Realizado"); no las comerciales.
@@ -199,15 +223,18 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto, onRec
   // Filtro de búsqueda + filtros (cliente, levantamiento, servicio, empresa, estado, levantador).
   const proyFiltrados = React.useMemo(() => {
     const q = busqueda.toLowerCase().trim();
+    const qDig = q.replace(/\D/g, ''); // v8.27.84: buscar la cotización por solo los dígitos (5774 → ST5774)
     return proyectos.filter(p => {
       if (esSup && !ETAPAS_SUP.includes(estadoDe(p))) return false; // supervisor: solo hasta "Realizado"
       if (esSup && p.asignado_a_id !== usuario.id) return false; // v8.25.25: supervisor solo ve SUS levantamientos asignados
+      const refCotiz = siteDeProy[p.id]?.referencia_odoo || '';
       if (q && !(
         (p.client_name || '').toLowerCase().includes(q) ||
         (p.name || '').toLowerCase().includes(q) ||
         (p.description || '').toLowerCase().includes(q) ||
         (p.asignado_a_nombre || '').toLowerCase().includes(q) ||
-        (siteDeProy[p.id]?.referencia_odoo || '').toLowerCase().includes(q) ||
+        refCotiz.toLowerCase().includes(q) ||
+        (qDig && refCotiz.replace(/\D/g, '').includes(qDig)) ||
         estadoDe(p).toLowerCase().includes(q)
       )) return false;
       if (fServicio && p.service_line !== fServicio) return false;
@@ -430,6 +457,28 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto, onRec
             })()
           )}
         </>
+      )}
+
+      {/* v8.27.84: obliga a registrar el # de cotización al pasar a "Cotización Realizada" (arrastre en Kanban) */}
+      {modalCotiz && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={() => !guardandoCotiz && setModalCotiz(null)}>
+          <div className="bg-zinc-900 border border-zinc-700 rounded-card p-4 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+            <div className="text-[10px] uppercase tracking-widest text-red-500 font-bold mb-1">Cotización realizada</div>
+            <div className="text-sm text-white font-bold mb-2">Número de cotización</div>
+            <div className="text-xs text-zinc-400 mb-3">Para marcar este levantamiento como <b>Cotización Realizada</b> escribe el número de la cotización (ej. <span className="font-mono">ST5774</span> o <span className="font-mono">PG1303</span>).</div>
+            <input autoFocus value={cotizInput} onChange={e => setCotizInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') guardarCotizYAvanzar(); }}
+              placeholder="ST5774"
+              className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none rounded-card px-3 py-2 text-white text-sm mb-3" />
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setModalCotiz(null)} disabled={guardandoCotiz} className="px-3 py-1.5 rounded-card text-xs font-bold text-zinc-400 hover:text-white disabled:opacity-50">Cancelar</button>
+              <button onClick={guardarCotizYAvanzar} disabled={!cotizInput.trim() || guardandoCotiz}
+                className="px-3 py-1.5 rounded-card text-xs font-bold bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-white flex items-center gap-1">
+                {guardandoCotiz && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Guardar y marcar cotizada
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

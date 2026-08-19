@@ -8,7 +8,7 @@
 // proyecto + sites + DynamicSurveyForm + photos.
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Loader2, Plus, MapPin, Building, ChevronRight, ArrowLeft, List, Map as MapIcon, LayoutGrid, Search, User as UserIcon, Calendar, Mail, MessageCircle, Clock, ArrowLeftRight } from 'lucide-react';
+import { Loader2, Plus, MapPin, Building, ChevronRight, ArrowLeft, List, Map as MapIcon, LayoutGrid, Search, User as UserIcon, Calendar, Mail, MessageCircle, Clock, ArrowLeftRight, Tag as TagIcon } from 'lucide-react';
 import { listarProyectosSurveys, listarSitesProyectoSurvey, listarTodosLosSitesSurvey, crearSiteSurvey, COMPANIES, PROJECT_STATUS, SITE_STATUS, SERVICE_LINES, ESCALERA, setEtapaSurvey } from '../../lib/surveys';
 import * as db from '../../lib/db';
 import MapaLeaflet from '../common/MapaLeaflet';
@@ -207,6 +207,7 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto, onRec
         (p.name || '').toLowerCase().includes(q) ||
         (p.description || '').toLowerCase().includes(q) ||
         (p.asignado_a_nombre || '').toLowerCase().includes(q) ||
+        (siteDeProy[p.id]?.referencia_odoo || '').toLowerCase().includes(q) ||
         estadoDe(p).toLowerCase().includes(q)
       )) return false;
       if (fServicio && p.service_line !== fServicio) return false;
@@ -215,7 +216,7 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto, onRec
       if (fLevantador && levantadorDe(p) !== fLevantador) return false;
       return true;
     });
-  }, [proyectos, busqueda, fServicio, fEmpresa, fEstado, fLevantador, esSup]);
+  }, [proyectos, busqueda, fServicio, fEmpresa, fEstado, fLevantador, esSup, siteDeProy]);
 
   // Opciones presentes (para los selects de filtro).
   const opcServicios = React.useMemo(() => [...new Set(proyectos.map(p => p.service_line).filter(Boolean))], [proyectos]);
@@ -357,7 +358,7 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto, onRec
           </div>
 
           {vista === 'lista' ? (
-            <SurveysTabla grupos={grupos} sitesPorProy={sitesPorProy} estadoDe={estadoDe} agrupado={agruparPor !== 'none'} onAbrir={onAbrirProyecto} />
+            <SurveysTabla grupos={grupos} sitesPorProy={sitesPorProy} siteDeProy={siteDeProy} estadoDe={estadoDe} agrupado={agruparPor !== 'none'} onAbrir={onAbrirProyecto} />
           ) : vista === 'kanban' ? (
             <>
             {esAdmin && agruparPor === 'estado' && (
@@ -449,7 +450,23 @@ export function EscaleraBadge({ valor, full }) {
   );
 }
 
-function FilaSurvey({ p, nSites, estado, onAbrir }) {
+// v8.27.84: número de cotización (referencia_odoo del sitio, ej. ST5774 / PG1303).
+// Se ignora vacío o el literal "No" (levantamientos sin cotizar).
+function cotizNum(v) {
+  const s = (v || '').trim();
+  return (s && s.toLowerCase() !== 'no') ? s : null;
+}
+function CotizacionBadge({ valor }) {
+  if (!valor) return <span className="text-zinc-700">—</span>;
+  const esProuco = /^pg/i.test(valor);
+  return (
+    <span className={`inline-flex items-center gap-1 text-[10px] font-bold font-mono px-1.5 py-0.5 rounded border ${esProuco ? 'bg-lime-900/30 border-lime-700/50 text-lime-300' : 'bg-amber-900/30 border-amber-700/50 text-amber-300'}`}>
+      <TagIcon className="w-3 h-3" />{valor}
+    </span>
+  );
+}
+
+function FilaSurvey({ p, nSites, estado, cotizacion, onAbrir }) {
   const color = SERVICE_LINES[p.service_line]?.color || '#666';
   const company = COMPANIES[p.company] || p.company || '—';
   return (
@@ -463,6 +480,7 @@ function FilaSurvey({ p, nSites, estado, onAbrir }) {
       <td className="px-3 py-2"><ServiceLineBadge serviceLine={p.service_line} /></td>
       <td className="px-3 py-2 text-[10px] uppercase tracking-wider text-zinc-500">{company}</td>
       <td className="px-3 py-2"><span className="text-[10px] uppercase tracking-wider font-bold text-zinc-300">{estado}</span></td>
+      <td className="px-3 py-2"><CotizacionBadge valor={cotizacion} /></td>
       <td className="px-3 py-2"><EscaleraBadge valor={p.requiere_escalera} /></td>
       <td className="px-3 py-2 text-xs text-zinc-400">
         {p.asignado_a_nombre
@@ -485,7 +503,7 @@ function FiltroSelect({ value, onChange, placeholder, options }) {
   );
 }
 
-function SurveysTabla({ grupos, sitesPorProy, estadoDe, agrupado, onAbrir }) {
+function SurveysTabla({ grupos, sitesPorProy, siteDeProy = {}, estadoDe, agrupado, onAbrir }) {
   const total = grupos.reduce((a, g) => a + g.items.length, 0);
   if (total === 0) {
     return <div className="bg-zinc-950 border border-zinc-800 rounded-card p-6 text-center text-zinc-500 text-sm">Sin resultados.</div>;
@@ -500,6 +518,7 @@ function SurveysTabla({ grupos, sitesPorProy, estadoDe, agrupado, onAbrir }) {
         <th className="px-3 py-2">Servicio</th>
         <th className="px-3 py-2">Empresa</th>
         <th className="px-3 py-2">Estado</th>
+        <th className="px-3 py-2">Cotización</th>
         <th className="px-3 py-2">Escalera</th>
         <th className="px-3 py-2">Levantador</th>
         <th className="px-3 py-2 text-right">Sitios</th>
@@ -519,13 +538,13 @@ function SurveysTabla({ grupos, sitesPorProy, estadoDe, agrupado, onAbrir }) {
               <React.Fragment key={g.key}>
                 {agrupado && (
                   <tr className="bg-zinc-950/80 border-b border-zinc-800">
-                    <td colSpan={10} className="px-3 py-1.5 text-[10px] uppercase tracking-widest font-black text-zinc-400">
+                    <td colSpan={11} className="px-3 py-1.5 text-[10px] uppercase tracking-widest font-black text-zinc-400">
                       {g.label} <span className="text-zinc-600">· {g.items.length}</span>
                     </td>
                   </tr>
                 )}
                 {g.items.map(p => (
-                  <FilaSurvey key={p.id} p={p} nSites={sitesPorProy[p.id]} estado={estadoDe(p)} onAbrir={onAbrir} />
+                  <FilaSurvey key={p.id} p={p} nSites={sitesPorProy[p.id]} estado={estadoDe(p)} cotizacion={cotizNum(siteDeProy[p.id]?.referencia_odoo)} onAbrir={onAbrir} />
                 ))}
               </React.Fragment>
             ))}
@@ -538,7 +557,7 @@ function SurveysTabla({ grupos, sitesPorProy, estadoDe, agrupado, onAbrir }) {
         {grupos.map(g => (
           <div key={g.key} className="space-y-2">
             {agrupado && <div className="text-[10px] uppercase tracking-widest font-black text-zinc-500 px-1">{g.label} · {g.items.length}</div>}
-            {g.items.map(p => <ProyectoCard key={p.id} proyecto={p} onClick={() => onAbrir(p)} />)}
+            {g.items.map(p => <ProyectoCard key={p.id} proyecto={p} cotizacion={cotizNum(siteDeProy[p.id]?.referencia_odoo)} onClick={() => onAbrir(p)} />)}
           </div>
         ))}
       </div>
@@ -546,7 +565,7 @@ function SurveysTabla({ grupos, sitesPorProy, estadoDe, agrupado, onAbrir }) {
   );
 }
 
-function ProyectoCard({ proyecto, onClick }) {
+function ProyectoCard({ proyecto, cotizacion, onClick }) {
   const estadoLabel = proyecto.odoo_stage || PROJECT_STATUS[proyecto.status] || proyecto.status;
   const company = COMPANIES[proyecto.company] || proyecto.company;
   const color = SERVICE_LINES[proyecto.service_line]?.color || '#666';
@@ -562,6 +581,7 @@ function ProyectoCard({ proyecto, onClick }) {
           <span className="text-[10px] text-zinc-500 uppercase tracking-wider">{company}</span>
           <span className="text-[10px] text-zinc-400 uppercase tracking-wider">· {estadoLabel}</span>
           {proyecto.requiere_escalera && <EscaleraBadge valor={proyecto.requiere_escalera} />}
+          {cotizacion && <CotizacionBadge valor={cotizacion} />}
         </div>
         <div className="font-bold text-sm truncate">{proyecto.name}</div>
         <div className="text-xs text-zinc-500 mt-0.5">{proyecto.client_name}</div>

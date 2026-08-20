@@ -52,11 +52,14 @@ export default function FlujoCaja({ empresa, setEmpresa }) {
   const [odoo, setOdoo] = useState({});          // { empresa: { cxc, cxp, saldosLibros, tasaUsd, advertencias } }
   const [compromisos, setCompromisos] = useState([]);
   const [manual, setManual] = useState([]);
+  const [entradas, setEntradas] = useState([]);  // entradas esperadas (avances, cubicaciones…)
+  const [expandido, setExpandido] = useState(() => new Set()); // 'emp:cxc' | 'emp:cxp' — facturas visibles en la tabla
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [refrescar, setRefrescar] = useState(0);
 
   const [modal, setModal] = useState(null);          // { tipo, empresa, semana?, label? } — editar celda manual
+  const [modalEntradas, setModalEntradas] = useState(null); // { empresa, semana } — entradas esperadas de esa semana
   const [detalle, setDetalle] = useState(null);      // { titulo, facturas }
   const [verCompromisos, setVerCompromisos] = useState(false);
   const [verLibros, setVerLibros] = useState(false);
@@ -81,9 +84,10 @@ export default function FlujoCaja({ empresa, setEmpresa }) {
     (async () => {
       setLoading(true); setError(null);
       try {
-        const [comps, man, ...lotes] = await Promise.all([
+        const [comps, man, entr, ...lotes] = await Promise.all([
           db.listarCompromisosFijos().catch(() => []),
           db.listarFlujoManual().catch(() => []),
+          db.listarFlujoEntradas().catch(() => []),
           ...Object.keys(EMPRESAS_RECEPTORAS).map(async (k) => {
             const res = await fetch(`/api/contabilidad/flujo-odoo?empresa=${k}`);
             const json = await res.json();
@@ -94,6 +98,7 @@ export default function FlujoCaja({ empresa, setEmpresa }) {
         if (cancel) return;
         setCompromisos(comps);
         setManual(man);
+        setEntradas(entr);
         setOdoo(Object.fromEntries(lotes));
       } catch (e) { if (!cancel) setError(e?.message || String(e)); }
       if (!cancel) setLoading(false);
@@ -130,7 +135,12 @@ export default function FlujoCaja({ empresa, setEmpresa }) {
         const cxcFacturas = cxc.filter(enSemana), cxpFacturas = cxp.filter(enSemana);
         const cxcAuto = cxcFacturas.reduce((t, f) => t + f.pendiente, 0);
         const cxpAuto = cxpFacturas.reduce((t, f) => t + f.pendiente, 0);
-        const cobro = enRD(manualDe(emp, 'cobro', s.iniStr));
+        // Entradas esperadas (avances, cubicaciones no facturadas…): por fecha
+        // esperada; lo atrasado (fecha < hoy y aún sin cobrar) cae en la semana 1.
+        const entradasSem = entradas.filter(e => e.empresa === emp && !e.cobrado && e.fechaEsperada &&
+          (s.i === 0 ? e.fechaEsperada <= s.finStr : (e.fechaEsperada >= s.iniStr && e.fechaEsperada <= s.finStr)))
+          .map(e => ({ ...e, montoRD: e.moneda === 'USD' ? e.monto * tasa : e.monto }));
+        const totalEntradasEsp = entradasSem.reduce((t, e) => t + e.montoRD, 0);
         const abono = enRD(manualDe(emp, 'abono_vencido', s.iniStr));
 
         // Compromisos fijos que caen en la semana
@@ -150,10 +160,10 @@ export default function FlujoCaja({ empresa, setEmpresa }) {
           }
         }
         const totalComps = compsSem.reduce((t, c) => t + c.montoRD, 0);
-        const entradas = cxcAuto + cobro;
+        const totalEntradas = cxcAuto + totalEntradasEsp;
         const salidas = cxpAuto + abono + totalComps;
-        saldo = saldo + entradas - salidas;
-        return { ...s, cxcAuto, cxcFacturas, cobro, entradas, cxpAuto, cxpFacturas, abono, compsSem, totalComps, salidas, saldoFinal: saldo };
+        saldo = saldo + totalEntradas - salidas;
+        return { ...s, cxcAuto, cxcFacturas, entradasSem, totalEntradasEsp, totalEntradas, cxpAuto, cxpFacturas, abono, compsSem, totalComps, salidas, saldoFinal: saldo };
       });
 
       const idxNegativo = sems.findIndex(s => s.saldoFinal < 0);
@@ -162,14 +172,14 @@ export default function FlujoCaja({ empresa, setEmpresa }) {
       out[emp] = { saldoInicial, si, sems, cxpVencida, cxcVencida, idxNegativo, diasCaja, totalSalidas };
     }
     return out;
-  }, [odoo, compromisos, manualDe, semanas, tasa, hoyStr]);
+  }, [odoo, compromisos, entradas, manualDe, semanas, tasa, hoyStr]);
 
   // Consolidado de las empresas seleccionadas
   const cons = useMemo(() => {
     const sel = empresasSel.map(k => flujos[k]).filter(Boolean);
     const saldoInicial = sel.reduce((t, f) => t + f.saldoInicial, 0);
     const sems = semanas.map((s, i) => ({
-      entradas: sel.reduce((t, f) => t + (f.sems[i]?.entradas || 0), 0),
+      entradas: sel.reduce((t, f) => t + (f.sems[i]?.totalEntradas || 0), 0),
       salidas: sel.reduce((t, f) => t + (f.sems[i]?.salidas || 0), 0),
       saldoFinal: sel.reduce((t, f) => t + (f.sems[i]?.saldoFinal || 0), 0),
     }));
@@ -197,6 +207,23 @@ export default function FlujoCaja({ empresa, setEmpresa }) {
       setModal(null);
     } catch (e) { toast('No se pudo guardar: ' + (e?.message || e), 'error'); }
   };
+
+  const guardarEntrada = async (e) => {
+    const g = await db.guardarFlujoEntrada(e);
+    setEntradas(prev => {
+      const otras = prev.filter(x => x.id !== g.id);
+      return [...otras, g];
+    });
+    return g;
+  };
+  const borrarEntrada = async (id) => {
+    await db.eliminarFlujoEntrada(id);
+    setEntradas(prev => prev.filter(x => x.id !== id));
+  };
+
+  const toggleExpandido = (k) => setExpandido(prev => {
+    const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n;
+  });
 
   const guardarComp = async () => {
     try {
@@ -291,7 +318,7 @@ export default function FlujoCaja({ empresa, setEmpresa }) {
             <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
               <div className="text-[9px] uppercase tracking-widest font-bold text-green-500">CxC vencida — cobrable ya</div>
               <div className="text-lg font-black text-green-400 mt-1">{formatRD(cons.cxcVencida)}</div>
-              <div className="text-[10px] text-zinc-500 mt-1">Cobros atrasados por gestionar. Lo que logres cobrar entra como “Cobros proyectados”.</div>
+              <div className="text-[10px] text-zinc-500 mt-1">Cobros atrasados por gestionar. Lo que esperes recuperar, regístralo como entrada esperada en su semana.</div>
             </div>
             <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
               <div className="text-[9px] uppercase tracking-widest font-bold text-red-500">CxP vencida — arrastre</div>
@@ -337,7 +364,12 @@ export default function FlujoCaja({ empresa, setEmpresa }) {
                   <tbody>
                     <tr className="border-b border-zinc-800/50 text-[10px] uppercase tracking-widest text-green-600 font-bold"><td className="px-3 pt-2 pb-1" colSpan={f.sems.length + 2}>Entradas</td></tr>
                     <tr className="border-b border-zinc-800/30">
-                      <td className="px-3 py-1.5 text-zinc-300">Facturas por cobrar que vencen <span className="text-zinc-600">(Odoo)</span></td>
+                      <td className="px-3 py-1.5 text-zinc-300">
+                        <button onClick={() => toggleExpandido(`${emp}:cxc`)} className="inline-flex items-center gap-1 hover:text-white">
+                          {expandido.has(`${emp}:cxc`) ? <ChevronDown className="w-3 h-3 text-zinc-500" /> : <ChevronRight className="w-3 h-3 text-zinc-500" />}
+                          Facturas por cobrar que vencen <span className="text-zinc-600">(Odoo)</span>
+                        </button>
+                      </td>
                       {f.sems.map(s => (
                         <td key={s.iniStr} className="px-3 py-1.5 text-right">
                           {s.cxcAuto > 0
@@ -347,21 +379,41 @@ export default function FlujoCaja({ empresa, setEmpresa }) {
                       ))}
                       <td className="px-3 py-1.5 text-right"><Monto v={f.sems.reduce((t, s) => t + s.cxcAuto, 0)} tipo="entrada" /></td>
                     </tr>
+                    {expandido.has(`${emp}:cxc`) && f.sems.flatMap(s => s.cxcFacturas.map(fac => ({ fac, wi: s.i }))).map(({ fac, wi }) => (
+                      <tr key={`cxc-${fac.id}`} className="border-b border-zinc-800/20 bg-zinc-950/40">
+                        <td className="pl-8 pr-3 py-1 text-[11px] text-zinc-500 max-w-[220px] truncate" title={fac.tercero}>
+                          {fac.tercero || fac.documento} <span className="text-[9px] text-zinc-600">· vence {fac.vence}</span>
+                        </td>
+                        {f.sems.map(s => (
+                          <td key={s.iniStr} className="px-3 py-1 text-right text-[11px]">
+                            {s.i === wi && <><Monto v={fac.pendiente} tipo="entrada" />{fac.moneda === 'USD' && <span className="block text-[9px] text-yellow-600">{fmtUS(fac.pendienteOriginal)}</span>}</>}
+                          </td>
+                        ))}
+                        <td />
+                      </tr>
+                    ))}
                     <tr className="border-b border-zinc-800/30">
-                      <td className="px-3 py-1.5 text-zinc-300">Cobros proyectados <span className="text-zinc-600">(tú los llenas)</span></td>
+                      <td className="px-3 py-1.5 text-zinc-300">Entradas esperadas <span className="text-zinc-600">(avances, cubicaciones…)</span></td>
                       {f.sems.map(s => (
                         <td key={s.iniStr} className="px-3 py-1.5 text-right">
-                          <button onClick={() => setModal({ tipo: 'cobro', empresa: emp, semana: s.iniStr, label: `Cobros proyectados — ${s.label} — ${info.label}` })}
+                          <button onClick={() => setModalEntradas({ empresa: emp, semana: s })}
                             className="group inline-flex items-center gap-1 hover:text-white">
-                            <Monto v={s.cobro} tipo="entrada" /><Pencil className="w-2.5 h-2.5 text-zinc-600 opacity-40 group-hover:opacity-100" />
+                            <Monto v={s.totalEntradasEsp} tipo="entrada" />
+                            {s.entradasSem.length > 0 && <span className="text-[9px] text-zinc-500">×{s.entradasSem.length}</span>}
+                            <Pencil className="w-2.5 h-2.5 text-zinc-600 opacity-40 group-hover:opacity-100" />
                           </button>
                         </td>
                       ))}
-                      <td className="px-3 py-1.5 text-right"><Monto v={f.sems.reduce((t, s) => t + s.cobro, 0)} tipo="entrada" /></td>
+                      <td className="px-3 py-1.5 text-right"><Monto v={f.sems.reduce((t, s) => t + s.totalEntradasEsp, 0)} tipo="entrada" /></td>
                     </tr>
                     <tr className="border-b border-zinc-800/50 text-[10px] uppercase tracking-widest text-red-600 font-bold"><td className="px-3 pt-2 pb-1" colSpan={f.sems.length + 2}>Salidas</td></tr>
                     <tr className="border-b border-zinc-800/30">
-                      <td className="px-3 py-1.5 text-zinc-300">Facturas por pagar que vencen <span className="text-zinc-600">(Odoo)</span></td>
+                      <td className="px-3 py-1.5 text-zinc-300">
+                        <button onClick={() => toggleExpandido(`${emp}:cxp`)} className="inline-flex items-center gap-1 hover:text-white">
+                          {expandido.has(`${emp}:cxp`) ? <ChevronDown className="w-3 h-3 text-zinc-500" /> : <ChevronRight className="w-3 h-3 text-zinc-500" />}
+                          Facturas por pagar que vencen <span className="text-zinc-600">(Odoo)</span>
+                        </button>
+                      </td>
                       {f.sems.map(s => (
                         <td key={s.iniStr} className="px-3 py-1.5 text-right">
                           {s.cxpAuto > 0
@@ -371,6 +423,19 @@ export default function FlujoCaja({ empresa, setEmpresa }) {
                       ))}
                       <td className="px-3 py-1.5 text-right"><Monto v={f.sems.reduce((t, s) => t + s.cxpAuto, 0)} tipo="salida" /></td>
                     </tr>
+                    {expandido.has(`${emp}:cxp`) && f.sems.flatMap(s => s.cxpFacturas.map(fac => ({ fac, wi: s.i }))).map(({ fac, wi }) => (
+                      <tr key={`cxp-${fac.id}`} className="border-b border-zinc-800/20 bg-zinc-950/40">
+                        <td className="pl-8 pr-3 py-1 text-[11px] text-zinc-500 max-w-[220px] truncate" title={fac.tercero}>
+                          {fac.tercero || fac.documento} <span className="text-[9px] text-zinc-600">· vence {fac.vence}</span>
+                        </td>
+                        {f.sems.map(s => (
+                          <td key={s.iniStr} className="px-3 py-1 text-right text-[11px]">
+                            {s.i === wi && <><Monto v={fac.pendiente} tipo="salida" />{fac.moneda === 'USD' && <span className="block text-[9px] text-yellow-600">{fmtUS(fac.pendienteOriginal)}</span>}</>}
+                          </td>
+                        ))}
+                        <td />
+                      </tr>
+                    ))}
                     <tr className="border-b border-zinc-800/30">
                       <td className="px-3 py-1.5 text-zinc-300">
                         Compromisos fijos <button onClick={() => setVerCompromisos(v => !v)} className="text-zinc-500 hover:text-white underline decoration-dotted underline-offset-2">(administrar)</button>
@@ -517,6 +582,22 @@ export default function FlujoCaja({ empresa, setEmpresa }) {
         />
       )}
 
+      {/* Modal: entradas esperadas de una semana (avances, cubicaciones…) */}
+      {modalEntradas && (
+        <ModalEntradas
+          empresa={modalEntradas.empresa}
+          semana={modalEntradas.semana}
+          items={entradas.filter(e => e.empresa === modalEntradas.empresa && e.fechaEsperada &&
+            (modalEntradas.semana.i === 0 ? e.fechaEsperada <= modalEntradas.semana.finStr
+              : (e.fechaEsperada >= modalEntradas.semana.iniStr && e.fechaEsperada <= modalEntradas.semana.finStr)))}
+          tasa={tasa}
+          hoyStr={hoyStr}
+          onGuardar={guardarEntrada}
+          onBorrar={borrarEntrada}
+          onCerrar={() => setModalEntradas(null)}
+        />
+      )}
+
       {/* Modal: detalle de facturas / compromisos de una semana */}
       {detalle && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => setDetalle(null)}>
@@ -586,6 +667,121 @@ export default function FlujoCaja({ empresa, setEmpresa }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Modal: entradas esperadas de una semana (avances, cubicaciones no facturadas…) ──
+const CATEGORIAS_ENTRADA = {
+  avance: { label: 'Avance de contrato', color: 'bg-green-900/40 text-green-300 border-green-800' },
+  cubicacion: { label: 'Cubicación por facturar', color: 'bg-blue-900/40 text-blue-300 border-blue-800' },
+  cobro: { label: 'Cobro comprometido', color: 'bg-yellow-900/40 text-yellow-300 border-yellow-800' },
+  otro: { label: 'Otro', color: 'bg-zinc-800 text-zinc-300 border-zinc-700' },
+};
+
+function ModalEntradas({ empresa, semana, items, tasa, hoyStr, onGuardar, onBorrar, onCerrar }) {
+  const info = EMPRESAS_RECEPTORAS[empresa];
+  const [form, setForm] = useState(null); // null = solo lista; {} = creando/editando
+  const [guardando, setGuardando] = useState(false);
+  const nuevo = () => setForm({
+    empresa, concepto: '', categoria: 'avance', monto: '', moneda: 'DOP',
+    fechaEsperada: semana.iniStr > hoyStr ? semana.iniStr : hoyStr, notas: '',
+  });
+
+  const guardar = async () => {
+    setGuardando(true);
+    try { await onGuardar(form); setForm(null); }
+    catch (e) { toast('No se pudo guardar: ' + (e?.message || e), 'error'); }
+    setGuardando(false);
+  };
+  const marcarCobrado = async (it) => {
+    try { await onGuardar({ ...it, cobrado: !it.cobrado }); }
+    catch (e) { toast('No se pudo actualizar: ' + (e?.message || e), 'error'); }
+  };
+  const borrar = async (id) => {
+    try { await onBorrar(id); }
+    catch (e) { toast('No se pudo eliminar: ' + (e?.message || e), 'error'); }
+  };
+
+  const totalRD = items.filter(i => !i.cobrado).reduce((t, i) => t + (i.moneda === 'USD' ? i.monto * tasa : i.monto), 0);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={onCerrar}>
+      <div className="bg-zinc-900 border border-zinc-700 rounded-card w-full max-w-lg max-h-[85vh] overflow-y-auto p-4 space-y-3" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-black text-white pr-4">Entradas esperadas — {semana.label} — {info?.label}</div>
+          <button onClick={onCerrar} className="text-zinc-500 hover:text-white"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="text-[10px] text-zinc-500">Dinero que piensas que va a entrar pero aún no es factura en Odoo: avances de contrato, cubicaciones por facturar, cobros comprometidos. Al recibirlo márcalo cobrado (sale de la proyección — ya vive en tu saldo bancario).</div>
+
+        {items.length > 0 && (
+          <table className="w-full text-xs">
+            <tbody>
+              {items.map(it => {
+                const cat = CATEGORIAS_ENTRADA[it.categoria] || CATEGORIAS_ENTRADA.otro;
+                return (
+                  <tr key={it.id} className={`border-b border-zinc-800/40 ${it.cobrado ? 'opacity-40' : ''}`}>
+                    <td className="px-2 py-1.5">
+                      <div className={`text-zinc-200 ${it.cobrado ? 'line-through' : ''}`}>{it.concepto}</div>
+                      <span className={`inline-block mt-0.5 px-1.5 py-0.5 rounded border text-[9px] font-bold ${cat.color}`}>{cat.label}</span>
+                      <span className="text-[9px] text-zinc-600 ml-1.5">esperado {it.fechaEsperada}{it.fechaEsperada < hoyStr && !it.cobrado ? ' · atrasado' : ''}</span>
+                      {it.notas && <div className="text-[9px] text-zinc-600">{it.notas}</div>}
+                    </td>
+                    <td className="px-2 py-1.5 text-right font-bold tabular-nums text-green-400 whitespace-nowrap">
+                      {it.moneda === 'USD' ? <>{formatRD(it.monto * tasa)}<span className="block text-[9px] text-yellow-500 font-normal">{fmtUS(it.monto)}</span></> : formatRD(it.monto)}
+                    </td>
+                    <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                      <label className="inline-flex items-center gap-1 text-[9px] text-zinc-500 mr-2 cursor-pointer" title="Marcar como cobrado">
+                        <input type="checkbox" checked={it.cobrado} onChange={() => marcarCobrado(it)} className="accent-green-600" /> cobrado
+                      </label>
+                      <button onClick={() => setForm({ ...it })} className="text-zinc-500 hover:text-white mr-1.5"><Pencil className="w-3.5 h-3.5" /></button>
+                      <button onClick={() => borrar(it.id)} className="text-zinc-600 hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>
+                    </td>
+                  </tr>
+                );
+              })}
+              <tr>
+                <td className="px-2 py-1.5 text-[10px] font-bold uppercase tracking-widest text-zinc-500">Total por entrar</td>
+                <td className="px-2 py-1.5 text-right font-black tabular-nums text-green-400">{formatRD(totalRD)}</td>
+                <td />
+              </tr>
+            </tbody>
+          </table>
+        )}
+        {items.length === 0 && !form && <div className="text-center text-zinc-600 text-xs py-3">Sin entradas esperadas esta semana</div>}
+
+        {form ? (
+          <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3 space-y-3">
+            <Campo label="Concepto"><Input value={form.concepto} onChange={v => setForm({ ...form, concepto: v })} placeholder="Ej. Avance 50% C5810 Banreservas" /></Campo>
+            <div className="grid grid-cols-2 gap-3">
+              <Campo label="Tipo">
+                <select value={form.categoria} onChange={e => setForm({ ...form, categoria: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-2 py-2 text-xs text-white">
+                  {Object.entries(CATEGORIAS_ENTRADA).map(([k, c]) => <option key={k} value={k}>{c.label}</option>)}
+                </select>
+              </Campo>
+              <Campo label="Fecha esperada"><Input type="date" value={form.fechaEsperada} onChange={v => setForm({ ...form, fechaEsperada: v })} /></Campo>
+              <Campo label="Monto"><Input type="number" value={form.monto} onChange={v => setForm({ ...form, monto: v })} placeholder="0.00" /></Campo>
+              <Campo label="Moneda">
+                <select value={form.moneda} onChange={e => setForm({ ...form, moneda: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-2 py-2 text-xs text-white">
+                  <option value="DOP">RD$</option><option value="USD">US$</option>
+                </select>
+              </Campo>
+            </div>
+            <Campo label="Notas (opcional)"><Input value={form.notas || ''} onChange={v => setForm({ ...form, notas: v })} placeholder="Ej. depende de aprobación del banco" /></Campo>
+            <div className="flex gap-2">
+              <button onClick={guardar} disabled={guardando || !form.concepto || !form.monto || !form.fechaEsperada}
+                className="flex-1 bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white rounded-card px-4 py-2 text-xs font-bold flex items-center justify-center gap-2">
+                {guardando && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Guardar
+              </button>
+              <button onClick={() => setForm(null)} className="px-4 py-2 text-xs text-zinc-400 hover:text-white">Cancelar</button>
+            </div>
+          </div>
+        ) : (
+          <button onClick={nuevo} className="bg-red-600 hover:bg-red-500 text-white rounded-card px-3 py-1.5 text-xs font-bold flex items-center gap-1.5">
+            <Plus className="w-3.5 h-3.5" /> Agregar entrada esperada
+          </button>
+        )}
+      </div>
     </div>
   );
 }

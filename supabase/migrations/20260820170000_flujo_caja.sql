@@ -35,6 +35,23 @@ create table if not exists cont_flujo_manual (
 create unique index if not exists cont_flujo_manual_unico
   on cont_flujo_manual (empresa, tipo, coalesce(semana, date '1900-01-01'));
 
+-- cont_flujo_entradas: dinero que "pensamos va a entrar" pero aún no es factura
+-- en Odoo — avances de contrato, cubicaciones por facturar, cobros comprometidos.
+-- Itemizado con fecha esperada; al cobrarse se marca y sale de la proyección
+-- (ya vive en el saldo bancario).
+create table if not exists cont_flujo_entradas (
+  id uuid primary key default gen_random_uuid(),
+  empresa text not null check (empresa in ('super_techos', 'prouco')),
+  concepto text not null,
+  categoria text not null default 'otro' check (categoria in ('avance', 'cubicacion', 'cobro', 'otro')),
+  monto numeric not null default 0,
+  moneda text not null default 'DOP' check (moneda in ('DOP', 'USD')),
+  fecha_esperada date not null,
+  cobrado boolean not null default false,
+  notas text,
+  creado_en timestamptz not null default now()
+);
+
 -- ── Seed: compromisos fijos (promedio mar–ago 2026, del Excel "Flujo_de_caja para pagos" del 20/8/2026) ──
 insert into cont_compromisos_fijos (empresa, concepto, monto, moneda, frecuencia, dia_mes, notas) values
   ('super_techos', 'Claro - telefonía e internet',        47716.27, 'DOP', 'mensual', 28, 'Promedio mar–ago 2026'),
@@ -62,5 +79,6 @@ insert into cont_flujo_manual (empresa, tipo, semana, monto, monto_usd, nota) va
 -- Sin Supabase Auth: RLS deshabilitada como en el resto del schema.
 alter table cont_compromisos_fijos disable row level security;
 alter table cont_flujo_manual disable row level security;
+alter table cont_flujo_entradas disable row level security;
 
 notify pgrst, 'reload schema';

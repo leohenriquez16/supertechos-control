@@ -12,8 +12,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   ArrowLeft, FileText, Download, AlertTriangle, Loader2, Plus, Trash2,
   Calculator, ChevronLeft, ChevronRight, Ban, ListOrdered, X,
-  Filter, ChevronDown, Layers,
+  Filter, ChevronDown, Layers, Wallet,
 } from 'lucide-react';
+import FlujoCaja from './FlujoCaja';
 import * as db from '../../lib/db';
 import { toast } from '../../lib/toast';
 import { formatRD } from '../../lib/helpers/formato';
@@ -107,6 +108,7 @@ export default function VistaContabilidad({ usuario, onVolver }) {
 
       <div className="flex border-b border-zinc-800 px-2 mt-2 overflow-x-auto">
         <TabBtn activo={tab === 'reportes'} onClick={() => setTab('reportes')}><FileText className="w-3 h-3 inline mr-1" /> Reportes DGII</TabBtn>
+        <TabBtn activo={tab === 'flujo'} onClick={() => setTab('flujo')}><Wallet className="w-3 h-3 inline mr-1" /> Flujo</TabBtn>
         <TabBtn activo={tab === 'cxc'} onClick={() => setTab('cxc')}>CxC</TabBtn>
         <TabBtn activo={tab === 'cxp'} onClick={() => setTab('cxp')}>CxP</TabBtn>
         <TabBtn activo={tab === 'catalogo'} onClick={() => setTab('catalogo')}>Catálogo</TabBtn>
@@ -126,6 +128,7 @@ export default function VistaContabilidad({ usuario, onVolver }) {
             loading={loading} generar={generar} rep={rep}
           />
         )}
+        {tab === 'flujo' && <FlujoCaja empresa={empresa} setEmpresa={setEmpresa} />}
         {tab === 'cxc' && <CuentasPendientes tipo="cxc" empresa={empresa} setEmpresa={setEmpresa} />}
         {tab === 'cxp' && <CuentasPendientes tipo="cxp" empresa={empresa} setEmpresa={setEmpresa} />}
         {tab === 'catalogo' && <CatalogoCuentas empresa={empresa} setEmpresa={setEmpresa} />}

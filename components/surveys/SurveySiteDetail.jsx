@@ -146,13 +146,40 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
   const [etapaProy, setEtapaProy] = useState(proyecto?.odoo_stage || MAP_ETAPA[proyecto?.status] || 'New');
   const [cambiandoEtapa, setCambiandoEtapa] = useState(false);
   const etapasDisponibles = (esAdmin || esOwner) ? ETAPAS_LEVANTAMIENTO : ETAPAS_LEVANTAMIENTO.slice(0, 5); // supervisor: hasta "Realizado"
-  const cambiarEtapaProy = async (etapa) => {
-    if (!etapa || etapa === etapaProy) return;
+
+  // v8.27.84: al marcar "Cotización Realizada" se OBLIGA a registrar el # de cotización.
+  const ETAPA_COTIZADA = 'Cotizacion Realizada';
+  const tieneCotiz = () => { const s = (site?.referencia_odoo || '').trim(); return !!s && s.toLowerCase() !== 'no'; };
+  const [modalCotiz, setModalCotiz] = useState(null); // { etapa } pendiente de número
+  const [cotizInput, setCotizInput] = useState('');
+
+  const aplicarEtapa = async (etapa) => {
     const prev = etapaProy;
     setEtapaProy(etapa); setCambiandoEtapa(true);
     try { await setEtapaSurvey(proyecto.id, etapa); try { await chatterEventoSurvey('levantamiento', proyecto.id, `Etapa → ${etapa}`, usuario); } catch {} }
     catch (e) { alert('No se pudo cambiar la etapa: ' + (e?.message || e)); setEtapaProy(prev); }
     setCambiandoEtapa(false);
+  };
+  const cambiarEtapaProy = async (etapa) => {
+    if (!etapa || etapa === etapaProy) return;
+    if (etapa === ETAPA_COTIZADA && !tieneCotiz()) { setCotizInput(''); setModalCotiz({ etapa }); return; }
+    await aplicarEtapa(etapa);
+  };
+  const guardarCotizYAvanzar = async () => {
+    const val = cotizInput.trim();
+    if (!val || !site?.id) return;
+    setCambiandoEtapa(true);
+    try {
+      const actualizado = await actualizarSiteSurvey(site.id, { referenciaOdoo: val });
+      setSite(s => ({ ...s, referencia_odoo: actualizado?.referencia_odoo ?? val }));
+      try { await chatterEventoSurvey('levantamiento', proyecto.id, `Cotización registrada: ${val}`, usuario); } catch {}
+      const etapa = modalCotiz.etapa;
+      setModalCotiz(null);
+      await aplicarEtapa(etapa);
+    } catch (e) {
+      alert('No se pudo guardar el número de cotización: ' + (e?.message || e));
+      setCambiandoEtapa(false);
+    }
   };
 
   // v8.25.34: ¿ya realizado? + fecha de realización (para mostrar quién/cuándo en vez de la cita).
@@ -566,6 +593,28 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
       <FotosDelLevantamiento site={site} proyecto={proyecto} usuario={usuario} />
 
       {/* Chatter tipo Odoo: quién creó, cambios de estado y notas */}
+      {/* v8.27.84: obliga a registrar el # de cotización al marcar "Cotización Realizada" */}
+      {modalCotiz && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={() => !cambiandoEtapa && setModalCotiz(null)}>
+          <div className="bg-zinc-900 border border-zinc-700 rounded-card p-4 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+            <div className="text-[10px] uppercase tracking-widest text-red-500 font-bold mb-1">Cotización realizada</div>
+            <div className="text-sm text-white font-bold mb-2">Número de cotización</div>
+            <div className="text-xs text-zinc-400 mb-3">Para marcar este levantamiento como <b>Cotización Realizada</b> escribe el número de la cotización (ej. <span className="font-mono">ST5774</span> o <span className="font-mono">PG1303</span>).</div>
+            <input autoFocus value={cotizInput} onChange={e => setCotizInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') guardarCotizYAvanzar(); }}
+              placeholder="ST5774"
+              className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none rounded-card px-3 py-2 text-white text-sm mb-3" />
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setModalCotiz(null)} disabled={cambiandoEtapa} className="px-3 py-1.5 rounded-card text-xs font-bold text-zinc-400 hover:text-white disabled:opacity-50">Cancelar</button>
+              <button onClick={guardarCotizYAvanzar} disabled={!cotizInput.trim() || cambiandoEtapa}
+                className="px-3 py-1.5 rounded-card text-xs font-bold bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-white flex items-center gap-1">
+                {cambiandoEtapa && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Guardar y marcar cotizada
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <ChatterPanel entityType="levantamiento" entityId={proyecto?.id} usuario={usuario} anclaFecha={proyecto?.created_at} anclaTitulo="Solicitud recibida" />
 
       {/* v8.22.6: eliminación con autorización del owner — al final, debajo del chatter */}

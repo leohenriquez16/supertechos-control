@@ -11,7 +11,7 @@ import { ArrowLeft, Award, Loader2, Plus, Save } from 'lucide-react';
 import * as db from '../../lib/db';
 import { listarProyectosSurveys } from '../../lib/surveys';
 import { formatRD } from '../../lib/helpers/formato';
-import { trimestreActual, calcularBonoSupervisor, calcularBonoGerente, bonoEstimado, BONO_GATE, BONO_TOPE, KPIS_SUPERVISOR, KPIS_GERENTE } from '../../lib/helpers/bonos';
+import { trimestreActual, calcularBonoSupervisor, calcularBonoGerente, calcularBonoComercial, bonoEstimado, BONO_GATE, BONO_TOPE, KPIS_SUPERVISOR, KPIS_GERENTE, KPIS_COMERCIAL } from '../../lib/helpers/bonos';
 import { BarraKpi } from './MiBono';
 
 const tieneRol = (p, r) => p?.roles?.includes(r);
@@ -30,12 +30,14 @@ export default function VistaBonos({ usuario, data, onVolver }) {
   const cargar = async () => {
     setLoading(true); setError('');
     try {
-      const [cfgs, jornadas, reclamaciones, surveys, cubicaciones] = await Promise.all([
+      const [cfgs, jornadas, reclamaciones, surveys, cubicaciones, solicitudes, tareasConf] = await Promise.all([
         db.listarBonosConfig().catch(e => { setError('Falta aplicar la migración 104 (bonos_config): ' + (e?.message || '')); return []; }),
         db.listarJornadasEnRango(trimestre.inicio, trimestre.fin).catch(() => []),
         db.listarReclamaciones().catch(() => []),
         listarProyectosSurveys().catch(() => []),
         db.listarCubicaciones().catch(() => []),
+        db.listarSolicitudesLevantamiento({ desde: trimestre.inicio }).catch(() => []),
+        db.listarTareasPorTipo('confirmar_recepcion_cotizacion', { desde: trimestre.inicio }).catch(() => []),
       ]);
       // v8.29.2: fechas del último cambio de estado de terminadas (KPI facturación del gerente)
       let historialEstados = {};
@@ -43,7 +45,7 @@ export default function VistaBonos({ usuario, data, onVolver }) {
         (p.estado === 'finalizado_no_entregado' || p.estado === 'finalizado_recibido_conforme')).map(p => p.id);
       if (idsTerm.length) historialEstados = await db.listarHistorialEstadosBatch(idsTerm).catch(() => ({}));
       setConfigs(cfgs);
-      setCtxBase({ jornadas, reclamaciones, surveys, cubicaciones, historialEstados, trimestre });
+      setCtxBase({ jornadas, reclamaciones, surveys, cubicaciones, solicitudes, tareas: tareasConf, historialEstados, trimestre });
     } catch (e) { setError(e?.message || 'Error cargando'); }
     setLoading(false);
   };
@@ -60,7 +62,7 @@ export default function VistaBonos({ usuario, data, onVolver }) {
       const persona = (data.personal || []).find(p => p.id === config.personaId);
       if (!persona) return null;
       const ctx = { data, ...ctxBase, config };
-      const calc = config.rolBono === 'gerente' ? calcularBonoGerente(persona, ctx) : calcularBonoSupervisor(persona, ctx);
+      const calc = config.rolBono === 'gerente' ? calcularBonoGerente(persona, ctx) : config.rolBono === 'comercial' ? calcularBonoComercial(persona, ctx) : calcularBonoSupervisor(persona, ctx);
       return { config, persona, calc, bono: bonoEstimado(calc.puntaje, config.montoObjetivoRd) };
     }).filter(Boolean).sort((a, b) => (b.calc.puntaje || 0) - (a.calc.puntaje || 0));
   }, [configs, ctxBase, data]);
@@ -105,7 +107,7 @@ export default function VistaBonos({ usuario, data, onVolver }) {
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="min-w-0">
                     <div className="font-bold truncate">{persona.nombre}</div>
-                    <div className="text-[10px] text-zinc-500 uppercase tracking-wide">{config.rolBono === 'gerente' ? 'Gerente de operaciones' : 'Supervisor'} · objetivo {formatRD(config.montoObjetivoRd)}</div>
+                    <div className="text-[10px] text-zinc-500 uppercase tracking-wide">{config.rolBono === 'gerente' ? 'Gerente de operaciones' : config.rolBono === 'comercial' ? 'Comercial (levantamientos)' : 'Supervisor'} · objetivo {formatRD(config.montoObjetivoRd)}</div>
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
                     <div className="text-right">
@@ -144,6 +146,7 @@ export default function VistaBonos({ usuario, data, onVolver }) {
                       <select value={editando.rolBono} onChange={e => setEditando({ ...editando, rolBono: e.target.value })} className="w-full bg-zinc-950 border border-zinc-700 text-sm rounded-card px-2 py-2 mt-1">
                         <option value="supervisor">Supervisor</option>
                         <option value="gerente">Gerente de operaciones</option>
+                        <option value="comercial">Comercial (levantamientos)</option>
                       </select>
                     </label>
                     <label className="text-[11px] text-zinc-400">Bono trimestral al 100% (RD$)
@@ -161,7 +164,7 @@ export default function VistaBonos({ usuario, data, onVolver }) {
                   <div className="border-t border-zinc-800 pt-2">
                     <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold mb-1">Ajuste manual por KPI <span className="normal-case font-normal">(puntaje vacío = cálculo automático)</span></div>
                     <div className="space-y-1.5">
-                      {(editando.rolBono === 'gerente' ? KPIS_GERENTE : KPIS_SUPERVISOR).map(def => {
+                      {(editando.rolBono === 'gerente' ? KPIS_GERENTE : editando.rolBono === 'comercial' ? KPIS_COMERCIAL : KPIS_SUPERVISOR).map(def => {
                         const o = (editando.kpiOverrides || {})[def.key] || {};
                         const setO = (campo, valor) => {
                           const next = { ...(editando.kpiOverrides || {}) };

@@ -10,7 +10,7 @@ import React, { useEffect, useState } from 'react';
 import { Loader2, Award, ChevronDown, ChevronUp } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatRD } from '../../lib/helpers/formato';
-import { trimestreActual, calcularBonoSupervisor, calcularBonoGerente, bonoEstimado, BONO_GATE, BONO_TOPE } from '../../lib/helpers/bonos';
+import { trimestreActual, calcularBonoSupervisor, calcularBonoGerente, calcularBonoComercial, bonoEstimado, BONO_GATE, BONO_TOPE } from '../../lib/helpers/bonos';
 
 export function BarraKpi({ k }) {
   const score = k.score == null ? null : Math.max(0, Math.min(BONO_TOPE, k.score));
@@ -46,11 +46,14 @@ export default function MiBono({ usuario, data }) {
         if (!config) { if (!cancel) { setResultado(null); setLoading(false); } return; }
         const trimestre = trimestreActual();
         const esGerente = config.rolBono === 'gerente';
-        const [jornadas, reclamaciones, surveys, cubicaciones] = await Promise.all([
+        const esComercial = config.rolBono === 'comercial';
+        const [jornadas, reclamaciones, surveys, cubicaciones, solicitudes, tareasConf] = await Promise.all([
           db.listarJornadasEnRango(trimestre.inicio, trimestre.fin).catch(() => []),
           db.listarReclamaciones().catch(() => []),
-          esGerente ? import('../../lib/surveys').then(m => m.listarProyectosSurveys()).catch(() => []) : Promise.resolve([]),
+          import('../../lib/surveys').then(m => m.listarProyectosSurveys()).catch(() => []), // v8.31: todos los roles usan el KPI compartido de 48h
           esGerente ? db.listarCubicaciones().catch(() => []) : Promise.resolve([]),
+          esComercial ? db.listarSolicitudesLevantamiento({ desde: trimestre.inicio }).catch(() => []) : Promise.resolve([]),
+          esComercial ? db.listarTareasPorTipo('confirmar_recepcion_cotizacion', { desde: trimestre.inicio }).catch(() => []) : Promise.resolve([]),
         ]);
         // v8.29.2: fechas del último cambio de estado de las obras terminadas (KPI facturación)
         let historialEstados = {};
@@ -59,9 +62,9 @@ export default function MiBono({ usuario, data }) {
             (p.estado === 'finalizado_no_entregado' || p.estado === 'finalizado_recibido_conforme')).map(p => p.id);
           if (idsTerm.length) historialEstados = await db.listarHistorialEstadosBatch(idsTerm).catch(() => ({}));
         }
-        const ctx = { data, jornadas, reclamaciones, surveys, cubicaciones, historialEstados, trimestre, config };
-        const calc = config.rolBono === 'gerente'
-          ? calcularBonoGerente(usuario, ctx)
+        const ctx = { data, jornadas, reclamaciones, surveys, cubicaciones, solicitudes, tareas: tareasConf, historialEstados, trimestre, config };
+        const calc = esGerente ? calcularBonoGerente(usuario, ctx)
+          : esComercial ? calcularBonoComercial(usuario, ctx)
           : calcularBonoSupervisor(usuario, ctx);
         if (!cancel) { setResultado({ config, calc, trimestre }); setLoading(false); }
       } catch (e) { console.warn('MiBono:', e?.message); if (!cancel) setLoading(false); }

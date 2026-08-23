@@ -16,8 +16,9 @@ import SurveySiteDetail from '../surveys/SurveySiteDetail';
 import CitaRuta from '../surveys/CitaRuta';
 import ClimaWidget from './ClimaWidget';
 import MiBono from '../bonos/MiBono'; // v8.28.2
+import MisPendientes from '../pendientes/MisPendientes'; // v8.28.3
 
-export default function InicioSupervisor({ usuario, data, onIrAReportar, onVerProyecto, onIrAAsignaciones, onIrAProyectos, onRecargar }) {
+export default function InicioSupervisor({ usuario, data, onIrAReportar, onVerProyecto, onIrAAsignaciones, onIrAProyectos, onIrAVista, onRecargar }) {
   const [levs, setLevs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refrescando, setRefrescando] = useState(false);
@@ -181,6 +182,12 @@ export default function InicioSupervisor({ usuario, data, onIrAReportar, onVerPr
 
       {/* Clima (cerrable; reaparece al día siguiente desde las 7am) */}
       {climaVisible && <ClimaWidget cerrable onClose={cerrarClima} />}
+
+      {/* v8.28.3: Mis pendientes de hoy — tareas diarias generadas solas por responsable */}
+      <MisPendientes usuario={usuario} data={data} compact
+        onIrAProyecto={(p, tab) => onVerProyecto?.(p, tab)}
+        onIrAReportar={(p) => onIrAReportar?.(p)}
+        onIrAVista={(v) => onIrAVista?.(v)} />
 
       {/* v8.28.2: Mi bono trimestral por KPIs — solo aparece si está configurado */}
       <MiBono usuario={usuario} data={data} />

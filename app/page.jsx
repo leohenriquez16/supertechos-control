@@ -84,6 +84,7 @@ import VistaContabilidad from '../components/contabilidad/VistaContabilidad';
 import VistaNomina from '../components/nomina/VistaNomina';
 import VistaProduccion from '../components/dashboard/VistaProduccion'; // v8.27.73
 import VistaBonos from '../components/bonos/VistaBonos'; // v8.28.2
+import MisPendientes from '../components/pendientes/MisPendientes'; // v8.28.3
 // v8.19.1: Módulo Levantamientos (surveys)
 import ModuloSurveys from '../components/surveys/ModuloSurveys';
 import ModuloSolicitudes from '../components/solicitudes/ModuloSolicitudes';
@@ -609,6 +610,8 @@ export default function App() {
   ] : esAdmin ? [
     { seccion: 'OPERACIÓN', items: [
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, vista: 'dashboard' },
+      // v8.28.3: task manager — tareas diarias generadas solas por responsable
+      { id: 'pendientes', label: 'Mis Pendientes', icon: CircleCheck, vista: 'pendientes' },
       { id: 'proyectos', label: 'Proyectos', icon: Briefcase, vista: 'proyectos', esProyectos: true },
       { id: 'surveys', label: 'Levantamientos', icon: MapPin, vista: 'surveys' },
       { id: 'solicitudes', label: 'Solicitudes', icon: FileText, vista: 'solicitudes', badge: solicitudesNuevas },
@@ -778,6 +781,14 @@ export default function App() {
         {vista === 'tareas' && <VistaTareas usuario={usuario} data={data} onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }} onCompletarTarea={async (id) => withSync(async () => { await db.completarTarea(id, usuario.id); })} onCrearTarea={async (t) => withSync(async () => { await db.crearTarea(t); })} onEliminarTarea={async (id) => withSync(async () => { await db.eliminarTarea(id); })} />}
         {tieneRol(usuario, 'owner') && vista === 'produccion' && <VistaProduccion usuario={usuario} data={data} onVolver={volverAtras} />}
         {esAdmin && vista === 'bonos' && <VistaBonos usuario={usuario} data={data} onVolver={volverAtras} />}
+        {vista === 'pendientes' && (
+          <div className="p-4 md:p-6 max-w-3xl mx-auto">
+            <MisPendientes usuario={usuario} data={data} esAdmin={esAdmin}
+              onIrAProyecto={(p, tab) => { setProyectoActivo(p); setVista('proyecto'); setTab(tab || 'avance'); }}
+              onIrAReportar={(p) => { setProyectoActivo(p); setVista('reportar'); }}
+              onIrAVista={(v) => setVista(v)} />
+          </div>
+        )}
         {esAdmin && vista === 'nomina' && <VistaNomina usuario={usuario} data={data} onVolver={volverAtras} onRecargarGlobal={recargar} onVerProyecto={(p, tabDestino) => navegarA('proyecto', { proyectoActivo: p, tab: tabDestino || 'avance' })} />}
         {esAdmin && vista === 'galeria' && <GaleriaGlobal usuario={usuario} data={data} onVolver={() => setVista('dashboard')} />}
         {esAdmin && vista === 'equipoGlobal' && <VistaEquipoGlobal data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
@@ -1073,7 +1084,7 @@ export default function App() {
           />
         )}
         {!esAdmin && vista === 'misProyectos' && <MisProyectos usuario={usuario} data={data} onIrAReportar={(p) => { setProyectoActivo(p); setVista('reportar'); }} onVerDetalle={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
-        {!esAdmin && vista === 'inicio' && <InicioSupervisor usuario={usuario} data={data} onRecargar={recargar} onVerProyecto={(p, tabDestino) => { setProyectoActivo(p); setVista('proyecto'); setTab(tabDestino || 'avance'); }} onIrAReportar={(p) => { setProyectoActivo(p); setVista('reportar'); }} onIrAAsignaciones={() => setVista('misAsignaciones')} onIrAProyectos={() => setVista('misProyectos')} />}
+        {!esAdmin && vista === 'inicio' && <InicioSupervisor usuario={usuario} data={data} onRecargar={recargar} onVerProyecto={(p, tabDestino) => { setProyectoActivo(p); setVista('proyecto'); setTab(tabDestino || 'avance'); }} onIrAReportar={(p) => { setProyectoActivo(p); setVista('reportar'); }} onIrAAsignaciones={() => setVista('misAsignaciones')} onIrAProyectos={() => setVista('misProyectos')} onIrAVista={(v) => setVista(v)} />}
         {!esAdmin && vista === 'clima' && <div className="max-w-md mx-auto space-y-4"><button onClick={() => setVista(tieneRol(usuario, 'supervisor') ? 'inicio' : 'misProyectos')} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button><h1 className="text-2xl font-black tracking-tight">Clima</h1><ClimaWidget /></div>}
         {vista === 'citas' && <VistaCitas usuario={usuario} onVolver={() => setVista(esAdmin ? 'dashboard' : tieneRol(usuario, 'supervisor') ? 'inicio' : 'misProyectos')} onRecargar={recargar} />}
         {!esAdmin && vista === 'misAsignaciones' && <VistaMisAsignaciones usuario={usuario} data={data} onRecargar={recargar} onVolver={() => setVista('inicio')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}

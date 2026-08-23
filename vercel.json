@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/sync-facturas-odoo",
       "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/reporte-diario-obras",
+      "schedule": "30 14 * * 1-6"
     }
   ]
 }

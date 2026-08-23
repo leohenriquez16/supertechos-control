@@ -583,7 +583,10 @@ export default function App() {
       // v8.27.36: usuario dedicado a Facturas (Lily) aterriza en su módulo.
       const soloFacturas = !tieneRol(u, 'admin') && (tieneRol(u, 'facturas') || u.facturasHabilitada)
         && !tieneRol(u, 'supervisor') && !tieneRol(u, 'maestro') && !tieneRol(u, 'ayudante');
-      setVista(soloFacturas ? 'facturasOdoo' : tieneRol(u, 'admin') ? 'dashboard' : tieneRol(u, 'supervisor') ? 'inicio' : 'misProyectos');
+      // v8.29.1: chofer y almacén (sin roles de obra) aterrizan en su Inicio (ruta / cola)
+      const esLogistica = !tieneRol(u, 'admin') && (tieneRol(u, 'chofer') || tieneRol(u, 'almacen'))
+        && !tieneRol(u, 'supervisor') && !tieneRol(u, 'maestro');
+      setVista(soloFacturas ? 'facturasOdoo' : tieneRol(u, 'admin') ? 'dashboard' : (tieneRol(u, 'supervisor') || esLogistica) ? 'inicio' : 'misProyectos');
     }
     try { localStorage.setItem('supertechos_usuario_id', u.id); } catch {}
   }} />;
@@ -664,7 +667,8 @@ export default function App() {
   ] : [
     { seccion: 'MIS PROYECTOS', items: [
       // v8.25.23: el supervisor inicia en el Home (resumen del día); los demás en Proyectos.
-      ...(tieneRol(usuario, 'supervisor') ? [{ id: 'inicio', label: 'Inicio', icon: LayoutDashboard, vista: 'inicio' }] : []),
+      // v8.29.1: chofer y almacén también tienen Inicio (su ruta / su cola).
+      ...((tieneRol(usuario, 'supervisor') || tieneRol(usuario, 'chofer') || tieneRol(usuario, 'almacen')) ? [{ id: 'inicio', label: 'Inicio', icon: LayoutDashboard, vista: 'inicio' }] : []),
       { id: 'misProyectos', label: 'Proyectos', icon: Briefcase, vista: 'misProyectos' },
       { id: 'clima', label: 'Clima', icon: CloudRain, vista: 'clima' },
       // v8.19.72: vista unificada del maestro (proyectos + levantamientos + reclamaciones + mapa)

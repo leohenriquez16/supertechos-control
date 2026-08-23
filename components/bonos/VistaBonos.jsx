@@ -30,14 +30,20 @@ export default function VistaBonos({ usuario, data, onVolver }) {
   const cargar = async () => {
     setLoading(true); setError('');
     try {
-      const [cfgs, jornadas, reclamaciones, surveys] = await Promise.all([
+      const [cfgs, jornadas, reclamaciones, surveys, cubicaciones] = await Promise.all([
         db.listarBonosConfig().catch(e => { setError('Falta aplicar la migración 104 (bonos_config): ' + (e?.message || '')); return []; }),
         db.listarJornadasEnRango(trimestre.inicio, trimestre.fin).catch(() => []),
         db.listarReclamaciones().catch(() => []),
         listarProyectosSurveys().catch(() => []),
+        db.listarCubicaciones().catch(() => []),
       ]);
+      // v8.29.2: fechas del último cambio de estado de terminadas (KPI facturación del gerente)
+      let historialEstados = {};
+      const idsTerm = (data.proyectos || []).filter(p => !p.archivado &&
+        (p.estado === 'finalizado_no_entregado' || p.estado === 'finalizado_recibido_conforme')).map(p => p.id);
+      if (idsTerm.length) historialEstados = await db.listarHistorialEstadosBatch(idsTerm).catch(() => ({}));
       setConfigs(cfgs);
-      setCtxBase({ jornadas, reclamaciones, surveys, trimestre });
+      setCtxBase({ jornadas, reclamaciones, surveys, cubicaciones, historialEstados, trimestre });
     } catch (e) { setError(e?.message || 'Error cargando'); }
     setLoading(false);
   };

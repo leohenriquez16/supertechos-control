@@ -90,6 +90,7 @@ import VistaAlmacen from '../components/logistica/VistaAlmacen'; // v8.29.0
 import VistaRutas from '../components/logistica/VistaRutas'; // v8.29.0
 import InicioChofer from '../components/logistica/InicioChofer'; // v8.29.0
 import TabCambios from '../components/cambios/TabCambios'; // v8.30.0
+import PlanObras from '../components/planificacion/PlanObras'; // v8.30.1
 // v8.19.1: Módulo Levantamientos (surveys)
 import ModuloSurveys from '../components/surveys/ModuloSurveys';
 import ModuloSolicitudes from '../components/solicitudes/ModuloSolicitudes';
@@ -626,6 +627,8 @@ export default function App() {
       { id: 'citas', label: 'Citas', icon: Calendar, vista: 'citas' },
       { id: 'reclamaciones', label: 'Reclamaciones', icon: AlertTriangle, vista: 'reclamaciones' },
       { id: 'planificacion', label: 'Planificación', icon: Calendar, vista: 'planificacion' },
+      // v8.30.1: planificación de OBRAS en el tiempo (la de arriba es de personas por día)
+      { id: 'planObras', label: 'Plan de Obras', icon: Calendar, vista: 'planObras' },
       { id: 'tareas', label: 'Tareas', icon: ClipboardList, vista: 'tareas', badge: tareas.length },
       { id: 'galeria', label: 'Galería', icon: ImageIcon, vista: 'galeria' },
       { id: 'equipoGlobal', label: 'Equipo en obra', icon: Users, vista: 'equipoGlobal' },
@@ -795,6 +798,7 @@ export default function App() {
         {esAdmin && vista === 'bonos' && <VistaBonos usuario={usuario} data={data} onVolver={volverAtras} />}
         {(esAdmin || tieneRol(usuario, 'almacen')) && vista === 'almacen' && <VistaAlmacen usuario={usuario} data={data} onVolver={esAdmin ? volverAtras : undefined} />}
         {esAdmin && vista === 'rutas' && <VistaRutas usuario={usuario} data={data} onVolver={volverAtras} />}
+        {esAdmin && vista === 'planObras' && <PlanObras usuario={usuario} data={data} onVolver={volverAtras} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('cronograma'); }} onRecargar={recargar} />}
         {vista === 'pendientes' && (
           <div className="p-4 md:p-6 max-w-3xl mx-auto">
             <MisPendientes usuario={usuario} data={data} esAdmin={esAdmin}

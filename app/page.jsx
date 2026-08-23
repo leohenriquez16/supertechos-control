@@ -91,6 +91,7 @@ import VistaRutas from '../components/logistica/VistaRutas'; // v8.29.0
 import InicioChofer from '../components/logistica/InicioChofer'; // v8.29.0
 import TabCambios from '../components/cambios/TabCambios'; // v8.30.0
 import PlanObras from '../components/planificacion/PlanObras'; // v8.30.1
+import VistaCarga from '../components/carga/VistaCarga'; // v8.30.2
 // v8.19.1: Módulo Levantamientos (surveys)
 import ModuloSurveys from '../components/surveys/ModuloSurveys';
 import ModuloSolicitudes from '../components/solicitudes/ModuloSolicitudes';
@@ -643,6 +644,8 @@ export default function App() {
       ...(tieneRol(usuario, 'owner') ? [{ id: 'produccion', label: 'Producción', icon: TrendingUp, vista: 'produccion' }] : []),
       // v8.28.2: Bonos por KPIs — la gerencia (admin) ve los puntajes; el owner configura montos/metas.
       { id: 'bonos', label: 'Bonos', icon: Award, vista: 'bonos' },
+      // v8.30.2: tablero de carga por persona (ERP+Odoo) — SOLO owner (Leonardo)
+      ...(tieneRol(usuario, 'owner') ? [{ id: 'carga', label: 'Carga y Actividad', icon: Zap, vista: 'carga' }] : []),
       { id: 'nomina', label: 'Nómina', icon: Wallet, vista: 'nomina' },
       { id: 'cajaChica', label: 'Caja Chica', icon: CreditCard, vista: 'cajaChica' },
       // v8.27.36: Facturas — captura de facturas de gasto para exportar a Odoo.
@@ -799,6 +802,7 @@ export default function App() {
         {(esAdmin || tieneRol(usuario, 'almacen')) && vista === 'almacen' && <VistaAlmacen usuario={usuario} data={data} onVolver={esAdmin ? volverAtras : undefined} />}
         {esAdmin && vista === 'rutas' && <VistaRutas usuario={usuario} data={data} onVolver={volverAtras} />}
         {esAdmin && vista === 'planObras' && <PlanObras usuario={usuario} data={data} onVolver={volverAtras} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('cronograma'); }} onRecargar={recargar} />}
+        {tieneRol(usuario, 'owner') && vista === 'carga' && <VistaCarga usuario={usuario} data={data} onVolver={volverAtras} />}
         {vista === 'pendientes' && (
           <div className="p-4 md:p-6 max-w-3xl mx-auto">
             <MisPendientes usuario={usuario} data={data} esAdmin={esAdmin}

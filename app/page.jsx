@@ -1069,7 +1069,7 @@ export default function App() {
           />
         )}
         {!esAdmin && vista === 'misProyectos' && <MisProyectos usuario={usuario} data={data} onIrAReportar={(p) => { setProyectoActivo(p); setVista('reportar'); }} onVerDetalle={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
-        {!esAdmin && vista === 'inicio' && <InicioSupervisor usuario={usuario} data={data} onRecargar={recargar} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} onIrAReportar={(p) => { setProyectoActivo(p); setVista('reportar'); }} onIrAAsignaciones={() => setVista('misAsignaciones')} onIrAProyectos={() => setVista('misProyectos')} />}
+        {!esAdmin && vista === 'inicio' && <InicioSupervisor usuario={usuario} data={data} onRecargar={recargar} onVerProyecto={(p, tabDestino) => { setProyectoActivo(p); setVista('proyecto'); setTab(tabDestino || 'avance'); }} onIrAReportar={(p) => { setProyectoActivo(p); setVista('reportar'); }} onIrAAsignaciones={() => setVista('misAsignaciones')} onIrAProyectos={() => setVista('misProyectos')} />}
         {!esAdmin && vista === 'clima' && <div className="max-w-md mx-auto space-y-4"><button onClick={() => setVista(tieneRol(usuario, 'supervisor') ? 'inicio' : 'misProyectos')} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button><h1 className="text-2xl font-black tracking-tight">Clima</h1><ClimaWidget /></div>}
         {vista === 'citas' && <VistaCitas usuario={usuario} onVolver={() => setVista(esAdmin ? 'dashboard' : tieneRol(usuario, 'supervisor') ? 'inicio' : 'misProyectos')} onRecargar={recargar} />}
         {!esAdmin && vista === 'misAsignaciones' && <VistaMisAsignaciones usuario={usuario} data={data} onRecargar={recargar} onVolver={() => setVista('inicio')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
@@ -11059,7 +11059,7 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
             )}
           </>
         )}
-        {tieneRol(usuario, 'admin') && (
+        {(tieneRol(usuario, 'admin') || proyecto.supervisorId === usuario.id) && (
           <button
             onClick={() => setProgramarModal(true)}
             className="w-full mt-2 bg-zinc-900 border border-zinc-700 hover:border-red-500 text-zinc-300 font-bold uppercase py-2.5 text-xs flex items-center justify-center gap-2"

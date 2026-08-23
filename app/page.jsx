@@ -92,6 +92,8 @@ import InicioChofer from '../components/logistica/InicioChofer'; // v8.29.0
 import TabCambios from '../components/cambios/TabCambios'; // v8.30.0
 import PlanObras from '../components/planificacion/PlanObras'; // v8.30.1
 import VistaCarga from '../components/carga/VistaCarga'; // v8.30.2
+import CelebracionReporte from '../components/reportes/CelebracionReporte'; // v8.30.4
+import RachaCard from '../components/reportes/RachaCard'; // v8.30.4
 // v8.19.1: Módulo Levantamientos (surveys)
 import ModuloSurveys from '../components/surveys/ModuloSurveys';
 import ModuloSolicitudes from '../components/solicitudes/ModuloSolicitudes';
@@ -400,6 +402,8 @@ export default function App() {
   const [error, setError] = useState(null);
   const [usuario, setUsuario] = useState(null);
   const [vista, setVista] = useState('dashboard');
+  // v8.30.4: celebración al guardar reporte — recompensa inmediata (m², racha, brigada de la semana)
+  const [celebracion, setCelebracion] = useState(null);
   const [proyectoActivo, setProyectoActivo] = useState(null);
   const [tab, setTab] = useState('avance');
   // v8.19.29: pila de navegación para que "Volver" regrese a la pantalla anterior
@@ -1176,7 +1180,7 @@ export default function App() {
                     await db.cambiarEstadoProyecto(proyectoActivo.id, 'en_ejecucion', usuario, 'Auto: primer reporte de avance (audio IA)');
                   } catch (e) { console.warn('No se pudo auto-cambiar estado:', e); }
                 }
-              }).then(() => { setModoReporte(null); salir(); })}
+              }).then(() => { setModoReporte(null); salir(); setCelebracion({ m2: Number(r.m2) || 0 }); })}
             />;
           }
 
@@ -1251,6 +1255,7 @@ export default function App() {
                 db.enviarCorreoReporte(dedup, `[${proy.referenciaOdoo || proy.cliente}] ${lineas.length} avances de ${usuario.nombre.split(' ')[0]}`, html);
               }
             } catch (err) { console.warn('Email lote fallo:', err); }
+            setCelebracion({ m2: lineas.reduce((s, l) => s + (Number(l.m2) || 0), 0) }); // v8.30.4
             return true;
           });
 
@@ -1262,6 +1267,7 @@ export default function App() {
           return <div className="space-y-3">{toggleManual}<FormReporte usuario={usuario} proyecto={proyectoActivo} reportes={data.reportes} sistema={data.sistemas[proyectoActivo.sistema]} sistemas={data.sistemas} estadosArea={data.estadosArea} onCancelar={salir} onTerminar={salir} onGuardar={async (r, fotos) => withSync(async () => {
           const reporteId = 'r_' + Date.now() + Math.random();
           await db.crearReporte({ ...r, id: reporteId });
+          setCelebracion({ m2: Number(r.m2) || 0 }); // v8.30.4: recompensa inmediata
           // v8.9.14: auto-mover a 'en_ejecucion' si está en 'aprobado'
           if (proyectoActivo.estado === 'aprobado') {
             try {
@@ -1317,6 +1323,7 @@ export default function App() {
             v8.27.70: abierto a TODOS como asistente de ayuda del ERP — los no-admin
             reciben SOLO el manual de uso (sin datos del negocio). */}
         <AsistenteIA usuario={usuario} data={data} esAdmin={esAdmin} />
+        {celebracion && <CelebracionReporte usuario={usuario} data={data} m2={celebracion.m2} onCerrar={() => setCelebracion(null)} />}
       </div></main>
     </div>
   );
@@ -9487,6 +9494,9 @@ function VistaMiProduccion({ usuario, data, onVolver, onVerProyecto }) {
 
       {/* v8.19.19: card de "Mi producción" basada en el corte de nómina (sábado-sábado).
           Complementa la vista quincenal de abajo. Gated por el toggle global. */}
+      {/* v8.30.4: racha 🔥 + Brigada de la Semana — reportar premia */}
+      <RachaCard usuario={usuario} data={data} />
+
       {data.config?.mostrarMiProduccionNomina && (
         <MiProduccionCard usuario={usuario} data={data} />
       )}

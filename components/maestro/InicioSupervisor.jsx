@@ -321,7 +321,20 @@ export default function InicioSupervisor({ usuario, data, onIrAReportar, onVerPr
                   <div className="text-sm font-bold truncate">{p.cliente || p.nombre} <span className="text-[10px] text-zinc-500">· {rs.length} reporte{rs.length !== 1 ? 's' : ''}</span></div>
                   <div className="mt-1 space-y-0.5">
                     {rs.map((r, i) => (
-                      <div key={i} className="text-[11px] text-zinc-400">📍 {nombreArea(p, r.areaId)} · {nombreTarea(p, r.areaId, r.tareaId)} · <span className="text-white">{cantTxt(r)}</span>{r.supervisor && <span className="text-zinc-600"> — {r.supervisor}</span>}</div>
+                      <div key={i} className="text-[11px] text-zinc-400 flex items-center gap-1.5 flex-wrap">
+                        <span>📍 {nombreArea(p, r.areaId)} · {nombreTarea(p, r.areaId, r.tareaId)} · <span className="text-white">{cantTxt(r)}</span>{r.supervisor && <span className="text-zinc-600"> — {r.supervisor}</span>}</span>
+                        {/* v8.30.4: el supervisor REVISA el reporte del maestro — visto bueno u observación */}
+                        {r.revisadoPorId ? (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-card bg-green-600/20 text-green-400" title={r.observacionSupervisor ? `Obs: ${r.observacionSupervisor}` : ''}>✓ {(r.revisadoPorNombre || '').split(' ')[0]}{r.observacionSupervisor ? ' ⚠' : ''}</span>
+                        ) : r.supervisorId !== usuario.id ? (
+                          <span className="inline-flex gap-1">
+                            <button onClick={async () => { try { await db.revisarReporte(r.id, { revisadoPorId: usuario.id, revisadoPorNombre: usuario.nombre }); await onRecargar?.(); } catch (e) { alert('Error: ' + (e?.message || e)); } }}
+                              className="text-[10px] font-black uppercase px-1.5 py-0.5 rounded-card bg-green-700 hover:bg-green-600 text-white">✓ OK</button>
+                            <button onClick={async () => { const obs = prompt('Observación para este reporte:'); if (!obs) return; try { await db.revisarReporte(r.id, { revisadoPorId: usuario.id, revisadoPorNombre: usuario.nombre, observacion: obs }); await onRecargar?.(); } catch (e) { alert('Error: ' + (e?.message || e)); } }}
+                              className="text-[10px] font-black uppercase px-1.5 py-0.5 rounded-card bg-zinc-800 border border-amber-700 text-amber-400 hover:bg-amber-900/30">⚠ Obs</button>
+                          </span>
+                        ) : null}
+                      </div>
                     ))}
                   </div>
                 </div>

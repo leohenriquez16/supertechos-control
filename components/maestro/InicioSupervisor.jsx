@@ -15,6 +15,7 @@ import { listarProyectosSurveys, listarTodosLosSitesSurvey, listarSitesProyectoS
 import SurveySiteDetail from '../surveys/SurveySiteDetail';
 import CitaRuta from '../surveys/CitaRuta';
 import ClimaWidget from './ClimaWidget';
+import MiBono from '../bonos/MiBono'; // v8.28.2
 
 export default function InicioSupervisor({ usuario, data, onIrAReportar, onVerProyecto, onIrAAsignaciones, onIrAProyectos, onRecargar }) {
   const [levs, setLevs] = useState([]);
@@ -180,6 +181,9 @@ export default function InicioSupervisor({ usuario, data, onIrAReportar, onVerPr
 
       {/* Clima (cerrable; reaparece al día siguiente desde las 7am) */}
       {climaVisible && <ClimaWidget cerrable onClose={cerrarClima} />}
+
+      {/* v8.28.2: Mi bono trimestral por KPIs — solo aparece si está configurado */}
+      <MiBono usuario={usuario} data={data} />
 
       {/* v8.28.1: Jornadas de hoy — abrir/cerrar sin navegar a cada obra */}
       {proyOperables.length > 0 && (

@@ -25,14 +25,16 @@ export default function MisPendientes({ usuario, data, esAdmin = false, compact 
     try {
       const hoy = hoyRD();
       const hace7 = (() => { const d = new Date(hoy + 'T12:00:00'); d.setDate(d.getDate() - 7); return d.toISOString().slice(0, 10); })();
-      const [jornadas7d, surveys, reclamaciones, tareas, cortes] = await Promise.all([
+      const esAlmacen = (usuario.roles || []).includes('almacen');
+      const [jornadas7d, surveys, reclamaciones, tareas, cortes, requisiciones] = await Promise.all([
         db.listarJornadasEnRango(hace7, hoy).catch(() => []),
         listarProyectosSurveys().catch(() => []),
         db.listarReclamaciones().catch(() => []),
         db.listarTareas({ completadas: false }).catch(() => []),
         esAdmin ? db.listarCortes().catch(() => []) : Promise.resolve([]),
+        (esAdmin || esAlmacen) ? db.listarRequisiciones({ estados: ['pendiente', 'preparando', 'lista'] }).catch(() => []) : Promise.resolve([]),
       ]);
-      setExtras({ jornadas7d, surveys, reclamaciones, tareas, cortes });
+      setExtras({ jornadas7d, surveys, reclamaciones, tareas, cortes, requisiciones, esAlmacen });
     } catch (e) { console.warn('MisPendientes:', e?.message); }
     setLoading(false); setRefrescando(false);
   };

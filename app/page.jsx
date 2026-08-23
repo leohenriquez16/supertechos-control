@@ -85,6 +85,10 @@ import VistaNomina from '../components/nomina/VistaNomina';
 import VistaProduccion from '../components/dashboard/VistaProduccion'; // v8.27.73
 import VistaBonos from '../components/bonos/VistaBonos'; // v8.28.2
 import MisPendientes from '../components/pendientes/MisPendientes'; // v8.28.3
+import RequisicionesProyecto from '../components/logistica/RequisicionesProyecto'; // v8.29.0
+import VistaAlmacen from '../components/logistica/VistaAlmacen'; // v8.29.0
+import VistaRutas from '../components/logistica/VistaRutas'; // v8.29.0
+import InicioChofer from '../components/logistica/InicioChofer'; // v8.29.0
 // v8.19.1: Módulo Levantamientos (surveys)
 import ModuloSurveys from '../components/surveys/ModuloSurveys';
 import ModuloSolicitudes from '../components/solicitudes/ModuloSolicitudes';
@@ -621,6 +625,9 @@ export default function App() {
       { id: 'tareas', label: 'Tareas', icon: ClipboardList, vista: 'tareas', badge: tareas.length },
       { id: 'galeria', label: 'Galería', icon: ImageIcon, vista: 'galeria' },
       { id: 'equipoGlobal', label: 'Equipo en obra', icon: Users, vista: 'equipoGlobal' },
+      // v8.29.0: Logística — cola de almacén y rutas de camiones
+      { id: 'almacen', label: 'Almacén', icon: Package, vista: 'almacen' },
+      { id: 'rutas', label: 'Rutas', icon: Truck, vista: 'rutas' },
       // v8.27.0: Gotera — feedback / reporte de errores del ERP en modo ticket.
       { id: 'gotera', label: 'Gotera', icon: CloudRain, vista: 'gotera' },
     ]},
@@ -781,6 +788,8 @@ export default function App() {
         {vista === 'tareas' && <VistaTareas usuario={usuario} data={data} onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }} onCompletarTarea={async (id) => withSync(async () => { await db.completarTarea(id, usuario.id); })} onCrearTarea={async (t) => withSync(async () => { await db.crearTarea(t); })} onEliminarTarea={async (id) => withSync(async () => { await db.eliminarTarea(id); })} />}
         {tieneRol(usuario, 'owner') && vista === 'produccion' && <VistaProduccion usuario={usuario} data={data} onVolver={volverAtras} />}
         {esAdmin && vista === 'bonos' && <VistaBonos usuario={usuario} data={data} onVolver={volverAtras} />}
+        {(esAdmin || tieneRol(usuario, 'almacen')) && vista === 'almacen' && <VistaAlmacen usuario={usuario} data={data} onVolver={esAdmin ? volverAtras : undefined} />}
+        {esAdmin && vista === 'rutas' && <VistaRutas usuario={usuario} data={data} onVolver={volverAtras} />}
         {vista === 'pendientes' && (
           <div className="p-4 md:p-6 max-w-3xl mx-auto">
             <MisPendientes usuario={usuario} data={data} esAdmin={esAdmin}
@@ -1084,7 +1093,10 @@ export default function App() {
           />
         )}
         {!esAdmin && vista === 'misProyectos' && <MisProyectos usuario={usuario} data={data} onIrAReportar={(p) => { setProyectoActivo(p); setVista('reportar'); }} onVerDetalle={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
-        {!esAdmin && vista === 'inicio' && <InicioSupervisor usuario={usuario} data={data} onRecargar={recargar} onVerProyecto={(p, tabDestino) => { setProyectoActivo(p); setVista('proyecto'); setTab(tabDestino || 'avance'); }} onIrAReportar={(p) => { setProyectoActivo(p); setVista('reportar'); }} onIrAAsignaciones={() => setVista('misAsignaciones')} onIrAProyectos={() => setVista('misProyectos')} onIrAVista={(v) => setVista(v)} />}
+        {/* v8.29.0: el CHOFER (sin otros roles operativos) ve su ruta del día; el de ALMACÉN ve su cola */}
+        {!esAdmin && vista === 'inicio' && tieneRol(usuario, 'chofer') && !tieneRol(usuario, 'supervisor') && !tieneRol(usuario, 'maestro') && <div className="p-4 md:p-6 max-w-2xl mx-auto"><InicioChofer usuario={usuario} data={data} /></div>}
+        {!esAdmin && vista === 'inicio' && tieneRol(usuario, 'almacen') && !tieneRol(usuario, 'chofer') && !tieneRol(usuario, 'supervisor') && !tieneRol(usuario, 'maestro') && <VistaAlmacen usuario={usuario} data={data} />}
+        {!esAdmin && vista === 'inicio' && !((tieneRol(usuario, 'chofer') || tieneRol(usuario, 'almacen')) && !tieneRol(usuario, 'supervisor') && !tieneRol(usuario, 'maestro')) && <InicioSupervisor usuario={usuario} data={data} onRecargar={recargar} onVerProyecto={(p, tabDestino) => { setProyectoActivo(p); setVista('proyecto'); setTab(tabDestino || 'avance'); }} onIrAReportar={(p) => { setProyectoActivo(p); setVista('reportar'); }} onIrAAsignaciones={() => setVista('misAsignaciones')} onIrAProyectos={() => setVista('misProyectos')} onIrAVista={(v) => setVista(v)} />}
         {!esAdmin && vista === 'clima' && <div className="max-w-md mx-auto space-y-4"><button onClick={() => setVista(tieneRol(usuario, 'supervisor') ? 'inicio' : 'misProyectos')} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button><h1 className="text-2xl font-black tracking-tight">Clima</h1><ClimaWidget /></div>}
         {vista === 'citas' && <VistaCitas usuario={usuario} onVolver={() => setVista(esAdmin ? 'dashboard' : tieneRol(usuario, 'supervisor') ? 'inicio' : 'misProyectos')} onRecargar={recargar} />}
         {!esAdmin && vista === 'misAsignaciones' && <VistaMisAsignaciones usuario={usuario} data={data} onRecargar={recargar} onVolver={() => setVista('inicio')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
@@ -3262,6 +3274,9 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
               <RolToggle active={form.roles.includes('ayudante')} onClick={() => toggleRol('ayudante')}>Ayudante</RolToggle>
               {/* v8.27.37: rol dedicado a captura de facturas (Lily) — entra directo y ve SOLO Facturas */}
               <RolToggle active={form.roles.includes('facturas')} onClick={() => toggleRol('facturas')}>Facturas</RolToggle>
+              {/* v8.29.0: logística — el chofer ve su ruta del día; almacén ve su cola de requisiciones */}
+              <RolToggle active={form.roles.includes('chofer')} onClick={() => toggleRol('chofer')}>Chofer</RolToggle>
+              <RolToggle active={form.roles.includes('almacen')} onClick={() => toggleRol('almacen')}>Almacén</RolToggle>
             </div>
           </Campo>
           {/* v8.17.89: el PIN guardado es hash bcrypt server-side y nunca se
@@ -5013,6 +5028,8 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
         {(esAdmin || proyecto.cronogramaVisibleMaestro !== false) && <TabBtn active={tab === 'cronograma'} onClick={() => setTab('cronograma')}><Calendar className="w-3 h-3 inline mr-1" />Cronograma</TabBtn>}
         {proyecto.tipoAvance === 'unidades' && <TabBtn active={tab === 'unidades'} onClick={() => setTab('unidades')}><Briefcase className="w-3 h-3 inline mr-1" />Unidades</TabBtn>}
         {!tieneRol(usuario, 'maestro') && <TabBtn active={tab === 'materiales'} onClick={() => setTab('materiales')}><Package className="w-3 h-3 inline mr-1" />Materiales</TabBtn>}
+        {/* v8.29.0: requisiciones de materiales desde la obra (todos los roles — el maestro también pide) */}
+        <TabBtn active={tab === 'pedidos'} onClick={() => setTab('pedidos')}><Truck className="w-3 h-3 inline mr-1" />Pedidos</TabBtn>
         {esAdmin && <TabBtn active={tab === 'areas'} onClick={() => setTab('areas')}>🗺️ Áreas</TabBtn>}
         {!esSupervisor && <TabBtn active={tab === 'productos'} onClick={() => setTab('productos')}><Sparkles className="w-3 h-3 inline mr-1" />Productos</TabBtn>}
         {!esSupervisor && <TabBtn active={tab === 'costo'} onClick={() => setTab('costo')}><DollarSign className="w-3 h-3 inline mr-1" />Costo</TabBtn>}
@@ -5029,6 +5046,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
       {tab === 'cronograma' && (esAdmin || proyecto.cronogramaVisibleMaestro !== false) && <TabCronograma proyecto={proyecto} porcentajeActual={porcentaje} onActualizarProyecto={onActualizarProyecto} esSupervisor={esSupervisor} reportes={data.reportes} sistema={sistema} sistemas={data.sistemas} />}
       {tab === 'unidades' && proyecto.tipoAvance === 'unidades' && <TabUnidades proyecto={proyecto} usuario={usuario} onActualizarProyecto={onActualizarProyecto} esAdmin={esAdmin} esSupervisor={esSupervisor} onRecargar={onRecargar} />}
       {tab === 'materiales' && !tieneRol(usuario, 'maestro') && <TabMateriales proyecto={proyecto} sistema={sistema} materiales={materiales} envios={data.envios.filter(e => e.proyectoId === proyecto.id)} reportes={data.reportes} sistemas={data.sistemas} onRegistrarEnvio={onRegistrarEnvio} onRegistrarEnviosLote={onRegistrarEnviosLote} esSupervisor={esSupervisor} onEliminarEnvio={onEliminarEnvio} onIrASistemas={onIrASistemas} />}
+      {tab === 'pedidos' && <RequisicionesProyecto usuario={usuario} proyecto={proyecto} esAdmin={esAdmin} />}
       {tab === 'areas' && esAdmin && <TabAreas proyecto={proyecto} data={data} usuario={usuario} onRecargar={onRecargar} />}
       {tab === 'productos' && !esSupervisor && <TabProductosAdicionales proyecto={proyecto} onActualizarProyecto={onActualizarProyecto} esAdmin={esAdmin} />}
       {tab === 'costo' && !esSupervisor && <TabCosto proyecto={proyecto} sistema={sistema} sistemas={data.sistemas} reportes={data.reportes} envios={data.envios} config={data.config} />}

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed, Building2, Star, MessageCircle, Send, Search, Filter, CloudRain, Calculator, Receipt, Car } from 'lucide-react';
+import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed, Building2, Star, MessageCircle, Send, Search, Filter, CloudRain, Calculator, Receipt, Car, Award } from 'lucide-react';
 import * as db from '../lib/db';
 import { leerArchivo, parseMateriales, parseSistemas, descargarPlantilla, comprimirImagen } from '../lib/imports';
 import { obtenerUbicacion, distanciaMetros, formatDistancia, abrirEnMapa } from '../lib/geo';
@@ -83,6 +83,7 @@ import VistaContabilidad from '../components/contabilidad/VistaContabilidad';
 // v8.10.13: VistaNomina extraída
 import VistaNomina from '../components/nomina/VistaNomina';
 import VistaProduccion from '../components/dashboard/VistaProduccion'; // v8.27.73
+import VistaBonos from '../components/bonos/VistaBonos'; // v8.28.2
 // v8.19.1: Módulo Levantamientos (surveys)
 import ModuloSurveys from '../components/surveys/ModuloSurveys';
 import ModuloSolicitudes from '../components/solicitudes/ModuloSolicitudes';
@@ -623,6 +624,8 @@ export default function App() {
     { seccion: 'FINANZAS', items: [
       // v8.27.73: dashboard de producción RD$ — v8.27.74: SOLO owner (como Contabilidad)
       ...(tieneRol(usuario, 'owner') ? [{ id: 'produccion', label: 'Producción', icon: TrendingUp, vista: 'produccion' }] : []),
+      // v8.28.2: Bonos por KPIs — la gerencia (admin) ve los puntajes; el owner configura montos/metas.
+      { id: 'bonos', label: 'Bonos', icon: Award, vista: 'bonos' },
       { id: 'nomina', label: 'Nómina', icon: Wallet, vista: 'nomina' },
       { id: 'cajaChica', label: 'Caja Chica', icon: CreditCard, vista: 'cajaChica' },
       // v8.27.36: Facturas — captura de facturas de gasto para exportar a Odoo.
@@ -774,6 +777,7 @@ export default function App() {
         )}
         {vista === 'tareas' && <VistaTareas usuario={usuario} data={data} onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }} onCompletarTarea={async (id) => withSync(async () => { await db.completarTarea(id, usuario.id); })} onCrearTarea={async (t) => withSync(async () => { await db.crearTarea(t); })} onEliminarTarea={async (id) => withSync(async () => { await db.eliminarTarea(id); })} />}
         {tieneRol(usuario, 'owner') && vista === 'produccion' && <VistaProduccion usuario={usuario} data={data} onVolver={volverAtras} />}
+        {esAdmin && vista === 'bonos' && <VistaBonos usuario={usuario} data={data} onVolver={volverAtras} />}
         {esAdmin && vista === 'nomina' && <VistaNomina usuario={usuario} data={data} onVolver={volverAtras} onRecargarGlobal={recargar} onVerProyecto={(p, tabDestino) => navegarA('proyecto', { proyectoActivo: p, tab: tabDestino || 'avance' })} />}
         {esAdmin && vista === 'galeria' && <GaleriaGlobal usuario={usuario} data={data} onVolver={() => setVista('dashboard')} />}
         {esAdmin && vista === 'equipoGlobal' && <VistaEquipoGlobal data={data} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}

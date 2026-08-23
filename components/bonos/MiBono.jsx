@@ -45,14 +45,21 @@ export default function MiBono({ usuario, data }) {
         const config = configs.find(c => c.personaId === usuario.id && c.activo);
         if (!config) { if (!cancel) { setResultado(null); setLoading(false); } return; }
         const trimestre = trimestreActual();
-        const [jornadas, reclamaciones, surveys] = await Promise.all([
+        const esGerente = config.rolBono === 'gerente';
+        const [jornadas, reclamaciones, surveys, cubicaciones] = await Promise.all([
           db.listarJornadasEnRango(trimestre.inicio, trimestre.fin).catch(() => []),
           db.listarReclamaciones().catch(() => []),
-          config.rolBono === 'gerente'
-            ? import('../../lib/surveys').then(m => m.listarProyectosSurveys()).catch(() => [])
-            : Promise.resolve([]),
+          esGerente ? import('../../lib/surveys').then(m => m.listarProyectosSurveys()).catch(() => []) : Promise.resolve([]),
+          esGerente ? db.listarCubicaciones().catch(() => []) : Promise.resolve([]),
         ]);
-        const ctx = { data, jornadas, reclamaciones, surveys, trimestre, config };
+        // v8.29.2: fechas del último cambio de estado de las obras terminadas (KPI facturación)
+        let historialEstados = {};
+        if (esGerente) {
+          const idsTerm = (data.proyectos || []).filter(p => !p.archivado &&
+            (p.estado === 'finalizado_no_entregado' || p.estado === 'finalizado_recibido_conforme')).map(p => p.id);
+          if (idsTerm.length) historialEstados = await db.listarHistorialEstadosBatch(idsTerm).catch(() => ({}));
+        }
+        const ctx = { data, jornadas, reclamaciones, surveys, cubicaciones, historialEstados, trimestre, config };
         const calc = config.rolBono === 'gerente'
           ? calcularBonoGerente(usuario, ctx)
           : calcularBonoSupervisor(usuario, ctx);

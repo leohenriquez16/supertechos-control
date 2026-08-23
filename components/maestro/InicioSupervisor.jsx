@@ -8,7 +8,9 @@
 // Es distinta de "Mis Asignaciones" (mapa + listas completas), accesible desde el menú.
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { ArrowLeft, Loader2, Clock, Play, MapPin, Briefcase, ChevronRight, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Loader2, Clock, Play, MapPin, Briefcase, ChevronRight, RefreshCw, Sun, CheckCircle2 } from 'lucide-react';
+import * as db from '../../lib/db';
+import { obtenerUbicacion, distanciaMetros } from '../../lib/geo';
 import { listarProyectosSurveys, listarTodosLosSitesSurvey, listarSitesProyectoSurvey, TIPO_CITA, ESCALERA, citaTextoHora } from '../../lib/surveys';
 import SurveySiteDetail from '../surveys/SurveySiteDetail';
 import CitaRuta from '../surveys/CitaRuta';
@@ -48,7 +50,7 @@ export default function InicioSupervisor({ usuario, data, onIrAReportar, onVerPr
     setLoading(false); setRefrescando(false);
   };
   useEffect(() => { cargar(); /* eslint-disable-next-line */ }, [usuario.id]);
-  const refrescar = async () => { await Promise.all([cargar({ silent: true }), onRecargar?.()]); };
+  const refrescar = async () => { await Promise.all([cargar({ silent: true }), cargarJornadas(), onRecargar?.()]); };
 
   const hoyLocal = (() => { const d = new Date(); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; })();
   // "Cualquier día (hora laboral)" siempre disponible; el resto, si su fecha es hoy.
@@ -70,6 +72,55 @@ export default function InicioSupervisor({ usuario, data, onIrAReportar, onVerPr
     const ppal = cts.find(c => c.esPrincipal) || cts[0];
     return ppal?.nombre || '';
   };
+
+  // v8.28.1: Jornadas de hoy — obras en ejecución donde este usuario es supervisor o
+  // maestro titular (los que pueden operar la jornada). Arranque en un toque desde el
+  // home; el cierre navega a la obra (ahí vive el modal de dieta/estadía).
+  const hoyRD = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo' }).format(new Date());
+  const proyOperables = useMemo(() => (data.proyectos || []).filter(p => !p.archivado && (p.estado || 'en_ejecucion') === 'en_ejecucion' && (
+    p.supervisorId === usuario.id || p.maestroId === usuario.id
+  )), [data.proyectos, usuario.id]);
+  const [jornadas, setJornadas] = useState({});
+  const [jornadasLoading, setJornadasLoading] = useState(true);
+  const [iniciando, setIniciando] = useState(null);
+  const cargarJornadas = async () => {
+    setJornadasLoading(true);
+    try {
+      const pares = await Promise.all(proyOperables.map(async p => {
+        const [abierta, hoyJ] = await Promise.all([
+          db.obtenerJornadaAbiertaProyecto(p.id),
+          db.obtenerJornadaHoy(p.id, hoyRD),
+        ]);
+        return [p.id, (abierta && !abierta.horaFin) ? abierta : (hoyJ || null)];
+      }));
+      setJornadas(Object.fromEntries(pares));
+    } catch (e) { console.warn('Jornadas inicio:', e?.message); }
+    setJornadasLoading(false);
+  };
+  useEffect(() => { cargarJornadas(); /* eslint-disable-next-line */ }, [proyOperables.map(p => p.id).join(',')]);
+  const iniciarRapido = async (p) => {
+    setIniciando(p.id);
+    try {
+      const ubi = await obtenerUbicacion();
+      let distancia = null;
+      if (ubi && p.ubicacionLat != null && p.ubicacionLng != null) {
+        distancia = distanciaMetros(ubi.lat, ubi.lng, p.ubicacionLat, p.ubicacionLng);
+      }
+      await db.iniciarJornada({
+        id: 'j_' + Date.now() + Math.random(),
+        proyectoId: p.id, fecha: hoyRD,
+        horaInicio: new Date().toISOString(),
+        iniciadaPorId: usuario.id, iniciadaPorNombre: usuario.nombre,
+        inicioLat: ubi?.lat ?? null, inicioLng: ubi?.lng ?? null,
+        inicioPrecisionM: ubi?.precision ?? null,
+        inicioDistanciaObraM: distancia,
+        personasPresentesIds: [p.maestroId, ...(p.ayudantesIds || [])].filter(Boolean),
+      });
+      await cargarJornadas();
+    } catch (e) { alert('Error iniciando jornada: ' + (e?.message || e)); }
+    setIniciando(null);
+  };
+  const horaCorta = (iso) => iso ? new Date(iso).toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit', hour12: true }) : '';
 
   // Cierre del día: proyectos en ejecución asignados a este usuario.
   const esTarde = new Date().getHours() >= 17;
@@ -129,6 +180,56 @@ export default function InicioSupervisor({ usuario, data, onIrAReportar, onVerPr
 
       {/* Clima (cerrable; reaparece al día siguiente desde las 7am) */}
       {climaVisible && <ClimaWidget cerrable onClose={cerrarClima} />}
+
+      {/* v8.28.1: Jornadas de hoy — abrir/cerrar sin navegar a cada obra */}
+      {proyOperables.length > 0 && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <Sun className="w-4 h-4 text-amber-400" />
+            <span className="text-[11px] tracking-widest uppercase text-amber-400 font-bold">Jornadas de hoy</span>
+            <span className="text-[10px] text-zinc-500">({jornadasLoading ? '…' : proyOperables.length})</span>
+          </div>
+          {jornadasLoading ? (
+            <div className="text-xs text-zinc-500 flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Cargando…</div>
+          ) : (
+            <div className="space-y-2">
+              {proyOperables.map(p => {
+                const j = jornadas[p.id];
+                const enCurso = !!(j?.horaInicio && !j?.horaFin);
+                const cerrada = !!j?.horaFin;
+                return (
+                  <div key={p.id} className="bg-zinc-950 border border-zinc-800 rounded-card p-3 flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-bold text-sm truncate">{p.cliente || p.nombre}</div>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        {cerrada ? (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-card bg-green-600/20 text-green-400">✓ Cerrada {horaCorta(j.horaFin)}</span>
+                        ) : enCurso ? (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-card bg-red-600/20 text-red-400 animate-pulse">● En curso desde {horaCorta(j.horaInicio)}</span>
+                        ) : (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-card bg-zinc-700/40 text-zinc-400">Sin abrir</span>
+                        )}
+                      </div>
+                    </div>
+                    {cerrada ? (
+                      <CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" />
+                    ) : enCurso ? (
+                      <button onClick={() => onVerProyecto?.(p, 'asistencia')} className="flex-shrink-0 px-3 py-2.5 rounded-card bg-zinc-800 border border-zinc-700 hover:border-red-500 text-white text-xs font-black uppercase tracking-wide">
+                        Cerrar →
+                      </button>
+                    ) : (
+                      <button onClick={() => iniciarRapido(p)} disabled={iniciando === p.id} className="flex-shrink-0 px-3 py-2.5 rounded-card bg-green-600 hover:bg-green-500 disabled:opacity-60 text-white text-xs font-black uppercase tracking-wide flex items-center gap-1.5">
+                        {iniciando === p.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />} Iniciar
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+              <div className="text-[10px] text-zinc-600">Al iniciar se marca la brigada completa; ajusta los presentes desde la obra (Asistencia → Jornada).</div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Citas de hoy */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">

@@ -33,6 +33,7 @@ export default function VistaVehiculos({ usuario, data, onRecargar }) {
   const [vehiculos, setVehiculos] = useState(data?.vehiculos || []);
   const [cargando, setCargando] = useState(false);
   const [modal, setModal] = useState(null); // null | 'nuevo' | vehiculo
+  const [logDe, setLogDe] = useState(null); // vehículo cuyo log se está viendo (v8.33.0)
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -84,9 +85,16 @@ export default function VistaVehiculos({ usuario, data, onRecargar }) {
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <div className="text-lg font-black">{v.marca} {v.modelo} {v.anio ? <span className="text-zinc-500 font-normal">· {v.anio}</span> : ''}</div>
-                    <div className="text-[11px] text-zinc-500">{v.color || 'sin color'}{v.empresa ? ` · ${v.empresa === 'super_techos' ? 'Super Techos' : 'Prouco'}` : ''}</div>
+                    <div className="text-[11px] text-zinc-500">{v.color || 'sin color'}{v.empresa ? ` · ${v.empresa === 'super_techos' ? 'Super Techos' : 'Prouco'}` : ''}{v.tipo ? ` · ${v.tipo}` : ''}</div>
+                    <div className="text-[11px] mt-0.5">
+                      <span className="text-zinc-500">Responsable: </span>
+                      <b>{(data?.personal || []).find(p => p.id === v.responsableId)?.nombre || '— sin asignar —'}</b>
+                      {v.odometroKm ? <span className="text-zinc-500"> · {v.odometroKm.toLocaleString()} km</span> : null}
+                      {v.estadoOperativo && v.estadoOperativo !== 'activo' && <span className={`ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded-card ${v.estadoOperativo === 'en_taller' ? 'bg-amber-600/20 text-amber-400' : 'bg-red-600/20 text-red-400'}`}>{v.estadoOperativo === 'en_taller' ? '🔧 En taller' : '⛔ Fuera de servicio'}</span>}
+                    </div>
                   </div>
                   <div className="flex gap-1 shrink-0">
+                    <button onClick={() => setLogDe(v)} title="Historial / log" className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded text-[11px] font-bold">📋</button>
                     <button onClick={() => setModal(v)} title="Editar" className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded"><Edit2 className="w-3.5 h-3.5" /></button>
                     <button onClick={() => eliminar(v)} title="Eliminar" className="p-1.5 text-zinc-400 hover:text-red-400 hover:bg-zinc-800 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
                   </div>
@@ -109,6 +117,7 @@ export default function VistaVehiculos({ usuario, data, onRecargar }) {
 
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   {seguroBadge && <span className={`text-[10px] px-2 py-0.5 rounded-full border ${seguroBadge.c}`}>{seguroBadge.t}{v.seguroVence ? ` (${v.seguroVence})` : ''}</span>}
+                  {(() => { const d = diasParaVencer(v.matriculaVence); return d == null ? null : <span className={`text-[10px] px-2 py-0.5 rounded-full border ${d < 0 ? 'bg-red-900/50 text-red-300 border-red-700' : d <= 30 ? 'bg-amber-900/40 text-amber-300 border-amber-700' : 'bg-green-900/30 text-green-400 border-green-800'}`}>{d < 0 ? `Placa vencida ${-d}d` : `Placa ${d}d`}</span>; })()}
                   {v.matriculaPath
                     ? <button onClick={() => verDoc(v.matriculaPath)} className="text-[11px] flex items-center gap-1 text-blue-400 hover:underline"><FileText className="w-3 h-3" /> Matrícula</button>
                     : <span className="text-[11px] text-zinc-600">sin matrícula</span>}
@@ -122,9 +131,11 @@ export default function VistaVehiculos({ usuario, data, onRecargar }) {
         </div>
       )}
 
+      {logDe && <ModalLogVehiculo usuario={usuario} vehiculo={logDe} personal={data?.personal || []} onCerrar={() => setLogDe(null)} />}
       {modal && (
         <ModalVehiculo
           usuario={usuario}
+          personal={data?.personal || []}
           vehiculo={modal === 'nuevo' ? null : modal}
           onCerrar={() => setModal(null)}
           onGuardado={() => { setModal(null); cargar(); }}
@@ -134,7 +145,7 @@ export default function VistaVehiculos({ usuario, data, onRecargar }) {
   );
 }
 
-function ModalVehiculo({ usuario, vehiculo, onCerrar, onGuardado }) {
+function ModalVehiculo({ usuario, vehiculo, personal, onCerrar, onGuardado }) {
   const editando = !!vehiculo;
   const [guardando, setGuardando] = useState(false);
   const [subiendo, setSubiendo] = useState(null); // 'matricula' | 'seguro' | null
@@ -146,6 +157,12 @@ function ModalVehiculo({ usuario, vehiculo, onCerrar, onGuardado }) {
     seguroAseguradora: vehiculo?.seguroAseguradora || '', seguroVence: vehiculo?.seguroVence || '',
     notas: vehiculo?.notas || '',
     matriculaPath: vehiculo?.matriculaPath || null, seguroPath: vehiculo?.seguroPath || null,
+    // v8.33.0
+    responsableId: vehiculo?.responsableId || '', tipo: vehiculo?.tipo || '',
+    combustible: vehiculo?.combustible || '', capacidadCargaKg: vehiculo?.capacidadCargaKg || '',
+    odometroKm: vehiculo?.odometroKm || '', matriculaVence: vehiculo?.matriculaVence || '',
+    revisionVence: vehiculo?.revisionVence || '', tagPeaje: vehiculo?.tagPeaje || '',
+    estadoOperativo: vehiculo?.estadoOperativo || 'activo', proximoMantFecha: vehiculo?.proximoMantFecha || '',
   });
 
   // Sube el doc de una vez (necesitamos un id; si es nuevo, lo creamos al primer archivo).
@@ -228,6 +245,41 @@ function ModalVehiculo({ usuario, vehiculo, onCerrar, onGuardado }) {
         </Campo>
 
         <div className="grid grid-cols-2 gap-3">
+          <Campo label="Responsable del vehículo">
+            <select value={form.responsableId} onChange={(e) => setForm({ ...form, responsableId: e.target.value })} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm">
+              <option value="">— Sin asignar —</option>
+              {(personal || []).filter(p => p.tienePin || p.roles?.length).sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '')).map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+            </select>
+          </Campo>
+          <Campo label="Tipo">
+            <select value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value })} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm">
+              <option value="">—</option><option value="camion">Camión</option><option value="camioneta">Camioneta</option><option value="carro">Carro</option><option value="motor">Motor</option><option value="equipo">Equipo</option>
+            </select>
+          </Campo>
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          <Campo label="Combustible">
+            <select value={form.combustible} onChange={(e) => setForm({ ...form, combustible: e.target.value })} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm">
+              <option value="">—</option><option value="diesel">Diésel</option><option value="gasolina">Gasolina</option><option value="glp">GLP</option>
+            </select>
+          </Campo>
+          <Campo label="Capacidad (kg)"><Input type="number" value={form.capacidadCargaKg} onChange={(v) => setForm({ ...form, capacidadCargaKg: v })} placeholder="3500" /></Campo>
+          <Campo label="Odómetro (km)"><Input type="number" value={form.odometroKm} onChange={(v) => setForm({ ...form, odometroKm: v })} placeholder="85000" /></Campo>
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          <Campo label="Vence placa/marbete"><Input type="date" value={form.matriculaVence} onChange={(v) => setForm({ ...form, matriculaVence: v })} /></Campo>
+          <Campo label="Vence revisión"><Input type="date" value={form.revisionVence} onChange={(v) => setForm({ ...form, revisionVence: v })} /></Campo>
+          <Campo label="Tag peaje"><Input value={form.tagPeaje} onChange={(v) => setForm({ ...form, tagPeaje: v })} placeholder="Paso Rápido #" /></Campo>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Campo label="Estado operativo">
+            <select value={form.estadoOperativo} onChange={(e) => setForm({ ...form, estadoOperativo: e.target.value })} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm">
+              <option value="activo">Activo</option><option value="en_taller">En taller</option><option value="fuera_servicio">Fuera de servicio</option>
+            </select>
+          </Campo>
+          <Campo label="Próx. mantenimiento (fecha)"><Input type="date" value={form.proximoMantFecha} onChange={(v) => setForm({ ...form, proximoMantFecha: v })} /></Campo>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
           <Campo label="Aseguradora"><Input value={form.seguroAseguradora} onChange={(v) => setForm({ ...form, seguroAseguradora: v })} placeholder="Seguros…" /></Campo>
           <Campo label="Vence seguro"><Input type="date" value={form.seguroVence} onChange={(v) => setForm({ ...form, seguroVence: v })} /></Campo>
         </div>
@@ -245,6 +297,99 @@ function ModalVehiculo({ usuario, vehiculo, onCerrar, onGuardado }) {
             {guardando ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />} {editando ? 'Guardar cambios' : 'Guardar vehículo'}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// v8.33.0: Log del vehículo — historial de mantenimientos, fallas, choques y daños.
+// Jonathan (flota) registra con costo/taller y resuelve lo reportado por los responsables.
+function ModalLogVehiculo({ usuario, vehiculo, personal, onCerrar }) {
+  const [eventos, setEventos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [agregando, setAgregando] = useState(false);
+  const [form, setForm] = useState({ tipo: 'mantenimiento', descripcion: '', km: '', costoRd: '', taller: '', fecha: new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo' }).format(new Date()) });
+  const TIPOS = { mantenimiento: '🛢️ Mantenimiento', falla_mecanica: '🔧 Falla mecánica', choque: '💥 Choque', dano: '🔨 Daño', gomas: '🛞 Gomas', inspeccion: '🔎 Inspección', otro: '📝 Otro' };
+  const ESTADOS = { abierto: ['Abierto', 'bg-red-600/20 text-red-400'], en_taller: ['En taller', 'bg-amber-600/20 text-amber-400'], resuelto: ['Resuelto ✓', 'bg-green-600/20 text-green-400'] };
+
+  const cargar = async () => {
+    setLoading(true);
+    try { setEventos(await db.listarEventosVehiculo({ vehiculoId: vehiculo.id })); } catch (e) { /* */ }
+    setLoading(false);
+  };
+  useEffect(() => { cargar(); /* eslint-disable-next-line */ }, [vehiculo.id]);
+
+  const guardar = async () => {
+    if (!(form.descripcion || '').trim()) { toast.warning('Describe el evento.'); return; }
+    try {
+      await db.crearEventoVehiculo({ vehiculoId: vehiculo.id, ...form, descripcion: form.descripcion.trim(), reportadoPorId: usuario.id, reportadoPorNombre: usuario.nombre, estado: (form.tipo === 'mantenimiento' || form.tipo === 'inspeccion') ? 'resuelto' : 'abierto' });
+      setAgregando(false); setForm({ ...form, descripcion: '', km: '', costoRd: '', taller: '' });
+      toast.success('Evento registrado.');
+      await cargar();
+    } catch (e) { toast.error('Error: ' + (e?.message || e)); }
+  };
+  const setEstado = async (ev, estado) => {
+    const nota = estado === 'resuelto' ? (prompt('Nota de cierre (qué se hizo / costo):') || '') : null;
+    try { await db.actualizarEventoVehiculo(ev.id, { estado, resueltoNota: nota }); await cargar(); }
+    catch (e) { toast.error('Error: ' + (e?.message || e)); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
+      <div className="bg-zinc-900 border-2 border-zinc-700 rounded-card max-w-lg w-full p-5 space-y-3 my-8" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-start">
+          <div>
+            <div className="text-xs tracking-widest uppercase text-red-500 font-bold">📋 Historial del vehículo</div>
+            <div className="font-black">{vehiculo.marca} {vehiculo.modelo} · {vehiculo.placa || 'sin placa'}</div>
+          </div>
+          <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
+        </div>
+
+        {!agregando ? (
+          <button onClick={() => setAgregando(true)} className="w-full bg-zinc-800 border border-zinc-700 hover:border-red-500 text-white text-xs font-black uppercase py-2.5 rounded-card">+ Registrar evento</button>
+        ) : (
+          <div className="bg-zinc-950 border border-zinc-700 rounded-card p-2.5 space-y-1.5">
+            <select value={form.tipo} onChange={e => setForm({ ...form, tipo: e.target.value })} className="w-full bg-zinc-900 border border-zinc-700 rounded-card px-2 py-2 text-sm">
+              {Object.entries(TIPOS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+            <textarea value={form.descripcion} onChange={e => setForm({ ...form, descripcion: e.target.value })} rows={2} placeholder="Descripción…" className="w-full bg-zinc-900 border border-zinc-700 rounded-card px-2 py-2 text-sm" />
+            <div className="grid grid-cols-2 gap-1.5">
+              <input type="date" value={form.fecha} onChange={e => setForm({ ...form, fecha: e.target.value })} className="bg-zinc-900 border border-zinc-700 rounded-card px-2 py-2 text-xs" />
+              <input type="number" value={form.km} onChange={e => setForm({ ...form, km: e.target.value })} placeholder="Km" className="bg-zinc-900 border border-zinc-700 rounded-card px-2 py-2 text-xs" />
+              <input type="number" value={form.costoRd} onChange={e => setForm({ ...form, costoRd: e.target.value })} placeholder="Costo RD$" className="bg-zinc-900 border border-zinc-700 rounded-card px-2 py-2 text-xs" />
+              <input value={form.taller} onChange={e => setForm({ ...form, taller: e.target.value })} placeholder="Taller / proveedor" className="bg-zinc-900 border border-zinc-700 rounded-card px-2 py-2 text-xs" />
+            </div>
+            <div className="flex gap-2">
+              <button onClick={guardar} className="flex-1 bg-red-600 hover:bg-red-700 text-white text-[11px] font-black uppercase py-2 rounded-card">Guardar</button>
+              <button onClick={() => setAgregando(false)} className="text-[11px] text-zinc-400 uppercase font-bold px-2">Cancelar</button>
+            </div>
+          </div>
+        )}
+
+        {loading ? <div className="text-center py-4"><Loader2 className="w-5 h-5 text-red-500 animate-spin mx-auto" /></div> : (
+          <div className="space-y-1.5 max-h-[45vh] overflow-y-auto">
+            {eventos.length === 0 && <div className="text-xs text-zinc-600 italic text-center py-3">Sin eventos registrados.</div>}
+            {eventos.map(ev => {
+              const [lbl, cls] = ESTADOS[ev.estado] || ESTADOS.abierto;
+              return (
+                <div key={ev.id} className="bg-zinc-950 border border-zinc-800 rounded-card p-2.5">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="text-xs font-bold">{TIPOS[ev.tipo] || ev.tipo}</span>
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-card ${cls}`}>{lbl}</span>
+                  </div>
+                  <div className="text-[11px] text-zinc-400 mt-0.5">{ev.descripcion}</div>
+                  <div className="text-[10px] text-zinc-600 mt-0.5">{ev.fecha}{ev.km ? ` · ${ev.km.toLocaleString()} km` : ''}{ev.costoRd ? ` · RD$ ${ev.costoRd.toLocaleString()}` : ''}{ev.taller ? ` · ${ev.taller}` : ''} · por {ev.reportadoPorNombre || '—'}{ev.resueltoNota ? ` · cierre: ${ev.resueltoNota}` : ''}</div>
+                  {ev.estado !== 'resuelto' && (
+                    <div className="flex gap-1.5 mt-1.5">
+                      {ev.estado !== 'en_taller' && <button onClick={() => setEstado(ev, 'en_taller')} className="text-[10px] font-black uppercase px-2 py-1 rounded-card bg-amber-700/40 text-amber-300 hover:bg-amber-700/60">🔧 En taller</button>}
+                      <button onClick={() => setEstado(ev, 'resuelto')} className="text-[10px] font-black uppercase px-2 py-1 rounded-card bg-green-700/40 text-green-300 hover:bg-green-700/60">✓ Resolver</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

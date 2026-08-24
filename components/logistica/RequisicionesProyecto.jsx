@@ -19,6 +19,14 @@ export const ESTADOS_REQ = {
   cancelada:  { label: 'Cancelada', color: 'bg-zinc-700/40 text-zinc-500' },
 };
 
+// v8.39.0: flujo de COMPRAS por renglón — lo que no está en stock.
+export const ESTADOS_COMPRA = {
+  solicitado:           { label: '🛒 Solicitado a compras', color: 'bg-orange-600/20 text-orange-300' },
+  cotizado:             { label: '💲 Cotizado', color: 'bg-blue-600/20 text-blue-300' },
+  esperando_aprobacion: { label: '⏳ Esperando aprobación', color: 'bg-amber-600/20 text-amber-300' },
+  comprado:             { label: '✓ Comprado', color: 'bg-green-600/20 text-green-400' },
+};
+
 const itemVacio = () => ({ descripcion: '', cantidad: '', unidad: '' });
 
 export default function RequisicionesProyecto({ usuario, proyecto, esAdmin }) {
@@ -29,6 +37,8 @@ export default function RequisicionesProyecto({ usuario, proyecto, esAdmin }) {
   const [items, setItems] = useState([itemVacio()]);
   const [urgente, setUrgente] = useState(false);
   const [notas, setNotas] = useState('');
+  const [esCompra, setEsCompra] = useState(false);        // v8.39.0
+  const [cotizacionFile, setCotizacionFile] = useState(null);
 
   const recargar = async () => {
     setLoading(true);
@@ -45,12 +55,19 @@ export default function RequisicionesProyecto({ usuario, proyecto, esAdmin }) {
     if (validos.length === 0) { alert('Agrega al menos un material.'); return; }
     setGuardando(true);
     try {
-      await db.crearRequisicion({
+      const id = await db.crearRequisicion({
         proyectoId: proyecto.id,
         solicitadoPorId: usuario.id, solicitadoPorNombre: usuario.nombre,
-        urgente, notas, items: validos,
+        urgente, notas, items: validos, esCompra,
       });
-      setCreando(false); setItems([itemVacio()]); setUrgente(false); setNotas('');
+      // v8.39.0: si es compra con cotización adjunta, subirla y amarrarla.
+      if (esCompra && cotizacionFile) {
+        try {
+          const url = await db.subirCotizacionRequisicion(cotizacionFile, id);
+          await db.actualizarRequisicion(id, { cotizacionUrl: url });
+        } catch (e2) { alert('El pedido se creó, pero la cotización no se pudo subir: ' + (e2?.message || e2)); }
+      }
+      setCreando(false); setItems([itemVacio()]); setUrgente(false); setNotas(''); setEsCompra(false); setCotizacionFile(null);
       await recargar();
     } catch (e) { alert('Error creando la requisición: ' + (e?.message || e)); }
     setGuardando(false);
@@ -89,6 +106,18 @@ export default function RequisicionesProyecto({ usuario, proyecto, esAdmin }) {
           <label className="flex items-center gap-2 text-xs text-zinc-300">
             <input type="checkbox" checked={urgente} onChange={e => setUrgente(e.target.checked)} className="w-3.5 h-3.5 accent-red-500" /> 🔥 Urgente — la obra está parada esperando esto
           </label>
+          {/* v8.39.0: pedido que NO está en almacén = compra; puede traer cotización */}
+          <label className="flex items-center gap-2 text-xs text-zinc-300">
+            <input type="checkbox" checked={esCompra} onChange={e => setEsCompra(e.target.checked)} className="w-3.5 h-3.5 accent-orange-500" /> 🛒 Es una compra — esto no está en el almacén
+          </label>
+          {esCompra && (
+            <div className="bg-zinc-950 border border-orange-800/50 rounded-card p-2 space-y-1.5">
+              <div className="text-[10px] text-zinc-400">¿Ya tienes una cotización del suplidor? Adjúntala (foto o PDF) — la IA la lee y prepara la orden de compra en borrador en Odoo.</div>
+              <input type="file" accept="image/*,application/pdf" onChange={e => setCotizacionFile(e.target.files?.[0] || null)}
+                className="w-full text-[11px] text-zinc-400 file:bg-orange-700 file:text-white file:border-0 file:rounded-card file:px-2.5 file:py-1.5 file:text-[10px] file:font-bold file:uppercase file:mr-2" />
+              {cotizacionFile && <div className="text-[10px] text-green-400">📎 {cotizacionFile.name}</div>}
+            </div>
+          )}
           <button onClick={guardar} disabled={guardando} className="w-full bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white text-xs font-black uppercase py-2.5 flex items-center justify-center gap-1.5">
             {guardando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Package className="w-3.5 h-3.5" />} Enviar al almacén
           </button>
@@ -109,6 +138,8 @@ export default function RequisicionesProyecto({ usuario, proyecto, esAdmin }) {
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-card ${est.color}`}>{est.label}</span>
                     {r.urgente && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-card bg-red-600/20 text-red-400">🔥 Urgente</span>}
+                    {r.esCompra && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-card bg-orange-600/20 text-orange-300">🛒 Compra</span>}
+                    {r.ocOdooName && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-card bg-purple-600/20 text-purple-300">📄 {r.ocOdooName} (borrador)</span>}
                     <span className="text-[10px] text-zinc-500">{formatFechaCorta((r.createdAt || '').slice(0, 10))} · {r.solicitadoPorNombre || ''}</span>
                   </div>
                   {(r.estado === 'pendiente') && (esAdmin || r.solicitadoPorId === usuario.id) && (
@@ -117,12 +148,16 @@ export default function RequisicionesProyecto({ usuario, proyecto, esAdmin }) {
                 </div>
                 <div className="mt-1.5 space-y-0.5">
                   {r.items.map(it => (
-                    <div key={it.id} className="text-xs text-zinc-300 flex items-center gap-1.5">
+                    <div key={it.id} className="text-xs text-zinc-300 flex items-center gap-1.5 flex-wrap">
                       <span className={it.despachado ? 'text-green-400' : 'text-zinc-600'}>{it.despachado ? '✓' : '•'}</span>
                       <span className={it.despachado ? 'line-through text-zinc-500' : ''}>{it.descripcion}{it.cantidad != null && it.cantidad !== '' ? ` — ${it.cantidad} ${it.unidad || ''}` : ''}</span>
+                      {it.estadoCompra && ESTADOS_COMPRA[it.estadoCompra] && (
+                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-card ${ESTADOS_COMPRA[it.estadoCompra].color}`}>{ESTADOS_COMPRA[it.estadoCompra].label}</span>
+                      )}
                     </div>
                   ))}
                 </div>
+                {r.cotizacionUrl && <a href={r.cotizacionUrl} target="_blank" rel="noreferrer" className="text-[10px] text-blue-400 hover:underline mt-1 inline-block">📎 Ver cotización adjunta</a>}
                 {r.notas && <div className="text-[10px] text-zinc-500 mt-1">📝 {r.notas}</div>}
               </div>
             );

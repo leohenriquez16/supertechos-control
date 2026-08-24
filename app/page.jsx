@@ -620,6 +620,8 @@ export default function App() {
   const itemsMenu = esFacturasOnly ? [
     { seccion: 'FACTURAS', items: [
       { id: 'facturasOdoo', label: 'Facturas', icon: Receipt, vista: 'facturasOdoo' },
+      // v8.39.0: Lily maneja el flujo de COMPRAS de las requisiciones (cotizado, esperando aprobación, OC)
+      { id: 'almacen', label: 'Almacén · Compras', icon: Package, vista: 'almacen' },
       // v8.27.38: Lily (capturista) también llena el módulo de Vehículos.
       { id: 'vehiculos', label: 'Vehículos', icon: Car, vista: 'vehiculos' },
       { id: 'gotera', label: 'Gotera', icon: CloudRain, vista: 'gotera' },
@@ -820,7 +822,8 @@ export default function App() {
         {vista === 'tareas' && <VistaTareas usuario={usuario} data={data} onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }} onCompletarTarea={async (id) => withSync(async () => { await db.completarTarea(id, usuario.id); })} onCrearTarea={async (t) => withSync(async () => { await db.crearTarea(t); })} onEliminarTarea={async (id) => withSync(async () => { await db.eliminarTarea(id); })} />}
         {tieneRol(usuario, 'owner') && vista === 'produccion' && <VistaProduccion usuario={usuario} data={data} onVolver={volverAtras} />}
         {esAdmin && vista === 'bonos' && <VistaBonos usuario={usuario} data={data} onVolver={volverAtras} />}
-        {(esAdmin || tieneRol(usuario, 'almacen')) && vista === 'almacen' && <VistaAlmacen usuario={usuario} data={data} onVolver={esAdmin ? volverAtras : undefined} />}
+        {/* v8.39.0: compras (rol facturas = Lily) también entra al Almacén — flujo de compras por renglón */}
+        {(esAdmin || tieneRol(usuario, 'almacen') || tieneRol(usuario, 'facturas')) && vista === 'almacen' && <VistaAlmacen usuario={usuario} data={data} onVolver={esAdmin ? volverAtras : undefined} />}
         {vista === 'miVehiculo' && <MiVehiculo usuario={usuario} data={data} onRecargar={recargar} />}
         {esAdmin && vista === 'rutas' && <VistaRutas usuario={usuario} data={data} onVolver={volverAtras} />}
         {esAdmin && vista === 'planObras' && <PlanObras usuario={usuario} data={data} onVolver={volverAtras} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('cronograma'); }} onRecargar={recargar} />}

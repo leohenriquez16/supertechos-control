@@ -123,7 +123,7 @@ export default function VistaRutas({ usuario, data, onVolver }) {
   }), [viajes]);
 
   return (
-    <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-4">
+    <div className="p-4 md:p-6 max-w-4xl lg:max-w-6xl mx-auto space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2">
           {onVolver && <button onClick={onVolver} className="text-zinc-500 hover:text-white"><ArrowLeft className="w-4 h-4" /></button>}

@@ -111,7 +111,7 @@ export default function MisPendientes({ usuario, data, esAdmin = false, compact 
       {pendientes.length === 0 ? (
         <div className="text-xs text-zinc-500">Nada pendiente por tu lado. 🎉 Las tareas de mañana aparecerán solas.</div>
       ) : (
-        <div className="space-y-2">
+        <div className={compact ? 'space-y-2' : 'space-y-2 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-3'}>
           {grupos.map(g => (
             <div key={g.key}>
               <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold mb-1">{g.def.label} ({g.items.length})</div>
@@ -143,7 +143,7 @@ export default function MisPendientes({ usuario, data, esAdmin = false, compact 
               </div>
             </div>
           ))}
-          <div className="text-[10px] text-zinc-600">Las tareas automáticas desaparecen solas cuando lo pendiente se hace en el sistema; las manuales se marcan con el círculo.</div>
+          <div className="text-[10px] text-zinc-600 lg:col-span-2">Las tareas automáticas desaparecen solas cuando lo pendiente se hace en el sistema; las manuales se marcan con el círculo.</div>
         </div>
       )}
     </div>

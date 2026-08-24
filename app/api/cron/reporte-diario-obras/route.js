@@ -78,12 +78,49 @@ export async function GET(request) {
       <td style="border:1px solid #ddd;padding:6px;text-align:center">${ultimoRep[o.id] || 'sin reportes (21d)'}</td>
     </tr>`).join('');
 
+  // v8.31.1: proyectos APROBADOS con información incompleta (regla: un proyecto
+  // aprobado en Odoo queda completo en el ERP el mismo día — KPI de Miguel/Erisdania).
+  const { data: aprob } = await supabase.from('proyectos')
+    .select('id, cliente, nombre, referencia_odoo, ubicacion_lat, ubicacion_lng, contacto_principal_id, contacto_cliente_nombre, contacto_cliente_telefono, contacto_cliente_email, areas, sistema_id, valor_cotizacion, supervisor_id, maestro_id')
+    .eq('estado', 'aprobado').eq('archivado', false);
+  const sidsAll = [...new Set((aprob || []).flatMap(p => [p.sistema_id, ...((p.areas || []).map(a => a.sistemaId))]).filter(Boolean))];
+  let sistemasMap = {};
+  if (sidsAll.length) {
+    const { data: ss } = await supabase.from('sistemas').select('id, data').in('id', sidsAll);
+    (ss || []).forEach(s => { sistemasMap[s.id] = s; });
+  }
+  const faltasDe = (p) => {
+    const f = [];
+    if (!((p.cliente || p.nombre || '').trim())) f.push('cliente');
+    const legacy = `${p.contacto_cliente_nombre || ''}${p.contacto_cliente_telefono || ''}${p.contacto_cliente_email || ''}`.trim();
+    if (!p.contacto_principal_id && !legacy) f.push('contacto');
+    if (p.ubicacion_lat == null || p.ubicacion_lng == null) f.push('ubicación');
+    const areas = p.areas || [];
+    if (areas.length === 0) f.push('áreas');
+    else if (areas.some(a => !(Number(a.m2) > 0))) f.push('m² por área');
+    const sids = [...new Set([p.sistema_id, ...areas.map(a => a.sistemaId)].filter(Boolean))];
+    if (!sids.length) f.push('sistema');
+    else if (sids.some(sid => !(sistemasMap[sid]?.data?.tareas?.length > 0))) f.push('tareas del sistema');
+    if (!(Number(p.valor_cotizacion) > 0)) f.push('valor cotización');
+    if (!p.supervisor_id) f.push('supervisor');
+    if (!p.maestro_id) f.push('maestro');
+    return f;
+  };
+  const incompletos = (aprob || []).map(p => ({ p, faltas: faltasDe(p) })).filter(x => x.faltas.length);
+  const seccionProyectos = incompletos.length === 0 ? '' : `
+    <h3 style="color:#D71920;margin-top:20px">🧩 Proyectos aprobados con información incompleta (${incompletos.length})</h3>
+    <table style="border-collapse:collapse;width:100%;font-size:13px">
+      <tr style="background:#f3f3f3"><th style="border:1px solid #ddd;padding:6px;text-align:left">Proyecto</th><th style="border:1px solid #ddd;padding:6px;text-align:left">Le falta</th></tr>
+      ${incompletos.map(({ p, faltas }) => `<tr><td style="border:1px solid #ddd;padding:6px">${[p.referencia_odoo, p.cliente || p.nombre].filter(Boolean).join(' · ')}</td><td style="border:1px solid #ddd;padding:6px">${faltas.join(', ')}</td></tr>`).join('')}
+    </table>
+    <p style="font-size:12px;color:#666">Regla: aprobado en Odoo = completo en el ERP el mismo día. Cuenta para el KPI "Proyectos creados completos".</p>`;
+
   const todoBien = faltantes.length === 0;
   const asunto = todoBien
     ? `✅ Reportes de obra al día — ${fmt(diaEval)}`
     : `⚠️ ${faltantes.length} obra${faltantes.length !== 1 ? 's' : ''} sin reporte del ${fmt(diaEval)}`;
   const html = todoBien
-    ? `<div style="font-family:Arial,sans-serif"><h2 style="color:#15803d">✅ Todas las obras en ejecución reportaron el ${fmt(diaEval)}</h2><p style="font-size:13px;color:#666">${(obras || []).length} obras en ejecución, todas con reporte. — ERP Super Techos</p></div>`
+    ? `<div style="font-family:Arial,sans-serif"><h2 style="color:#15803d">✅ Todas las obras en ejecución reportaron el ${fmt(diaEval)}</h2><p style="font-size:13px;color:#666">${(obras || []).length} obras en ejecución, todas con reporte. — ERP Super Techos</p>${seccionProyectos}</div>`
     : `<div style="font-family:Arial,sans-serif;max-width:680px">
         <h2 style="color:#D71920">⚠️ Obras sin reporte del ${fmt(diaEval)}</h2>
         <p style="font-size:13px">Fecha tope: 10:30 am del día siguiente. Estas obras en ejecución no tienen reporte de avance:</p>
@@ -97,6 +134,7 @@ export async function GET(request) {
           </tr>${filas}
         </table>
         <p style="font-size:12px;color:#666;margin-top:12px">✅ jornada sin reporte = trabajaron y no reportaron (llamar al supervisor) · ❌ sin jornada = ¿no se trabajó o no se registró? Si la obra no puede avanzar, márquenla "parado" con su razón.<br>— ERP Super Techos · ${(obras || []).length - faltantes.length}/${(obras || []).length} obras sí reportaron</p>
+        ${seccionProyectos}
       </div>`;
 
   const resp = await fetch('https://api.resend.com/emails', {

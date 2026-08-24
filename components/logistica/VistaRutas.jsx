@@ -24,6 +24,7 @@ export default function VistaRutas({ usuario, data, onVolver }) {
   const [creando, setCreando] = useState(false);
   const [nuevo, setNuevo] = useState({ choferId: '', vehiculo: '', tipoEnvio: 'camion' });
   const [paradaLibre, setParadaLibre] = useState(null); // { viajeId, tipo, lugar, descripcion }
+  const [viajeSel, setViajeSel] = useState(null); // v8.38.0: viaje abierto en el panel (desktop)
 
   const choferes = useMemo(() => (data.personal || []).filter(p => tieneRol(p, 'chofer')), [data.personal]);
 
@@ -44,6 +45,13 @@ export default function VistaRutas({ usuario, data, onVolver }) {
     setLoading(false);
   };
   useEffect(() => { recargar(); /* eslint-disable-next-line */ }, [fecha]);
+  // v8.38.0: auto-seleccionar el primer viaje del día (el panel es solo desktop).
+  useEffect(() => {
+    if (loading) return;
+    if (viajeSel && viajes.some(v => v.id === viajeSel)) return;
+    setViajeSel(viajes[0]?.id || null);
+    // eslint-disable-next-line
+  }, [viajes, loading]);
 
   const nombreObra = (pid) => { const p = (data.proyectos || []).find(x => x.id === pid); return p ? (p.cliente || p.nombre || p.referenciaOdoo) : pid; };
 
@@ -122,8 +130,68 @@ export default function VistaRutas({ usuario, data, onVolver }) {
     return { v, horasTot, extras: horasTot != null ? Math.max(0, horasTot - 8) : null };
   }), [viajes]);
 
+  // v8.38.0: la tarjeta completa del viaje (cabecera + form parada libre + paradas)
+  // — inline en móvil, panel sticky en desktop. Mismos handlers, cero lógica nueva.
+  const DetalleViaje = ({ v }) => (
+    <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 space-y-2">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="min-w-0">
+          <div className="font-bold text-sm">{v.tipoEnvio === 'pagado' ? '📮 Envío pagado' : `🚛 ${v.choferNombre || 'Sin chofer'}`}{v.vehiculo ? ` · ${v.vehiculo}` : ''}</div>
+          <div className="text-[10px] text-zinc-500">
+            {v.estado === 'planificado' ? 'Planificado' : v.estado === 'en_curso' ? `En curso desde ${hora(v.horaInicio)}` : `Completado · ${hora(v.horaInicio)} → ${hora(v.horaFin)}`}
+            {' · '}{v.paradas.filter(p => p.estado === 'completada').length}/{v.paradas.length} paradas
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <button onClick={() => setParadaLibre({ viajeId: v.id, tipo: 'recogida', lugar: '', descripcion: '' })} className="text-[10px] uppercase font-bold border border-zinc-700 hover:border-cyan-500 text-zinc-300 px-2 py-1.5 rounded-card">+ Parada</button>
+          {v.estado === 'planificado' && v.paradas.length === 0 && <button onClick={() => borrarViaje(v)} className="text-zinc-600 hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>}
+        </div>
+      </div>
+
+      {paradaLibre?.viajeId === v.id && (
+        <div className="bg-zinc-950 border border-cyan-800/50 rounded-card p-2 space-y-1.5">
+          <div className="flex items-center justify-between"><span className="text-[10px] uppercase font-bold text-cyan-400">Parada libre</span><button onClick={() => setParadaLibre(null)} className="text-zinc-500"><X className="w-3.5 h-3.5" /></button></div>
+          <div className="flex gap-1.5 flex-wrap">
+            <select value={paradaLibre.tipo} onChange={e => setParadaLibre({ ...paradaLibre, tipo: e.target.value })} className="bg-zinc-900 border border-zinc-700 rounded-card px-1.5 py-1.5 text-xs">
+              <option value="recogida">Recoger en</option>
+              <option value="entrega">Entregar en</option>
+            </select>
+            <input value={paradaLibre.lugar} onChange={e => setParadaLibre({ ...paradaLibre, lugar: e.target.value })} placeholder="Puerto / almacén fiscal / suplidor / obra…" className="flex-1 bg-zinc-900 border border-zinc-700 rounded-card px-2 py-1.5 text-xs min-w-[140px]" />
+          </div>
+          <input value={paradaLibre.descripcion} onChange={e => setParadaLibre({ ...paradaLibre, descripcion: e.target.value })} placeholder="Qué (ej. contenedor MSKU123, 40 sacos)" className="w-full bg-zinc-900 border border-zinc-700 rounded-card px-2 py-1.5 text-xs" />
+          <button onClick={agregarLibre} className="w-full bg-cyan-700 hover:bg-cyan-600 text-white text-[10px] font-black uppercase py-2 rounded-card">Agregar al viaje</button>
+        </div>
+      )}
+
+      <div className="space-y-1">
+        {v.paradas.map((p, i) => (
+          <div key={p.id} className={`bg-zinc-950 border rounded-card px-2 py-1.5 flex items-center gap-2 ${p.estado === 'completada' ? 'border-green-900/50' : 'border-zinc-800'}`}>
+            <span className="text-[10px] font-black text-zinc-600 w-4 text-center shrink-0">{i + 1}</span>
+            <div className="min-w-0 flex-1">
+              <div className={`text-xs font-bold truncate ${p.estado === 'completada' ? 'text-green-400' : ''}`}>
+                {p.tipo === 'recogida' ? '↑ Recoger' : '↓ Entregar'} · {p.proyectoId ? nombreObra(p.proyectoId) : p.lugar}
+                {p.estado === 'completada' && ` ✓ ${hora(p.completadaAt)}`}
+              </div>
+              {p.descripcion && <div className="text-[10px] text-zinc-500 truncate">{p.descripcion}</div>}
+            </div>
+            {v.estado !== 'completado' && p.estado !== 'completada' && (
+              <div className="flex items-center gap-0.5 shrink-0">
+                <button onClick={() => mover(v, p, -1)} className="text-zinc-600 hover:text-white"><ChevronUp className="w-3.5 h-3.5" /></button>
+                <button onClick={() => mover(v, p, 1)} className="text-zinc-600 hover:text-white"><ChevronDown className="w-3.5 h-3.5" /></button>
+                <button onClick={() => quitarParada(v, p)} className="text-zinc-600 hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>
+              </div>
+            )}
+          </div>
+        ))}
+        {v.paradas.length === 0 && <div className="text-[11px] text-zinc-600 italic">Sin paradas — monta requisiciones listas o agrega una parada libre.</div>}
+      </div>
+    </div>
+  );
+
+  const vSel = viajes.find(v => v.id === viajeSel);
+
   return (
-    <div className="p-4 md:p-6 max-w-4xl lg:max-w-6xl mx-auto space-y-4">
+    <div className="p-4 md:p-6 max-w-4xl lg:max-w-[1400px] mx-auto space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2">
           {onVolver && <button onClick={onVolver} className="text-zinc-500 hover:text-white"><ArrowLeft className="w-4 h-4" /></button>}
@@ -141,7 +209,8 @@ export default function VistaRutas({ usuario, data, onVolver }) {
       {loading ? (
         <div className="text-center py-10"><Loader2 className="w-6 h-6 text-red-500 animate-spin mx-auto" /></div>
       ) : (
-        <>
+        <div className="lg:flex lg:gap-5 lg:items-start">
+        <div className="min-w-0 flex-1 space-y-4">
           {/* Requisiciones listas esperando viaje */}
           <div className="bg-zinc-900 border border-purple-800/50 rounded-card p-3">
             <div className="text-[11px] tracking-widest uppercase text-purple-400 font-bold mb-1.5">📦 Listas para envío sin viaje ({listas.length})</div>
@@ -166,61 +235,22 @@ export default function VistaRutas({ usuario, data, onVolver }) {
             )}
           </div>
 
-          {/* Viajes del día */}
+          {/* Viajes del día — móvil: tarjeta completa; desktop: fila que abre el panel */}
           {viajes.map(v => (
-            <div key={v.id} className="bg-zinc-900 border border-zinc-800 rounded-card p-3 space-y-2">
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <div className="min-w-0">
-                  <div className="font-bold text-sm">{v.tipoEnvio === 'pagado' ? '📮 Envío pagado' : `🚛 ${v.choferNombre || 'Sin chofer'}`}{v.vehiculo ? ` · ${v.vehiculo}` : ''}</div>
+            <React.Fragment key={v.id}>
+              <div className="lg:hidden"><DetalleViaje v={v} /></div>
+              <button onClick={() => setViajeSel(v.id)}
+                className={`hidden lg:flex w-full items-center gap-2.5 px-3 py-2.5 rounded-card border bg-zinc-900 text-left ${viajeSel === v.id ? 'border-cyan-500 bg-zinc-800/70' : 'border-zinc-800 hover:border-zinc-600'}`}>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-bold truncate">{v.tipoEnvio === 'pagado' ? '📮 Envío pagado' : `🚛 ${v.choferNombre || 'Sin chofer'}`}{v.vehiculo ? ` · ${v.vehiculo}` : ''}</div>
                   <div className="text-[10px] text-zinc-500">
                     {v.estado === 'planificado' ? 'Planificado' : v.estado === 'en_curso' ? `En curso desde ${hora(v.horaInicio)}` : `Completado · ${hora(v.horaInicio)} → ${hora(v.horaFin)}`}
-                    {' · '}{v.paradas.filter(p => p.estado === 'completada').length}/{v.paradas.length} paradas
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <button onClick={() => setParadaLibre({ viajeId: v.id, tipo: 'recogida', lugar: '', descripcion: '' })} className="text-[10px] uppercase font-bold border border-zinc-700 hover:border-cyan-500 text-zinc-300 px-2 py-1.5 rounded-card">+ Parada</button>
-                  {v.estado === 'planificado' && v.paradas.length === 0 && <button onClick={() => borrarViaje(v)} className="text-zinc-600 hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>}
-                </div>
-              </div>
-
-              {paradaLibre?.viajeId === v.id && (
-                <div className="bg-zinc-950 border border-cyan-800/50 rounded-card p-2 space-y-1.5">
-                  <div className="flex items-center justify-between"><span className="text-[10px] uppercase font-bold text-cyan-400">Parada libre</span><button onClick={() => setParadaLibre(null)} className="text-zinc-500"><X className="w-3.5 h-3.5" /></button></div>
-                  <div className="flex gap-1.5 flex-wrap">
-                    <select value={paradaLibre.tipo} onChange={e => setParadaLibre({ ...paradaLibre, tipo: e.target.value })} className="bg-zinc-900 border border-zinc-700 rounded-card px-1.5 py-1.5 text-xs">
-                      <option value="recogida">Recoger en</option>
-                      <option value="entrega">Entregar en</option>
-                    </select>
-                    <input value={paradaLibre.lugar} onChange={e => setParadaLibre({ ...paradaLibre, lugar: e.target.value })} placeholder="Puerto / almacén fiscal / suplidor / obra…" className="flex-1 bg-zinc-900 border border-zinc-700 rounded-card px-2 py-1.5 text-xs min-w-[140px]" />
-                  </div>
-                  <input value={paradaLibre.descripcion} onChange={e => setParadaLibre({ ...paradaLibre, descripcion: e.target.value })} placeholder="Qué (ej. contenedor MSKU123, 40 sacos)" className="w-full bg-zinc-900 border border-zinc-700 rounded-card px-2 py-1.5 text-xs" />
-                  <button onClick={agregarLibre} className="w-full bg-cyan-700 hover:bg-cyan-600 text-white text-[10px] font-black uppercase py-2 rounded-card">Agregar al viaje</button>
-                </div>
-              )}
-
-              <div className="space-y-1">
-                {v.paradas.map((p, i) => (
-                  <div key={p.id} className={`bg-zinc-950 border rounded-card px-2 py-1.5 flex items-center gap-2 ${p.estado === 'completada' ? 'border-green-900/50' : 'border-zinc-800'}`}>
-                    <span className="text-[10px] font-black text-zinc-600 w-4 text-center shrink-0">{i + 1}</span>
-                    <div className="min-w-0 flex-1">
-                      <div className={`text-xs font-bold truncate ${p.estado === 'completada' ? 'text-green-400' : ''}`}>
-                        {p.tipo === 'recogida' ? '↑ Recoger' : '↓ Entregar'} · {p.proyectoId ? nombreObra(p.proyectoId) : p.lugar}
-                        {p.estado === 'completada' && ` ✓ ${hora(p.completadaAt)}`}
-                      </div>
-                      {p.descripcion && <div className="text-[10px] text-zinc-500 truncate">{p.descripcion}</div>}
-                    </div>
-                    {v.estado !== 'completado' && p.estado !== 'completada' && (
-                      <div className="flex items-center gap-0.5 shrink-0">
-                        <button onClick={() => mover(v, p, -1)} className="text-zinc-600 hover:text-white"><ChevronUp className="w-3.5 h-3.5" /></button>
-                        <button onClick={() => mover(v, p, 1)} className="text-zinc-600 hover:text-white"><ChevronDown className="w-3.5 h-3.5" /></button>
-                        <button onClick={() => quitarParada(v, p)} className="text-zinc-600 hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-                {v.paradas.length === 0 && <div className="text-[11px] text-zinc-600 italic">Sin paradas — monta requisiciones listas o agrega una parada libre.</div>}
-              </div>
-            </div>
+                <span className={`shrink-0 text-[10px] font-bold ${v.paradas.length > 0 && v.paradas.every(p => p.estado === 'completada') ? 'text-green-400' : 'text-zinc-400'}`}>📍 {v.paradas.filter(p => p.estado === 'completada').length}/{v.paradas.length}</span>
+                <ChevronDown className={`w-4 h-4 shrink-0 -rotate-90 ${viajeSel === v.id ? 'text-cyan-400' : 'text-zinc-600'}`} />
+              </button>
+            </React.Fragment>
           ))}
 
           {/* Crear viaje */}
@@ -262,7 +292,21 @@ export default function VistaRutas({ usuario, data, onVolver }) {
               ))}
             </div>
           )}
-        </>
+        </div>
+
+        {/* ===== Detalle del viaje (derecha, solo desktop) ===== */}
+        <aside className="hidden lg:block w-[420px] xl:w-[460px] shrink-0">
+          <div className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
+            {vSel ? (
+              <DetalleViaje v={vSel} />
+            ) : (
+              <div className="bg-zinc-950/50 border border-dashed border-zinc-800 rounded-card p-6 text-center text-xs text-zinc-600">
+                Crea o elige un viaje del día para armar su ruta aquí.
+              </div>
+            )}
+          </div>
+        </aside>
+        </div>
       )}
     </div>
   );

@@ -1955,7 +1955,8 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
           </>
         )}
 
-        {vistaDetalle === 'supervisor' && resumenSupervisores.map(rs => {
+        {/* v8.38.0: en lg+ las cards de supervisor van a 2 columnas (solo presentación) */}
+        {vistaDetalle === 'supervisor' && <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 items-start">{resumenSupervisores.map(rs => {
           // Agrupar los recibos del supervisor por proyecto para una vista anidada más clara
           const porProyecto = {};
           rs.recibos.forEach(r => {
@@ -1997,9 +1998,10 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
               </div>
             </div>
           );
-        })}
+        })}</div>}
 
-        {vistaDetalle === 'recibos' && detalleFiltrado.map(d => (
+        {/* v8.38.0: recibos a 2-3 columnas en pantallas grandes (mismo map, mismas keys) */}
+        {vistaDetalle === 'recibos' && <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-2 items-start">{detalleFiltrado.map(d => (
           <div key={d.id} className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
             <div className="flex justify-between items-start">
               <div>
@@ -2090,7 +2092,7 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
               );
             })()}
           </div>
-        ))}
+        ))}</div>}
       </div>
 
       {/* v8.27.77: posibles m² duplicados de la quincena anterior (ticket Miguel) */}

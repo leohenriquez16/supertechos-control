@@ -4,9 +4,12 @@
 // Recibe los pedidos de las obras al instante (adiós grupos de WhatsApp), va marcando
 // cada renglón despachado, y avanza el estado: preparando → LISTA para envío.
 // Cuando está lista, Rutas la monta en un camión o en un envío pagado.
+// v8.38.0 (desktop-first 3): en lg+ son DOS PANELES — cola compacta a la izquierda,
+// detalle de la requisición sticky a la derecha. En celular/iPad vertical igual que
+// siempre (tarjetas completas). Todo clickeable sin hover (el iPad no tiene mouse).
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Loader2, Package, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Loader2, Package, RefreshCw, ChevronRight } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatFechaCorta } from '../../lib/helpers/formato';
 import { ESTADOS_REQ } from './RequisicionesProyecto';
@@ -22,6 +25,7 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
   const [reqs, setReqs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [procesando, setProcesando] = useState(null);
+  const [selId, setSelId] = useState(null); // v8.38.0: requisición abierta en el panel
 
   const recargar = async () => {
     setLoading(true);
@@ -30,6 +34,19 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
     setLoading(false);
   };
   useEffect(() => { recargar(); }, []);
+
+  const enCola = (r) => COLS.some(c => c.estado === r.estado);
+  // Auto-selección: la primera de la cola (urgentes primero, por orden de COLS).
+  useEffect(() => {
+    if (loading) return;
+    if (selId && reqs.some(r => r.id === selId && enCola(r))) return;
+    for (const col of COLS) {
+      const del = reqs.filter(r => r.estado === col.estado).sort((a, b) => (b.urgente - a.urgente) || (a.createdAt || '').localeCompare(b.createdAt || ''));
+      if (del.length) { setSelId(del[0].id); return; }
+    }
+    setSelId(null);
+    // eslint-disable-next-line
+  }, [reqs, loading]);
 
   const proyectoDe = (r) => (data.proyectos || []).find(p => p.id === r.proyectoId);
   const etiqueta = (r) => { const p = proyectoDe(r); return p ? (p.cliente || p.nombre || p.referenciaOdoo) : r.proyectoId; };
@@ -50,8 +67,45 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
     return reqs.filter(r => r.estado === 'entregada' && (r.entregadaAt || '').slice(0, 10) === hoy);
   }, [reqs]);
 
+  // La tarjeta completa de siempre — se usa inline en móvil y como panel en desktop.
+  const DetalleRequisicion = ({ r, col }) => {
+    const todosDespachados = r.items.length > 0 && r.items.every(i => i.despachado);
+    return (
+      <div className={`bg-zinc-900 border rounded-card p-3 ${r.urgente ? 'border-red-800/70' : 'border-zinc-800'}`}>
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="min-w-0">
+            <div className="font-bold text-sm truncate">{etiqueta(r)} {r.urgente && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-card bg-red-600/20 text-red-400 align-middle">🔥 Urgente</span>}</div>
+            <div className="text-[10px] text-zinc-500">{formatFechaCorta((r.createdAt || '').slice(0, 10))} · pidió {r.solicitadoPorNombre || '—'} · <span className={ESTADOS_REQ[r.estado]?.color || ''}>{ESTADOS_REQ[r.estado]?.label || r.estado}</span></div>
+          </div>
+          {col.siguiente && (
+            <button onClick={() => avanzar(r, col.siguiente)} disabled={procesando === r.id || (col.siguiente === 'lista' && !todosDespachados)}
+              title={col.siguiente === 'lista' && !todosDespachados ? 'Marca todos los renglones primero' : ''}
+              className="shrink-0 bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-white text-[10px] font-black uppercase px-3 py-2 rounded-card">
+              {procesando === r.id ? '…' : col.btn}
+            </button>
+          )}
+        </div>
+        <div className="mt-1.5 space-y-1">
+          {r.items.map(it => (
+            <label key={it.id} className="flex items-center gap-2 text-xs cursor-pointer py-0.5">
+              <input type="checkbox" checked={it.despachado} disabled={col.estado === 'en_ruta'} onChange={() => toggleItem(r, it)} className="w-4 h-4 accent-green-500" />
+              <span className={it.despachado ? 'line-through text-zinc-500' : 'text-zinc-200'}>
+                {it.descripcion}{it.cantidad != null && it.cantidad !== '' ? ` — ${it.cantidad} ${it.unidad || ''}` : ''}
+              </span>
+            </label>
+          ))}
+        </div>
+        {r.notas && <div className="text-[10px] text-zinc-500 mt-1">📝 {r.notas}</div>}
+        {col.estado === 'lista' && <div className="text-[10px] text-purple-400 mt-1.5">Esperando que Rutas la monte en un viaje o envío pagado.</div>}
+      </div>
+    );
+  };
+
+  const reqSel = reqs.find(r => r.id === selId && enCola(r));
+  const colSel = reqSel ? COLS.find(c => c.estado === reqSel.estado) : null;
+
   return (
-    <div className="p-4 md:p-6 max-w-4xl lg:max-w-6xl mx-auto space-y-4">
+    <div className="p-4 md:p-6 max-w-4xl lg:max-w-[1400px] mx-auto space-y-4">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           {onVolver && <button onClick={onVolver} className="text-zinc-500 hover:text-white"><ArrowLeft className="w-4 h-4" /></button>}
@@ -66,7 +120,9 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
       {loading ? (
         <div className="text-center py-10"><Loader2 className="w-6 h-6 text-red-500 animate-spin mx-auto" /></div>
       ) : (
-        <>
+        <div className="lg:flex lg:gap-5 lg:items-start">
+        {/* ===== Cola (izquierda) ===== */}
+        <div className="min-w-0 flex-1 space-y-4">
           {COLS.map(col => {
             const del = reqs.filter(r => r.estado === col.estado)
               .sort((a, b) => (b.urgente - a.urgente) || (a.createdAt || '').localeCompare(b.createdAt || ''));
@@ -76,37 +132,24 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
                 {del.length === 0 ? (
                   <div className="text-xs text-zinc-600 italic mb-3">Nada aquí.</div>
                 ) : (
-                  <div className="space-y-2 mb-4">
+                  <div className="space-y-2 mb-4 lg:space-y-1.5">
                     {del.map(r => {
-                      const todosDespachados = r.items.length > 0 && r.items.every(i => i.despachado);
+                      const despachados = r.items.filter(i => i.despachado).length;
                       return (
-                        <div key={r.id} className={`bg-zinc-900 border rounded-card p-3 ${r.urgente ? 'border-red-800/70' : 'border-zinc-800'}`}>
-                          <div className="flex items-center justify-between gap-2 flex-wrap">
-                            <div className="min-w-0">
-                              <div className="font-bold text-sm truncate">{etiqueta(r)} {r.urgente && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-card bg-red-600/20 text-red-400 align-middle">🔥 Urgente</span>}</div>
-                              <div className="text-[10px] text-zinc-500">{formatFechaCorta((r.createdAt || '').slice(0, 10))} · pidió {r.solicitadoPorNombre || '—'}</div>
+                        <React.Fragment key={r.id}>
+                          {/* Móvil / iPad vertical: la tarjeta completa de siempre */}
+                          <div className="lg:hidden"><DetalleRequisicion r={r} col={col} /></div>
+                          {/* Desktop: fila compacta que abre el panel */}
+                          <button onClick={() => setSelId(r.id)}
+                            className={`hidden lg:flex w-full items-center gap-2.5 px-3 py-2.5 rounded-card border bg-zinc-900 text-left ${selId === r.id ? 'border-amber-500 bg-zinc-800/70' : r.urgente ? 'border-red-800/70 hover:border-red-700' : 'border-zinc-800 hover:border-zinc-600'}`}>
+                            <div className="min-w-0 flex-1">
+                              <div className="text-sm font-bold truncate">{r.urgente && '🔥 '}{etiqueta(r)}</div>
+                              <div className="text-[10px] text-zinc-500">{formatFechaCorta((r.createdAt || '').slice(0, 10))} · {r.solicitadoPorNombre || '—'}</div>
                             </div>
-                            {col.siguiente && (
-                              <button onClick={() => avanzar(r, col.siguiente)} disabled={procesando === r.id || (col.siguiente === 'lista' && !todosDespachados)}
-                                title={col.siguiente === 'lista' && !todosDespachados ? 'Marca todos los renglones primero' : ''}
-                                className="shrink-0 bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-white text-[10px] font-black uppercase px-3 py-2 rounded-card">
-                                {procesando === r.id ? '…' : col.btn}
-                              </button>
-                            )}
-                          </div>
-                          <div className="mt-1.5 space-y-1">
-                            {r.items.map(it => (
-                              <label key={it.id} className="flex items-center gap-2 text-xs cursor-pointer">
-                                <input type="checkbox" checked={it.despachado} disabled={col.estado === 'en_ruta'} onChange={() => toggleItem(r, it)} className="w-3.5 h-3.5 accent-green-500" />
-                                <span className={it.despachado ? 'line-through text-zinc-500' : 'text-zinc-200'}>
-                                  {it.descripcion}{it.cantidad != null && it.cantidad !== '' ? ` — ${it.cantidad} ${it.unidad || ''}` : ''}
-                                </span>
-                              </label>
-                            ))}
-                          </div>
-                          {r.notas && <div className="text-[10px] text-zinc-500 mt-1">📝 {r.notas}</div>}
-                          {col.estado === 'lista' && <div className="text-[10px] text-purple-400 mt-1.5">Esperando que Rutas la monte en un viaje o envío pagado.</div>}
-                        </div>
+                            <span className={`shrink-0 text-[10px] font-bold ${despachados === r.items.length && r.items.length > 0 ? 'text-green-400' : 'text-zinc-400'}`}>☑ {despachados}/{r.items.length}</span>
+                            <ChevronRight className={`w-4 h-4 shrink-0 ${selId === r.id ? 'text-amber-400' : 'text-zinc-600'}`} />
+                          </button>
+                        </React.Fragment>
                       );
                     })}
                   </div>
@@ -118,7 +161,21 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
           <div className="text-[11px] text-zinc-500 border-t border-zinc-800 pt-2">
             ✓ Entregadas hoy: <b className="text-green-400">{entregadasHoy.length}</b>
           </div>
-        </>
+        </div>
+
+        {/* ===== Detalle (derecha, solo desktop) ===== */}
+        <aside className="hidden lg:block w-[400px] xl:w-[440px] shrink-0">
+          <div className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
+            {reqSel && colSel ? (
+              <DetalleRequisicion r={reqSel} col={colSel} />
+            ) : (
+              <div className="bg-zinc-950/50 border border-dashed border-zinc-800 rounded-card p-6 text-center text-xs text-zinc-600">
+                Elige una requisición de la cola para despacharla aquí.
+              </div>
+            )}
+          </div>
+        </aside>
+        </div>
       )}
     </div>
   );

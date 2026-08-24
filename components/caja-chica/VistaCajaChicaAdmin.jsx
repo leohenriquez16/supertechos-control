@@ -661,7 +661,10 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
           ) : pendientesFiltradosBandeja.length === 0 ? (
             <div className="text-center py-10 text-zinc-500 text-sm">Sin pendientes que coincidan con los filtros.</div>
           ) : (
-            pendientesAgrupadosBandeja.map(grupo => {
+            /* v8.38.0: en lg+ los grupos de la bandeja van a 2 columnas (la navegación
+               del modal usa idxPlano del array plano — no depende del orden del DOM) */
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 items-start">
+            {pendientesAgrupadosBandeja.map(grupo => {
               const colapsado = gruposColapsados.has(grupo.key);
               const hayHeader = grupo.label !== null;
               return (
@@ -717,7 +720,8 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
                   )}
                 </div>
               );
-            })
+            })}
+            </div>
           )}
         </div>
       )}
@@ -735,6 +739,8 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
             )}
           </div>
 
+          {/* v8.38.0: cards de persona a 2 columnas en lg+ (items-start: una expandida no estira a la vecina) */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 items-start">
           {porPersona.map(p => {
             const expandida = personasExpandidas.has(p.personaId);
             // Movimientos del mes actual ordenados por fecha desc (para la lista interna)
@@ -848,6 +854,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
               </div>
             );
           })}
+          </div>
         </div>
       )}
 
@@ -856,7 +863,10 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
           <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Por proyecto ({porProyecto.length})</div>
           {porProyecto.length === 0 ? (
             <div className="text-center py-10 text-zinc-500 text-sm">Sin gastos asociados a proyecto.</div>
-          ) : porProyecto.map(p => (
+          ) : (
+          /* v8.38.0: proyectos a 2-3 columnas en pantallas grandes */
+          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-2 items-start">
+          {porProyecto.map(p => (
             <div
               key={p.proyectoId}
               className={`bg-zinc-900 border border-zinc-800 rounded-card hover:border-red-600 ${dx.cardPad} cursor-pointer transition`}
@@ -920,6 +930,8 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
               )}
             </div>
           ))}
+          </div>
+          )}
         </div>
       )}
 

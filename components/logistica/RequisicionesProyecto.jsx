@@ -6,9 +6,18 @@
 // → entregada) sin preguntar en el grupo.
 
 import React, { useEffect, useState } from 'react';
-import { Loader2, Plus, Package, X, Trash2 } from 'lucide-react';
+import { Loader2, Plus, Package, X, Trash2, Camera } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatFechaCorta } from '../../lib/helpers/formato';
+import { comprimirImagenABlob } from '../../lib/imports';
+
+// v8.40.0: estados de una diligencia de retiro (material sobrante en obra).
+export const ESTADOS_DILIGENCIA = {
+  sin_planificar: { label: '📦 Esperando retiro', color: 'bg-red-600/20 text-red-300' },
+  asignada:       { label: '🚚 En ruta de retiro', color: 'bg-cyan-600/20 text-cyan-300' },
+  completada:     { label: '✓ Retirado', color: 'bg-green-600/20 text-green-400' },
+  cancelada:      { label: 'Cancelada', color: 'bg-zinc-700/40 text-zinc-500' },
+};
 
 export const ESTADOS_REQ = {
   pendiente:  { label: 'Pendiente en almacén', color: 'bg-amber-600/20 text-amber-400' },
@@ -39,12 +48,46 @@ export default function RequisicionesProyecto({ usuario, proyecto, esAdmin }) {
   const [notas, setNotas] = useState('');
   const [esCompra, setEsCompra] = useState(false);        // v8.39.0
   const [cotizacionFile, setCotizacionFile] = useState(null);
+  // v8.40.0: material sobrante — se reporta aquí, se retira por Rutas.
+  const [sobrantes, setSobrantes] = useState([]);
+  const [reportandoSobrante, setReportandoSobrante] = useState(false);
+  const [sobranteListado, setSobranteListado] = useState('');
+  const [sobranteFoto, setSobranteFoto] = useState(null);
+  const [guardandoSobrante, setGuardandoSobrante] = useState(false);
 
   const recargar = async () => {
     setLoading(true);
-    try { setReqs(await db.listarRequisiciones({ proyectoId: proyecto.id })); }
+    try {
+      const [rs, dils] = await Promise.all([
+        db.listarRequisiciones({ proyectoId: proyecto.id }),
+        db.listarDiligencias({ proyectoId: proyecto.id }).catch(() => []),
+      ]);
+      setReqs(rs); setSobrantes(dils);
+    }
     catch (e) { console.warn('Requisiciones:', e?.message); }
     setLoading(false);
+  };
+
+  const reportarSobrante = async () => {
+    if (!sobranteListado.trim()) { alert('Escribe qué material sobró (el listado).'); return; }
+    setGuardandoSobrante(true);
+    try {
+      const id = await db.crearDiligencia({
+        tipo: 'retiro_sobrante', proyectoId: proyecto.id, descripcion: sobranteListado.trim(),
+        creadoPorId: usuario.id, creadoPorNombre: usuario.nombre,
+      });
+      if (sobranteFoto) {
+        try {
+          const blob = await comprimirImagenABlob(sobranteFoto);
+          const url = await db.subirFotoSobrante(blob, id);
+          await db.actualizarFotoDiligencia(id, url);
+        } catch (e2) { alert('El reporte se creó, pero la foto no subió: ' + (e2?.message || e2)); }
+      }
+      setReportandoSobrante(false); setSobranteListado(''); setSobranteFoto(null);
+      await recargar();
+      alert('Reportado ✓ — Rutas lo verá como retiro pendiente hasta que lo monte en un camión.');
+    } catch (e) { alert('Error: ' + (e?.message || e)); }
+    setGuardandoSobrante(false);
   };
   useEffect(() => { recargar(); /* eslint-disable-next-line */ }, [proyecto.id]);
 
@@ -164,6 +207,55 @@ export default function RequisicionesProyecto({ usuario, proyecto, esAdmin }) {
           })}
         </div>
       )}
+
+      {/* ============ v8.40.0: MATERIAL SOBRANTE (retiro por Rutas) ============ */}
+      <div className="border-t border-zinc-800 pt-3 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-[11px] tracking-widest uppercase font-bold text-zinc-400">📦 Material sobrante</div>
+          {!reportandoSobrante && (
+            <button onClick={() => setReportandoSobrante(true)} className="text-[10px] font-black uppercase px-2.5 py-1.5 rounded-card border border-amber-700/60 text-amber-400 hover:bg-amber-600 hover:text-black">
+              + Reportar sobrante
+            </button>
+          )}
+        </div>
+        {reportandoSobrante && (
+          <div className="bg-zinc-900 border-2 border-amber-600 rounded-card p-3 space-y-2">
+            <div className="text-[10px] text-zinc-400">¿Sobró material en la obra? Repórtalo aquí (no al WhatsApp): Rutas lo verá como retiro pendiente hasta recogerlo.</div>
+            <textarea value={sobranteListado} onChange={e => setSobranteListado(e.target.value)} rows={3}
+              placeholder={'Listado de lo que sobró, un renglón por cosa:\n8 rollos lona SBS 3mm\n2 cubetas primer'}
+              className="w-full bg-zinc-950 border border-zinc-700 rounded-card px-2 py-2 text-sm" />
+            <label className="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer">
+              <span className="bg-zinc-800 border border-zinc-700 rounded-card px-2.5 py-2 flex items-center gap-1.5 text-[11px] font-bold"><Camera className="w-3.5 h-3.5" /> {sobranteFoto ? 'Cambiar foto' : 'Foto del material'}</span>
+              <input type="file" accept="image/*" capture="environment" className="hidden" onChange={e => setSobranteFoto(e.target.files?.[0] || null)} />
+              {sobranteFoto && <span className="text-[10px] text-green-400">📷 lista</span>}
+            </label>
+            <div className="flex gap-1.5">
+              <button onClick={() => { setReportandoSobrante(false); setSobranteFoto(null); }} className="px-3 bg-zinc-800 text-zinc-400 text-[10px] font-bold uppercase py-2 rounded-card">Cancelar</button>
+              <button onClick={reportarSobrante} disabled={guardandoSobrante} className="flex-1 bg-amber-600 hover:bg-amber-500 disabled:opacity-60 text-black text-[10px] font-black uppercase py-2 rounded-card">
+                {guardandoSobrante ? 'Subiendo…' : 'Reportar para retiro'}
+              </button>
+            </div>
+          </div>
+        )}
+        {sobrantes.filter(s => s.estado !== 'cancelada').length === 0 && !reportandoSobrante && (
+          <div className="text-[11px] text-zinc-600 italic">Sin sobrantes reportados.</div>
+        )}
+        {sobrantes.filter(s => s.estado !== 'cancelada').map(s => {
+          const est = ESTADOS_DILIGENCIA[s.estado] || ESTADOS_DILIGENCIA.sin_planificar;
+          return (
+            <div key={s.id} className="bg-zinc-950 border border-zinc-800 rounded-card p-2.5 flex items-start gap-2.5">
+              {s.fotoUrl && <a href={s.fotoUrl} target="_blank" rel="noreferrer" className="shrink-0"><img src={s.fotoUrl} alt="sobrante" className="w-12 h-12 object-cover rounded-card border border-zinc-800" /></a>}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-card ${est.color}`}>{est.label}</span>
+                  <span className="text-[10px] text-zinc-500">{formatFechaCorta((s.createdAt || '').slice(0, 10))} · {s.creadoPorNombre}</span>
+                </div>
+                <div className="text-xs text-zinc-300 mt-1 whitespace-pre-wrap">{s.descripcion}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

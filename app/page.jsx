@@ -4989,6 +4989,10 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
         </div>
       )}
 
+      {/* v8.36.0 (desktop-first 2): en lg+ la identidad va a la izquierda y las 3
+          cifras (Avance/Producido/Contrato) como panel financiero a la derecha.
+          En móvil sigue el stack de siempre. Los modales (fixed) no ocupan celda. */}
+      <div className="space-y-6 lg:space-y-0 lg:grid lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-6 lg:items-start">
       <div>
         <div className="flex items-center gap-2 mb-2">
           <button onClick={() => puedeCambiarEstado && setModalEstado(true)} disabled={!puedeCambiarEstado} className={`px-2 py-1 text-[10px] tracking-widest uppercase font-black text-white ${estadoColor(proyecto.estado)} ${puedeCambiarEstado ? 'cursor-pointer hover:opacity-80' : 'cursor-default'}`}>{estadoLabel(proyecto.estado)}</button>
@@ -5030,7 +5034,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
       }} />}
 
       {!esSupervisor && (
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-3 gap-2 lg:grid-cols-1">
           <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 min-w-0">
             <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Avance</div>
             <AutoFitText maxSize={28} minSize={14} className="font-black">{porcentaje.toFixed(1)}%</AutoFitText>
@@ -5045,9 +5049,10 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
           </div>
         </div>
       )}
+      </div>{/* /grid identidad + cifras (v8.36.0) */}
 
-      {esSupervisor && onIrAReportar && proyecto.estado === 'en_ejecucion' && <button onClick={onIrAReportar} className="w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase py-3 flex items-center justify-center gap-2"><Plus className="w-4 h-4" /> Reportar Avance</button>}
-      {esAdmin && onIrAReportar && proyecto.estado === 'en_ejecucion' && <button onClick={onIrAReportar} className="w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase py-3 flex items-center justify-center gap-2"><Plus className="w-4 h-4" /> Reportar Avance</button>}
+      {esSupervisor && onIrAReportar && proyecto.estado === 'en_ejecucion' && <button onClick={onIrAReportar} className="w-full lg:w-auto lg:px-12 bg-red-600 hover:bg-red-700 text-white font-black uppercase py-3 flex items-center justify-center gap-2"><Plus className="w-4 h-4" /> Reportar Avance</button>}
+      {esAdmin && onIrAReportar && proyecto.estado === 'en_ejecucion' && <button onClick={onIrAReportar} className="w-full lg:w-auto lg:px-12 bg-red-600 hover:bg-red-700 text-white font-black uppercase py-3 flex items-center justify-center gap-2"><Plus className="w-4 h-4" /> Reportar Avance</button>}
 
       {/* v8.25.46: obra PARADA → la bitácora (chatter) sube arriba para ver razones + siguiente paso */}
       {proyecto.estado === 'parado' && (
@@ -5057,7 +5062,8 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
         </div>
       )}
 
-      <div className="flex gap-1 border-b-2 border-zinc-800 overflow-x-auto">
+      {/* v8.36.0: con ~16 tabs y contenido largo, la barra queda pegada arriba en desktop */}
+      <div className="flex gap-1 border-b-2 border-zinc-800 overflow-x-auto lg:sticky lg:top-0 lg:z-20 lg:bg-zinc-950/95 lg:backdrop-blur">
         <TabBtn active={tab === 'avance'} onClick={() => setTab('avance')}><TrendingUp className="w-3 h-3 inline mr-1" />Avance</TabBtn>
         <TabBtn active={tab === 'info'} onClick={() => setTab('info')}><MapPin className="w-3 h-3 inline mr-1" />Info</TabBtn>
         <TabBtn active={tab === 'asistencia'} onClick={() => setTab('asistencia')}><CheckCircle2 className="w-3 h-3 inline mr-1" />Asistencia</TabBtn>
@@ -5182,11 +5188,13 @@ function TabInfo({ proyecto, clientes = [], contactos = [], documentos = [], sis
     );
   }, [proyecto.ubicacionLat, proyecto.ubicacionLng, proyecto.ubicacionRadioM]);
 
+  // v8.36.0: en lg+ las cards de Info van a DOS columnas (ubicación+mapa junto a
+  // cliente/contactos/datos); en móvil sigue la pila. Solo clases lg: aditivas.
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-4 lg:items-start">
       {/* v8.17.41: Quick actions del proyecto (cartas, etc.) — solo admin */}
       {esAdmin && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 flex items-center justify-between gap-3 flex-wrap">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 flex items-center justify-between gap-3 flex-wrap lg:col-span-2">
           <div className="flex items-center gap-2">
             <FileText className="w-4 h-4 text-red-400" />
             <div>
@@ -5328,6 +5336,7 @@ function TabInfo({ proyecto, clientes = [], contactos = [], documentos = [], sis
       </div>
 
       {/* v8.9.15: Documentos formales del proyecto */}
+      <div className="lg:col-span-2">
       <SeccionDocumentos
         proyecto={proyecto}
         documentos={documentos}
@@ -5339,6 +5348,7 @@ function TabInfo({ proyecto, clientes = [], contactos = [], documentos = [], sis
         esSupervisor={esSupervisor}
         onRecargar={onRecargar}
       />
+      </div>
 
       {/* v8.17.41: Modal de carta de acceso al cliente */}
       {modalCarta && (

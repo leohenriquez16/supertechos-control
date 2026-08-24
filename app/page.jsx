@@ -92,6 +92,7 @@ import InicioChofer from '../components/logistica/InicioChofer'; // v8.29.0
 import TabCambios from '../components/cambios/TabCambios'; // v8.30.0
 import PlanObras from '../components/planificacion/PlanObras'; // v8.30.1
 import VistaCarga from '../components/carga/VistaCarga'; // v8.30.2
+import MiVehiculo from '../components/vehiculos/MiVehiculo'; // v8.33.0
 import CelebracionReporte from '../components/reportes/CelebracionReporte'; // v8.30.4
 import RachaCard from '../components/reportes/RachaCard'; // v8.30.4
 // v8.19.1: Módulo Levantamientos (surveys)
@@ -698,6 +699,8 @@ export default function App() {
       // v8.27.36: Facturas para no-admins con el flag (reportar facturas personales / reembolso)
       ...(usuario.facturasHabilitada ? [{ id: 'facturasOdoo', label: 'Facturas', icon: Receipt, vista: 'facturasOdoo' }] : []),
       ...(tareas.filter(t => t.asignadaAId === usuario.id).length > 0 ? [{ id: 'tareas', label: 'Tareas', icon: ClipboardList, vista: 'tareas', badge: tareas.filter(t => t.asignadaAId === usuario.id).length }] : []),
+      // v8.33.0: responsable de un vehículo → "Mi vehículo" (ficha + reportar fallas/daños)
+      ...((data.vehiculos || []).some(v => v.responsableId === usuario.id && v.activo !== false) ? [{ id: 'miVehiculo', label: 'Mi vehículo', icon: Car, vista: 'miVehiculo' }] : []),
       // v8.32.2: el encargado de almacén administra también la FLOTA de vehículos.
       // (La planificación de Rutas es de Erisdania con apoyo de Miguel — ambos admin.)
       ...(tieneRol(usuario, 'almacen') ? [
@@ -809,6 +812,7 @@ export default function App() {
         {tieneRol(usuario, 'owner') && vista === 'produccion' && <VistaProduccion usuario={usuario} data={data} onVolver={volverAtras} />}
         {esAdmin && vista === 'bonos' && <VistaBonos usuario={usuario} data={data} onVolver={volverAtras} />}
         {(esAdmin || tieneRol(usuario, 'almacen')) && vista === 'almacen' && <VistaAlmacen usuario={usuario} data={data} onVolver={esAdmin ? volverAtras : undefined} />}
+        {vista === 'miVehiculo' && <MiVehiculo usuario={usuario} data={data} onRecargar={recargar} />}
         {esAdmin && vista === 'rutas' && <VistaRutas usuario={usuario} data={data} onVolver={volverAtras} />}
         {esAdmin && vista === 'planObras' && <PlanObras usuario={usuario} data={data} onVolver={volverAtras} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('cronograma'); }} onRecargar={recargar} />}
         {tieneRol(usuario, 'owner') && vista === 'carga' && <VistaCarga usuario={usuario} data={data} onVolver={volverAtras} />}
@@ -11769,6 +11773,9 @@ function VistaTareas({ usuario, data, onVolver, onCompletarTarea, onCrearTarea, 
   const [loading, setLoading] = useState(true);
   const [mostrarCompletadas, setMostrarCompletadas] = useState(false);
   const [crearModal, setCrearModal] = useState(false);
+  // v8.33.0: filtro Me tocan / Superviso / Todas + delegación con fecha
+  const [filtro, setFiltro] = useState('mias'); // mias | superviso | todas
+  const [delegando, setDelegando] = useState(null); // tarea en delegación
 
   const esAdmin = tieneRol(usuario, 'admin');
 
@@ -11776,12 +11783,36 @@ function VistaTareas({ usuario, data, onVolver, onCompletarTarea, onCrearTarea, 
     setLoading(true);
     try {
       const t = await db.listarTareas({ completadas: mostrarCompletadas });
-      // Si no es admin, filtrar solo las asignadas al usuario
-      setTareas(esAdmin ? t : t.filter(x => x.asignadaAId === usuario.id));
+      // no-admin: ve las suyas Y las que supervisa
+      setTareas(esAdmin ? t : t.filter(x => x.asignadaAId === usuario.id || x.supervisorId === usuario.id));
     } catch (e) { console.error(e); }
     setLoading(false);
   };
   useEffect(() => { recargar(); }, [mostrarCompletadas]);
+
+  const visibles = tareas.filter(t =>
+    filtro === 'mias' ? t.asignadaAId === usuario.id :
+    filtro === 'superviso' ? t.supervisorId === usuario.id : true);
+
+  // Delegar: el nuevo responsable la recibe; si no tenía supervisor, quien delega
+  // queda como supervisor (sigue viéndola en "Superviso").
+  const delegar = async (tarea, nuevaPersonaId, nuevaFecha) => {
+    const p = (data.personal || []).find(x => x.id === nuevaPersonaId);
+    if (!p) { alert('Elige a quién delegar.'); return; }
+    await db.actualizarTarea(tarea.id, {
+      asignadaAId: p.id, asignadaANombre: p.nombre,
+      ...(tarea.supervisorId ? {} : { supervisorId: usuario.id, supervisorNombre: usuario.nombre }),
+      ...(nuevaFecha !== undefined ? { fechaLimite: nuevaFecha } : {}),
+    });
+    setDelegando(null);
+    await recargar();
+  };
+  const cambiarFecha = async (tarea) => {
+    const f = prompt('Nueva fecha límite (YYYY-MM-DD, vacío = sin fecha):', tarea.fechaLimite || '');
+    if (f === null) return;
+    await db.actualizarTarea(tarea.id, { fechaLimite: f || null });
+    await recargar();
+  };
 
   const completar = async (id) => { await onCompletarTarea(id); await recargar(); };
   const eliminar = async (id) => { if (confirm('¿Eliminar tarea?')) { await onEliminarTarea(id); await recargar(); } };
@@ -11797,9 +11828,15 @@ function VistaTareas({ usuario, data, onVolver, onCompletarTarea, onCrearTarea, 
         <TabBtn active={!mostrarCompletadas} onClick={() => setMostrarCompletadas(false)}>Pendientes</TabBtn>
         <TabBtn active={mostrarCompletadas} onClick={() => setMostrarCompletadas(true)}>Completadas</TabBtn>
       </div>
+      {/* v8.33.0: Me tocan / Superviso / Todas */}
+      <div className="flex flex-wrap gap-1">
+        <button onClick={() => setFiltro('mias')} className={`text-[10px] font-bold uppercase px-2.5 py-1.5 rounded-card border ${filtro === 'mias' ? 'bg-red-600 border-red-600 text-white' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>👤 Me tocan ({tareas.filter(t => t.asignadaAId === usuario.id).length})</button>
+        <button onClick={() => setFiltro('superviso')} className={`text-[10px] font-bold uppercase px-2.5 py-1.5 rounded-card border ${filtro === 'superviso' ? 'bg-red-600 border-red-600 text-white' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>👁 Superviso ({tareas.filter(t => t.supervisorId === usuario.id).length})</button>
+        {esAdmin && <button onClick={() => setFiltro('todas')} className={`text-[10px] font-bold uppercase px-2.5 py-1.5 rounded-card border ${filtro === 'todas' ? 'bg-red-600 border-red-600 text-white' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>Todas ({tareas.length})</button>}
+      </div>
       {loading && <div className="text-center py-6"><Loader2 className="w-5 h-5 text-red-500 animate-spin mx-auto" /></div>}
-      {!loading && tareas.length === 0 && <div className="text-center py-10 text-zinc-500 text-sm">Sin tareas.</div>}
-      <div className="space-y-2">{tareas.map(t => {
+      {!loading && visibles.length === 0 && <div className="text-center py-10 text-zinc-500 text-sm">Sin tareas en este filtro.</div>}
+      <div className="space-y-2">{visibles.map(t => {
         const proy = data.proyectos.find(p => p.id === t.proyectoId);
         return (
           <div key={t.id} className={`bg-zinc-900 border-l-4 ${t.completada ? 'border-green-600 opacity-70' : 'border-orange-500'} p-3 flex items-start gap-3`}>
@@ -11810,14 +11847,48 @@ function VistaTareas({ usuario, data, onVolver, onCompletarTarea, onCrearTarea, 
               <div className="text-[10px] text-zinc-500 mt-1 flex flex-wrap gap-2">
                 {proy && <span>📋 {proy.cliente}</span>}
                 {t.asignadaANombre && <span>👤 {t.asignadaANombre}</span>}
-                {t.fechaLimite && <span className="text-yellow-400">📅 {formatFechaCorta(t.fechaLimite)}</span>}
+                {t.supervisorNombre && <span>👁 {t.supervisorNombre}</span>}
+                {t.fechaLimite && <span className={t.fechaLimite < new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo' }).format(new Date()) && !t.completada ? 'text-red-400 font-bold' : 'text-yellow-400'}>📅 {formatFechaCorta(t.fechaLimite)}</span>}
               </div>
+              {!t.completada && (t.asignadaAId === usuario.id || t.supervisorId === usuario.id || esAdmin) && (
+                <div className="flex gap-1.5 mt-1.5">
+                  <button onClick={() => setDelegando(t)} className="text-[10px] font-black uppercase px-2 py-1 rounded-card border border-zinc-700 hover:border-blue-500 text-zinc-300">↪ Delegar</button>
+                  <button onClick={() => cambiarFecha(t)} className="text-[10px] font-black uppercase px-2 py-1 rounded-card border border-zinc-700 hover:border-amber-500 text-zinc-300">📅 Fecha</button>
+                </div>
+              )}
             </div>
             {esAdmin && <button onClick={() => eliminar(t.id)} className="text-zinc-500 hover:text-red-400"><Trash2 className="w-3 h-3" /></button>}
           </div>
         );
       })}</div>
       {crearModal && <ModalCrearTarea usuario={usuario} proyectos={data.proyectos} personal={data.personal} onCerrar={() => setCrearModal(false)} onCrear={async (t) => { await onCrearTarea(t); setCrearModal(false); await recargar(); }} />}
+      {delegando && (
+        <ModalDelegarTarea tarea={delegando} personal={data.personal} onCerrar={() => setDelegando(null)} onDelegar={delegar} />
+      )}
+    </div>
+  );
+}
+
+// v8.33.0: delegar una tarea — nuevo responsable + fecha; quien delega queda de supervisor.
+function ModalDelegarTarea({ tarea, personal, onCerrar, onDelegar }) {
+  const [personaId, setPersonaId] = useState('');
+  const [fecha, setFecha] = useState(tarea.fechaLimite || '');
+  const candidatos = (personal || []).filter(p => tieneRol(p, 'admin') || tieneRol(p, 'supervisor') || tieneRol(p, 'maestro') || tieneRol(p, 'facturas') || tieneRol(p, 'almacen') || tieneRol(p, 'chofer'));
+  return (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={onCerrar}>
+      <div className="bg-zinc-900 border-2 border-blue-600 rounded-card max-w-sm w-full p-5 space-y-3" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-start"><div className="text-xs tracking-widest uppercase text-blue-400 font-bold">↪ Delegar tarea</div><button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button></div>
+        <div className="text-sm font-bold">{tarea.titulo}</div>
+        <Campo label="Delegar a">
+          <select value={personaId} onChange={e => setPersonaId(e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-blue-600 outline-none px-3 py-3 text-white">
+            <option value="">Elegir persona…</option>
+            {candidatos.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '')).map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+          </select>
+        </Campo>
+        <Campo label="Fecha de vencimiento"><Input type="date" value={fecha} onChange={setFecha} /></Campo>
+        <div className="text-[10px] text-zinc-500">Al delegar, tú quedas como supervisor de la tarea (la sigues viendo en "👁 Superviso").</div>
+        <button onClick={() => onDelegar(tarea, personaId, fecha || null)} disabled={!personaId} className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-3 rounded-card">Delegar</button>
+      </div>
     </div>
   );
 }
@@ -11827,6 +11898,7 @@ function ModalCrearTarea({ usuario, proyectos, personal, onCerrar, onCrear }) {
   const [descripcion, setDescripcion] = useState('');
   const [proyectoId, setProyectoId] = useState('');
   const [asignadaAId, setAsignadaAId] = useState('');
+  const [supervisorId, setSupervisorId] = useState(usuario.id); // v8.33.0: quien crea supervisa por defecto
   const [fechaLimite, setFechaLimite] = useState('');
   const asignablesRoles = personal.filter(p => tieneRol(p, 'admin') || tieneRol(p, 'supervisor') || tieneRol(p, 'maestro'));
   const crear = () => {
@@ -11836,6 +11908,7 @@ function ModalCrearTarea({ usuario, proyectos, personal, onCerrar, onCrear }) {
       id: 't_' + Date.now() + Math.random(),
       proyectoId: proyectoId || null, tipo: 'otro', titulo, descripcion,
       asignadaAId: asignadaAId || null, asignadaANombre: persona?.nombre || null,
+      supervisorId: supervisorId || null, supervisorNombre: personal.find(p => p.id === supervisorId)?.nombre || null,
       fechaLimite: fechaLimite || null,
     });
   };
@@ -11847,6 +11920,7 @@ function ModalCrearTarea({ usuario, proyectos, personal, onCerrar, onCrear }) {
         <Campo label="Descripción"><textarea value={descripcion} onChange={e => setDescripcion(e.target.value)} rows={2} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm" /></Campo>
         <Campo label="Proyecto"><select value={proyectoId} onChange={e => setProyectoId(e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="">(General)</option>{proyectos.map(p => <option key={p.id} value={p.id}>{labelProyecto(p)}</option>)}</select></Campo>
         <Campo label="Asignar a"><select value={asignadaAId} onChange={e => setAsignadaAId(e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="">Sin asignar</option>{asignablesRoles.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}</select></Campo>
+        <Campo label="Supervisor de la tarea"><select value={supervisorId} onChange={e => setSupervisorId(e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="">Sin supervisor</option>{asignablesRoles.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}</select></Campo>
         <Campo label="Fecha límite"><Input type="date" value={fechaLimite} onChange={setFechaLimite} /></Campo>
         <div className="flex gap-2 pt-1"><button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button><button onClick={crear} disabled={!titulo} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-3"><Save className="w-3 h-3 inline mr-1" /> Crear</button></div>
       </div>

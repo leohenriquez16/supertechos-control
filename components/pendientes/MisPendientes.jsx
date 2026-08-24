@@ -10,7 +10,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Loader2, CircleCheck, RefreshCw, ChevronRight, AlertTriangle } from 'lucide-react';
 import * as db from '../../lib/db';
 import { listarProyectosSurveys } from '../../lib/surveys';
-import { generarPendientes, GRUPOS } from '../../lib/helpers/pendientes';
+import { generarPendientes, GRUPOS, AREAS_PENDIENTES } from '../../lib/helpers/pendientes';
 
 const hoyRD = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo' }).format(new Date());
 
@@ -18,6 +18,7 @@ export default function MisPendientes({ usuario, data, esAdmin = false, compact 
   const [loading, setLoading] = useState(true);
   const [refrescando, setRefrescando] = useState(false);
   const [extras, setExtras] = useState(null); // { jornadas7d, surveys, reclamaciones, tareas, cortes }
+  const [areaFiltro, setAreaFiltro] = useState('Todas'); // v8.33.0: filtro por área
   const [completando, setCompletando] = useState(null);
 
   const cargar = async ({ silent } = {}) => {
@@ -26,15 +27,16 @@ export default function MisPendientes({ usuario, data, esAdmin = false, compact 
       const hoy = hoyRD();
       const hace7 = (() => { const d = new Date(hoy + 'T12:00:00'); d.setDate(d.getDate() - 7); return d.toISOString().slice(0, 10); })();
       const esAlmacen = (usuario.roles || []).includes('almacen');
-      const [jornadas7d, surveys, reclamaciones, tareas, cortes, requisiciones] = await Promise.all([
+      const [jornadas7d, surveys, reclamaciones, tareas, cortes, requisiciones, vehiculoEventos] = await Promise.all([
         db.listarJornadasEnRango(hace7, hoy).catch(() => []),
         listarProyectosSurveys().catch(() => []),
         db.listarReclamaciones().catch(() => []),
         db.listarTareas({ completadas: false }).catch(() => []),
         esAdmin ? db.listarCortes().catch(() => []) : Promise.resolve([]),
         (esAdmin || esAlmacen) ? db.listarRequisiciones({ estados: ['pendiente', 'preparando', 'lista'] }).catch(() => []) : Promise.resolve([]),
+        (esAdmin || esAlmacen) ? db.listarEventosVehiculo({ soloAbiertos: true }).catch(() => []) : Promise.resolve([]),
       ]);
-      setExtras({ jornadas7d, surveys, reclamaciones, tareas, cortes, requisiciones, esAlmacen });
+      setExtras({ jornadas7d, surveys, reclamaciones, tareas, cortes, requisiciones, vehiculoEventos, esAlmacen });
     } catch (e) { console.warn('MisPendientes:', e?.message); }
     setLoading(false); setRefrescando(false);
   };
@@ -73,10 +75,13 @@ export default function MisPendientes({ usuario, data, esAdmin = false, compact 
   }
 
   // Agrupar manteniendo el orden (urgentes ya vienen primero dentro del sort global).
+  // v8.33.0: filtro por ÁREA (Proyectos, Logística, Comercial, Postventa, Gerencia…).
   const grupos = Object.entries(GRUPOS)
     .sort((a, b) => a[1].orden - b[1].orden)
     .map(([key, def]) => ({ key, def, items: pendientes.filter(p => p.grupo === key) }))
-    .filter(g => g.items.length > 0);
+    .filter(g => g.items.length > 0)
+    .filter(g => areaFiltro === 'Todas' || g.def.area === areaFiltro);
+  const areasConItems = ['Todas', ...AREAS_PENDIENTES.filter(a => a !== 'Todas' && pendientes.some(p => GRUPOS[p.grupo]?.area === a))];
 
   return (
     <div className={`bg-zinc-900 border rounded-card p-3 space-y-2 ${urgentes > 0 ? 'border-red-800/60' : 'border-zinc-800'}`}>
@@ -93,6 +98,16 @@ export default function MisPendientes({ usuario, data, esAdmin = false, compact 
         </button>
       </div>
 
+      {!compact && pendientes.length > 0 && areasConItems.length > 2 && (
+        <div className="flex flex-wrap gap-1">
+          {areasConItems.map(a => (
+            <button key={a} onClick={() => setAreaFiltro(a)}
+              className={`text-[10px] font-bold uppercase px-2 py-1 rounded-card border ${areaFiltro === a ? 'bg-blue-600 border-blue-600 text-white' : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'}`}>
+              {a}{a !== 'Todas' ? ` (${pendientes.filter(p => GRUPOS[p.grupo]?.area === a).length})` : ''}
+            </button>
+          ))}
+        </div>
+      )}
       {pendientes.length === 0 ? (
         <div className="text-xs text-zinc-500">Nada pendiente por tu lado. 🎉 Las tareas de mañana aparecerán solas.</div>
       ) : (

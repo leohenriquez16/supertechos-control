@@ -128,6 +128,8 @@ export default function VistaTareas({ usuario, data, onVolver, onCompletarTarea,
           <div className={`text-sm font-semibold truncate ${t.completada ? 'line-through text-zinc-500' : ''}`} title={t.descripcion || t.titulo}>
             {t.prioridad === 'alta' && <span className="mr-1">🔥</span>}{t.titulo}
             {(t.comentarios || []).length > 0 && <span className="ml-1.5 text-[10px] text-zinc-500">💬 {t.comentarios.length}</span>}
+            {(t.subtareas || []).length > 0 && <span className="ml-1.5 text-[10px] text-zinc-500">☑ {(t.subtareas || []).filter(x => x.hecha).length}/{t.subtareas.length}</span>}
+            {(t.likes || []).length > 0 && <span className="ml-1.5 text-[10px] text-zinc-500">👍 {t.likes.length}</span>}
           </div>
           <div className="flex items-center gap-2 flex-wrap text-[10px] text-zinc-500 mt-0.5">
             {proy && <span className="bg-zinc-950 border border-zinc-800 rounded-full px-1.5 py-0.5 truncate max-w-[160px]">📋 {proy.referenciaOdoo || proy.cliente}</span>}
@@ -290,7 +292,19 @@ export function ModalCrearTarea({ usuario, proyectos, personal, onCerrar, onCrea
 function ModalDetalleTarea({ tarea, usuario, data, esAdmin, onCerrar, onRecargar, onCompletar, onDelegar, onCambiarFecha }) {
   const [comentario, setComentario] = useState('');
   const [enviando, setEnviando] = useState(false);
+  const [nuevaSub, setNuevaSub] = useState(''); // v8.33.4
   const puedeGestionar = tarea.asignadaAId === usuario.id || tarea.supervisorId === usuario.id || esAdmin;
+  const yoDiLike = (tarea.likes || []).some(l => l.porId === usuario.id);
+  const darLike = async () => { await db.toggleLikeTarea(tarea.id, { porId: usuario.id, porNombre: usuario.nombre }); await onRecargar(); };
+  const toggleSub = async (i) => {
+    const subs = (tarea.subtareas || []).map((x, n) => n === i ? { ...x, hecha: !x.hecha } : x);
+    await db.actualizarSubtareas(tarea.id, subs); await onRecargar();
+  };
+  const agregarSub = async () => {
+    if (!nuevaSub.trim()) return;
+    await db.actualizarSubtareas(tarea.id, [...(tarea.subtareas || []), { texto: nuevaSub.trim(), hecha: false }]);
+    setNuevaSub(''); await onRecargar();
+  };
 
   const comentar = async () => {
     if (!comentario.trim()) return;
@@ -322,6 +336,27 @@ function ModalDetalleTarea({ tarea, usuario, data, esAdmin, onCerrar, onRecargar
           {tarea.asignadaANombre && <span className="bg-zinc-950 border border-zinc-800 rounded-full px-2 py-0.5">👤 {tarea.asignadaANombre}</span>}
           {tarea.supervisorNombre && <span className="bg-zinc-950 border border-zinc-800 rounded-full px-2 py-0.5">👁 {tarea.supervisorNombre}</span>}
           {tarea.fechaLimite && <span className="bg-zinc-950 border border-zinc-800 rounded-full px-2 py-0.5">📅 {formatFechaCorta(tarea.fechaLimite)}</span>}
+          <button onClick={darLike} className={`rounded-full px-2 py-0.5 border font-bold ${yoDiLike ? 'bg-blue-600/20 border-blue-700 text-blue-300' : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'}`}
+            title={(tarea.likes || []).map(l => l.porNombre).join(', ')}>👍 {(tarea.likes || []).length || ''}</button>
+        </div>
+        {/* Subtareas (checklist) */}
+        <div className="border-t border-zinc-800 pt-2.5">
+          <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold mb-1.5">☑ Subtareas ({(tarea.subtareas || []).filter(x => x.hecha).length}/{(tarea.subtareas || []).length})</div>
+          <div className="space-y-1">
+            {(tarea.subtareas || []).map((st, i) => (
+              <label key={i} className="flex items-center gap-2 text-sm cursor-pointer">
+                <input type="checkbox" checked={!!st.hecha} onChange={() => puedeGestionar && toggleSub(i)} className="w-4 h-4 accent-green-500" />
+                <span className={st.hecha ? 'line-through text-zinc-500' : 'text-zinc-200'}>{st.texto}</span>
+              </label>
+            ))}
+          </div>
+          {puedeGestionar && !tarea.completada && (
+            <div className="flex gap-1.5 mt-1.5">
+              <input value={nuevaSub} onChange={e => setNuevaSub(e.target.value)} onKeyDown={e => e.key === 'Enter' && agregarSub()}
+                placeholder="+ Agregar subtarea…" className="flex-1 bg-zinc-950 border border-zinc-800 rounded-card px-2.5 py-1.5 text-xs min-w-0" />
+              {nuevaSub.trim() && <button onClick={agregarSub} className="text-[10px] font-black uppercase px-2.5 rounded-card bg-zinc-800 hover:bg-zinc-700 text-white">Añadir</button>}
+            </div>
+          )}
         </div>
         {puedeGestionar && !tarea.completada && (
           <div className="flex flex-wrap gap-1.5 items-center border-t border-zinc-800 pt-2.5">

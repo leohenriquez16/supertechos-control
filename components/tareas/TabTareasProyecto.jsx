@@ -9,6 +9,7 @@ import { Loader2, Plus, CircleCheck, CircleDashed } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatFechaCorta } from '../../lib/helpers/formato';
 import { ModalCrearTarea, ModalDelegarTarea } from './VistaTareas';
+import { PLANTILLAS_TAREAS } from '../../lib/helpers/plantillasTareas';
 
 const hoyRD = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo' }).format(new Date());
 
@@ -42,6 +43,27 @@ export default function TabTareasProyecto({ usuario, proyecto, data, esAdmin }) 
     } catch (e) { /* */ }
   };
 
+  // v8.33.4: crear en lote desde plantilla — responsable: supervisor de la obra
+  // (o maestro si no hay), supervisor de tarea: quien la crea. Fechas escalonadas.
+  const crearDesdePlantilla = async (pl) => {
+    const respId = proyecto.supervisorId || proyecto.maestroId || null;
+    const resp = (data.personal || []).find(p => p.id === respId);
+    if (!confirm(`Crear ${pl.tareas.length} tareas de "${pl.nombre}" en esta obra${resp ? `, asignadas a ${resp.nombre}` : ''}?`)) return;
+    const hoyF = hoyRD();
+    const suma = (f, n) => { const d = new Date(f + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+    for (const lt of pl.tareas) {
+      await db.crearTarea({
+        id: 't_' + Date.now() + Math.random(), proyectoId: proyecto.id, tipo: 'plantilla',
+        titulo: lt.titulo, descripcion: `Plantilla: ${pl.nombre}`,
+        asignadaAId: respId, asignadaANombre: resp?.nombre || null,
+        supervisorId: usuario.id, supervisorNombre: usuario.nombre,
+        prioridad: lt.prioridad || 'normal', fechaLimite: suma(hoyF, lt.dias || 0),
+      });
+    }
+    if (respId && respId !== usuario.id) avisar(respId, `${pl.tareas.length} tareas de ${pl.nombre} en ${proyecto.cliente || proyecto.nombre}`, null);
+    await recargar();
+  };
+
   const pendientes = tareas.filter(t => !t.completada).sort((a, b) => (a.fechaLimite || '9999').localeCompare(b.fechaLimite || '9999'));
   const completadas = tareas.filter(t => t.completada);
 
@@ -71,7 +93,14 @@ export default function TabTareasProyecto({ usuario, proyecto, data, esAdmin }) 
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
         <button onClick={() => setVerCompletadas(!verCompletadas)} className={`text-[10px] font-bold uppercase px-2.5 py-1.5 rounded-card border ${verCompletadas ? 'bg-green-700 border-green-700 text-white' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>✓ Ver completadas</button>
-        <button onClick={() => setCrear(true)} className="bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase px-3 py-2 rounded-card flex items-center gap-1"><Plus className="w-3.5 h-3.5" /> Nueva tarea</button>
+        <div className="flex gap-1.5">
+          <select defaultValue="" onChange={async (e) => { const pl = PLANTILLAS_TAREAS.find(x => x.id === e.target.value); e.target.value = ''; if (pl) await crearDesdePlantilla(pl); }}
+            className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-2 text-[11px] text-zinc-300">
+            <option value="" disabled>📋 Desde plantilla…</option>
+            {PLANTILLAS_TAREAS.map(p => <option key={p.id} value={p.id}>{p.nombre} ({p.tareas.length})</option>)}
+          </select>
+          <button onClick={() => setCrear(true)} className="bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase px-3 py-2 rounded-card flex items-center gap-1"><Plus className="w-3.5 h-3.5" /> Nueva tarea</button>
+        </div>
       </div>
       {loading ? <div className="text-center py-8"><Loader2 className="w-5 h-5 text-red-500 animate-spin mx-auto" /></div> : (
         <div className="space-y-1.5">

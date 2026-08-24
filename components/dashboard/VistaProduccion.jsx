@@ -165,7 +165,7 @@ export default function VistaProduccion({ usuario, data, onVolver }) {
   const nRetro = filas.filter(f => f.retro).length;
 
   return (
-    <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-5">
+    <div className="p-4 md:p-6 max-w-5xl lg:max-w-7xl mx-auto space-y-5">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2">
           {onVolver && <button onClick={onVolver} className="text-zinc-500 hover:text-white"><ArrowLeft className="w-4 h-4" /></button>}

@@ -625,26 +625,34 @@ export default function App() {
       { id: 'gotera', label: 'Gotera', icon: CloudRain, vista: 'gotera' },
     ]},
   ] : esAdmin ? [
+    // v8.35.0: menú reorganizado por ÁREAS del organigrama (Operación, Comercial,
+    // Logística, Finanzas) — el ERP se navega como se navega la empresa.
     { seccion: 'OPERACIÓN', items: [
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, vista: 'dashboard' },
       // v8.28.3: task manager — tareas diarias generadas solas por responsable
       { id: 'pendientes', label: 'Mis Pendientes', icon: CircleCheck, vista: 'pendientes' },
       { id: 'proyectos', label: 'Proyectos', icon: Briefcase, vista: 'proyectos', esProyectos: true },
+      // v8.30.1: Plan de Obras = obras en el tiempo; Planificación = personas por día
+      { id: 'planObras', label: 'Plan de Obras', icon: Calendar, vista: 'planObras' },
+      { id: 'planificacion', label: 'Planificación', icon: Calendar, vista: 'planificacion' },
+      { id: 'tareas', label: 'Tareas', icon: ClipboardList, vista: 'tareas', badge: tareas.length },
+      { id: 'reclamaciones', label: 'Reclamaciones', icon: AlertTriangle, vista: 'reclamaciones' },
+      { id: 'equipoGlobal', label: 'Equipo en obra', icon: Users, vista: 'equipoGlobal' },
+      { id: 'galeria', label: 'Galería', icon: ImageIcon, vista: 'galeria' },
+      // v8.27.0: Gotera — feedback / reporte de errores del ERP en modo ticket.
+      { id: 'gotera', label: 'Gotera', icon: CloudRain, vista: 'gotera' },
+    ]},
+    { seccion: 'COMERCIAL', items: [
       { id: 'surveys', label: 'Levantamientos', icon: MapPin, vista: 'surveys' },
       { id: 'solicitudes', label: 'Solicitudes', icon: FileText, vista: 'solicitudes', badge: solicitudesNuevas },
       { id: 'citas', label: 'Citas', icon: Calendar, vista: 'citas' },
-      { id: 'reclamaciones', label: 'Reclamaciones', icon: AlertTriangle, vista: 'reclamaciones' },
-      { id: 'planificacion', label: 'Planificación', icon: Calendar, vista: 'planificacion' },
-      // v8.30.1: planificación de OBRAS en el tiempo (la de arriba es de personas por día)
-      { id: 'planObras', label: 'Plan de Obras', icon: Calendar, vista: 'planObras' },
-      { id: 'tareas', label: 'Tareas', icon: ClipboardList, vista: 'tareas', badge: tareas.length },
-      { id: 'galeria', label: 'Galería', icon: ImageIcon, vista: 'galeria' },
-      { id: 'equipoGlobal', label: 'Equipo en obra', icon: Users, vista: 'equipoGlobal' },
-      // v8.29.0: Logística — cola de almacén y rutas de camiones
+    ]},
+    { seccion: 'LOGÍSTICA', items: [
+      // v8.29.0: cola de almacén y rutas de camiones
       { id: 'almacen', label: 'Almacén', icon: Package, vista: 'almacen' },
       { id: 'rutas', label: 'Rutas', icon: Truck, vista: 'rutas' },
-      // v8.27.0: Gotera — feedback / reporte de errores del ERP en modo ticket.
-      { id: 'gotera', label: 'Gotera', icon: CloudRain, vista: 'gotera' },
+      // v8.27.38: flota + docs (matrícula/seguro), elegibles en cartas de acceso
+      { id: 'vehiculos', label: 'Vehículos', icon: Car, vista: 'vehiculos' },
     ]},
     { seccion: 'FINANZAS', items: [
       // v8.27.73: dashboard de producción RD$ — v8.27.74: SOLO owner (como Contabilidad)
@@ -669,8 +677,6 @@ export default function App() {
       { id: 'clientes', label: 'Clientes', icon: Building2, vista: 'clientes' },
       { id: 'ubicaciones', label: 'Ubicaciones', icon: MapPin, vista: 'ubicaciones' },
       { id: 'garantias', label: 'Garantías', icon: CheckCircle2, vista: 'garantias' },
-      // v8.27.38: flota de vehículos + docs (matrícula/seguro), elegibles en cartas de acceso
-      { id: 'vehiculos', label: 'Vehículos', icon: Car, vista: 'vehiculos' },
       { id: 'personal', label: 'Personal', icon: UserIcon, vista: 'personal' },
       { id: 'notificaciones', label: 'Notificaciones', icon: Mail, vista: 'notificaciones' },
       { id: 'estadisticasPersonal', label: 'Estadísticas', icon: TrendingUp, vista: 'estadisticasPersonal' },
@@ -820,7 +826,7 @@ export default function App() {
         {esAdmin && vista === 'planObras' && <PlanObras usuario={usuario} data={data} onVolver={volverAtras} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('cronograma'); }} onRecargar={recargar} />}
         {tieneRol(usuario, 'owner') && vista === 'carga' && <VistaCarga usuario={usuario} data={data} onVolver={volverAtras} />}
         {vista === 'pendientes' && (
-          <div className="p-4 md:p-6 max-w-3xl mx-auto">
+          <div className="p-4 md:p-6 max-w-3xl lg:max-w-5xl mx-auto">
             <MisPendientes usuario={usuario} data={data} esAdmin={esAdmin}
               onIrAProyecto={(p, tab) => { setProyectoActivo(p); setVista('proyecto'); setTab(tab || 'avance'); }}
               onIrAReportar={(p) => { setProyectoActivo(p); setVista('reportar'); }}

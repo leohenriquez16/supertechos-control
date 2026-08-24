@@ -145,8 +145,9 @@ export default function VistaTareas({ usuario, data, onVolver, onCompletarTarea,
     const proy = (data.proyectos || []).find(p => p.id === t.proyectoId);
     const vencida = t.fechaLimite && t.fechaLimite.slice(0, 10) < hoy && !t.completada;
     const puedeGestionar = !t.completada && (t.asignadaAId === usuario.id || t.supervisorId === usuario.id || esAdmin);
+    const abierta = detalle?.id === t.id; // v8.35.0: seleccionada en el panel lateral
     return (
-      <div className={`group flex items-center gap-2.5 px-3 py-2 rounded-card border bg-zinc-900 hover:bg-zinc-800/70 ${vencida ? 'border-red-900/60' : 'border-zinc-800'} ${t.completada ? 'opacity-60' : ''}`}>
+      <div className={`group flex items-center gap-2.5 px-3 py-2 rounded-card border bg-zinc-900 hover:bg-zinc-800/70 ${abierta ? 'border-blue-700/70 bg-zinc-800/60' : vencida ? 'border-red-900/60' : 'border-zinc-800'} ${t.completada ? 'opacity-60' : ''}`}>
         <button onClick={() => !t.completada && completar(t.id)} disabled={t.completada} className="shrink-0" title="Completar">
           {t.completada ? <CircleCheck className="w-5 h-5 text-green-500" /> : <CircleDashed className="w-5 h-5 text-zinc-600 hover:text-green-400" />}
         </button>
@@ -157,6 +158,7 @@ export default function VistaTareas({ usuario, data, onVolver, onCompletarTarea,
             {(t.subtareas || []).length > 0 && <span className="ml-1.5 text-[10px] text-zinc-500">☑ {(t.subtareas || []).filter(x => x.hecha).length}/{t.subtareas.length}</span>}
             {(t.likes || []).length > 0 && <span className="ml-1.5 text-[10px] text-zinc-500">👍 {t.likes.length}</span>}
           </div>
+          {t.descripcion && <div className="hidden lg:block text-[11px] text-zinc-500 truncate mt-0.5">{t.descripcion}</div>}
           <div className="flex items-center gap-2 flex-wrap text-[10px] text-zinc-500 mt-0.5">
             {proy && <span className="bg-zinc-950 border border-zinc-800 rounded-full px-1.5 py-0.5 truncate max-w-[160px]">📋 {proy.referenciaOdoo || proy.cliente}</span>}
             {t.proyectoInternoId && (() => { const esp = internos.find(i => i.id === t.proyectoInternoId); return esp ? <span className="bg-violet-950/60 border border-violet-800/60 text-violet-300 rounded-full px-1.5 py-0.5 truncate max-w-[160px]">📁 {esp.nombre}</span> : null; })()}
@@ -182,8 +184,13 @@ export default function VistaTareas({ usuario, data, onVolver, onCompletarTarea,
     );
   };
 
+  // v8.35.0 (desktop-first): en pantalla grande la vista es de DOS PANELES —
+  // lista a la izquierda y el detalle de la tarea fijo a la derecha (sin modal).
+  // En celular todo queda igual (modal a pantalla completa).
   return (
-    <div className="space-y-4 max-w-3xl">
+    <div className="max-w-3xl lg:max-w-[1400px]">
+      <div className="lg:flex lg:gap-5 lg:items-start">
+      <div className="space-y-4 min-w-0 flex-1">
       <button onClick={onVolver} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button>
       <div className="flex justify-between items-center gap-2 flex-wrap">
         <h1 className="text-3xl font-black tracking-tight">Tareas</h1>
@@ -288,13 +295,17 @@ export default function VistaTareas({ usuario, data, onVolver, onCompletarTarea,
         </div>
       )}
 
+      </div>
+
+      {detalle && <ModalDetalleTarea tarea={tareas.find(x => x.id === detalle.id) || detalle} usuario={usuario} data={data} esAdmin={esAdmin}
+        onCerrar={() => setDetalle(null)} onRecargar={recargar}
+        onCompletar={completar} onDelegar={(t) => { setDetalle(null); setDelegando(t); }} onCambiarFecha={cambiarFecha} />}
+      </div>
+
       {crearModal && <ModalCrearTarea usuario={usuario} proyectos={data.proyectos || []} personal={data.personal || []} internos={internos} espacioFijo={espacioFiltro || null} onCerrar={() => setCrearModal(false)} onCrear={async (t) => { await onCrearTarea(t); if (t.asignadaAId && t.asignadaAId !== usuario.id) avisarAsignacion(t.asignadaAId, t.titulo, usuario.nombre, t.fechaLimite); setCrearModal(false); await recargar(); }} />}
       {crearEspacio && <ModalCrearEspacio usuario={usuario} personal={data.personal || []} onCerrar={() => setCrearEspacio(false)} onCreado={async (id) => { setCrearEspacio(false); await recargar(); setEspacioFiltro(id); }} />}
       {verRecurrentes && <ModalRecurrentes usuario={usuario} data={data} internos={internos} onCerrar={() => setVerRecurrentes(false)} onGenerado={recargar} />}
       {delegando && <ModalDelegarTarea tarea={delegando} personal={data.personal || []} onCerrar={() => setDelegando(null)} onDelegar={delegar} />}
-      {detalle && <ModalDetalleTarea tarea={tareas.find(x => x.id === detalle.id) || detalle} usuario={usuario} data={data} esAdmin={esAdmin}
-        onCerrar={() => setDetalle(null)} onRecargar={recargar}
-        onCompletar={completar} onDelegar={(t) => { setDetalle(null); setDelegando(t); }} onCambiarFecha={cambiarFecha} />}
     </div>
   );
 }
@@ -452,9 +463,11 @@ function ModalDetalleTarea({ tarea, usuario, data, esAdmin, onCerrar, onRecargar
     await onRecargar();
   };
 
+  // v8.35.0: en móvil es un modal (overlay); en lg+ es un PANEL LATERAL sticky
+  // dentro de la fila de dos columnas de VistaTareas — más información a la vista.
   return (
-    <div className="fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
-      <div className="bg-zinc-900 border-2 border-zinc-700 rounded-card max-w-lg w-full p-5 space-y-3 my-8" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4 overflow-auto lg:static lg:inset-auto lg:bg-transparent lg:z-auto lg:p-0 lg:block lg:overflow-visible lg:w-[400px] xl:w-[440px] lg:shrink-0" onClick={onCerrar}>
+      <div className="bg-zinc-900 border-2 border-zinc-700 rounded-card max-w-lg w-full p-5 space-y-3 my-8 lg:my-0 lg:max-w-none lg:border lg:border-zinc-800 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto animate-fadeIn" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-start gap-2">
           <div className="min-w-0">
             <div className="text-xs tracking-widest uppercase text-zinc-500 font-bold">Tarea</div>

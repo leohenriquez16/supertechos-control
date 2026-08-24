@@ -94,7 +94,7 @@ export default function ModuloSolicitudes({ usuario, onRecargar }) {
   const mapsUrl = (s) => s.lat && s.lng ? `https://www.google.com/maps?q=${s.lat},${s.lng}` : (s.direccion ? `https://www.google.com/maps/search/${encodeURIComponent(s.direccion)}` : null);
 
   return (
-    <div className="max-w-3xl mx-auto">
+    <div className="max-w-3xl lg:max-w-5xl mx-auto">
       <div className="flex items-center gap-2 mb-4">
         <Inbox className="w-6 h-6 text-red-500" />
         <h1 className="text-2xl font-black tracking-tight">Solicitudes de levantamiento</h1>

@@ -698,6 +698,11 @@ export default function App() {
       // v8.27.36: Facturas para no-admins con el flag (reportar facturas personales / reembolso)
       ...(usuario.facturasHabilitada ? [{ id: 'facturasOdoo', label: 'Facturas', icon: Receipt, vista: 'facturasOdoo' }] : []),
       ...(tareas.filter(t => t.asignadaAId === usuario.id).length > 0 ? [{ id: 'tareas', label: 'Tareas', icon: ClipboardList, vista: 'tareas', badge: tareas.filter(t => t.asignadaAId === usuario.id).length }] : []),
+      // v8.32.2: el encargado de almacén administra también la FLOTA de vehículos.
+      // (La planificación de Rutas es de Erisdania con apoyo de Miguel — ambos admin.)
+      ...(tieneRol(usuario, 'almacen') ? [
+        { id: 'vehiculos', label: 'Vehículos', icon: Car, vista: 'vehiculos' },
+      ] : []),
       // v8.27.0: cualquier usuario puede reportar un error o dar feedback (Gotera).
       { id: 'gotera', label: 'Gotera', icon: CloudRain, vista: 'gotera' },
     ]},
@@ -836,7 +841,7 @@ export default function App() {
         {/* v8.17.49: Propiedades de la empresa (apartamento Punta Cana, etc) */}
         {vista === 'propiedadesEmpresa' && esAdmin && <VistaPropiedadesEmpresa usuario={usuario} data={data} onVolver={() => setVista('dashboard')} />}
         {/* v8.27.38: Vehículos (flota) — admin, o capturista (Lily) con rol/flag facturas */}
-        {vista === 'vehiculos' && (esAdmin || tieneRol(usuario, 'facturas') || usuario.facturasHabilitada) && <VistaVehiculos usuario={usuario} data={data} onRecargar={recargar} />}
+        {vista === 'vehiculos' && (esAdmin || tieneRol(usuario, 'facturas') || tieneRol(usuario, 'almacen') || usuario.facturasHabilitada) && <VistaVehiculos usuario={usuario} data={data} onRecargar={recargar} />}
         {/* v8.26.0: Contabilidad — reportes DGII (606/607/608) + resumen ITBIS/IT-1 */}
         {vista === 'contabilidad' && tieneRol(usuario, 'owner') && <VistaContabilidad usuario={usuario} onVolver={() => setVista('dashboard')} />}
         {vista === 'miPerfil' && <MiPerfil usuario={usuario} persona={usuario} soloLectura={false} onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }} onGuardar={(campos) => withSync(() => db.guardarPerfil(usuario.id, campos))} />}

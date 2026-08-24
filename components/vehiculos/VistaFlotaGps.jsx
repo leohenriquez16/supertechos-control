@@ -26,9 +26,9 @@ function MapaFlotaViva({ data }) {
     return {
       lat: u.lat, lng: u.lng,
       vehiculoTipo: v?.tipo || 'camion',
-      color: u.online === 'offline' ? 'gray' : u.velocidad > 2 ? 'green' : 'yellow',
+      color: u.velocidad > 2 ? 'green' : u.online === 'online' ? 'yellow' : 'red', // v8.44.0: apagado = rojo
       label: v ? `${v.marca} ${v.modelo}` : u.nombre,
-      popup: `<b>${v ? `${v.marca} ${v.modelo}${v.placa ? ` · ${v.placa}` : ''}` : u.nombre}</b><br>${u.velocidad} km/h · ${u.online === 'offline' ? 'sin señal' : u.velocidad > 2 ? 'en movimiento' : 'detenido'}${v?.responsableId ? `<br><span style=\"font-size:11px;color:#a1a1aa\">🧑‍✈️ ${pmap[v.responsableId] || ''}</span>` : ''}<br><span style=\"font-size:11px;color:#a1a1aa\">${u.hora || ''}</span>`,
+      popup: `<b>${v ? `${v.marca} ${v.modelo}${v.placa ? ` · ${v.placa}` : ''}` : u.nombre}</b><br>${u.velocidad} km/h · ${u.velocidad > 2 ? 'en movimiento' : u.online === 'online' ? 'encendido detenido' : u.online === 'offline' ? 'apagado (sin señal)' : 'apagado'}${v?.responsableId ? `<br><span style=\"font-size:11px;color:#a1a1aa\">🧑‍✈️ ${pmap[v.responsableId] || ''}</span>` : ''}<br><span style=\"font-size:11px;color:#a1a1aa\">${u.hora || ''}</span>`,
     };
   });
   const MapaLeaflet = React.lazy(() => import('../common/MapaLeaflet'));
@@ -50,7 +50,7 @@ function MapaFlotaViva({ data }) {
           <MapaLeaflet center={[18.48, -69.93]} zoom={11} height={340} markers={markers} scrollWheelZoom={false} className="border border-zinc-800" />
         </React.Suspense>
       )}
-      <div className="text-[10px] text-zinc-500">🟢 en movimiento · 🟡 detenido · ⚪ sin señal — cada silueta es el tipo real del vehículo, a escala.</div>
+      <div className="text-[10px] text-zinc-500">🟢 en movimiento · 🟡 encendido detenido · 🔴 apagado / sin señal — cada silueta es el tipo real del vehículo, a escala.</div>
     </div>
   );
 }

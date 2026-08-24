@@ -591,7 +591,7 @@ function ModalGpsVehiculo({ vehiculo, onCerrar }) {
         </div>
         <div className="px-4 py-2 border-t border-zinc-800 text-[10px] text-zinc-500">
           {vehiculo.gpsDeviceId
-            ? <>🛰 Posición directa del rastreador{unidadViva ? <> — <b className="text-zinc-300">{unidadViva.velocidad} km/h · {unidadViva.online === 'offline' ? 'sin señal' : unidadViva.velocidad > 2 ? 'en movimiento' : 'detenido'}</b> · última señal {unidadViva.hora}</> : null}. <b>Refrescar</b> trae la posición nueva.</>
+            ? <>🛰 Posición directa del rastreador{unidadViva ? <> — <b className="text-zinc-300">{unidadViva.velocidad} km/h · {unidadViva.velocidad > 2 ? 'en movimiento' : unidadViva.online === 'online' ? 'encendido detenido' : 'apagado'}</b> · última señal {unidadViva.hora}</> : null}. <b>Refrescar</b> trae la posición nueva.</>
             : <>Si el mapa sale en blanco, Pressto no permite incrustarlo aquí — usa <b>“Abrir en Pressto”</b>. <b>Refrescar</b> lo recarga y actualiza la hora.</>}
         </div>
       </div>
@@ -647,7 +647,7 @@ function MapaUnidadViva({ deviceId, reloadKey, onDato }) {
   return (
     <React.Suspense fallback={<div className="h-full flex items-center justify-center text-sm text-zinc-500">Cargando mapa…</div>}>
       <MapaLeaflet center={[unidad.lat, unidad.lng]} zoom={14} height="100%" scrollWheelZoom={true}
-        markers={[{ lat: unidad.lat, lng: unidad.lng, color: unidad.online === 'offline' ? 'gray' : unidad.velocidad > 2 ? 'green' : 'yellow', label: unidad.nombre, popup: `<b>🛰 ${unidad.nombre}</b><br>${unidad.velocidad} km/h · ${unidad.hora || ''}` }]}
+        markers={[{ lat: unidad.lat, lng: unidad.lng, color: unidad.velocidad > 2 ? 'green' : unidad.online === 'online' ? 'yellow' : 'red', label: unidad.nombre, popup: `<b>🛰 ${unidad.nombre}</b><br>${unidad.velocidad} km/h · ${unidad.hora || ''}` }]}
         className="h-full" />
     </React.Suspense>
   );

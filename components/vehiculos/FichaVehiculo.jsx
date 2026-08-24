@@ -61,7 +61,7 @@ export default function FichaVehiculo({ vehiculo: v, personal = [], licencia = n
             <div className="flex gap-2 flex-wrap mt-1">
               {enGarantia && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-600/20 text-emerald-300 border border-emerald-700/60">🛡 EN GARANTÍA — mantenimiento en {v.garantiaCasa || 'la casa'}</span>}
               {v.garantiaVence && !enGarantia && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400 border border-zinc-700">🛡 Garantía vencida</span>}
-              {gpsViva && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-600/15 text-cyan-300 border border-cyan-800/60">🛰 {gpsViva.online === 'offline' ? 'sin señal' : `${gpsViva.velocidad} km/h`}</span>}
+              {gpsViva && <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${gpsViva.velocidad > 2 ? 'bg-emerald-600/15 text-emerald-300 border-emerald-800/60' : gpsViva.online === 'online' ? 'bg-amber-600/15 text-amber-300 border-amber-800/60' : 'bg-red-600/15 text-red-300 border-red-800/60'}`}>🛰 {gpsViva.velocidad > 2 ? `${gpsViva.velocidad} km/h` : gpsViva.online === 'online' ? 'encendido detenido' : 'apagado'}</span>}
             </div>
           </div>
           <button onClick={onCerrar} className="text-zinc-500 shrink-0"><X className="w-4 h-4" /></button>
@@ -116,7 +116,7 @@ export default function FichaVehiculo({ vehiculo: v, personal = [], licencia = n
             </Seccion>
             <Seccion titulo="🛰 GPS">
               <Fila label="Unidad amarrada">{v.gpsDeviceId ? (gpsViva?.nombre || `#${v.gpsDeviceId}`) : 'sin amarrar'}</Fila>
-              <Fila label="Ahora">{gpsViva ? `${gpsViva.velocidad} km/h · ${gpsViva.online === 'offline' ? 'sin señal' : gpsViva.velocidad > 2 ? 'en movimiento' : 'detenido'}` : null}</Fila>
+              <Fila label="Ahora">{gpsViva ? `${gpsViva.velocidad} km/h · ${gpsViva.velocidad > 2 ? 'en movimiento' : gpsViva.online === 'online' ? 'encendido detenido' : 'apagado'}` : null}</Fila>
               <Fila label="Última señal">{gpsViva?.hora || null}</Fila>
             </Seccion>
           </div>

@@ -178,7 +178,7 @@ export default function TabCambios({ usuario, proyecto, data, esAdmin, onRecarga
         await db.crearTarea({
           id: 't_' + Date.now() + Math.random(), proyectoId: proyecto.id, tipo: 'ajustar_cotizacion_odoo',
           titulo: `Ajustar cotización en Odoo: +${formatRD(oc.montoTotal)} (OC-${oc.numero} · ${proyecto.referenciaOdoo || proyecto.cliente})`,
-          descripcion: `Orden de cambio aprobada por ${oc.aprobadaPorCliente} (${oc.aprobadaVia}). Agregar las líneas adicionales a la cotización ${proyecto.referenciaOdoo || ''} en Odoo: ${oc.lineas.map(l => `${l.nombreArea} +${l.m2} m² @ RD$${l.precioM2}`).join('; ')}.`,
+          descripcion: `Orden de cambio aprobada por ${oc.aprobadaPorCliente} (${oc.aprobadaVia}). Crear la SUB-COTIZACIÓN en Odoo eligiendo la cuenta analítica del proyecto original${proyecto.analiticaOdooNombre ? ` ("${proyecto.analiticaOdooNombre}")` : ` (la que empieza con ${proyecto.referenciaOdoo || 'la referencia original'})`} — la sub-cot tendrá su propio número, pero sirve a esa analítica. Líneas: ${oc.lineas.map(l => `${l.nombreArea} +${l.m2} m² @ RD$${l.precioM2}`).join('; ')}.`,
           asignadaAId: lily?.id || null, asignadaANombre: lily?.nombre || null,
         });
       } catch (e) { console.warn('Tarea Odoo no creada:', e?.message); }

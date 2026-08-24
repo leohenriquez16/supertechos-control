@@ -12,7 +12,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Loader2, Package, RefreshCw, ChevronRight } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatFechaCorta } from '../../lib/helpers/formato';
-import { ESTADOS_REQ } from './RequisicionesProyecto';
+import { ESTADOS_REQ, ESTADOS_COMPRA } from './RequisicionesProyecto';
 
 const COLS = [
   { estado: 'pendiente', titulo: '📥 Nuevas', siguiente: 'preparando', btn: 'Empezar a preparar' },
@@ -61,6 +61,28 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
     try { await db.marcarItemRequisicion(it.id, !it.despachado); await recargar(); }
     catch (e) { alert('Error: ' + (e?.message || e)); }
   };
+  // v8.39.0: renglón sin stock → flujo de compras (solicitado → cotizado → esperando → comprado).
+  const marcarCompra = async (it, estado) => {
+    try { await db.marcarEstadoCompraItem(it.id, estado || null); await recargar(); }
+    catch (e) { alert('Error: ' + (e?.message || e)); }
+  };
+  const puedeOC = ['admin', 'facturas'].some(r => usuario?.roles?.includes(r));
+  const [generandoOC, setGenerandoOC] = useState(null);
+  const generarOC = async (r) => {
+    if (!confirm(`¿Leer la cotización adjunta con la IA y crear la ORDEN DE COMPRA en BORRADOR en Odoo?\n(No se confirma sola — compras la revisa en Odoo.)`)) return;
+    setGenerandoOC(r.id);
+    try {
+      const res = await fetch('/api/compras/generar-oc', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requisicionId: r.id }),
+      });
+      const d = await res.json();
+      if (!res.ok || d.error) alert('No se pudo generar la OC: ' + (d.error || res.status) + (d.advertencias?.length ? '\n· ' + d.advertencias.join('\n· ') : ''));
+      else alert(`✅ OC ${d.oc.name} creada en BORRADOR en Odoo\nProveedor: ${d.oc.proveedor}\nRenglones con producto: ${d.oc.lineas}${d.sinMatch?.length ? `\n⚠ Sin producto en Odoo (quedaron en las notas de la OC):\n· ${d.sinMatch.join('\n· ')}` : ''}`);
+      await recargar();
+    } catch (e) { alert('Error: ' + (e?.message || e)); }
+    setGenerandoOC(null);
+  };
 
   const entregadasHoy = useMemo(() => {
     const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo' }).format(new Date());
@@ -74,7 +96,7 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
       <div className={`bg-zinc-900 border rounded-card p-3 ${r.urgente ? 'border-red-800/70' : 'border-zinc-800'}`}>
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="min-w-0">
-            <div className="font-bold text-sm truncate">{etiqueta(r)} {r.urgente && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-card bg-red-600/20 text-red-400 align-middle">🔥 Urgente</span>}</div>
+            <div className="font-bold text-sm truncate">{etiqueta(r)} {r.urgente && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-card bg-red-600/20 text-red-400 align-middle">🔥 Urgente</span>} {r.esCompra && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-card bg-orange-600/20 text-orange-300 align-middle">🛒 Compra</span>}</div>
             <div className="text-[10px] text-zinc-500">{formatFechaCorta((r.createdAt || '').slice(0, 10))} · pidió {r.solicitadoPorNombre || '—'} · <span className={ESTADOS_REQ[r.estado]?.color || ''}>{ESTADOS_REQ[r.estado]?.label || r.estado}</span></div>
           </div>
           {col.siguiente && (
@@ -87,15 +109,43 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
         </div>
         <div className="mt-1.5 space-y-1">
           {r.items.map(it => (
-            <label key={it.id} className="flex items-center gap-2 text-xs cursor-pointer py-0.5">
-              <input type="checkbox" checked={it.despachado} disabled={col.estado === 'en_ruta'} onChange={() => toggleItem(r, it)} className="w-4 h-4 accent-green-500" />
-              <span className={it.despachado ? 'line-through text-zinc-500' : 'text-zinc-200'}>
-                {it.descripcion}{it.cantidad != null && it.cantidad !== '' ? ` — ${it.cantidad} ${it.unidad || ''}` : ''}
-              </span>
-            </label>
+            <div key={it.id} className="flex items-center gap-2 text-xs py-0.5 flex-wrap">
+              <label className="flex items-center gap-2 cursor-pointer min-w-0 flex-1">
+                <input type="checkbox" checked={it.despachado} disabled={col.estado === 'en_ruta'} onChange={() => toggleItem(r, it)} className="w-4 h-4 accent-green-500 shrink-0" />
+                <span className={it.despachado ? 'line-through text-zinc-500' : 'text-zinc-200'}>
+                  {it.descripcion}{it.cantidad != null && it.cantidad !== '' ? ` — ${it.cantidad} ${it.unidad || ''}` : ''}
+                </span>
+              </label>
+              {/* v8.39.0: lo que no está en stock entra al flujo de compras */}
+              {col.estado !== 'en_ruta' && !it.despachado ? (
+                <select value={it.estadoCompra || ''} onChange={e => marcarCompra(it, e.target.value)}
+                  className={`shrink-0 rounded-card px-1.5 py-1 text-[10px] font-bold border ${it.estadoCompra ? ESTADOS_COMPRA[it.estadoCompra]?.color + ' border-transparent' : 'bg-zinc-950 border-zinc-700 text-zinc-500'}`}>
+                  <option value="">En stock</option>
+                  <option value="solicitado">🛒 Solicitado a compras</option>
+                  <option value="cotizado">💲 Cotizado</option>
+                  <option value="esperando_aprobacion">⏳ Esperando aprobación</option>
+                  <option value="comprado">✓ Comprado</option>
+                </select>
+              ) : it.estadoCompra && ESTADOS_COMPRA[it.estadoCompra] ? (
+                <span className={`shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-card ${ESTADOS_COMPRA[it.estadoCompra].color}`}>{ESTADOS_COMPRA[it.estadoCompra].label}</span>
+              ) : null}
+            </div>
           ))}
         </div>
         {r.notas && <div className="text-[10px] text-zinc-500 mt-1">📝 {r.notas}</div>}
+        {/* v8.39.0: cotización adjunta + OC en Odoo */}
+        {(r.cotizacionUrl || r.ocOdooName) && (
+          <div className="flex items-center gap-2 flex-wrap mt-1.5">
+            {r.cotizacionUrl && <a href={r.cotizacionUrl} target="_blank" rel="noreferrer" className="text-[10px] text-blue-400 hover:underline">📎 Ver cotización</a>}
+            {r.ocOdooName && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-card bg-purple-600/20 text-purple-300">📄 OC {r.ocOdooName} (borrador en Odoo)</span>}
+          </div>
+        )}
+        {puedeOC && r.esCompra && r.cotizacionUrl && !r.ocOdooId && (
+          <button onClick={() => generarOC(r)} disabled={generandoOC === r.id}
+            className="mt-2 w-full bg-purple-700 hover:bg-purple-600 disabled:opacity-50 text-white text-[10px] font-black uppercase py-2 rounded-card flex items-center justify-center gap-1.5">
+            {generandoOC === r.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : '🤖'} Leer cotización con IA y crear OC en Odoo (borrador)
+          </button>
+        )}
         {col.estado === 'lista' && <div className="text-[10px] text-purple-400 mt-1.5">Esperando que Rutas la monte en un viaje o envío pagado.</div>}
       </div>
     );

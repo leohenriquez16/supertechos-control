@@ -12,6 +12,7 @@ import * as db from '../../lib/db';
 import { listarProyectosSurveys } from '../../lib/surveys';
 import { formatRD } from '../../lib/helpers/formato';
 import { trimestreActual, calcularBonoSupervisor, calcularBonoGerente, calcularBonoComercial, bonoEstimado, BONO_GATE, BONO_TOPE, KPIS_SUPERVISOR, KPIS_GERENTE, KPIS_COMERCIAL } from '../../lib/helpers/bonos';
+import { faltantesProyecto } from '../../lib/helpers/proyectoCompleto';
 import { BarraKpi } from './MiBono';
 
 const tieneRol = (p, r) => p?.roles?.includes(r);
@@ -30,7 +31,7 @@ export default function VistaBonos({ usuario, data, onVolver }) {
   const cargar = async () => {
     setLoading(true); setError('');
     try {
-      const [cfgs, jornadas, reclamaciones, surveys, cubicaciones, solicitudes, tareasConf] = await Promise.all([
+      const [cfgs, jornadas, reclamaciones, surveys, cubicaciones, solicitudes, tareasConf, cajaMovs] = await Promise.all([
         db.listarBonosConfig().catch(e => { setError('Falta aplicar la migración 104 (bonos_config): ' + (e?.message || '')); return []; }),
         db.listarJornadasEnRango(trimestre.inicio, trimestre.fin).catch(() => []),
         db.listarReclamaciones().catch(() => []),
@@ -38,6 +39,7 @@ export default function VistaBonos({ usuario, data, onVolver }) {
         db.listarCubicaciones().catch(() => []),
         db.listarSolicitudesLevantamiento({ desde: trimestre.inicio }).catch(() => []),
         db.listarTareasPorTipo('confirmar_recepcion_cotizacion', { desde: trimestre.inicio }).catch(() => []),
+        db.listarCajaMovimientosRango(trimestre.inicio).catch(() => []),
       ]);
       // v8.29.2: fechas del último cambio de estado de terminadas (KPI facturación del gerente)
       let historialEstados = {};
@@ -45,7 +47,7 @@ export default function VistaBonos({ usuario, data, onVolver }) {
         (p.estado === 'finalizado_no_entregado' || p.estado === 'finalizado_recibido_conforme')).map(p => p.id);
       if (idsTerm.length) historialEstados = await db.listarHistorialEstadosBatch(idsTerm).catch(() => ({}));
       setConfigs(cfgs);
-      setCtxBase({ jornadas, reclamaciones, surveys, cubicaciones, solicitudes, tareas: tareasConf, historialEstados, trimestre });
+      setCtxBase({ jornadas, reclamaciones, surveys, cubicaciones, solicitudes, tareas: tareasConf, cajaMovs, historialEstados, trimestre, faltantesFn: faltantesProyecto });
     } catch (e) { setError(e?.message || 'Error cargando'); }
     setLoading(false);
   };

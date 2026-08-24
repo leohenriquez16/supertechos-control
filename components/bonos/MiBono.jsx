@@ -11,6 +11,7 @@ import { Loader2, Award, ChevronDown, ChevronUp } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatRD } from '../../lib/helpers/formato';
 import { trimestreActual, calcularBonoSupervisor, calcularBonoGerente, calcularBonoComercial, bonoEstimado, BONO_GATE, BONO_TOPE } from '../../lib/helpers/bonos';
+import { faltantesProyecto } from '../../lib/helpers/proyectoCompleto';
 
 export function BarraKpi({ k }) {
   const score = k.score == null ? null : Math.max(0, Math.min(BONO_TOPE, k.score));
@@ -47,13 +48,14 @@ export default function MiBono({ usuario, data }) {
         const trimestre = trimestreActual();
         const esGerente = config.rolBono === 'gerente';
         const esComercial = config.rolBono === 'comercial';
-        const [jornadas, reclamaciones, surveys, cubicaciones, solicitudes, tareasConf] = await Promise.all([
+        const [jornadas, reclamaciones, surveys, cubicaciones, solicitudes, tareasConf, cajaMovs] = await Promise.all([
           db.listarJornadasEnRango(trimestre.inicio, trimestre.fin).catch(() => []),
           db.listarReclamaciones().catch(() => []),
           import('../../lib/surveys').then(m => m.listarProyectosSurveys()).catch(() => []), // v8.31: todos los roles usan el KPI compartido de 48h
           esGerente ? db.listarCubicaciones().catch(() => []) : Promise.resolve([]),
           esComercial ? db.listarSolicitudesLevantamiento({ desde: trimestre.inicio }).catch(() => []) : Promise.resolve([]),
           esComercial ? db.listarTareasPorTipo('confirmar_recepcion_cotizacion', { desde: trimestre.inicio }).catch(() => []) : Promise.resolve([]),
+          db.listarCajaMovimientosRango(trimestre.inicio).catch(() => []), // v8.31.1: caja al día
         ]);
         // v8.29.2: fechas del último cambio de estado de las obras terminadas (KPI facturación)
         let historialEstados = {};
@@ -62,7 +64,7 @@ export default function MiBono({ usuario, data }) {
             (p.estado === 'finalizado_no_entregado' || p.estado === 'finalizado_recibido_conforme')).map(p => p.id);
           if (idsTerm.length) historialEstados = await db.listarHistorialEstadosBatch(idsTerm).catch(() => ({}));
         }
-        const ctx = { data, jornadas, reclamaciones, surveys, cubicaciones, solicitudes, tareas: tareasConf, historialEstados, trimestre, config };
+        const ctx = { data, jornadas, reclamaciones, surveys, cubicaciones, solicitudes, tareas: tareasConf, cajaMovs, historialEstados, trimestre, config, faltantesFn: faltantesProyecto };
         const calc = esGerente ? calcularBonoGerente(usuario, ctx)
           : esComercial ? calcularBonoComercial(usuario, ctx)
           : calcularBonoSupervisor(usuario, ctx);

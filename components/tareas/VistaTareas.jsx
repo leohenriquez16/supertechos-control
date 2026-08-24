@@ -16,6 +16,8 @@ const tieneRol = (p, r) => p?.roles?.includes(r);
 const hoyRD = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo' }).format(new Date());
 const addDias = (f, n) => { const d = new Date(f + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
 
+const PRIORIDADES = { alta: { label: '🔥 Alta', orden: 0, chip: 'bg-red-600/20 text-red-400 border-red-800' }, normal: { label: 'Normal', orden: 1, chip: '' }, baja: { label: '▽ Baja', orden: 2, chip: 'bg-zinc-800 text-zinc-500 border-zinc-700' } };
+
 const SECCIONES = [
   { key: 'vencidas', label: '🔴 Vencidas', color: 'text-red-400' },
   { key: 'hoy', label: '🟠 Para hoy', color: 'text-amber-400' },
@@ -31,6 +33,7 @@ export default function VistaTareas({ usuario, data, onVolver, onCompletarTarea,
   const [mostrarCompletadas, setMostrarCompletadas] = useState(false);
   const [crearModal, setCrearModal] = useState(false);
   const [delegando, setDelegando] = useState(null);
+  const [detalle, setDetalle] = useState(null); // v8.33.2: tarea abierta en detalle (comentarios)
   const [filtro, setFiltro] = useState('mias');       // mias | superviso | todas
   const [busca, setBusca] = useState('');
   const [personaFiltro, setPersonaFiltro] = useState(''); // admin: filtrar por responsable
@@ -71,7 +74,7 @@ export default function VistaTareas({ usuario, data, onVolver, onCompletarTarea,
       else if (f <= finSemana) m.semana.push(t);
       else m.luego.push(t);
     });
-    Object.values(m).forEach(arr => arr.sort((a, b) => (a.fechaLimite || '9999').localeCompare(b.fechaLimite || '9999')));
+    Object.values(m).forEach(arr => arr.sort((a, b) => ((PRIORIDADES[a.prioridad]?.orden ?? 1) - (PRIORIDADES[b.prioridad]?.orden ?? 1)) || (a.fechaLimite || '9999').localeCompare(b.fechaLimite || '9999')));
     return m;
   }, [visibles, hoy, finSemana]);
 
@@ -89,9 +92,20 @@ export default function VistaTareas({ usuario, data, onVolver, onCompletarTarea,
     await db.actualizarTarea(t.id, { fechaLimite: f || null });
     await recargar();
   };
+  // v8.33.2: "inbox" — aviso por correo cuando te asignan o delegan una tarea.
+  const avisarAsignacion = (personaId, titulo, quien, fecha) => {
+    try {
+      const p = (data.personal || []).find(x => x.id === personaId);
+      if (!p?.email || !p.email.includes('@')) return;
+      db.enviarCorreoReporte([p.email], `📌 Nueva tarea para ti: ${titulo}`,
+        `<div style="font-family:Arial,sans-serif;max-width:520px"><h3 style="color:#D71920">📌 ${titulo}</h3><p style="font-size:13px">${quien} te asignó esta tarea${fecha ? ` con fecha límite <b>${fecha}</b>` : ''}. La ves en el ERP → Tareas → "Me tocan".</p><p style="font-size:12px;color:#666">— ERP Super Techos</p></div>`);
+    } catch (e) { /* no bloquear */ }
+  };
+
   const delegar = async (tarea, nuevaPersonaId, nuevaFecha) => {
     const p = (data.personal || []).find(x => x.id === nuevaPersonaId);
     if (!p) return;
+    avisarAsignacion(p.id, tarea.titulo, usuario.nombre, nuevaFecha);
     await db.actualizarTarea(tarea.id, {
       asignadaAId: p.id, asignadaANombre: p.nombre,
       ...(tarea.supervisorId ? {} : { supervisorId: usuario.id, supervisorNombre: usuario.nombre }),
@@ -110,14 +124,17 @@ export default function VistaTareas({ usuario, data, onVolver, onCompletarTarea,
         <button onClick={() => !t.completada && completar(t.id)} disabled={t.completada} className="shrink-0" title="Completar">
           {t.completada ? <CircleCheck className="w-5 h-5 text-green-500" /> : <CircleDashed className="w-5 h-5 text-zinc-600 hover:text-green-400" />}
         </button>
-        <div className="min-w-0 flex-1">
-          <div className={`text-sm font-semibold truncate ${t.completada ? 'line-through text-zinc-500' : ''}`} title={t.descripcion || t.titulo}>{t.titulo}</div>
+        <button onClick={() => setDetalle(t)} className="min-w-0 flex-1 text-left">
+          <div className={`text-sm font-semibold truncate ${t.completada ? 'line-through text-zinc-500' : ''}`} title={t.descripcion || t.titulo}>
+            {t.prioridad === 'alta' && <span className="mr-1">🔥</span>}{t.titulo}
+            {(t.comentarios || []).length > 0 && <span className="ml-1.5 text-[10px] text-zinc-500">💬 {t.comentarios.length}</span>}
+          </div>
           <div className="flex items-center gap-2 flex-wrap text-[10px] text-zinc-500 mt-0.5">
             {proy && <span className="bg-zinc-950 border border-zinc-800 rounded-full px-1.5 py-0.5 truncate max-w-[160px]">📋 {proy.referenciaOdoo || proy.cliente}</span>}
             {t.asignadaANombre && <span className={t.asignadaAId === usuario.id ? 'text-blue-400 font-bold' : ''}>👤 {t.asignadaANombre.split(' ').slice(0, 2).join(' ')}</span>}
             {t.supervisorNombre && <span>👁 {t.supervisorNombre.split(' ')[0]}</span>}
           </div>
-        </div>
+        </button>
         {t.fechaLimite && (
           <button onClick={() => puedeGestionar && cambiarFecha(t)}
             className={`shrink-0 text-[10px] font-bold px-2 py-1 rounded-full border ${vencida ? 'bg-red-900/40 border-red-700 text-red-300' : t.fechaLimite.slice(0, 10) === hoy ? 'bg-amber-900/40 border-amber-700 text-amber-300' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>
@@ -193,8 +210,11 @@ export default function VistaTareas({ usuario, data, onVolver, onCompletarTarea,
         </div>
       )}
 
-      {crearModal && <ModalCrearTarea usuario={usuario} proyectos={data.proyectos || []} personal={data.personal || []} onCerrar={() => setCrearModal(false)} onCrear={async (t) => { await onCrearTarea(t); setCrearModal(false); await recargar(); }} />}
+      {crearModal && <ModalCrearTarea usuario={usuario} proyectos={data.proyectos || []} personal={data.personal || []} onCerrar={() => setCrearModal(false)} onCrear={async (t) => { await onCrearTarea(t); if (t.asignadaAId && t.asignadaAId !== usuario.id) avisarAsignacion(t.asignadaAId, t.titulo, usuario.nombre, t.fechaLimite); setCrearModal(false); await recargar(); }} />}
       {delegando && <ModalDelegarTarea tarea={delegando} personal={data.personal || []} onCerrar={() => setDelegando(null)} onDelegar={delegar} />}
+      {detalle && <ModalDetalleTarea tarea={tareas.find(x => x.id === detalle.id) || detalle} usuario={usuario} data={data} esAdmin={esAdmin}
+        onCerrar={() => setDetalle(null)} onRecargar={recargar}
+        onCompletar={completar} onDelegar={(t) => { setDetalle(null); setDelegando(t); }} onCambiarFecha={cambiarFecha} />}
     </div>
   );
 }
@@ -229,6 +249,7 @@ function ModalCrearTarea({ usuario, proyectos, personal, onCerrar, onCrear }) {
   const [asignadaAId, setAsignadaAId] = useState('');
   const [supervisorId, setSupervisorId] = useState(usuario.id);
   const [fechaLimite, setFechaLimite] = useState('');
+  const [prioridad, setPrioridad] = useState('normal');
   const asignables = personal.filter(p => ['admin', 'supervisor', 'maestro', 'facturas', 'almacen', 'chofer'].some(r => tieneRol(p, r)));
   const crear = () => {
     if (!titulo) return;
@@ -238,7 +259,7 @@ function ModalCrearTarea({ usuario, proyectos, personal, onCerrar, onCrear }) {
       proyectoId: proyectoId || null, tipo: 'otro', titulo, descripcion,
       asignadaAId: asignadaAId || null, asignadaANombre: persona?.nombre || null,
       supervisorId: supervisorId || null, supervisorNombre: personal.find(p => p.id === supervisorId)?.nombre || null,
-      fechaLimite: fechaLimite || null,
+      prioridad, fechaLimite: fechaLimite || null,
     });
   };
   return (
@@ -250,8 +271,90 @@ function ModalCrearTarea({ usuario, proyectos, personal, onCerrar, onCrear }) {
         <Campo label="Proyecto"><select value={proyectoId} onChange={e => setProyectoId(e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="">(General)</option>{proyectos.map(p => <option key={p.id} value={p.id}>{[p.referenciaOdoo, p.cliente || p.nombre].filter(Boolean).join(' · ')}</option>)}</select></Campo>
         <Campo label="Responsable"><select value={asignadaAId} onChange={e => setAsignadaAId(e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="">Sin asignar</option>{asignables.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}</select></Campo>
         <Campo label="Supervisor de la tarea"><select value={supervisorId} onChange={e => setSupervisorId(e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="">Sin supervisor</option>{asignables.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}</select></Campo>
-        <Campo label="Fecha límite"><Input type="date" value={fechaLimite} onChange={setFechaLimite} /></Campo>
+        <div className="grid grid-cols-2 gap-3">
+          <Campo label="Prioridad">
+            <select value={prioridad} onChange={e => setPrioridad(e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white">
+              <option value="alta">🔥 Alta</option><option value="normal">Normal</option><option value="baja">▽ Baja</option>
+            </select>
+          </Campo>
+          <Campo label="Fecha límite"><Input type="date" value={fechaLimite} onChange={setFechaLimite} /></Campo>
+        </div>
         <div className="flex gap-2 pt-1"><button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button><button onClick={crear} disabled={!titulo} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-3"><Save className="w-3 h-3 inline mr-1" /> Crear</button></div>
+      </div>
+    </div>
+  );
+}
+
+// v8.33.2: Detalle de la tarea — descripción completa, prioridad editable,
+// comentarios (el hilo de la tarea) y acciones.
+function ModalDetalleTarea({ tarea, usuario, data, esAdmin, onCerrar, onRecargar, onCompletar, onDelegar, onCambiarFecha }) {
+  const [comentario, setComentario] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const puedeGestionar = tarea.asignadaAId === usuario.id || tarea.supervisorId === usuario.id || esAdmin;
+
+  const comentar = async () => {
+    if (!comentario.trim()) return;
+    setEnviando(true);
+    try {
+      await db.comentarTarea(tarea.id, { porId: usuario.id, porNombre: usuario.nombre, texto: comentario.trim() });
+      setComentario('');
+      await onRecargar();
+    } catch (e) { alert('Error: ' + (e?.message || e)); }
+    setEnviando(false);
+  };
+  const setPrioridad = async (p) => {
+    await db.actualizarTarea(tarea.id, { prioridad: p });
+    await onRecargar();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
+      <div className="bg-zinc-900 border-2 border-zinc-700 rounded-card max-w-lg w-full p-5 space-y-3 my-8" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-start gap-2">
+          <div className="min-w-0">
+            <div className="text-xs tracking-widest uppercase text-zinc-500 font-bold">Tarea</div>
+            <div className="text-lg font-black leading-snug">{tarea.prioridad === 'alta' ? '🔥 ' : ''}{tarea.titulo}</div>
+          </div>
+          <button onClick={onCerrar} className="text-zinc-500 shrink-0"><X className="w-4 h-4" /></button>
+        </div>
+        {tarea.descripcion && <div className="text-sm text-zinc-300 whitespace-pre-wrap">{tarea.descripcion}</div>}
+        <div className="flex flex-wrap gap-2 text-[11px] text-zinc-400">
+          {tarea.asignadaANombre && <span className="bg-zinc-950 border border-zinc-800 rounded-full px-2 py-0.5">👤 {tarea.asignadaANombre}</span>}
+          {tarea.supervisorNombre && <span className="bg-zinc-950 border border-zinc-800 rounded-full px-2 py-0.5">👁 {tarea.supervisorNombre}</span>}
+          {tarea.fechaLimite && <span className="bg-zinc-950 border border-zinc-800 rounded-full px-2 py-0.5">📅 {formatFechaCorta(tarea.fechaLimite)}</span>}
+        </div>
+        {puedeGestionar && !tarea.completada && (
+          <div className="flex flex-wrap gap-1.5 items-center border-t border-zinc-800 pt-2.5">
+            <span className="text-[10px] uppercase text-zinc-500 font-bold">Prioridad:</span>
+            {['alta', 'normal', 'baja'].map(p => (
+              <button key={p} onClick={() => setPrioridad(p)} className={`text-[10px] font-bold uppercase px-2 py-1 rounded-card border ${tarea.prioridad === p ? 'bg-red-600 border-red-600 text-white' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>{p === 'alta' ? '🔥 Alta' : p === 'baja' ? '▽ Baja' : 'Normal'}</button>
+            ))}
+            <span className="flex-1" />
+            <button onClick={() => onDelegar(tarea)} className="text-[10px] font-black uppercase px-2.5 py-1.5 rounded-card border border-zinc-700 hover:border-blue-500 text-zinc-300">↪ Delegar</button>
+            <button onClick={() => { onCambiarFecha(tarea); }} className="text-[10px] font-black uppercase px-2.5 py-1.5 rounded-card border border-zinc-700 hover:border-amber-500 text-zinc-300">📅 Fecha</button>
+            <button onClick={async () => { await onCompletar(tarea.id); onCerrar(); }} className="text-[10px] font-black uppercase px-2.5 py-1.5 rounded-card bg-green-700 hover:bg-green-600 text-white">✓ Completar</button>
+          </div>
+        )}
+        {/* Comentarios */}
+        <div className="border-t border-zinc-800 pt-2.5">
+          <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold mb-1.5">💬 Comentarios ({(tarea.comentarios || []).length})</div>
+          <div className="space-y-1.5 max-h-[30vh] overflow-y-auto">
+            {(tarea.comentarios || []).map((c, i) => (
+              <div key={i} className="bg-zinc-950 border border-zinc-800 rounded-card px-2.5 py-1.5">
+                <div className="text-[10px] text-zinc-500"><b className="text-zinc-300">{c.porNombre}</b> · {new Date(c.at).toLocaleString('es-DO', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</div>
+                <div className="text-xs text-zinc-200 mt-0.5 whitespace-pre-wrap">{c.texto}</div>
+              </div>
+            ))}
+            {(tarea.comentarios || []).length === 0 && <div className="text-[11px] text-zinc-600 italic">Sin comentarios.</div>}
+          </div>
+          <div className="flex gap-1.5 mt-2">
+            <input value={comentario} onChange={e => setComentario(e.target.value)} onKeyDown={e => e.key === 'Enter' && comentar()}
+              placeholder="Escribe un comentario…" className="flex-1 bg-zinc-950 border border-zinc-700 rounded-card px-2.5 py-2 text-sm min-w-0" />
+            <button onClick={comentar} disabled={enviando || !comentario.trim()} className="bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-xs font-black uppercase px-3 py-2 rounded-card shrink-0">
+              {enviando ? '…' : 'Enviar'}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

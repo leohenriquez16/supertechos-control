@@ -699,7 +699,8 @@ export default function App() {
       ...((tieneRol(usuario, 'maestro') || tieneRol(usuario, 'supervisor')) && usuario.cajaChicaHabilitada ? [{ id: 'miCajaChica', label: 'Mi Caja Chica', icon: CreditCard, vista: 'miCajaChica' }] : []),
       // v8.27.36: Facturas para no-admins con el flag (reportar facturas personales / reembolso)
       ...(usuario.facturasHabilitada ? [{ id: 'facturasOdoo', label: 'Facturas', icon: Receipt, vista: 'facturasOdoo' }] : []),
-      ...(tareas.filter(t => t.asignadaAId === usuario.id).length > 0 ? [{ id: 'tareas', label: 'Tareas', icon: ClipboardList, vista: 'tareas', badge: tareas.filter(t => t.asignadaAId === usuario.id).length }] : []),
+      // v8.33.2: Tareas siempre visible para todos los miembros (antes solo con tareas asignadas)
+      { id: 'tareas', label: 'Tareas', icon: ClipboardList, vista: 'tareas', badge: tareas.filter(t => t.asignadaAId === usuario.id).length || undefined },
       // v8.33.0: responsable de un vehículo → "Mi vehículo" (ficha + reportar fallas/daños)
       ...((data.vehiculos || []).some(v => v.responsableId === usuario.id && v.activo !== false) ? [{ id: 'miVehiculo', label: 'Mi vehículo', icon: Car, vista: 'miVehiculo' }] : []),
       // v8.32.2: el encargado de almacén administra también la FLOTA de vehículos.

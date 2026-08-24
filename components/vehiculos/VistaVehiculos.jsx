@@ -10,6 +10,7 @@ import Input from '../common/Input';
 import ModalInspecciones from './ModalInspecciones';
 import VistaFlotaGps from './VistaFlotaGps';
 import RutasVehiculo from './RutasVehiculo'; // v8.41.0
+import FichaVehiculo from './FichaVehiculo'; // v8.44.0
 
 const COLORES = ['Blanco', 'Negro', 'Gris', 'Plata', 'Rojo', 'Azul', 'Verde', 'Amarillo', 'Dorado', 'Marrón'];
 
@@ -39,6 +40,7 @@ export default function VistaVehiculos({ usuario, data, onRecargar }) {
   const [logDe, setLogDe] = useState(null); // vehículo cuyo log se está viendo (v8.33.0)
   const [gpsDe, setGpsDe] = useState(null); // vehículo cuyo mapa GPS se está viendo (v8.27.85)
   const [rutasDe, setRutasDe] = useState(null); // v8.41.0: rutas futuras/pasadas del vehículo
+  const [fichaDe, setFichaDe] = useState(null); // v8.44.0: ficha completa
   const [inspDe, setInspDe] = useState(null); // vehículo cuyas inspecciones se están viendo (v8.35.3)
   const [licencias, setLicencias] = useState({}); // v8.35.2: licencia por chofer (responsable) para verla en la ficha
   const [tab, setTab] = useState('fichas'); // v8.42.1: 'fichas' | 'flota' (dashboard GPS)
@@ -111,7 +113,16 @@ export default function VistaVehiculos({ usuario, data, onRecargar }) {
               <div key={v.id} className="bg-zinc-900 border border-zinc-800 rounded-card p-4">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <div className="text-lg font-black">{v.marca} {v.modelo} {v.anio ? <span className="text-zinc-500 font-normal">· {v.anio}</span> : ''}</div>
+                    <button onClick={() => setFichaDe(v)} className="text-lg font-black text-left hover:text-red-400" title="Ver ficha completa">{v.marca} {v.modelo} {v.anio ? <span className="text-zinc-500 font-normal">· {v.anio}</span> : ''}</button>
+                    {(() => { // v8.44.0: badge de garantía vigente → mantenimiento en la casa
+                      if (!v.garantiaVence) return null;
+                      const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo' }).format(new Date());
+                      const vigenteF = v.garantiaVence >= hoy;
+                      const vigenteK = v.garantiaKm == null || v.odometroKm == null || Number(v.odometroKm) < Number(v.garantiaKm);
+                      return vigenteF && vigenteK
+                        ? <div className="text-[10px] font-bold text-emerald-300 mt-0.5">🛡 En garantía — mantenimiento en {v.garantiaCasa || 'la casa'}</div>
+                        : <div className="text-[10px] text-zinc-500 mt-0.5">🛡 Garantía vencida</div>;
+                    })()}
                     <div className="text-[11px] text-zinc-500">{v.color || 'sin color'}{v.empresa ? ` · ${v.empresa === 'super_techos' ? 'Super Techos' : 'Prouco'}` : ''}{v.tipo ? ` · ${v.tipo}` : ''}</div>
                     <div className="text-[11px] mt-0.5">
                       <span className="text-zinc-500">Responsable: </span>
@@ -153,7 +164,7 @@ export default function VistaVehiculos({ usuario, data, onRecargar }) {
                   {v.seguroPath
                     ? <button onClick={() => verDoc(v.seguroPath)} className="text-[11px] flex items-center gap-1 text-blue-400 hover:underline"><FileText className="w-3 h-3" /> Seguro</button>
                     : <span className="text-[11px] text-zinc-600">sin seguro</span>}
-                  {v.gpsUrl
+                  {(v.gpsUrl || v.gpsDeviceId)
                     ? <button onClick={() => setGpsDe(v)} className="text-[11px] flex items-center gap-1 text-emerald-400 hover:underline font-bold"><MapPin className="w-3 h-3" /> GPS en vivo</button>
                     : <span className="text-[11px] text-zinc-600">sin GPS</span>}
                   {/* v8.35.2: licencia del chofer (responsable) — sale de inmediato en la ficha */}
@@ -178,6 +189,13 @@ export default function VistaVehiculos({ usuario, data, onRecargar }) {
 
       {logDe && <ModalLogVehiculo usuario={usuario} vehiculo={logDe} personal={data?.personal || []} onCerrar={() => setLogDe(null)} />}
       {rutasDe && <RutasVehiculo vehiculo={rutasDe} onCerrar={() => setRutasDe(null)} />}
+      {fichaDe && <FichaVehiculo vehiculo={fichaDe} personal={data?.personal || []} licencia={licencias[fichaDe.responsableId]} puedeEditar={true}
+        onCerrar={() => setFichaDe(null)}
+        onEditar={() => { setModal(fichaDe); setFichaDe(null); }}
+        onLog={() => { setLogDe(fichaDe); setFichaDe(null); }}
+        onRutas={() => { setRutasDe(fichaDe); setFichaDe(null); }}
+        onInspecciones={() => { setInspDe(fichaDe); setFichaDe(null); }}
+        onGps={() => { setGpsDe(fichaDe); setFichaDe(null); }} />}
       {gpsDe && <ModalGpsVehiculo vehiculo={gpsDe} onCerrar={() => setGpsDe(null)} />}
       {inspDe && <ModalInspecciones vehiculo={inspDe} usuario={usuario} onCerrar={() => { setInspDe(null); cargar(); }} />}
       {modal && (
@@ -213,6 +231,8 @@ function ModalVehiculo({ usuario, vehiculo, personal, onCerrar, onGuardado }) {
     estadoOperativo: vehiculo?.estadoOperativo || 'activo', proximoMantFecha: vehiculo?.proximoMantFecha || '',
     gpsUrl: vehiculo?.gpsUrl || '',
     gpsDeviceId: vehiculo?.gpsDeviceId || '',
+    garantiaVence: vehiculo?.garantiaVence || '', garantiaKm: vehiculo?.garantiaKm || '',
+    garantiaCasa: vehiculo?.garantiaCasa || '', garantiaNotas: vehiculo?.garantiaNotas || '',
     // v8.35.2: licencia del chofer (se carga/guarda en la persona responsable)
     licenciaPath: null, licenciaCategoria: '', licenciaVence: '',
   });
@@ -304,10 +324,10 @@ function ModalVehiculo({ usuario, vehiculo, personal, onCerrar, onGuardado }) {
   );
 
   return (
-    <div className="fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4 overflow-auto">
-      <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-lg w-full p-5 space-y-3 my-8">
+    <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-auto">
+      <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-xl w-full p-6 space-y-3.5 my-8">
         <div className="flex justify-between items-start">
-          <div className="text-xs tracking-widest uppercase text-red-500 font-bold">{editando ? 'Editar vehículo' : 'Nuevo vehículo'}</div>
+          <div className="text-sm tracking-widest uppercase text-red-500 font-black">{editando ? 'Editar vehículo' : 'Nuevo vehículo'}</div>
           <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
         </div>
 
@@ -336,7 +356,7 @@ function ModalVehiculo({ usuario, vehiculo, personal, onCerrar, onGuardado }) {
           <Input value={form.gpsUrl} onChange={(v) => setForm({ ...form, gpsUrl: v })} placeholder="https://…  (link de Compartir de Pressto para este vehículo)" />
           {/* v8.43.0: unidad GPS EN VIVO — amarra el vehículo a su rastreador */}
           <SelectorUnidadGPS value={form.gpsDeviceId} onChange={(v) => setForm({ ...form, gpsDeviceId: v })} />
-          <div className="text-[10px] text-zinc-500 mt-1">En Pressto: <b>Compartir → Ninguna → selecciona SOLO este vehículo → Guardar</b>, y en la pestaña <b>Sharings</b> copia el enlace y pégalo aquí. Con eso el mapa en vivo se ve desde la ficha.</div>
+          <div className="text-[11px] text-zinc-400 mt-1">En Pressto: <b>Compartir → Ninguna → selecciona SOLO este vehículo → Guardar</b>, y en la pestaña <b>Sharings</b> copia el enlace y pégalo aquí. Con eso el mapa en vivo se ve desde la ficha.</div>
         </Campo>
 
         <div className="grid grid-cols-2 gap-3">
@@ -356,7 +376,7 @@ function ModalVehiculo({ usuario, vehiculo, personal, onCerrar, onGuardado }) {
         {/* v8.35.2: Licencia de conducir del chofer (se guarda en la persona) */}
         {form.responsableId && (
           <div className="bg-zinc-950 border-2 border-zinc-800 rounded-card p-3 space-y-2">
-            <div className="text-[10px] uppercase text-zinc-400 font-bold flex items-center gap-1"><FileText className="w-3 h-3 text-purple-400" /> Licencia de conducir del chofer {cargandoLic && <Loader2 className="w-3 h-3 animate-spin text-purple-400" />}</div>
+            <div className="text-[11px] uppercase text-zinc-300 font-bold flex items-center gap-1"><FileText className="w-3 h-3 text-purple-400" /> Licencia de conducir del chofer {cargandoLic && <Loader2 className="w-3 h-3 animate-spin text-purple-400" />}</div>
             <div className="grid grid-cols-2 gap-2">
               <Campo label="Categoría"><Input value={form.licenciaCategoria} onChange={(v) => setForm({ ...form, licenciaCategoria: v })} placeholder="Categoría 3" /></Campo>
               <Campo label="Vence"><Input type="date" value={form.licenciaVence} onChange={(v) => setForm({ ...form, licenciaVence: v })} /></Campo>
@@ -392,6 +412,18 @@ function ModalVehiculo({ usuario, vehiculo, personal, onCerrar, onGuardado }) {
           <Campo label="Vence revisión"><Input type="date" value={form.revisionVence} onChange={(v) => setForm({ ...form, revisionVence: v })} /></Campo>
           <Campo label="Tag peaje"><Input value={form.tagPeaje} onChange={(v) => setForm({ ...form, tagPeaje: v })} placeholder="Paso Rápido #" /></Campo>
         </div>
+        {/* v8.44.0: garantía — si está vigente, el mantenimiento va a la casa */}
+        <div className="bg-zinc-950 border-2 border-zinc-800 rounded-card p-3 space-y-2">
+          <div className="text-[11px] uppercase text-zinc-300 font-bold">🛡 Garantía del vehículo</div>
+          <div className="grid grid-cols-2 gap-2">
+            <Campo label="Vence (fecha)"><Input type="date" value={form.garantiaVence} onChange={(v) => setForm({ ...form, garantiaVence: v })} /></Campo>
+            <Campo label="Límite de km"><Input type="number" value={form.garantiaKm} onChange={(v) => setForm({ ...form, garantiaKm: v })} placeholder="100000" /></Campo>
+          </div>
+          <Campo label="Casa / dealer"><Input value={form.garantiaCasa} onChange={(v) => setForm({ ...form, garantiaCasa: v })} placeholder="Ej: Santo Domingo Motors" /></Campo>
+          <Campo label="Notas de garantía"><Input value={form.garantiaNotas} onChange={(v) => setForm({ ...form, garantiaNotas: v })} placeholder="Cobertura, condiciones…" /></Campo>
+          <div className="text-[11px] text-zinc-400">Si la garantía está vigente, la ficha avisa que el mantenimiento se hace en la casa para no perderla.</div>
+        </div>
+
         <div className="grid grid-cols-2 gap-3">
           <Campo label="Estado operativo">
             <select value={form.estadoOperativo} onChange={(e) => setForm({ ...form, estadoOperativo: e.target.value })} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm">
@@ -523,6 +555,7 @@ function ModalGpsVehiculo({ vehiculo, onCerrar }) {
   const [actualizado, setActualizado] = useState(null);
   const [cargando, setCargando] = useState(true);
   const url = vehiculo?.gpsUrl || '';
+  const [unidadViva, setUnidadViva] = useState(null); // v8.43.1
   const nombre = `${vehiculo.marca || ''} ${vehiculo.modelo || ''}`.trim() || vehiculo.placa || 'Vehículo';
   const horaTxt = actualizado
     ? actualizado.toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
@@ -538,22 +571,28 @@ function ModalGpsVehiculo({ vehiculo, onCerrar }) {
           </div>
           <div className="flex items-center gap-2">
             <button onClick={refrescar} className="flex items-center gap-1 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold px-3 py-1.5 rounded-card"><RefreshCw className={`w-3.5 h-3.5 ${cargando ? 'animate-spin' : ''}`} /> Refrescar</button>
-            <a href={url} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-blue-400 hover:underline text-xs font-bold"><ExternalLink className="w-3.5 h-3.5" /> Abrir en Pressto</a>
+            {url && <a href={url} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-blue-400 hover:underline text-xs font-bold"><ExternalLink className="w-3.5 h-3.5" /> Abrir en Pressto</a>}
             <button onClick={onCerrar} className="text-zinc-500 hover:text-white p-1"><X className="w-4 h-4" /></button>
           </div>
         </div>
         <div className="relative flex-1 bg-zinc-950">
-          {cargando && <div className="absolute inset-0 flex items-center justify-center text-zinc-500 text-sm gap-2 z-10 pointer-events-none"><Loader2 className="w-5 h-5 animate-spin" /> Cargando mapa…</div>}
-          <iframe
-            key={reloadKey}
-            src={url}
-            title={`GPS ${nombre}`}
-            className="w-full h-full border-0"
-            onLoad={() => { setCargando(false); setActualizado(new Date()); }}
-          />
+          {vehiculo.gpsDeviceId ? (
+            <MapaUnidadViva deviceId={vehiculo.gpsDeviceId} reloadKey={reloadKey} onDato={(u) => { setCargando(false); setActualizado(new Date()); setUnidadViva(u); }} />
+          ) : (<>
+            {cargando && <div className="absolute inset-0 flex items-center justify-center text-zinc-500 text-sm gap-2 z-10 pointer-events-none"><Loader2 className="w-5 h-5 animate-spin" /> Cargando mapa…</div>}
+            <iframe
+              key={reloadKey}
+              src={url}
+              title={`GPS ${nombre}`}
+              className="w-full h-full border-0"
+              onLoad={() => { setCargando(false); setActualizado(new Date()); }}
+            />
+          </>)}
         </div>
         <div className="px-4 py-2 border-t border-zinc-800 text-[10px] text-zinc-500">
-          Si el mapa sale en blanco, Pressto no permite incrustarlo aquí — usa <b>“Abrir en Pressto”</b>. El mapa se actualiza solo mientras esté abierto; <b>Refrescar</b> lo recarga y actualiza la hora.
+          {vehiculo.gpsDeviceId
+            ? <>🛰 Posición directa del rastreador{unidadViva ? <> — <b className="text-zinc-300">{unidadViva.velocidad} km/h · {unidadViva.online === 'offline' ? 'sin señal' : unidadViva.velocidad > 2 ? 'en movimiento' : 'detenido'}</b> · última señal {unidadViva.hora}</> : null}. <b>Refrescar</b> trae la posición nueva.</>
+            : <>Si el mapa sale en blanco, Pressto no permite incrustarlo aquí — usa <b>“Abrir en Pressto”</b>. <b>Refrescar</b> lo recarga y actualiza la hora.</>}
         </div>
       </div>
     </div>
@@ -582,5 +621,34 @@ function SelectorUnidadGPS({ value, onChange }) {
         </select>
       )}
     </div>
+  );
+}
+
+
+// v8.43.1: mapa EN VIVO de UNA unidad (directo del API, sin iframe): pin del
+// camión (verde andando / amarillo detenido / gris sin señal) que se actualiza
+// con "Refrescar".
+function MapaUnidadViva({ deviceId, reloadKey, onDato }) {
+  const [unidad, setUnidad] = useState(null);
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    let vivo = true;
+    fetch('/api/gps/posiciones').then(r => r.json()).then(d => {
+      if (!vivo) return;
+      const u = (d.dispositivos || []).find(x => String(x.id) === String(deviceId));
+      if (u) { setUnidad(u); onDato?.(u); } else setError('La unidad no aparece en el GPS.');
+    }).catch(e => vivo && setError(e.message || String(e)));
+    return () => { vivo = false; };
+    // eslint-disable-next-line
+  }, [deviceId, reloadKey]);
+  if (error) return <div className="h-full flex items-center justify-center text-sm text-zinc-500 p-6 text-center">{error}</div>;
+  if (!unidad) return <div className="h-full flex items-center justify-center text-sm text-zinc-500 gap-2"><Loader2 className="w-5 h-5 animate-spin" /> Buscando el camión…</div>;
+  const MapaLeaflet = React.lazy(() => import('../common/MapaLeaflet'));
+  return (
+    <React.Suspense fallback={<div className="h-full flex items-center justify-center text-sm text-zinc-500">Cargando mapa…</div>}>
+      <MapaLeaflet center={[unidad.lat, unidad.lng]} zoom={14} height="100%" scrollWheelZoom={true}
+        markers={[{ lat: unidad.lat, lng: unidad.lng, color: unidad.online === 'offline' ? 'gray' : unidad.velocidad > 2 ? 'green' : 'yellow', label: unidad.nombre, popup: `<b>🛰 ${unidad.nombre}</b><br>${unidad.velocidad} km/h · ${unidad.hora || ''}` }]}
+        className="h-full" />
+    </React.Suspense>
   );
 }

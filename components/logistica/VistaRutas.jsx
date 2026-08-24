@@ -234,8 +234,9 @@ export default function VistaRutas({ usuario, data, onVolver }) {
     // detenido, gris sin señal.
     gpsUnidades.forEach(u => {
       if (u.lat == null || u.lng == null) return;
-      ms.push({ lat: u.lat, lng: u.lng, color: u.online === 'offline' ? 'gray' : u.velocidad > 2 ? 'green' : 'yellow',
-        label: `🛰 ${u.nombre}`,
+      const veh = (data.vehiculos || []).find(x => String(x.gpsDeviceId) === String(u.id));
+      ms.push({ lat: u.lat, lng: u.lng, vehiculoTipo: veh?.tipo || 'camion', color: u.online === 'offline' ? 'gray' : u.velocidad > 2 ? 'green' : 'yellow',
+        label: `🛰 ${veh ? `${veh.marca} ${veh.modelo}` : u.nombre}`,
         popup: `<b>🛰 ${u.nombre}</b><br>${u.velocidad} km/h · ${u.online === 'offline' ? 'sin señal' : u.velocidad > 2 ? 'en movimiento' : 'detenido'}<br><span style="font-size:11px;color:#a1a1aa">${u.hora || ''}</span>` });
     });
     return ms;

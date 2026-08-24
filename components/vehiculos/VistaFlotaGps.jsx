@@ -5,8 +5,55 @@
 // con las obras del ERP. Lo llena el agente diario desde los reportes de Pressto.
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Loader2, Truck, Satellite, MapPin } from 'lucide-react';
+import { Loader2, Truck, Satellite, MapPin, RefreshCw } from 'lucide-react';
 import * as db from '../../lib/db';
+
+// v8.44.0: MAPA EN VIVO de toda la flota — posición actual de cada unidad con su
+// mini-vehículo a escala (camión > camioneta > carro > motor), color por estado.
+function MapaFlotaViva({ data }) {
+  const [unidades, setUnidades] = useState(null);
+  const [refrescando, setRefrescando] = useState(false);
+  const cargar = () => {
+    setRefrescando(true);
+    fetch('/api/gps/posiciones').then(r => r.json()).then(d => setUnidades(d.dispositivos || [])).catch(() => setUnidades([])).finally(() => setRefrescando(false));
+  };
+  useEffect(() => { cargar(); }, []);
+
+  const vehiculos = data?.vehiculos || [];
+  const pmap = Object.fromEntries((data?.personal || []).map(p => [p.id, p.nombre]));
+  const markers = (unidades || []).filter(u => u.lat != null && u.lng != null).map(u => {
+    const v = vehiculos.find(x => String(x.gpsDeviceId) === String(u.id));
+    return {
+      lat: u.lat, lng: u.lng,
+      vehiculoTipo: v?.tipo || 'camion',
+      color: u.online === 'offline' ? 'gray' : u.velocidad > 2 ? 'green' : 'yellow',
+      label: v ? `${v.marca} ${v.modelo}` : u.nombre,
+      popup: `<b>${v ? `${v.marca} ${v.modelo}${v.placa ? ` · ${v.placa}` : ''}` : u.nombre}</b><br>${u.velocidad} km/h · ${u.online === 'offline' ? 'sin señal' : u.velocidad > 2 ? 'en movimiento' : 'detenido'}${v?.responsableId ? `<br><span style=\"font-size:11px;color:#a1a1aa\">🧑‍✈️ ${pmap[v.responsableId] || ''}</span>` : ''}<br><span style=\"font-size:11px;color:#a1a1aa\">${u.hora || ''}</span>`,
+    };
+  });
+  const MapaLeaflet = React.lazy(() => import('../common/MapaLeaflet'));
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <div className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">📍 Ahora mismo — toda la flota en vivo</div>
+        <button onClick={cargar} disabled={refrescando} className="text-[10px] font-bold uppercase px-2 py-1 rounded-card border border-zinc-700 text-zinc-400 hover:text-white flex items-center gap-1">
+          <RefreshCw className={`w-3 h-3 ${refrescando ? 'animate-spin' : ''}`} /> Refrescar
+        </button>
+      </div>
+      {unidades === null ? (
+        <div className="bg-zinc-950 border border-zinc-800 rounded-card flex items-center justify-center" style={{ height: 340 }}><Loader2 className="w-5 h-5 text-emerald-500 animate-spin" /></div>
+      ) : markers.length === 0 ? (
+        <div className="bg-zinc-950 border border-dashed border-zinc-800 rounded-card p-6 text-center text-xs text-zinc-600">Sin unidades GPS visibles (revisa GPS_API_KEY o amarra las unidades en cada vehículo).</div>
+      ) : (
+        <React.Suspense fallback={<div className="bg-zinc-950 border border-zinc-800 rounded-card" style={{ height: 340 }} />}>
+          <MapaLeaflet center={[18.48, -69.93]} zoom={11} height={340} markers={markers} scrollWheelZoom={false} className="border border-zinc-800" />
+        </React.Suspense>
+      )}
+      <div className="text-[10px] text-zinc-500">🟢 en movimiento · 🟡 detenido · ⚪ sin señal — cada silueta es el tipo real del vehículo, a escala.</div>
+    </div>
+  );
+}
 
 const CAT = [
   { k: 'obraS', l: 'Obra', c: '#22c55e' },
@@ -78,10 +125,13 @@ export default function VistaFlotaGps({ usuario, data }) {
   if (loading) return <div className="py-16 text-center"><Loader2 className="w-6 h-6 text-red-500 animate-spin mx-auto" /></div>;
 
   if (!periodo || filas.length === 0) return (
-    <div className="py-14 text-center text-zinc-500">
-      <Satellite className="w-10 h-10 mx-auto mb-2 opacity-50" />
-      <div className="text-sm">Aún no hay datos de GPS cargados.</div>
-      <div className="text-[11px] mt-1">Cuando lleguen los reportes de Pressto al buzón, aparecerán aquí.</div>
+    <div className="space-y-4">
+      <MapaFlotaViva data={data} />
+      <div className="py-10 text-center text-zinc-500">
+        <Satellite className="w-10 h-10 mx-auto mb-2 opacity-50" />
+        <div className="text-sm">Aún no hay RESÚMENES de recorrido cargados.</div>
+        <div className="text-[11px] mt-1">Cuando lleguen los reportes de Pressto al buzón, el análisis aparecerá aquí.</div>
+      </div>
     </div>
   );
 
@@ -95,6 +145,8 @@ export default function VistaFlotaGps({ usuario, data }) {
 
   return (
     <div className="space-y-4">
+      <MapaFlotaViva data={data} />
+
       {/* selector de período */}
       <div className="flex flex-wrap items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-card p-2.5">
         <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">Período</span>

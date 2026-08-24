@@ -54,7 +54,7 @@ export default function InicioChofer({ usuario, data }) {
     // v8.43.0: "tú estás aquí" — el camión del viaje en vivo (Pressto GPS)
     const veh = (data.vehiculos || []).find(x => x.id === v.vehiculoId);
     const unidad = veh?.gpsDeviceId ? gpsUnidades.find(u => String(u.id) === String(veh.gpsDeviceId)) : null;
-    if (unidad && unidad.lat != null) markers.push({ lat: unidad.lat, lng: unidad.lng, color: 'purple', label: '🛰 Tu camión', popup: `<b>🛰 Tu camión</b><br>${unidad.velocidad} km/h · ${unidad.hora || ''}` });
+    if (unidad && unidad.lat != null) markers.push({ lat: unidad.lat, lng: unidad.lng, vehiculoTipo: veh?.tipo || 'camion', color: 'purple', label: '🛰 Tu camión', popup: `<b>🛰 Tu camión</b><br>${unidad.velocidad} km/h · ${unidad.hora || ''}` });
     return (
       <React.Suspense fallback={<div className="bg-zinc-950 border border-zinc-800 rounded-card flex items-center justify-center" style={{ height: 260 }}><span className="text-xs text-zinc-500">Cargando mapa…</span></div>}>
         <MapaLeaflet center={[markers[0].lat, markers[0].lng]} zoom={11} height={260} markers={markers}

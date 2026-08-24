@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Car, Plus, Loader2, Edit2, Trash2, Copy, Check, FileText, Upload, X, AlertTriangle, Eye } from 'lucide-react';
+import { Car, Plus, Loader2, Edit2, Trash2, Copy, Check, FileText, Upload, X, AlertTriangle, Eye, MapPin, RefreshCw, ExternalLink } from 'lucide-react';
 import * as db from '../../lib/db';
 import { toast } from '../../lib/toast';
 import { comprimirImagenABlob } from '../../lib/imports';
@@ -34,6 +34,7 @@ export default function VistaVehiculos({ usuario, data, onRecargar }) {
   const [cargando, setCargando] = useState(false);
   const [modal, setModal] = useState(null); // null | 'nuevo' | vehiculo
   const [logDe, setLogDe] = useState(null); // vehículo cuyo log se está viendo (v8.33.0)
+  const [gpsDe, setGpsDe] = useState(null); // vehículo cuyo mapa GPS se está viendo (v8.27.85)
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -124,6 +125,9 @@ export default function VistaVehiculos({ usuario, data, onRecargar }) {
                   {v.seguroPath
                     ? <button onClick={() => verDoc(v.seguroPath)} className="text-[11px] flex items-center gap-1 text-blue-400 hover:underline"><FileText className="w-3 h-3" /> Seguro</button>
                     : <span className="text-[11px] text-zinc-600">sin seguro</span>}
+                  {v.gpsUrl
+                    ? <button onClick={() => setGpsDe(v)} className="text-[11px] flex items-center gap-1 text-emerald-400 hover:underline font-bold"><MapPin className="w-3 h-3" /> GPS en vivo</button>
+                    : <span className="text-[11px] text-zinc-600">sin GPS</span>}
                 </div>
               </div>
             );
@@ -132,6 +136,7 @@ export default function VistaVehiculos({ usuario, data, onRecargar }) {
       )}
 
       {logDe && <ModalLogVehiculo usuario={usuario} vehiculo={logDe} personal={data?.personal || []} onCerrar={() => setLogDe(null)} />}
+      {gpsDe && <ModalGpsVehiculo vehiculo={gpsDe} onCerrar={() => setGpsDe(null)} />}
       {modal && (
         <ModalVehiculo
           usuario={usuario}
@@ -163,6 +168,7 @@ function ModalVehiculo({ usuario, vehiculo, personal, onCerrar, onGuardado }) {
     odometroKm: vehiculo?.odometroKm || '', matriculaVence: vehiculo?.matriculaVence || '',
     revisionVence: vehiculo?.revisionVence || '', tagPeaje: vehiculo?.tagPeaje || '',
     estadoOperativo: vehiculo?.estadoOperativo || 'activo', proximoMantFecha: vehiculo?.proximoMantFecha || '',
+    gpsUrl: vehiculo?.gpsUrl || '',
   });
 
   // Sube el doc de una vez (necesitamos un id; si es nuevo, lo creamos al primer archivo).
@@ -242,6 +248,10 @@ function ModalVehiculo({ usuario, vehiculo, personal, onCerrar, onGuardado }) {
             <option value="super_techos">Super Techos</option>
             <option value="prouco">Prouco</option>
           </select>
+        </Campo>
+        <Campo label="Enlace GPS (Pressto)">
+          <Input value={form.gpsUrl} onChange={(v) => setForm({ ...form, gpsUrl: v })} placeholder="https://…  (link de Compartir de Pressto para este vehículo)" />
+          <div className="text-[10px] text-zinc-500 mt-1">En Pressto: <b>Compartir → Ninguna → selecciona SOLO este vehículo → Guardar</b>, y en la pestaña <b>Sharings</b> copia el enlace y pégalo aquí. Con eso el mapa en vivo se ve desde la ficha.</div>
         </Campo>
 
         <div className="grid grid-cols-2 gap-3">
@@ -390,6 +400,50 @@ function ModalLogVehiculo({ usuario, vehiculo, personal, onCerrar }) {
             })}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// v8.27.85: mapa GPS en vivo del vehículo (embebe el enlace "Compartir" de Pressto)
+// con botón de refrescar y hora de última actualización.
+function ModalGpsVehiculo({ vehiculo, onCerrar }) {
+  const [reloadKey, setReloadKey] = useState(0);
+  const [actualizado, setActualizado] = useState(null);
+  const [cargando, setCargando] = useState(true);
+  const url = vehiculo?.gpsUrl || '';
+  const nombre = `${vehiculo.marca || ''} ${vehiculo.modelo || ''}`.trim() || vehiculo.placa || 'Vehículo';
+  const horaTxt = actualizado
+    ? actualizado.toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    : '—';
+  const refrescar = () => { setCargando(true); setReloadKey((k) => k + 1); };
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={onCerrar}>
+      <div className="bg-zinc-900 border border-zinc-700 rounded-card w-full max-w-4xl h-[80vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-zinc-800">
+          <div className="min-w-0">
+            <div className="text-sm font-black text-white flex items-center gap-2"><MapPin className="w-4 h-4 text-emerald-400" /> GPS en vivo · {nombre}</div>
+            <div className="text-[11px] text-zinc-500">Actualizado: <span className="text-zinc-300 font-bold">{horaTxt}</span></div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={refrescar} className="flex items-center gap-1 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold px-3 py-1.5 rounded-card"><RefreshCw className={`w-3.5 h-3.5 ${cargando ? 'animate-spin' : ''}`} /> Refrescar</button>
+            <a href={url} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-blue-400 hover:underline text-xs font-bold"><ExternalLink className="w-3.5 h-3.5" /> Abrir en Pressto</a>
+            <button onClick={onCerrar} className="text-zinc-500 hover:text-white p-1"><X className="w-4 h-4" /></button>
+          </div>
+        </div>
+        <div className="relative flex-1 bg-zinc-950">
+          {cargando && <div className="absolute inset-0 flex items-center justify-center text-zinc-500 text-sm gap-2 z-10 pointer-events-none"><Loader2 className="w-5 h-5 animate-spin" /> Cargando mapa…</div>}
+          <iframe
+            key={reloadKey}
+            src={url}
+            title={`GPS ${nombre}`}
+            className="w-full h-full border-0"
+            onLoad={() => { setCargando(false); setActualizado(new Date()); }}
+          />
+        </div>
+        <div className="px-4 py-2 border-t border-zinc-800 text-[10px] text-zinc-500">
+          Si el mapa sale en blanco, Pressto no permite incrustarlo aquí — usa <b>“Abrir en Pressto”</b>. El mapa se actualiza solo mientras esté abierto; <b>Refrescar</b> lo recarga y actualiza la hora.
+        </div>
       </div>
     </div>
   );

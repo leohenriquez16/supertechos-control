@@ -196,23 +196,30 @@ export async function sincronizarAnaliticasProyectos() {
         else res.vinculados++;
       }
 
-      // Presupuesto al día: valor del ERP vs suma de las cotizaciones de la analítica.
-      const sumaOdoo = (m.cotizaciones || []).reduce((s, c) => s + (Number(c.monto) || 0), 0);
+      // Presupuesto al día: valor del ERP (CON ITBIS) vs suma de las cotizaciones
+      // de la analítica CON ITBIS (v8.32.1: el valor_cotizacion del ERP incluye ITBIS —
+      // comparar contra amount_untaxed daba falsos descuadres de exactamente 18%).
+      const sumaOdoo = (m.cotizaciones || []).reduce((s, c) => s + (Number(c.montoConItbis) || 0), 0);
       const valorErp = Number(p.valor_cotizacion) || 0;
-      if (sumaOdoo > 0 && Math.abs(sumaOdoo - valorErp) / sumaOdoo > 0.01) {
+      if (valorErp === 0 && sumaOdoo > 0) {
+        res.sinValorERP = res.sinValorERP || [];
+        res.sinValorERP.push({ etiqueta, sumaOdoo });
+      } else if (sumaOdoo > 0 && Math.abs(sumaOdoo - valorErp) / sumaOdoo > 0.02) {
         res.descuadres.push({ etiqueta, valorErp, sumaOdoo, cots: (m.cotizaciones || []).map(c => c.ref).join(', ') });
       }
     }
 
     // Correo a Miguel + Felvison si hay algo que cuadrar
-    if ((res.sinAnalitica.length || res.descuadres.length) && process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL) {
+    if ((res.sinAnalitica.length || res.descuadres.length || (res.sinValorERP || []).length) && process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL) {
       const fmt = (n) => 'RD$ ' + Math.round(n).toLocaleString('es-DO');
       const html = `<div style="font-family:Arial,sans-serif;max-width:680px">
         <h2 style="color:#D71920">📊 Presupuestos ERP ↔ Analíticas de Odoo — hay que cuadrar</h2>
         ${res.sinAnalitica.length ? `<h3 style="font-size:15px">Proyectos SIN cuenta analítica que matchee (${res.sinAnalitica.length})</h3>
           <p style="font-size:12px;color:#666">Regla: el nombre de la analítica debe COMENZAR con la referencia de la cot original (ej. "ST-C1234 - Cliente").</p>
           <ul style="font-size:13px">${res.sinAnalitica.map(x => `<li>${x}</li>`).join('')}</ul>` : ''}
-        ${res.descuadres.length ? `<h3 style="font-size:15px">Presupuesto descuadrado ERP vs Odoo (${res.descuadres.length})</h3>
+        ${(res.sinValorERP || []).length ? `<h3 style="font-size:15px">Proyectos SIN valor en el ERP — Odoo sí lo tiene (${res.sinValorERP.length})</h3>
+          <ul style="font-size:13px">${res.sinValorERP.map(x => `<li>${x.etiqueta} — Odoo: RD$ ${Math.round(x.sumaOdoo).toLocaleString('es-DO')}</li>`).join('')}</ul>` : ''}
+        ${res.descuadres.length ? `<h3 style="font-size:15px">Presupuesto descuadrado ERP vs Odoo, con ITBIS (${res.descuadres.length})</h3>
           <table style="border-collapse:collapse;width:100%;font-size:13px">
             <tr style="background:#f3f3f3"><th style="border:1px solid #ddd;padding:6px;text-align:left">Proyecto</th><th style="border:1px solid #ddd;padding:6px;text-align:right">Valor ERP</th><th style="border:1px solid #ddd;padding:6px;text-align:right">Cots Odoo (sin ITBIS)</th><th style="border:1px solid #ddd;padding:6px;text-align:left">Cotizaciones</th></tr>
             ${res.descuadres.map(d => `<tr><td style="border:1px solid #ddd;padding:6px">${d.etiqueta}</td><td style="border:1px solid #ddd;padding:6px;text-align:right">${fmt(d.valorErp)}</td><td style="border:1px solid #ddd;padding:6px;text-align:right"><b>${fmt(d.sumaOdoo)}</b></td><td style="border:1px solid #ddd;padding:6px">${d.cots}</td></tr>`).join('')}
@@ -225,7 +232,7 @@ export async function sincronizarAnaliticasProyectos() {
         body: JSON.stringify({
           from: process.env.RESEND_FROM_EMAIL,
           to: ['mmartinez@supertechos.com.do', 'fcalcano@supertechos.com.do'],
-          subject: `📊 ${res.sinAnalitica.length + res.descuadres.length} proyecto(s) por cuadrar ERP ↔ Odoo`,
+          subject: `📊 ${res.sinAnalitica.length + res.descuadres.length + (res.sinValorERP || []).length} proyecto(s) por cuadrar ERP ↔ Odoo`,
           html,
         }),
       }).catch(() => {});

@@ -12,7 +12,8 @@ import React from 'react';
 export default function Campo({ label, children }) {
   return (
     <div>
-      <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-1">{label}</div>
+      {/* v8.43.1: zinc-300 (antes 400) — los labels se perdían sobre fondo oscuro */}
+      <div className="text-[11px] tracking-widest uppercase text-zinc-300 font-bold mb-1">{label}</div>
       {children}
     </div>
   );

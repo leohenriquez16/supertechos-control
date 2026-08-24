@@ -32,6 +32,27 @@ const MARKER_COLORS = {
   purple: '#9333ea',
 };
 
+// v8.44.0: mini-VEHÍCULOS a escala para el mapa de flota — silueta según el
+// tipo (camión > camioneta > carro > motor), color según estado.
+const SILUETAS_VEH = {
+  camion:    { w: 46, path: 'M2 15 L2 8 L12 8 L12 4 L20 4 L23 8 L44 8 L44 15 Z', ruedas: [[9,15],[30,15],[38,15]] },
+  camioneta: { w: 40, path: 'M2 15 L2 9 L6 9 L10 4 L22 4 L24 9 L38 9 L38 15 Z', ruedas: [[9,15],[31,15]] },
+  carro:     { w: 34, path: 'M2 14 L4 9 L10 8 L13 4 L24 4 L28 8 L32 9 L32 14 Z', ruedas: [[9,14],[26,14]] },
+  motor:     { w: 26, path: 'M4 14 L10 7 L16 7 L15 4 L19 4 L22 14', ruedas: [[6,14],[20,14]], linea: true },
+  equipo:    { w: 40, path: 'M2 15 L2 6 L16 6 L16 10 L38 10 L38 15 Z', ruedas: [[8,15],[30,15]] },
+};
+function makeVehiculoIcon(tipo = 'camion', color = '#16a34a') {
+  const s2 = SILUETAS_VEH[tipo] || SILUETAS_VEH.camion;
+  const h = 22;
+  const ruedas = s2.ruedas.map(([x, y]) => `<circle cx="${x}" cy="${y}" r="3.4" fill="#18181b" stroke="white" stroke-width="1.4"/>`).join('');
+  const cuerpo = s2.linea
+    ? `<path d="${s2.path}" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`
+    : `<path d="${s2.path}" fill="${color}" stroke="white" stroke-width="1.6" stroke-linejoin="round"/>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${s2.w}" height="${h}" viewBox="0 0 ${s2.w} ${h}">
+    ${cuerpo}${ruedas}</svg>`;
+  return { url: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`, w: s2.w, h };
+}
+
 // Genera un ícono SVG de pin personalizado. v8.41.0: `numero` pinta el número
 // de la parada dentro del pin (para rutas en orden).
 function makeSvgIcon(color = '#dc2626', size = 32, numero = null) {
@@ -114,14 +135,21 @@ export default function MapaLeaflet({
       markers.forEach((m) => {
         if (m.lat == null || m.lng == null) return;
         const colorHex = MARKER_COLORS[m.color] || m.color || MARKER_COLORS.red;
-        const iconUrl = makeSvgIcon(colorHex, m.numero != null ? 32 : 28, m.numero ?? null);
-        const icon = L.icon({
-          iconUrl,
-          iconSize: [28, 36],
-          iconAnchor: [14, 36],
-          popupAnchor: [0, -36],
-          tooltipAnchor: [14, -20],
-        });
+        let icon;
+        if (m.vehiculoTipo) {
+          // v8.44.0: mini-vehículo a escala en vez de pin
+          const vi = makeVehiculoIcon(m.vehiculoTipo, colorHex);
+          icon = L.icon({ iconUrl: vi.url, iconSize: [vi.w, vi.h], iconAnchor: [vi.w / 2, vi.h], popupAnchor: [0, -vi.h], tooltipAnchor: [0, -vi.h] });
+        } else {
+          const iconUrl = makeSvgIcon(colorHex, m.numero != null ? 32 : 28, m.numero ?? null);
+          icon = L.icon({
+            iconUrl,
+            iconSize: [28, 36],
+            iconAnchor: [14, 36],
+            popupAnchor: [0, -36],
+            tooltipAnchor: [14, -20],
+          });
+        }
 
         const marker = L.marker([m.lat, m.lng], { icon });
 

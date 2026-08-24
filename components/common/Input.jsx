@@ -17,7 +17,9 @@ export default function Input({ value, onChange, placeholder, type = 'text', ste
       step={step}
       onChange={e => onChange(e.target.value)}
       placeholder={placeholder}
-      className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-4 py-3 text-white placeholder-zinc-600 transition-colors"
+      // v8.43.1: bg-zinc-950 (antes zinc-900, se fundía con el panel de los modales),
+      // placeholder más legible y color-scheme dark para que los date/time no salgan tenues.
+      className="w-full bg-zinc-950 border-2 border-zinc-700 rounded-card focus:border-red-600 outline-none px-4 py-3 text-white placeholder-zinc-500 transition-colors [color-scheme:dark]"
     />
   );
 }

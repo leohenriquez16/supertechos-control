@@ -234,9 +234,10 @@ export default function VistaRutas({ usuario, data, onVolver }) {
     // detenido, gris sin señal.
     gpsUnidades.forEach(u => {
       if (u.lat == null || u.lng == null) return;
-      ms.push({ lat: u.lat, lng: u.lng, color: u.online === 'offline' ? 'gray' : u.velocidad > 2 ? 'green' : 'yellow',
-        label: `🛰 ${u.nombre}`,
-        popup: `<b>🛰 ${u.nombre}</b><br>${u.velocidad} km/h · ${u.online === 'offline' ? 'sin señal' : u.velocidad > 2 ? 'en movimiento' : 'detenido'}<br><span style="font-size:11px;color:#a1a1aa">${u.hora || ''}</span>` });
+      const veh = (data.vehiculos || []).find(x => String(x.gpsDeviceId) === String(u.id));
+      ms.push({ lat: u.lat, lng: u.lng, vehiculoTipo: veh?.tipo || 'camion', color: u.velocidad > 2 ? 'green' : u.online === 'online' ? 'yellow' : 'red',
+        label: `🛰 ${veh ? `${veh.marca} ${veh.modelo}` : u.nombre}`,
+        popup: `<b>🛰 ${u.nombre}</b><br>${u.velocidad} km/h · ${u.velocidad > 2 ? 'en movimiento' : u.online === 'online' ? 'encendido detenido' : 'apagado'}<br><span style="font-size:11px;color:#a1a1aa">${u.hora || ''}</span>` });
     });
     return ms;
   }, [diligencias, listas, viajes, data.proyectos, gpsUnidades]);
@@ -412,7 +413,7 @@ export default function VistaRutas({ usuario, data, onVolver }) {
                 <div className="bg-zinc-950 border border-dashed border-zinc-800 rounded-card p-4 text-center text-xs text-zinc-600">Nada que ubicar hoy (las obras necesitan GPS en su ficha para salir aquí).</div>
               ) : MapaDiligencias}
               <div className="text-[10px] text-zinc-500 flex gap-3 flex-wrap">
-                <span>🔴 Retiro sin planificar</span><span>🟠 Lista sin viaje</span><span>🔵 En viaje</span><span>🟢 Completada</span><span>🛰 Camión en vivo (verde=andando · amarillo=detenido)</span>
+                <span>🔴 Retiro sin planificar</span><span>🟠 Lista sin viaje</span><span>🔵 En viaje</span><span>🟢 Completada</span><span>🛰 Camión: 🟢 andando · 🟡 encendido detenido · 🔴 apagado</span>
               </div>
             </div>
           )}

@@ -212,6 +212,7 @@ function ModalVehiculo({ usuario, vehiculo, personal, onCerrar, onGuardado }) {
     revisionVence: vehiculo?.revisionVence || '', tagPeaje: vehiculo?.tagPeaje || '',
     estadoOperativo: vehiculo?.estadoOperativo || 'activo', proximoMantFecha: vehiculo?.proximoMantFecha || '',
     gpsUrl: vehiculo?.gpsUrl || '',
+    gpsDeviceId: vehiculo?.gpsDeviceId || '',
     // v8.35.2: licencia del chofer (se carga/guarda en la persona responsable)
     licenciaPath: null, licenciaCategoria: '', licenciaVence: '',
   });
@@ -333,6 +334,8 @@ function ModalVehiculo({ usuario, vehiculo, personal, onCerrar, onGuardado }) {
         </Campo>
         <Campo label="Enlace GPS (Pressto)">
           <Input value={form.gpsUrl} onChange={(v) => setForm({ ...form, gpsUrl: v })} placeholder="https://…  (link de Compartir de Pressto para este vehículo)" />
+          {/* v8.43.0: unidad GPS EN VIVO — amarra el vehículo a su rastreador */}
+          <SelectorUnidadGPS value={form.gpsDeviceId} onChange={(v) => setForm({ ...form, gpsDeviceId: v })} />
           <div className="text-[10px] text-zinc-500 mt-1">En Pressto: <b>Compartir → Ninguna → selecciona SOLO este vehículo → Guardar</b>, y en la pestaña <b>Sharings</b> copia el enlace y pégalo aquí. Con eso el mapa en vivo se ve desde la ficha.</div>
         </Campo>
 
@@ -553,6 +556,31 @@ function ModalGpsVehiculo({ vehiculo, onCerrar }) {
           Si el mapa sale en blanco, Pressto no permite incrustarlo aquí — usa <b>“Abrir en Pressto”</b>. El mapa se actualiza solo mientras esté abierto; <b>Refrescar</b> lo recarga y actualiza la hora.
         </div>
       </div>
+    </div>
+  );
+}
+
+
+// v8.43.0: selector de UNIDAD GPS (Pressto) — trae la lista en vivo del API y
+// amarra el vehículo a su rastreador para verlo moverse en los mapas del ERP.
+function SelectorUnidadGPS({ value, onChange }) {
+  const [unidades, setUnidades] = useState(null);
+  useEffect(() => {
+    fetch('/api/gps/posiciones').then(r => r.json()).then(d => setUnidades(d.dispositivos || [])).catch(() => setUnidades([]));
+  }, []);
+  return (
+    <div className="mt-2">
+      <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-1">🛰 Unidad GPS (posición en vivo)</div>
+      {unidades === null ? (
+        <div className="text-[11px] text-zinc-600">Cargando unidades del GPS…</div>
+      ) : unidades.length === 0 ? (
+        <div className="text-[11px] text-zinc-600">No se pudieron leer las unidades (revisa GPS_API_KEY).</div>
+      ) : (
+        <select value={value || ''} onChange={e => onChange(e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-emerald-600 outline-none px-3 py-3 text-white">
+          <option value="">Sin unidad GPS</option>
+          {unidades.map(u => <option key={u.id} value={u.id}>{u.nombre} · {u.online === 'offline' ? 'sin señal' : `${u.velocidad} km/h`}</option>)}
+        </select>
+      )}
     </div>
   );
 }

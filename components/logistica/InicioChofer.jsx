@@ -20,6 +20,7 @@ export default function InicioChofer({ usuario, data }) {
   const [procesando, setProcesando] = useState(null);
   const [mapaDe, setMapaDe] = useState(null); // v8.41.0: viaje cuyo mapa de ruta se muestra
   const [entregando, setEntregando] = useState(null); // v8.42.0: {v,p} parada de ENTREGA confirmándose (foto + firma)
+  const [gpsUnidades, setGpsUnidades] = useState([]); // v8.43.0
 
   const recargar = async () => {
     setLoading(true);
@@ -28,6 +29,10 @@ export default function InicioChofer({ usuario, data }) {
     setLoading(false);
   };
   useEffect(() => { recargar(); /* eslint-disable-next-line */ }, [usuario.id]);
+  // v8.43.0: posición en vivo del camión (si el vehículo del viaje tiene unidad GPS)
+  useEffect(() => {
+    fetch('/api/gps/posiciones').then(r => r.json()).then(d => setGpsUnidades(d.dispositivos || [])).catch(() => {});
+  }, []);
 
   const nombreObra = (pid) => { const p = (data.proyectos || []).find(x => x.id === pid); return p ? (p.cliente || p.nombre || p.referenciaOdoo) : pid; };
 
@@ -46,6 +51,10 @@ export default function InicioChofer({ usuario, data }) {
       label: `${i + 1}. ${p.proyectoId ? nombreObra(p.proyectoId) : p.lugar}`,
       popup: `<b>${i + 1}. ${p.tipo === 'recogida' ? '↑ Recoger' : '↓ Entregar'}</b><br>${p.proyectoId ? nombreObra(p.proyectoId) : (p.lugar || '')}${p.descripcion ? `<br><span style="font-size:11px;color:#a1a1aa">${p.descripcion}</span>` : ''}`,
     }));
+    // v8.43.0: "tú estás aquí" — el camión del viaje en vivo (Pressto GPS)
+    const veh = (data.vehiculos || []).find(x => x.id === v.vehiculoId);
+    const unidad = veh?.gpsDeviceId ? gpsUnidades.find(u => String(u.id) === String(veh.gpsDeviceId)) : null;
+    if (unidad && unidad.lat != null) markers.push({ lat: unidad.lat, lng: unidad.lng, color: 'purple', label: '🛰 Tu camión', popup: `<b>🛰 Tu camión</b><br>${unidad.velocidad} km/h · ${unidad.hora || ''}` });
     return (
       <React.Suspense fallback={<div className="bg-zinc-950 border border-zinc-800 rounded-card flex items-center justify-center" style={{ height: 260 }}><span className="text-xs text-zinc-500">Cargando mapa…</span></div>}>
         <MapaLeaflet center={[markers[0].lat, markers[0].lng]} zoom={11} height={260} markers={markers}

@@ -16,6 +16,7 @@ export default function InicioChofer({ usuario, data }) {
   const [viajes, setViajes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [procesando, setProcesando] = useState(null);
+  const [mapaDe, setMapaDe] = useState(null); // v8.41.0: viaje cuyo mapa de ruta se muestra
 
   const recargar = async () => {
     setLoading(true);
@@ -26,6 +27,31 @@ export default function InicioChofer({ usuario, data }) {
   useEffect(() => { recargar(); /* eslint-disable-next-line */ }, [usuario.id]);
 
   const nombreObra = (pid) => { const p = (data.proyectos || []).find(x => x.id === pid); return p ? (p.cliente || p.nombre || p.referenciaOdoo) : pid; };
+
+  // v8.41.0: la RUTA EN ORDEN en el mapa — pines numerados + línea del recorrido.
+  const coordsParada = (p) => {
+    if (p.lat != null && p.lng != null) return { lat: p.lat, lng: p.lng };
+    const pr = (data.proyectos || []).find(x => x.id === p.proyectoId);
+    return (pr?.ubicacionLat != null && pr?.ubicacionLng != null) ? { lat: pr.ubicacionLat, lng: pr.ubicacionLng } : null;
+  };
+  const MapaRuta = ({ v }) => {
+    const conCoords = v.paradas.map((p, i) => ({ p, i, c: coordsParada(p) })).filter(x => x.c);
+    if (conCoords.length === 0) return <div className="bg-zinc-950 border border-dashed border-zinc-800 rounded-card p-4 text-center text-[11px] text-zinc-600">Las paradas de este viaje no tienen ubicación GPS.</div>;
+    const MapaLeaflet = React.lazy(() => import('../common/MapaLeaflet'));
+    const markers = conCoords.map(({ p, i, c }) => ({
+      ...c, numero: i + 1, color: p.estado === 'completada' ? 'green' : 'blue',
+      label: `${i + 1}. ${p.proyectoId ? nombreObra(p.proyectoId) : p.lugar}`,
+      popup: `<b>${i + 1}. ${p.tipo === 'recogida' ? '↑ Recoger' : '↓ Entregar'}</b><br>${p.proyectoId ? nombreObra(p.proyectoId) : (p.lugar || '')}${p.descripcion ? `<br><span style="font-size:11px;color:#a1a1aa">${p.descripcion}</span>` : ''}`,
+    }));
+    return (
+      <React.Suspense fallback={<div className="bg-zinc-950 border border-zinc-800 rounded-card flex items-center justify-center" style={{ height: 260 }}><span className="text-xs text-zinc-500">Cargando mapa…</span></div>}>
+        <MapaLeaflet center={[markers[0].lat, markers[0].lng]} zoom={11} height={260} markers={markers}
+          polyline={markers.length > 1 ? { points: markers.map(m => [m.lat, m.lng]), color: '#22d3ee' } : null}
+          scrollWheelZoom={false} className="border border-zinc-800" />
+        {conCoords.length < v.paradas.length && <div className="text-[10px] text-zinc-600 mt-1">{v.paradas.length - conCoords.length} parada(s) sin GPS no salen en el mapa.</div>}
+      </React.Suspense>
+    );
+  };
 
   const iniciar = async (v) => {
     setProcesando(v.id);
@@ -104,6 +130,14 @@ export default function InicioChofer({ usuario, data }) {
                 </button>
               )}
             </div>
+
+            {v.paradas.length > 0 && (
+              <button onClick={() => setMapaDe(mapaDe === v.id ? null : v.id)}
+                className={`w-full text-[11px] font-black uppercase py-2 rounded-card border ${mapaDe === v.id ? 'bg-cyan-700 border-cyan-700 text-white' : 'border-zinc-700 text-zinc-300'}`}>
+                🗺 {mapaDe === v.id ? 'Ocultar mapa' : 'Ver mi ruta en el mapa'}
+              </button>
+            )}
+            {mapaDe === v.id && <MapaRuta v={v} />}
 
             <div className="space-y-1.5">
               {v.paradas.map((p, i) => (

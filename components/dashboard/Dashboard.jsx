@@ -203,16 +203,19 @@ export default function Dashboard({ usuario, data, onVerProyecto, onNuevoProyect
     }).sort((a, b) => b.diasAtascado - a.diasAtascado);
   }, [data.proyectos]);
 
+  // v8.36.0 (desktop-first 2): en lg+ el dashboard es un grid de 12 columnas —
+  // selector junto a los KPIs que controla, Importar Odoo junto a Tareas.
+  // En móvil sigue siendo la pila vertical de siempre (solo se AGREGAN clases lg:).
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 lg:space-y-0 lg:grid lg:grid-cols-12 lg:gap-5 lg:items-start">
       {/* v8.19.19: Mi Producción del corte actual — gated por toggle global */}
       {data.config?.mostrarMiProduccionNomina && usuario && (
-        <MiProduccionCard usuario={usuario} data={data} />
+        <div className="lg:col-span-12"><MiProduccionCard usuario={usuario} data={data} /></div>
       )}
 
       {/* v8.9.14: Alerta de proyectos aprobados atascados */}
       {proyectosAprobadosAtrasados.length > 0 && (
-        <div className="bg-yellow-900/20 border-2 border-yellow-700 p-4 space-y-2">
+        <div className="bg-yellow-900/20 border-2 border-yellow-700 p-4 space-y-2 lg:col-span-12">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-yellow-400" />
@@ -224,7 +227,7 @@ export default function Dashboard({ usuario, data, onVerProyecto, onNuevoProyect
               </div>
             </div>
           </div>
-          <div className="space-y-1">
+          <div className="space-y-1 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-1">
             {proyectosAprobadosAtrasados.slice(0, 5).map(p => (
               <button
                 key={p.id}
@@ -244,7 +247,7 @@ export default function Dashboard({ usuario, data, onVerProyecto, onNuevoProyect
               </button>
             ))}
             {proyectosAprobadosAtrasados.length > 5 && (
-              <div className="text-[10px] text-zinc-500 text-center pt-1">
+              <div className="text-[10px] text-zinc-500 text-center pt-1 lg:col-span-2">
                 + {proyectosAprobadosAtrasados.length - 5} más en el Kanban
               </div>
             )}
@@ -252,7 +255,7 @@ export default function Dashboard({ usuario, data, onVerProyecto, onNuevoProyect
         </div>
       )}
       {/* SELECTOR DE PERIODO */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 space-y-2">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 space-y-2 lg:col-span-4 lg:self-stretch">
         <div className="flex flex-wrap gap-1">
           {[['dia','Día'],['semana','Semana'],['quincena','Quincena'],['mes','Mes'],['trimestre','Trim'],['anio','Año']].map(([v,t]) => (
             <button key={v} onClick={() => { setPeriodo(v); setFechaRef(hoy); }} className={`px-3 py-1.5 text-[10px] font-bold uppercase ${periodo === v ? 'bg-red-600 text-white' : 'bg-zinc-950 text-zinc-400 border border-zinc-800'}`}>{t}</button>
@@ -269,7 +272,7 @@ export default function Dashboard({ usuario, data, onVerProyecto, onNuevoProyect
       {/* HERO: Métricas ejecutivas del periodo - v8.9.29: 4 tarjetas
           v8.17.30: AutoFitText para que números no se salgan del cuadro en móvil,
           labels con leading-tight y subtext truncado. */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 lg:col-span-8">
         <button onClick={() => setModalDetalle('enEjecucion')} className="bg-gradient-to-br from-red-600 to-red-800 rounded-card shadow-card p-3 sm:p-4 text-left hover:brightness-110 transition-all cursor-pointer overflow-hidden">
           <div className="flex items-start justify-between gap-1">
             <div className="text-[10px] tracking-widest uppercase text-red-200 leading-tight">En Ejecución</div>
@@ -317,7 +320,7 @@ export default function Dashboard({ usuario, data, onVerProyecto, onNuevoProyect
       {onImportarOdoo && (
         <button
           onClick={onImportarOdoo}
-          className="w-full bg-purple-900/20 border-2 border-purple-700 hover:border-purple-500 p-3 flex items-center gap-3 transition-colors"
+          className="w-full bg-purple-900/20 border-2 border-purple-700 hover:border-purple-500 p-3 flex items-center gap-3 transition-colors lg:col-span-4 lg:self-start"
         >
           <div className="w-8 h-8 bg-purple-600 flex items-center justify-center flex-shrink-0">
             <Download className="w-4 h-4 text-white" />
@@ -332,9 +335,9 @@ export default function Dashboard({ usuario, data, onVerProyecto, onNuevoProyect
 
       {/* TAREAS PENDIENTES */}
       {tareasPendientes.length > 0 && (
-        <div>
+        <div className="lg:col-span-8">
           <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2">Tareas pendientes</div>
-          <div className="space-y-1">{tareasPendientes.map(t => {
+          <div className="space-y-1 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-1.5">{tareasPendientes.map(t => {
             const proy = data.proyectos.find(p => p.id === t.proyectoId);
             return (
               <div key={t.id} className="bg-zinc-900 border-l-4 border-orange-500 p-2 flex items-center gap-2">

@@ -94,10 +94,17 @@ export default function VistaRutas({ usuario, data, onVolver }) {
   };
 
   const montarRequisicion = async (viaje, req) => {
+    // v8.42.0: TODA parada lleva ubicación — el chofer la ve clara en su celular.
+    const prj = (data.proyectos || []).find(x => x.id === req.proyectoId);
+    if (prj?.ubicacionLat == null || prj?.ubicacionLng == null) {
+      alert(`La obra "${nombreObra(req.proyectoId)}" no tiene ubicación GPS.\nAsígnala en el proyecto (tab Info → Ubicación) y vuelve a montarla.`);
+      return;
+    }
     try {
       await db.agregarParada({
         viajeId: viaje.id, orden: viaje.paradas.length + 1, tipo: 'entrega',
         proyectoId: req.proyectoId, requisicionId: req.id,
+        lat: prj.ubicacionLat, lng: prj.ubicacionLng, // v8.42.0
         descripcion: `Entregar materiales en ${nombreObra(req.proyectoId)}`,
       });
       // el viaje "pagado" entrega directo; el camión la lleva cuando el chofer arranca
@@ -124,16 +131,29 @@ export default function VistaRutas({ usuario, data, onVolver }) {
     const p = paradaLibre;
     const viaje = viajes.find(v => v.id === p.viajeId);
     const base = (viaje?.paradas.length || 0);
-    const origen = p.lugar?.trim() ? { lugar: p.lugar.trim(), lat: p.lat ?? null, lng: p.lng ?? null, proyectoId: p.proyectoId || null } : null;
+    // v8.42.0: rescate de coords — si escribieron el lugar libre, aceptamos el link de Maps
+    const cOri = p.lat == null ? parseCoords(p.lugarMaps || '') : null;
+    const cDes = p.destinoLat == null ? parseCoords(p.destinoMaps || '') : null;
+    const origen = p.lugar?.trim() ? { lugar: p.lugar.trim(), lat: p.lat ?? cOri?.lat ?? null, lng: p.lng ?? cOri?.lng ?? null, proyectoId: p.proyectoId || null } : null;
+    // v8.42.0: GPS OBLIGATORIO — el chofer tiene que ver claro a dónde va
+    if (origen && origen.lat == null) { alert('Ese lugar no tiene ubicación GPS.\nElígelo de las sugerencias con 📍 o pega el link de Google Maps en el campo de ubicación.'); return; }
+    // v8.42.0: documento para mostrar al retirar (OC / cotización / factura)
+    let docUrl = null, docNombre = null;
+    if (p.docFile && (p.tipo === 'recogida' || p.tipo === 'par')) {
+      try { docUrl = await db.subirDocParada(p.docFile, p.viajeId); docNombre = p.docFile.name || 'documento'; }
+      catch (e) { alert('El documento no se pudo subir: ' + (e?.message || e)); return; }
+    }
     try {
       if (p.tipo === 'par') {
         // v8.41.1: RECOGER Y ENTREGAR — dos paradas encadenadas (ej. suplidor → obra)
-        const destino = p.destinoLugar?.trim() ? { lugar: p.destinoLugar.trim(), lat: p.destinoLat ?? null, lng: p.destinoLng ?? null, proyectoId: p.destinoProyectoId || null } : null;
+        const destino = p.destinoLugar?.trim() ? { lugar: p.destinoLugar.trim(), lat: p.destinoLat ?? cDes?.lat ?? null, lng: p.destinoLng ?? cDes?.lng ?? null, proyectoId: p.destinoProyectoId || null } : null;
         if (!origen) { alert('Escribe o elige DÓNDE se recoge (paso 2).'); return; }
         if (!destino) { alert('Escribe o elige DÓNDE se entrega (paso 3).'); return; }
+        if (destino.lat == null) { alert('El destino no tiene ubicación GPS.\nElígelo de las sugerencias con 📍 o pega el link de Google Maps.'); return; }
         await db.agregarParada({
           viajeId: p.viajeId, orden: base + 1, tipo: 'recogida',
           lugar: origen.lugar, proyectoId: origen.proyectoId, lat: origen.lat, lng: origen.lng,
+          docUrl, docNombre, // v8.42.0
           descripcion: [p.descripcion || '', `→ llevar a ${destino.lugar}`].filter(Boolean).join(' '),
         });
         await db.agregarParada({
@@ -146,6 +166,7 @@ export default function VistaRutas({ usuario, data, onVolver }) {
         await db.agregarParada({
           viajeId: p.viajeId, orden: base + 1,
           tipo: p.tipo, lugar: origen.lugar, proyectoId: origen.proyectoId,
+          docUrl: p.tipo === 'recogida' ? docUrl : null, docNombre: p.tipo === 'recogida' ? docNombre : null, // v8.42.0
           descripcion: p.descripcion || '', lat: origen.lat, lng: origen.lng,
         });
       }
@@ -157,6 +178,10 @@ export default function VistaRutas({ usuario, data, onVolver }) {
   // v8.40.0: montar un RETIRO DE SOBRANTE en un viaje — parada de recogida en la obra.
   const montarDiligencia = async (viaje, d) => {
     const proy = (data.proyectos || []).find(x => x.id === d.proyectoId);
+    if (proy?.ubicacionLat == null || proy?.ubicacionLng == null) {
+      alert(`La obra "${nombreObra(d.proyectoId)}" no tiene ubicación GPS.\nAsígnala en el proyecto (tab Info → Ubicación) y vuelve a montar el retiro.`);
+      return;
+    }
     try {
       await db.agregarParada({
         viajeId: viaje.id, orden: viaje.paradas.length + 1, tipo: 'recogida',
@@ -269,8 +294,12 @@ export default function VistaRutas({ usuario, data, onVolver }) {
             <BuscadorLugar candidatos={candidatosLugar} valor={paradaLibre.lugar || ''} conGps={paradaLibre.lat != null}
               placeholder="Ej: Ferretería Americana, Caucedo, o el nombre de la obra…"
               onCambiar={(c) => setParadaLibre(c.elegir
-                ? { ...paradaLibre, lugar: c.elegir.lugar, lat: c.elegir.lat, lng: c.elegir.lng, proyectoId: c.elegir.proyectoId }
+                ? { ...paradaLibre, lugar: c.elegir.lugar, lat: c.elegir.lat, lng: c.elegir.lng, proyectoId: c.elegir.proyectoId, lugarMaps: '' }
                 : { ...paradaLibre, lugar: c.texto, lat: null, lng: null, proyectoId: null })} />
+            {(paradaLibre.lugar || '').trim() && paradaLibre.lat == null && (
+              <input value={paradaLibre.lugarMaps || ''} onChange={e => setParadaLibre({ ...paradaLibre, lugarMaps: e.target.value })}
+                placeholder="📍 Obligatorio: pega el link de Google Maps de este lugar" className={`w-full mt-1 bg-zinc-900 border rounded-card px-2 py-1.5 text-xs ${parseCoords(paradaLibre.lugarMaps) ? 'border-green-700' : 'border-amber-700'}`} />
+            )}
           </div>
 
           {paradaLibre.tipo === 'par' && (
@@ -279,8 +308,12 @@ export default function VistaRutas({ usuario, data, onVolver }) {
               <BuscadorLugar candidatos={candidatosLugar} valor={paradaLibre.destinoLugar || ''} conGps={paradaLibre.destinoLat != null}
                 placeholder="Ej: la obra donde se va a dejar…"
                 onCambiar={(c) => setParadaLibre(c.elegir
-                  ? { ...paradaLibre, destinoLugar: c.elegir.lugar, destinoLat: c.elegir.lat, destinoLng: c.elegir.lng, destinoProyectoId: c.elegir.proyectoId }
+                  ? { ...paradaLibre, destinoLugar: c.elegir.lugar, destinoLat: c.elegir.lat, destinoLng: c.elegir.lng, destinoProyectoId: c.elegir.proyectoId, destinoMaps: '' }
                   : { ...paradaLibre, destinoLugar: c.texto, destinoLat: null, destinoLng: null, destinoProyectoId: null })} />
+              {(paradaLibre.destinoLugar || '').trim() && paradaLibre.destinoLat == null && (
+                <input value={paradaLibre.destinoMaps || ''} onChange={e => setParadaLibre({ ...paradaLibre, destinoMaps: e.target.value })}
+                  placeholder="📍 Obligatorio: pega el link de Google Maps de este lugar" className={`w-full mt-1 bg-zinc-900 border rounded-card px-2 py-1.5 text-xs ${parseCoords(paradaLibre.destinoMaps) ? 'border-green-700' : 'border-amber-700'}`} />
+              )}
             </div>
           )}
 
@@ -289,6 +322,14 @@ export default function VistaRutas({ usuario, data, onVolver }) {
             <input value={paradaLibre.descripcion} onChange={e => setParadaLibre({ ...paradaLibre, descripcion: e.target.value })} placeholder="Ej: contenedor MSKU123 · 40 sacos de cemento" className="w-full bg-zinc-900 border border-zinc-700 rounded-card px-2 py-1.5 text-xs" />
           </div>
 
+          {(paradaLibre.tipo === 'recogida' || paradaLibre.tipo === 'par') && (
+            <div>
+              <div className="text-[10px] font-bold text-zinc-400 mb-1">📎 Documento para retirar (opcional) — OC, cotización o factura: el chofer lo muestra al llegar</div>
+              <input type="file" accept="image/*,application/pdf" onChange={e => setParadaLibre({ ...paradaLibre, docFile: e.target.files?.[0] || null })}
+                className="w-full text-[11px] text-zinc-400 file:bg-zinc-700 file:text-white file:border-0 file:rounded-card file:px-2.5 file:py-1.5 file:text-[10px] file:font-bold file:uppercase file:mr-2" />
+              {paradaLibre.docFile && <div className="text-[10px] text-green-400 mt-0.5">📎 {paradaLibre.docFile.name}</div>}
+            </div>
+          )}
           <button onClick={agregarLibre} className="w-full bg-cyan-700 hover:bg-cyan-600 text-white text-[10px] font-black uppercase py-2 rounded-card">
             {paradaLibre.tipo === 'par' ? 'Agregar las 2 paradas al viaje' : 'Agregar al viaje'}
           </button>
@@ -305,6 +346,14 @@ export default function VistaRutas({ usuario, data, onVolver }) {
                 {p.estado === 'completada' && ` ✓ ${hora(p.completadaAt)}`}
               </div>
               {p.descripcion && <div className="text-[10px] text-zinc-500 truncate">{p.descripcion}</div>}
+              {(p.docUrl || p.entregaFotoUrl || p.entregaFirmaUrl || p.recibidoPorNombre) && (
+                <div className="flex gap-2 flex-wrap text-[10px] mt-0.5">
+                  {p.docUrl && <a href={p.docUrl} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">📄 Doc</a>}
+                  {p.entregaFotoUrl && <a href={p.entregaFotoUrl} target="_blank" rel="noreferrer" className="text-green-400 hover:underline">📷 Entrega</a>}
+                  {p.entregaFirmaUrl && <a href={p.entregaFirmaUrl} target="_blank" rel="noreferrer" className="text-green-400 hover:underline">✍️ Firma</a>}
+                  {p.recibidoPorNombre && <span className="text-zinc-500">recibió {p.recibidoPorNombre}</span>}
+                </div>
+              )}
             </div>
             {v.estado !== 'completado' && p.estado !== 'completada' && (
               <div className="flex items-center gap-0.5 shrink-0">

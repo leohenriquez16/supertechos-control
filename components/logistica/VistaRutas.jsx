@@ -78,13 +78,14 @@ export default function VistaRutas({ usuario, data, onVolver }) {
   const nombreObra = (pid) => { const p = (data.proyectos || []).find(x => x.id === pid); return p ? (p.cliente || p.nombre || p.referenciaOdoo) : pid; };
 
   const crearViaje = async () => {
-    if (nuevo.tipoEnvio === 'camion' && !nuevo.choferId) { alert('Elige el chofer.'); return; }
+    if (nuevo.tipoEnvio === 'camion' && !nuevo.choferId) { alert('Elige el vehículo (el chofer se toma solo) o asigna un chofer.'); return; }
     const chofer = choferes.find(c => c.id === nuevo.choferId);
     try {
       await db.crearViaje({
         fecha, choferId: nuevo.tipoEnvio === 'camion' ? nuevo.choferId : null,
-        choferNombre: nuevo.tipoEnvio === 'camion' ? (chofer?.nombre || '') : 'Envío pagado',
-        vehiculo: nuevo.vehiculo, vehiculoId: nuevo.vehiculoId || null, // v8.41.0
+        // v8.41.1: tercer tipo — viaje SUB-CONTRATADO (camión alquilado con su chofer externo)
+        choferNombre: nuevo.tipoEnvio === 'camion' ? (chofer?.nombre || '') : nuevo.tipoEnvio === 'subcontratado' ? 'Sub-contratado' : 'Envío pagado',
+        vehiculo: nuevo.vehiculo, vehiculoId: nuevo.tipoEnvio === 'camion' ? (nuevo.vehiculoId || null) : null, // v8.41.0
         tipoEnvio: nuevo.tipoEnvio, creadoPorId: usuario.id,
       });
       setCreando(false); setNuevo({ choferId: '', vehiculo: '', vehiculoId: '', tipoEnvio: 'camion' });
@@ -93,28 +94,82 @@ export default function VistaRutas({ usuario, data, onVolver }) {
   };
 
   const montarRequisicion = async (viaje, req) => {
+    // v8.42.0: TODA parada lleva ubicación — el chofer la ve clara en su celular.
+    const prj = (data.proyectos || []).find(x => x.id === req.proyectoId);
+    if (prj?.ubicacionLat == null || prj?.ubicacionLng == null) {
+      alert(`La obra "${nombreObra(req.proyectoId)}" no tiene ubicación GPS.\nAsígnala en el proyecto (tab Info → Ubicación) y vuelve a montarla.`);
+      return;
+    }
     try {
       await db.agregarParada({
         viajeId: viaje.id, orden: viaje.paradas.length + 1, tipo: 'entrega',
         proyectoId: req.proyectoId, requisicionId: req.id,
+        lat: prj.ubicacionLat, lng: prj.ubicacionLng, // v8.42.0
         descripcion: `Entregar materiales en ${nombreObra(req.proyectoId)}`,
       });
       // el viaje "pagado" entrega directo; el camión la lleva cuando el chofer arranca
-      if (viaje.tipoEnvio === 'pagado' || viaje.estado === 'en_curso') await db.actualizarRequisicion(req.id, { estado: 'en_ruta' });
+      if (viaje.tipoEnvio === 'pagado' || viaje.tipoEnvio === 'subcontratado' || viaje.estado === 'en_curso') await db.actualizarRequisicion(req.id, { estado: 'en_ruta' });
       await recargar();
     } catch (e) { alert('Error: ' + (e?.message || e)); }
   };
 
+  // v8.41.1: candidatos del buscador "¿dónde?" — obras CON ubicación, suplidores
+  // (cada locación es una sugerencia), puertos y almacenes frecuentes.
+  const candidatosLugar = useMemo(() => {
+    const out = [];
+    (data.proyectos || []).filter(p => !p.archivado && p.ubicacionLat != null && p.ubicacionLng != null)
+      .forEach(p => out.push({ icono: '🏗', label: [p.referenciaOdoo, p.cliente || p.nombre].filter(Boolean).join(' · '), lugar: p.cliente || p.nombre || p.referenciaOdoo, lat: p.ubicacionLat, lng: p.ubicacionLng, proyectoId: p.id }));
+    suplidores.forEach(s => s.locaciones.forEach(l => {
+      const nom = `${s.nombre}${l.nombre && l.nombre !== 'Principal' ? ` — ${l.nombre}` : ''}`;
+      out.push({ icono: '🏪', label: nom, lugar: nom, lat: l.lat, lng: l.lng, proyectoId: null });
+    }));
+    lugares.forEach(l => out.push({ icono: l.tipo === 'puerto' ? '⚓' : l.tipo === 'almacen_fiscal' ? '🏛' : l.tipo === 'almacen' ? '🏭' : '📍', label: l.nombre, lugar: l.nombre, lat: l.lat, lng: l.lng, proyectoId: null }));
+    return out;
+  }, [data.proyectos, suplidores, lugares]);
+
   const agregarLibre = async () => {
     const p = paradaLibre;
-    if (!p?.lugar?.trim()) { alert('Escribe el lugar.'); return; }
     const viaje = viajes.find(v => v.id === p.viajeId);
+    const base = (viaje?.paradas.length || 0);
+    // v8.42.0: rescate de coords — si escribieron el lugar libre, aceptamos el link de Maps
+    const cOri = p.lat == null ? parseCoords(p.lugarMaps || '') : null;
+    const cDes = p.destinoLat == null ? parseCoords(p.destinoMaps || '') : null;
+    const origen = p.lugar?.trim() ? { lugar: p.lugar.trim(), lat: p.lat ?? cOri?.lat ?? null, lng: p.lng ?? cOri?.lng ?? null, proyectoId: p.proyectoId || null } : null;
+    // v8.42.0: GPS OBLIGATORIO — el chofer tiene que ver claro a dónde va
+    if (origen && origen.lat == null) { alert('Ese lugar no tiene ubicación GPS.\nElígelo de las sugerencias con 📍 o pega el link de Google Maps en el campo de ubicación.'); return; }
+    // v8.42.0: documento para mostrar al retirar (OC / cotización / factura)
+    let docUrl = null, docNombre = null;
+    if (p.docFile && (p.tipo === 'recogida' || p.tipo === 'par')) {
+      try { docUrl = await db.subirDocParada(p.docFile, p.viajeId); docNombre = p.docFile.name || 'documento'; }
+      catch (e) { alert('El documento no se pudo subir: ' + (e?.message || e)); return; }
+    }
     try {
-      await db.agregarParada({
-        viajeId: p.viajeId, orden: (viaje?.paradas.length || 0) + 1,
-        tipo: p.tipo, lugar: p.lugar.trim(), descripcion: p.descripcion || '',
-        lat: p.lat ?? null, lng: p.lng ?? null, // v8.40.0: coords del lugar frecuente
-      });
+      if (p.tipo === 'par') {
+        // v8.41.1: RECOGER Y ENTREGAR — dos paradas encadenadas (ej. suplidor → obra)
+        const destino = p.destinoLugar?.trim() ? { lugar: p.destinoLugar.trim(), lat: p.destinoLat ?? cDes?.lat ?? null, lng: p.destinoLng ?? cDes?.lng ?? null, proyectoId: p.destinoProyectoId || null } : null;
+        if (!origen) { alert('Escribe o elige DÓNDE se recoge (paso 2).'); return; }
+        if (!destino) { alert('Escribe o elige DÓNDE se entrega (paso 3).'); return; }
+        if (destino.lat == null) { alert('El destino no tiene ubicación GPS.\nElígelo de las sugerencias con 📍 o pega el link de Google Maps.'); return; }
+        await db.agregarParada({
+          viajeId: p.viajeId, orden: base + 1, tipo: 'recogida',
+          lugar: origen.lugar, proyectoId: origen.proyectoId, lat: origen.lat, lng: origen.lng,
+          docUrl, docNombre, // v8.42.0
+          descripcion: [p.descripcion || '', `→ llevar a ${destino.lugar}`].filter(Boolean).join(' '),
+        });
+        await db.agregarParada({
+          viajeId: p.viajeId, orden: base + 2, tipo: 'entrega',
+          lugar: destino.lugar, proyectoId: destino.proyectoId, lat: destino.lat, lng: destino.lng,
+          descripcion: [p.descripcion || '', `(recogido en ${origen.lugar})`].filter(Boolean).join(' '),
+        });
+      } else {
+        if (!origen) { alert('Elige o escribe el lugar (paso 2).'); return; }
+        await db.agregarParada({
+          viajeId: p.viajeId, orden: base + 1,
+          tipo: p.tipo, lugar: origen.lugar, proyectoId: origen.proyectoId,
+          docUrl: p.tipo === 'recogida' ? docUrl : null, docNombre: p.tipo === 'recogida' ? docNombre : null, // v8.42.0
+          descripcion: p.descripcion || '', lat: origen.lat, lng: origen.lng,
+        });
+      }
       setParadaLibre(null);
       await recargar();
     } catch (e) { alert('Error: ' + (e?.message || e)); }
@@ -123,6 +178,10 @@ export default function VistaRutas({ usuario, data, onVolver }) {
   // v8.40.0: montar un RETIRO DE SOBRANTE en un viaje — parada de recogida en la obra.
   const montarDiligencia = async (viaje, d) => {
     const proy = (data.proyectos || []).find(x => x.id === d.proyectoId);
+    if (proy?.ubicacionLat == null || proy?.ubicacionLng == null) {
+      alert(`La obra "${nombreObra(d.proyectoId)}" no tiene ubicación GPS.\nAsígnala en el proyecto (tab Info → Ubicación) y vuelve a montar el retiro.`);
+      return;
+    }
     try {
       await db.agregarParada({
         viajeId: viaje.id, orden: viaje.paradas.length + 1, tipo: 'recogida',
@@ -217,56 +276,63 @@ export default function VistaRutas({ usuario, data, onVolver }) {
 
       {paradaLibre?.viajeId === v.id && (
         <div className="bg-zinc-950 border border-cyan-800/50 rounded-card p-2 space-y-1.5">
-          <div className="flex items-center justify-between"><span className="text-[10px] uppercase font-bold text-cyan-400">Parada libre</span><button onClick={() => setParadaLibre(null)} className="text-zinc-500"><X className="w-3.5 h-3.5" /></button></div>
-          {/* v8.41.0: SUPLIDOR por nombre — si tiene varias locaciones, se elige cuál */}
-          {suplidores.length > 0 && (
-            <div className="flex gap-1.5">
-              <select value={paradaLibre.suplidorId || ''} onChange={e => {
-                const sup = suplidores.find(s => s.id === e.target.value);
-                if (!sup) { setParadaLibre({ ...paradaLibre, suplidorId: '' }); return; }
-                if (sup.locaciones.length === 1) {
-                  const l = sup.locaciones[0];
-                  setParadaLibre({ ...paradaLibre, suplidorId: sup.id, lugar: `${sup.nombre}${l.nombre && l.nombre !== 'Principal' ? ` — ${l.nombre}` : ''}`, lat: l.lat, lng: l.lng });
-                } else {
-                  setParadaLibre({ ...paradaLibre, suplidorId: sup.id, lugar: sup.nombre, lat: null, lng: null });
-                }
-              }} className="flex-1 bg-zinc-900 border border-orange-800/60 rounded-card px-1.5 py-1.5 text-xs text-orange-300 min-w-0">
-                <option value="">🏪 Suplidor…</option>
-                {suplidores.map(s => <option key={s.id} value={s.id}>{s.nombre}{s.locaciones.length > 1 ? ` (${s.locaciones.length} locaciones)` : ''}</option>)}
-              </select>
-              {(() => {
-                const sup = suplidores.find(s => s.id === paradaLibre.suplidorId);
-                return sup && sup.locaciones.length > 1 ? (
-                  <select defaultValue="" onChange={e => { const l = sup.locaciones.find(x => x.id === e.target.value); if (l) setParadaLibre({ ...paradaLibre, lugar: `${sup.nombre} — ${l.nombre}`, lat: l.lat, lng: l.lng }); }}
-                    className="flex-1 bg-zinc-900 border border-orange-800/60 rounded-card px-1.5 py-1.5 text-xs text-orange-300 min-w-0">
-                    <option value="" disabled>¿Cuál locación?</option>
-                    {sup.locaciones.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
-                  </select>
-                ) : null;
-              })()}
+          <div className="flex items-center justify-between"><span className="text-[10px] uppercase font-bold text-cyan-400">Nueva parada</span><button onClick={() => setParadaLibre(null)} className="text-zinc-500"><X className="w-3.5 h-3.5" /></button></div>
+
+          {/* v8.41.1: flujo 1-2-3 — qué hace el camión, dónde, qué lleva */}
+          <div>
+            <div className="text-[10px] font-bold text-zinc-400 mb-1">1 · ¿Qué va a hacer el camión?</div>
+            <div className="grid grid-cols-3 gap-1">
+              {[['recogida', '↑ Recoger'], ['entrega', '↓ Entregar'], ['par', '↑↓ Recoger y entregar']].map(([v2, l]) => (
+                <button key={v2} onClick={() => setParadaLibre({ ...paradaLibre, tipo: v2 })}
+                  className={`text-[10px] font-bold py-2 px-1 rounded-card border ${paradaLibre.tipo === v2 ? 'bg-cyan-700 border-cyan-700 text-white' : 'bg-zinc-900 border-zinc-700 text-zinc-400'}`}>{l}</button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <div className="text-[10px] font-bold text-zinc-400 mb-1">2 · ¿Dónde {paradaLibre.tipo === 'entrega' ? 'entrega' : 'recoge'}? <span className="text-zinc-600 font-normal">— escribe y elige de las sugerencias</span></div>
+            <BuscadorLugar candidatos={candidatosLugar} valor={paradaLibre.lugar || ''} conGps={paradaLibre.lat != null}
+              placeholder="Ej: Ferretería Americana, Caucedo, o el nombre de la obra…"
+              onCambiar={(c) => setParadaLibre(c.elegir
+                ? { ...paradaLibre, lugar: c.elegir.lugar, lat: c.elegir.lat, lng: c.elegir.lng, proyectoId: c.elegir.proyectoId, lugarMaps: '' }
+                : { ...paradaLibre, lugar: c.texto, lat: null, lng: null, proyectoId: null })} />
+            {(paradaLibre.lugar || '').trim() && paradaLibre.lat == null && (
+              <input value={paradaLibre.lugarMaps || ''} onChange={e => setParadaLibre({ ...paradaLibre, lugarMaps: e.target.value })}
+                placeholder="📍 Obligatorio: pega el link de Google Maps de este lugar" className={`w-full mt-1 bg-zinc-900 border rounded-card px-2 py-1.5 text-xs ${parseCoords(paradaLibre.lugarMaps) ? 'border-green-700' : 'border-amber-700'}`} />
+            )}
+          </div>
+
+          {paradaLibre.tipo === 'par' && (
+            <div>
+              <div className="text-[10px] font-bold text-zinc-400 mb-1">3 · ¿Dónde lo entrega?</div>
+              <BuscadorLugar candidatos={candidatosLugar} valor={paradaLibre.destinoLugar || ''} conGps={paradaLibre.destinoLat != null}
+                placeholder="Ej: la obra donde se va a dejar…"
+                onCambiar={(c) => setParadaLibre(c.elegir
+                  ? { ...paradaLibre, destinoLugar: c.elegir.lugar, destinoLat: c.elegir.lat, destinoLng: c.elegir.lng, destinoProyectoId: c.elegir.proyectoId, destinoMaps: '' }
+                  : { ...paradaLibre, destinoLugar: c.texto, destinoLat: null, destinoLng: null, destinoProyectoId: null })} />
+              {(paradaLibre.destinoLugar || '').trim() && paradaLibre.destinoLat == null && (
+                <input value={paradaLibre.destinoMaps || ''} onChange={e => setParadaLibre({ ...paradaLibre, destinoMaps: e.target.value })}
+                  placeholder="📍 Obligatorio: pega el link de Google Maps de este lugar" className={`w-full mt-1 bg-zinc-900 border rounded-card px-2 py-1.5 text-xs ${parseCoords(paradaLibre.destinoMaps) ? 'border-green-700' : 'border-amber-700'}`} />
+              )}
             </div>
           )}
-          {/* v8.40.0: puertos y almacenes frecuentes → autollena nombre y coordenadas */}
-          {lugares.length > 0 && (
-            <select defaultValue="" onChange={e => { const l = lugares.find(x => x.id === e.target.value); if (l) setParadaLibre({ ...paradaLibre, suplidorId: '', lugar: l.nombre, lat: l.lat, lng: l.lng }); e.target.value = ''; }}
-              className="w-full bg-zinc-900 border border-cyan-800/60 rounded-card px-1.5 py-1.5 text-xs text-cyan-300">
-              <option value="" disabled>📍 Puerto / almacén frecuente…</option>
-              {Object.entries(TIPOS_LUGAR).filter(([t]) => t !== 'suplidor').map(([t, label]) => {
-                const del = lugares.filter(l => l.tipo === t);
-                return del.length ? <optgroup key={t} label={label}>{del.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}</optgroup> : null;
-              })}
-            </select>
-          )}
-          <div className="flex gap-1.5 flex-wrap">
-            <select value={paradaLibre.tipo} onChange={e => setParadaLibre({ ...paradaLibre, tipo: e.target.value })} className="bg-zinc-900 border border-zinc-700 rounded-card px-1.5 py-1.5 text-xs">
-              <option value="recogida">Recoger en</option>
-              <option value="entrega">Entregar en</option>
-            </select>
-            <input value={paradaLibre.lugar} onChange={e => setParadaLibre({ ...paradaLibre, lugar: e.target.value, lat: null, lng: null })} placeholder="Puerto / almacén fiscal / suplidor / obra…" className="flex-1 bg-zinc-900 border border-zinc-700 rounded-card px-2 py-1.5 text-xs min-w-[140px]" />
-            {paradaLibre.lat != null && <span className="text-[10px] text-green-400 self-center" title={`${paradaLibre.lat}, ${paradaLibre.lng}`}>📍 con ubicación</span>}
+
+          <div>
+            <div className="text-[10px] font-bold text-zinc-400 mb-1">{paradaLibre.tipo === 'par' ? '4' : '3'} · ¿Qué lleva?</div>
+            <input value={paradaLibre.descripcion} onChange={e => setParadaLibre({ ...paradaLibre, descripcion: e.target.value })} placeholder="Ej: contenedor MSKU123 · 40 sacos de cemento" className="w-full bg-zinc-900 border border-zinc-700 rounded-card px-2 py-1.5 text-xs" />
           </div>
-          <input value={paradaLibre.descripcion} onChange={e => setParadaLibre({ ...paradaLibre, descripcion: e.target.value })} placeholder="Qué (ej. contenedor MSKU123, 40 sacos)" className="w-full bg-zinc-900 border border-zinc-700 rounded-card px-2 py-1.5 text-xs" />
-          <button onClick={agregarLibre} className="w-full bg-cyan-700 hover:bg-cyan-600 text-white text-[10px] font-black uppercase py-2 rounded-card">Agregar al viaje</button>
+
+          {(paradaLibre.tipo === 'recogida' || paradaLibre.tipo === 'par') && (
+            <div>
+              <div className="text-[10px] font-bold text-zinc-400 mb-1">📎 Documento para retirar (opcional) — OC, cotización o factura: el chofer lo muestra al llegar</div>
+              <input type="file" accept="image/*,application/pdf" onChange={e => setParadaLibre({ ...paradaLibre, docFile: e.target.files?.[0] || null })}
+                className="w-full text-[11px] text-zinc-400 file:bg-zinc-700 file:text-white file:border-0 file:rounded-card file:px-2.5 file:py-1.5 file:text-[10px] file:font-bold file:uppercase file:mr-2" />
+              {paradaLibre.docFile && <div className="text-[10px] text-green-400 mt-0.5">📎 {paradaLibre.docFile.name}</div>}
+            </div>
+          )}
+          <button onClick={agregarLibre} className="w-full bg-cyan-700 hover:bg-cyan-600 text-white text-[10px] font-black uppercase py-2 rounded-card">
+            {paradaLibre.tipo === 'par' ? 'Agregar las 2 paradas al viaje' : 'Agregar al viaje'}
+          </button>
         </div>
       )}
 
@@ -280,6 +346,14 @@ export default function VistaRutas({ usuario, data, onVolver }) {
                 {p.estado === 'completada' && ` ✓ ${hora(p.completadaAt)}`}
               </div>
               {p.descripcion && <div className="text-[10px] text-zinc-500 truncate">{p.descripcion}</div>}
+              {(p.docUrl || p.entregaFotoUrl || p.entregaFirmaUrl || p.recibidoPorNombre) && (
+                <div className="flex gap-2 flex-wrap text-[10px] mt-0.5">
+                  {p.docUrl && <a href={p.docUrl} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">📄 Doc</a>}
+                  {p.entregaFotoUrl && <a href={p.entregaFotoUrl} target="_blank" rel="noreferrer" className="text-green-400 hover:underline">📷 Entrega</a>}
+                  {p.entregaFirmaUrl && <a href={p.entregaFirmaUrl} target="_blank" rel="noreferrer" className="text-green-400 hover:underline">✍️ Firma</a>}
+                  {p.recibidoPorNombre && <span className="text-zinc-500">recibió {p.recibidoPorNombre}</span>}
+                </div>
+              )}
             </div>
             {v.estado !== 'completado' && p.estado !== 'completada' && (
               <div className="flex items-center gap-0.5 shrink-0">
@@ -428,37 +502,45 @@ export default function VistaRutas({ usuario, data, onVolver }) {
           ) : (
             <div className="bg-zinc-900 border-2 border-cyan-700 rounded-card p-3 space-y-2">
               <div className="flex items-center justify-between"><span className="text-[11px] uppercase font-bold text-cyan-400">Nuevo viaje</span><button onClick={() => setCreando(false)} className="text-zinc-500"><X className="w-4 h-4" /></button></div>
-              {/* v8.41.0: PRIMERO el vehículo REAL de la flota (acumula su historial de
-                  rutas); al elegirlo se sugiere el chofer responsable del camión. */}
-              {nuevo.tipoEnvio === 'camion' && (
-                <select value={nuevo.vehiculoId || ''} onChange={e => {
-                  const v = (data.vehiculos || []).find(x => x.id === e.target.value);
-                  const resp = v ? (data.personal || []).find(p => p.id === v.responsableId && (p.roles || []).includes('chofer')) : null;
-                  setNuevo({
-                    ...nuevo, vehiculoId: v?.id || '',
-                    vehiculo: v ? `${v.marca || ''} ${v.modelo || ''}${v.placa ? ` · ${v.placa}` : ''}`.trim() : '',
-                    ...(resp ? { choferId: resp.id } : {}),
-                  });
-                }} className="w-full bg-zinc-950 border-2 border-cyan-700 rounded-card px-2 py-2.5 text-sm font-bold">
-                  <option value="">🚛 Elegir vehículo de la flota…</option>
-                  {(data.vehiculos || []).filter(v => v.activo !== false).map(v => <option key={v.id} value={v.id}>{[v.marca, v.modelo, v.placa].filter(Boolean).join(' ')}</option>)}
-                </select>
-              )}
+              {/* v8.41.1: se elige SOLO el vehículo — el chofer responsable entra solo.
+                  Tipos: camión propio | viaje SUB-CONTRATADO | envío pagado. */}
               <div className="flex gap-1.5 flex-wrap">
-                <select value={nuevo.tipoEnvio} onChange={e => setNuevo({ ...nuevo, tipoEnvio: e.target.value })} className="bg-zinc-950 border border-zinc-700 rounded-card px-2 py-2 text-sm">
+                <select value={nuevo.tipoEnvio} onChange={e => setNuevo({ ...nuevo, tipoEnvio: e.target.value, vehiculoId: '', vehiculo: '', choferId: '', cambiarChofer: false })} className="bg-zinc-950 border border-zinc-700 rounded-card px-2 py-2 text-sm">
                   <option value="camion">Camión propio</option>
+                  <option value="subcontratado">Viaje sub-contratado</option>
                   <option value="pagado">Envío pagado</option>
                 </select>
                 {nuevo.tipoEnvio === 'camion' && (
-                  <select value={nuevo.choferId} onChange={e => setNuevo({ ...nuevo, choferId: e.target.value })} className="flex-1 bg-zinc-950 border border-zinc-700 rounded-card px-2 py-2 text-sm min-w-[140px]">
-                    <option value="">Chofer… {choferes.length === 0 ? '(asigna el rol Chofer en Personal)' : ''}</option>
-                    {choferes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                  <select value={nuevo.vehiculoId || ''} onChange={e => {
+                    const v = (data.vehiculos || []).find(x => x.id === e.target.value);
+                    const resp = v ? (data.personal || []).find(p => p.id === v.responsableId && (p.roles || []).includes('chofer')) : null;
+                    setNuevo({
+                      ...nuevo, vehiculoId: v?.id || '', cambiarChofer: false,
+                      vehiculo: v ? `${v.marca || ''} ${v.modelo || ''}${v.placa ? ` · ${v.placa}` : ''}`.trim() : '',
+                      choferId: resp ? resp.id : '',
+                    });
+                  }} className="flex-1 bg-zinc-950 border-2 border-cyan-700 rounded-card px-2 py-2 text-sm font-bold min-w-[160px]">
+                    <option value="">🚛 Elegir vehículo de la flota…</option>
+                    {(data.vehiculos || []).filter(v => v.activo !== false).map(v => <option key={v.id} value={v.id}>{[v.marca, v.modelo, v.placa].filter(Boolean).join(' ')}</option>)}
                   </select>
                 )}
-                {(nuevo.tipoEnvio === 'pagado' || !nuevo.vehiculoId) && (
-                  <input value={nuevo.vehiculo} onChange={e => setNuevo({ ...nuevo, vehiculo: e.target.value, vehiculoId: '' })} placeholder={nuevo.tipoEnvio === 'pagado' ? 'Mensajería / quién lleva' : 'U otro camión (texto libre)'} className="flex-1 bg-zinc-950 border border-zinc-700 rounded-card px-2 py-2 text-sm min-w-[140px]" />
-                )}
               </div>
+              {nuevo.tipoEnvio === 'camion' && (nuevo.choferId && !nuevo.cambiarChofer ? (
+                <div className="text-xs text-zinc-300 flex items-center gap-2">
+                  <span>👤 Chofer: <b>{(choferes.find(c => c.id === nuevo.choferId) || {}).nombre || '—'}</b> <span className="text-zinc-500">(responsable del camión)</span></span>
+                  <button onClick={() => setNuevo({ ...nuevo, cambiarChofer: true })} className="text-[10px] uppercase font-bold text-cyan-400 hover:text-cyan-300">cambiar</button>
+                </div>
+              ) : (
+                <select value={nuevo.choferId} onChange={e => setNuevo({ ...nuevo, choferId: e.target.value })} className="w-full bg-zinc-950 border border-zinc-700 rounded-card px-2 py-2 text-sm">
+                  <option value="">Chofer… {choferes.length === 0 ? '(asigna el rol Chofer en Personal)' : nuevo.vehiculoId ? '(este camión no tiene chofer responsable — elígelo)' : '(o elige el vehículo y entra solo)'}</option>
+                  {choferes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                </select>
+              ))}
+              {(nuevo.tipoEnvio !== 'camion' || !nuevo.vehiculoId) && (
+                <input value={nuevo.vehiculo} onChange={e => setNuevo({ ...nuevo, vehiculo: e.target.value, vehiculoId: '' })}
+                  placeholder={nuevo.tipoEnvio === 'pagado' ? 'Mensajería / quién lleva' : nuevo.tipoEnvio === 'subcontratado' ? 'Transporte sub-contratado (empresa o persona)' : 'U otro camión que no está en la flota (texto libre)'}
+                  className="w-full bg-zinc-950 border border-zinc-700 rounded-card px-2 py-2 text-sm" />
+              )}
               <button onClick={crearViaje} className="w-full bg-cyan-700 hover:bg-cyan-600 text-white text-xs font-black uppercase py-2.5 rounded-card">Crear viaje</button>
             </div>
           )}
@@ -495,6 +577,38 @@ export default function VistaRutas({ usuario, data, onVolver }) {
       )}
 
       {gestionLugares && <ModalLugares lugares={lugares} suplidores={suplidores} onCerrar={() => setGestionLugares(false)} onCambio={recargar} />}
+    </div>
+  );
+}
+
+// v8.41.1: BUSCADOR de lugar con sugerencias en vivo — obras con GPS, suplidores
+// (cada locación), puertos y almacenes. Escribes y eliges; texto libre también vale.
+function BuscadorLugar({ candidatos, valor, conGps, placeholder, onCambiar }) {
+  const [foco, setFoco] = useState(false);
+  const q = (valor || '').toLowerCase().trim();
+  const sugerencias = q.length >= 2
+    ? candidatos.filter(c => c.label.toLowerCase().includes(q)).slice(0, 8)
+    : [];
+  return (
+    <div className="relative">
+      <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-700 rounded-card px-2 focus-within:border-cyan-600">
+        <input value={valor} onChange={e => onCambiar({ texto: e.target.value })}
+          onFocus={() => setFoco(true)} onBlur={() => setTimeout(() => setFoco(false), 200)}
+          placeholder={placeholder} className="flex-1 bg-transparent outline-none py-2 text-xs min-w-0" />
+        {conGps && <span className="shrink-0 text-[10px] text-green-400" title="Con ubicación GPS — sale en el mapa">📍</span>}
+      </div>
+      {foco && sugerencias.length > 0 && (
+        <div className="absolute z-30 left-0 right-0 mt-1 bg-zinc-900 border border-zinc-700 rounded-card overflow-hidden shadow-pop max-h-52 overflow-y-auto">
+          {sugerencias.map((c, i) => (
+            <button key={i} onMouseDown={(e) => { e.preventDefault(); onCambiar({ elegir: c }); setFoco(false); }}
+              className="w-full text-left px-2.5 py-2 text-xs text-zinc-200 hover:bg-zinc-800 flex items-center gap-2 border-t border-zinc-800 first:border-t-0">
+              <span className="shrink-0">{c.icono}</span>
+              <span className="truncate">{c.label}</span>
+              {c.lat == null && <span className="ml-auto shrink-0 text-[9px] text-zinc-600">sin GPS</span>}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

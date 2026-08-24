@@ -41,6 +41,7 @@ export default function VistaRutas({ usuario, data, onVolver }) {
   const [lugares, setLugares] = useState([]);
   const [suplidores, setSuplidores] = useState([]); // v8.41.0: entidad con locaciones
   const [verMapa, setVerMapa] = useState(false);
+  const [gpsUnidades, setGpsUnidades] = useState([]); // v8.43.0: camiones EN VIVO
   const [gestionLugares, setGestionLugares] = useState(false);
 
   const choferes = useMemo(() => (data.personal || []).filter(p => tieneRol(p, 'chofer')), [data.personal]);
@@ -56,6 +57,8 @@ export default function VistaRutas({ usuario, data, onVolver }) {
         db.listarRequisiciones({ estados: ['pendiente', 'preparando'] }).catch(() => []),
       ]);
       db.listarSuplidores().then(setSuplidores).catch(() => {});
+      // v8.43.0: posiciones en vivo de la flota (no bloquea la vista si falla)
+      fetch('/api/gps/posiciones').then(r => r.json()).then(d => setGpsUnidades(d.dispositivos || [])).catch(() => {});
       const asignadas = new Set(vs.flatMap(v => v.paradas.map(p => p.requisicionId).filter(Boolean)));
       // también excluir requisiciones ya montadas en viajes de OTRAS fechas
       const otras = await db.listarViajes({ desde: hoyRD().slice(0, 8) + '01' }).catch(() => []);
@@ -227,8 +230,16 @@ export default function VistaRutas({ usuario, data, onVolver }) {
       const c = (p.lat != null && p.lng != null) ? { lat: p.lat, lng: p.lng } : coordsObra(p.proyectoId);
       if (c) ms.push({ ...c, color: p.estado === 'completada' ? 'green' : 'blue', label: p.lugar || nombreObra(p.proyectoId), popup: `<b>${p.tipo === 'recogida' ? '↑ Recoger' : '↓ Entregar'}${p.estado === 'completada' ? ' ✓' : ''}</b><br>${p.proyectoId ? nombreObra(p.proyectoId) : (p.lugar || '')}<br><span style="font-size:11px;color:#a1a1aa">${v.choferNombre || v.vehiculo || ''}</span>` });
     }));
+    // v8.43.0: los CAMIONES en vivo (Pressto GPS) — verde moviéndose, amarillo
+    // detenido, gris sin señal.
+    gpsUnidades.forEach(u => {
+      if (u.lat == null || u.lng == null) return;
+      ms.push({ lat: u.lat, lng: u.lng, color: u.online === 'offline' ? 'gray' : u.velocidad > 2 ? 'green' : 'yellow',
+        label: `🛰 ${u.nombre}`,
+        popup: `<b>🛰 ${u.nombre}</b><br>${u.velocidad} km/h · ${u.online === 'offline' ? 'sin señal' : u.velocidad > 2 ? 'en movimiento' : 'detenido'}<br><span style="font-size:11px;color:#a1a1aa">${u.hora || ''}</span>` });
+    });
     return ms;
-  }, [diligencias, listas, viajes, data.proyectos]);
+  }, [diligencias, listas, viajes, data.proyectos, gpsUnidades]);
   const MapaDiligencias = useMemo(() => {
     if (!verMapa || marcadoresMapa.length === 0) return null;
     const MapaLeaflet = React.lazy(() => import('../common/MapaLeaflet'));
@@ -401,7 +412,7 @@ export default function VistaRutas({ usuario, data, onVolver }) {
                 <div className="bg-zinc-950 border border-dashed border-zinc-800 rounded-card p-4 text-center text-xs text-zinc-600">Nada que ubicar hoy (las obras necesitan GPS en su ficha para salir aquí).</div>
               ) : MapaDiligencias}
               <div className="text-[10px] text-zinc-500 flex gap-3 flex-wrap">
-                <span>🔴 Retiro sin planificar</span><span>🟠 Lista sin viaje</span><span>🔵 En viaje</span><span>🟢 Completada</span>
+                <span>🔴 Retiro sin planificar</span><span>🟠 Lista sin viaje</span><span>🔵 En viaje</span><span>🟢 Completada</span><span>🛰 Camión en vivo (verde=andando · amarillo=detenido)</span>
               </div>
             </div>
           )}

@@ -1,12 +1,13 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Car, Plus, Loader2, Edit2, Trash2, Copy, Check, FileText, Upload, X, AlertTriangle, Eye, MapPin, RefreshCw, ExternalLink } from 'lucide-react';
+import { Car, Plus, Loader2, Edit2, Trash2, Copy, Check, FileText, Upload, X, AlertTriangle, Eye, MapPin, RefreshCw, ExternalLink, Camera } from 'lucide-react';
 import * as db from '../../lib/db';
 import { toast } from '../../lib/toast';
 import { comprimirImagenABlob } from '../../lib/imports';
 import Campo from '../common/Campo';
 import Input from '../common/Input';
+import ModalInspecciones from './ModalInspecciones';
 
 const COLORES = ['Blanco', 'Negro', 'Gris', 'Plata', 'Rojo', 'Azul', 'Verde', 'Amarillo', 'Dorado', 'Marrón'];
 
@@ -35,6 +36,7 @@ export default function VistaVehiculos({ usuario, data, onRecargar }) {
   const [modal, setModal] = useState(null); // null | 'nuevo' | vehiculo
   const [logDe, setLogDe] = useState(null); // vehículo cuyo log se está viendo (v8.33.0)
   const [gpsDe, setGpsDe] = useState(null); // vehículo cuyo mapa GPS se está viendo (v8.27.85)
+  const [inspDe, setInspDe] = useState(null); // vehículo cuyas inspecciones se están viendo (v8.35.3)
   const [licencias, setLicencias] = useState({}); // v8.35.2: licencia por chofer (responsable) para verla en la ficha
 
   const cargar = useCallback(async () => {
@@ -105,6 +107,7 @@ export default function VistaVehiculos({ usuario, data, onRecargar }) {
                     </div>
                   </div>
                   <div className="flex gap-1 shrink-0">
+                    <button onClick={() => setInspDe(v)} title="Inspecciones" className="p-1.5 text-zinc-400 hover:text-emerald-400 hover:bg-zinc-800 rounded"><Camera className="w-3.5 h-3.5" /></button>
                     <button onClick={() => setLogDe(v)} title="Historial / log" className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded text-[11px] font-bold">📋</button>
                     <button onClick={() => setModal(v)} title="Editar" className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded"><Edit2 className="w-3.5 h-3.5" /></button>
                     <button onClick={() => eliminar(v)} title="Eliminar" className="p-1.5 text-zinc-400 hover:text-red-400 hover:bg-zinc-800 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
@@ -160,6 +163,7 @@ export default function VistaVehiculos({ usuario, data, onRecargar }) {
 
       {logDe && <ModalLogVehiculo usuario={usuario} vehiculo={logDe} personal={data?.personal || []} onCerrar={() => setLogDe(null)} />}
       {gpsDe && <ModalGpsVehiculo vehiculo={gpsDe} onCerrar={() => setGpsDe(null)} />}
+      {inspDe && <ModalInspecciones vehiculo={inspDe} usuario={usuario} onCerrar={() => { setInspDe(null); cargar(); }} />}
       {modal && (
         <ModalVehiculo
           usuario={usuario}

@@ -219,7 +219,7 @@ export default function VistaTareas({ usuario, data, onVolver, onCompletarTarea,
   );
 }
 
-function ModalDelegarTarea({ tarea, personal, onCerrar, onDelegar }) {
+export function ModalDelegarTarea({ tarea, personal, onCerrar, onDelegar }) {
   const [personaId, setPersonaId] = useState('');
   const [fecha, setFecha] = useState(tarea.fechaLimite || '');
   const candidatos = (personal || []).filter(p => ['admin', 'supervisor', 'maestro', 'facturas', 'almacen', 'chofer'].some(r => tieneRol(p, r)));
@@ -242,10 +242,10 @@ function ModalDelegarTarea({ tarea, personal, onCerrar, onDelegar }) {
   );
 }
 
-function ModalCrearTarea({ usuario, proyectos, personal, onCerrar, onCrear }) {
+export function ModalCrearTarea({ usuario, proyectos, personal, onCerrar, onCrear, proyectoFijo = null }) {
   const [titulo, setTitulo] = useState('');
   const [descripcion, setDescripcion] = useState('');
-  const [proyectoId, setProyectoId] = useState('');
+  const [proyectoId, setProyectoId] = useState(proyectoFijo || '');
   const [asignadaAId, setAsignadaAId] = useState('');
   const [supervisorId, setSupervisorId] = useState(usuario.id);
   const [fechaLimite, setFechaLimite] = useState('');
@@ -268,7 +268,7 @@ function ModalCrearTarea({ usuario, proyectos, personal, onCerrar, onCrear }) {
         <div className="flex justify-between items-start"><div className="text-xs tracking-widest uppercase text-red-500 font-bold">Nueva tarea</div><button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button></div>
         <Campo label="Título"><Input value={titulo} onChange={setTitulo} /></Campo>
         <Campo label="Descripción"><textarea value={descripcion} onChange={e => setDescripcion(e.target.value)} rows={2} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm" /></Campo>
-        <Campo label="Proyecto"><select value={proyectoId} onChange={e => setProyectoId(e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="">(General)</option>{proyectos.map(p => <option key={p.id} value={p.id}>{[p.referenciaOdoo, p.cliente || p.nombre].filter(Boolean).join(' · ')}</option>)}</select></Campo>
+        {!proyectoFijo && <Campo label="Proyecto"><select value={proyectoId} onChange={e => setProyectoId(e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="">(General)</option>{proyectos.map(p => <option key={p.id} value={p.id}>{[p.referenciaOdoo, p.cliente || p.nombre].filter(Boolean).join(' · ')}</option>)}</select></Campo>}
         <Campo label="Responsable"><select value={asignadaAId} onChange={e => setAsignadaAId(e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="">Sin asignar</option>{asignables.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}</select></Campo>
         <Campo label="Supervisor de la tarea"><select value={supervisorId} onChange={e => setSupervisorId(e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="">Sin supervisor</option>{asignables.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}</select></Campo>
         <div className="grid grid-cols-2 gap-3">

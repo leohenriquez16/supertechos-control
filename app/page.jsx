@@ -94,6 +94,7 @@ import PlanObras from '../components/planificacion/PlanObras'; // v8.30.1
 import VistaCarga from '../components/carga/VistaCarga'; // v8.30.2
 import MiVehiculo from '../components/vehiculos/MiVehiculo'; // v8.33.0
 import VistaTareas from '../components/tareas/VistaTareas'; // v8.33.1: task manager estilo Asana
+import TabTareasProyecto from '../components/tareas/TabTareasProyecto'; // v8.33.3
 import CelebracionReporte from '../components/reportes/CelebracionReporte'; // v8.30.4
 import RachaCard from '../components/reportes/RachaCard'; // v8.30.4
 // v8.19.1: Módulo Levantamientos (surveys)
@@ -5063,6 +5064,8 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
         <TabBtn active={tab === 'pedidos'} onClick={() => setTab('pedidos')}><Truck className="w-3 h-3 inline mr-1" />Pedidos</TabBtn>
         {/* v8.30.0: órdenes de cambio — aumentos de volumen con constancia (admin + supervisor) */}
         {(esAdmin || esSupervisor) && <TabBtn active={tab === 'cambios'} onClick={() => setTab('cambios')}><FileText className="w-3 h-3 inline mr-1" />Cambios</TabBtn>}
+        {/* v8.33.3: tareas amarradas a la obra */}
+        <TabBtn active={tab === 'tareasProy'} onClick={() => setTab('tareasProy')}><ClipboardList className="w-3 h-3 inline mr-1" />Tareas</TabBtn>
         {esAdmin && <TabBtn active={tab === 'areas'} onClick={() => setTab('areas')}>🗺️ Áreas</TabBtn>}
         {!esSupervisor && <TabBtn active={tab === 'productos'} onClick={() => setTab('productos')}><Sparkles className="w-3 h-3 inline mr-1" />Productos</TabBtn>}
         {!esSupervisor && <TabBtn active={tab === 'costo'} onClick={() => setTab('costo')}><DollarSign className="w-3 h-3 inline mr-1" />Costo</TabBtn>}
@@ -5081,6 +5084,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
       {tab === 'materiales' && !tieneRol(usuario, 'maestro') && <TabMateriales proyecto={proyecto} sistema={sistema} materiales={materiales} envios={data.envios.filter(e => e.proyectoId === proyecto.id)} reportes={data.reportes} sistemas={data.sistemas} onRegistrarEnvio={onRegistrarEnvio} onRegistrarEnviosLote={onRegistrarEnviosLote} esSupervisor={esSupervisor} onEliminarEnvio={onEliminarEnvio} onIrASistemas={onIrASistemas} />}
       {tab === 'pedidos' && <RequisicionesProyecto usuario={usuario} proyecto={proyecto} esAdmin={esAdmin} />}
       {tab === 'cambios' && (esAdmin || esSupervisor) && <TabCambios usuario={usuario} proyecto={proyecto} data={data} esAdmin={esAdmin} onRecargar={onRecargar} />}
+      {tab === 'tareasProy' && <TabTareasProyecto usuario={usuario} proyecto={proyecto} data={data} esAdmin={esAdmin} />}
       {tab === 'areas' && esAdmin && <TabAreas proyecto={proyecto} data={data} usuario={usuario} onRecargar={onRecargar} />}
       {tab === 'productos' && !esSupervisor && <TabProductosAdicionales proyecto={proyecto} onActualizarProyecto={onActualizarProyecto} esAdmin={esAdmin} />}
       {tab === 'costo' && !esSupervisor && <TabCosto proyecto={proyecto} sistema={sistema} sistemas={data.sistemas} reportes={data.reportes} envios={data.envios} config={data.config} />}

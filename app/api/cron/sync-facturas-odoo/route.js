@@ -91,6 +91,13 @@ export async function GET(request) {
   // v8.32.0: vincular analíticas + detectar sub-cotizaciones + avisar descuadres
   resultados.analiticas = await sincronizarAnaliticasProyectos();
 
+  // v8.34.0: abrir las tareas recurrentes que tocan (impuestos, pagos, cierres)
+  try {
+    const { generarTareasRecurrentesCon } = await import('../../../../lib/helpers/recurrentes');
+    const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo' }).format(new Date());
+    resultados.recurrentes = await generarTareasRecurrentesCon(supabase, hoy);
+  } catch (e) { resultados.recurrentes = { error: e.message || String(e) }; }
+
   return Response.json({ ok: true, ...resultados });
 }
 

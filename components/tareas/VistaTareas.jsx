@@ -11,6 +11,7 @@ import * as db from '../../lib/db';
 import { formatFechaCorta } from '../../lib/helpers/formato';
 import Campo from '../common/Campo';
 import Input from '../common/Input';
+import ModalRecurrentes from './ModalRecurrentes'; // v8.34.0
 
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const hoyRD = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo' }).format(new Date());
@@ -38,16 +39,40 @@ export default function VistaTareas({ usuario, data, onVolver, onCompletarTarea,
   const [busca, setBusca] = useState('');
   const [personaFiltro, setPersonaFiltro] = useState(''); // admin: filtrar por responsable
   const [colapsadas, setColapsadas] = useState({});
+  // v8.34.0: espacios administrativos (proyectos internos) + recurrentes
+  const [internos, setInternos] = useState([]);
+  const [espacioFiltro, setEspacioFiltro] = useState('');
+  const [crearEspacio, setCrearEspacio] = useState(false);
+  const [verRecurrentes, setVerRecurrentes] = useState(false);
+  const puedeGestionarEspacios = esAdmin || tieneRol(usuario, 'facturas');
 
   const recargar = async () => {
     setLoading(true);
     try {
-      const t = await db.listarTareas({ completadas: mostrarCompletadas });
+      const [t, ints] = await Promise.all([
+        db.listarTareas({ completadas: mostrarCompletadas }),
+        db.listarProyectosInternos().catch(() => []),
+      ]);
       setTareas(esAdmin ? t : t.filter(x => x.asignadaAId === usuario.id || x.supervisorId === usuario.id));
+      setInternos(ints);
     } catch (e) { console.error(e); }
     setLoading(false);
   };
   useEffect(() => { recargar(); /* eslint-disable-next-line */ }, [mostrarCompletadas]);
+  // v8.34.0: al entrar, abrir las recurrentes que tocan (además del cron diario).
+  useEffect(() => {
+    if (!puedeGestionarEspacios) return;
+    db.generarTareasRecurrentes().then(g => { if (g?.generadas) recargar(); }).catch(() => {});
+    // eslint-disable-next-line
+  }, []);
+  // Completadas del espacio abierto (para la barra de progreso).
+  const [espacioHechas, setEspacioHechas] = useState(0);
+  useEffect(() => {
+    if (!espacioFiltro) { setEspacioHechas(0); return; }
+    db.listarTareas({ completadas: true })
+      .then(ts => setEspacioHechas(ts.filter(t => t.proyectoInternoId === espacioFiltro).length))
+      .catch(() => setEspacioHechas(0));
+  }, [espacioFiltro]);
 
   const hoy = hoyRD();
   const finSemana = addDias(hoy, 7 - ((new Date(hoy + 'T12:00:00').getDay() + 6) % 7) - 1); // domingo de esta semana
@@ -57,12 +82,13 @@ export default function VistaTareas({ usuario, data, onVolver, onCompletarTarea,
     if (filtro === 'mias') v = v.filter(t => t.asignadaAId === usuario.id);
     else if (filtro === 'superviso') v = v.filter(t => t.supervisorId === usuario.id);
     if (personaFiltro) v = v.filter(t => t.asignadaAId === personaFiltro);
+    if (espacioFiltro) v = v.filter(t => t.proyectoInternoId === espacioFiltro);
     if (busca.trim()) {
       const q = busca.trim().toLowerCase();
       v = v.filter(t => `${t.titulo} ${t.descripcion || ''} ${t.asignadaANombre || ''}`.toLowerCase().includes(q));
     }
     return v;
-  }, [tareas, filtro, personaFiltro, busca, usuario.id]);
+  }, [tareas, filtro, personaFiltro, espacioFiltro, busca, usuario.id]);
 
   const porSeccion = useMemo(() => {
     const m = { vencidas: [], hoy: [], semana: [], luego: [], sinFecha: [] };
@@ -133,6 +159,8 @@ export default function VistaTareas({ usuario, data, onVolver, onCompletarTarea,
           </div>
           <div className="flex items-center gap-2 flex-wrap text-[10px] text-zinc-500 mt-0.5">
             {proy && <span className="bg-zinc-950 border border-zinc-800 rounded-full px-1.5 py-0.5 truncate max-w-[160px]">📋 {proy.referenciaOdoo || proy.cliente}</span>}
+            {t.proyectoInternoId && (() => { const esp = internos.find(i => i.id === t.proyectoInternoId); return esp ? <span className="bg-violet-950/60 border border-violet-800/60 text-violet-300 rounded-full px-1.5 py-0.5 truncate max-w-[160px]">📁 {esp.nombre}</span> : null; })()}
+            {t.tipo === 'recurrente' && <span className="text-amber-500/80">🔁</span>}
             {t.asignadaANombre && <span className={t.asignadaAId === usuario.id ? 'text-blue-400 font-bold' : ''}>👤 {t.asignadaANombre.split(' ').slice(0, 2).join(' ')}</span>}
             {t.supervisorNombre && <span>👁 {t.supervisorNombre.split(' ')[0]}</span>}
           </div>
@@ -159,8 +187,56 @@ export default function VistaTareas({ usuario, data, onVolver, onCompletarTarea,
       <button onClick={onVolver} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button>
       <div className="flex justify-between items-center gap-2 flex-wrap">
         <h1 className="text-3xl font-black tracking-tight">Tareas</h1>
-        {esAdmin && <button onClick={() => setCrearModal(true)} className="bg-red-600 hover:bg-red-700 text-white font-black uppercase px-4 py-2 text-xs flex items-center gap-1 rounded-card"><Plus className="w-3 h-3" /> Nueva</button>}
+        <div className="flex gap-1.5">
+          {puedeGestionarEspacios && <button onClick={() => setVerRecurrentes(true)} className="border border-amber-700/60 text-amber-500 hover:bg-amber-600 hover:text-black font-black uppercase px-3 py-2 text-xs rounded-card">🔁 Recurrentes</button>}
+          {esAdmin && <button onClick={() => setCrearModal(true)} className="bg-red-600 hover:bg-red-700 text-white font-black uppercase px-4 py-2 text-xs flex items-center gap-1 rounded-card"><Plus className="w-3 h-3" /> Nueva</button>}
+        </div>
       </div>
+
+      {/* v8.34.0: ESPACIOS administrativos — proyectos internos (no-obra) */}
+      {(internos.length > 0 || puedeGestionarEspacios) && (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <button onClick={() => setEspacioFiltro('')} className={`text-[10px] font-bold uppercase px-2.5 py-1.5 rounded-card border ${!espacioFiltro ? 'bg-violet-700 border-violet-700 text-white' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>📁 Todo</button>
+          {internos.map(i => {
+            const n = tareas.filter(t => t.proyectoInternoId === i.id && !t.completada).length;
+            return (
+              <button key={i.id} onClick={() => setEspacioFiltro(espacioFiltro === i.id ? '' : i.id)}
+                className={`text-[10px] font-bold px-2.5 py-1.5 rounded-card border ${espacioFiltro === i.id ? 'bg-violet-700 border-violet-700 text-white' : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'}`}>
+                {i.nombre}{n > 0 ? ` (${n})` : ''}
+              </button>
+            );
+          })}
+          {puedeGestionarEspacios && <button onClick={() => setCrearEspacio(true)} className="text-[10px] font-bold px-2 py-1.5 rounded-card border border-dashed border-zinc-700 text-zinc-500 hover:text-white hover:border-violet-600">＋ Espacio</button>}
+        </div>
+      )}
+      {espacioFiltro && (() => {
+        const esp = internos.find(i => i.id === espacioFiltro);
+        if (!esp) return null;
+        const pendEspacio = tareas.filter(t => t.proyectoInternoId === esp.id && !t.completada).length;
+        const hechas = mostrarCompletadas ? tareas.filter(t => t.proyectoInternoId === esp.id && t.completada).length : espacioHechas;
+        const totalEspacio = pendEspacio + hechas;
+        return (
+          <div className="bg-violet-950/30 border border-violet-800/50 rounded-card p-3 space-y-1.5">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="min-w-0">
+                <div className="text-sm font-black">📁 {esp.nombre}</div>
+                <div className="text-[10px] text-zinc-400">{[esp.area, esp.responsableNombre ? `Resp: ${esp.responsableNombre}` : null, esp.fechaMeta ? `Meta: ${formatFechaCorta(esp.fechaMeta)}` : null].filter(Boolean).join(' · ')}</div>
+              </div>
+              {puedeGestionarEspacios && (
+                <button onClick={async () => { if (confirm(`¿Marcar el espacio "${esp.nombre}" como completado?`)) { await db.actualizarProyectoInterno(esp.id, { estado: 'completado' }); setEspacioFiltro(''); await recargar(); } }}
+                  className="text-[10px] font-black uppercase px-2.5 py-1.5 rounded-card border border-zinc-700 text-zinc-400 hover:border-green-600 hover:text-green-400">✓ Completar espacio</button>
+              )}
+            </div>
+            {esp.descripcion && <div className="text-[11px] text-zinc-400">{esp.descripcion}</div>}
+            {totalEspacio > 0 && (
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-1.5 bg-zinc-900 rounded-full overflow-hidden"><div className="h-full bg-violet-500" style={{ width: `${Math.round(hechas / totalEspacio * 100)}%` }} /></div>
+                <span className="text-[10px] text-zinc-400 font-bold">{hechas}/{totalEspacio}</span>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Filtros */}
       <div className="flex items-center gap-1.5 flex-wrap">
@@ -212,7 +288,9 @@ export default function VistaTareas({ usuario, data, onVolver, onCompletarTarea,
         </div>
       )}
 
-      {crearModal && <ModalCrearTarea usuario={usuario} proyectos={data.proyectos || []} personal={data.personal || []} onCerrar={() => setCrearModal(false)} onCrear={async (t) => { await onCrearTarea(t); if (t.asignadaAId && t.asignadaAId !== usuario.id) avisarAsignacion(t.asignadaAId, t.titulo, usuario.nombre, t.fechaLimite); setCrearModal(false); await recargar(); }} />}
+      {crearModal && <ModalCrearTarea usuario={usuario} proyectos={data.proyectos || []} personal={data.personal || []} internos={internos} espacioFijo={espacioFiltro || null} onCerrar={() => setCrearModal(false)} onCrear={async (t) => { await onCrearTarea(t); if (t.asignadaAId && t.asignadaAId !== usuario.id) avisarAsignacion(t.asignadaAId, t.titulo, usuario.nombre, t.fechaLimite); setCrearModal(false); await recargar(); }} />}
+      {crearEspacio && <ModalCrearEspacio usuario={usuario} personal={data.personal || []} onCerrar={() => setCrearEspacio(false)} onCreado={async (id) => { setCrearEspacio(false); await recargar(); setEspacioFiltro(id); }} />}
+      {verRecurrentes && <ModalRecurrentes usuario={usuario} data={data} internos={internos} onCerrar={() => setVerRecurrentes(false)} onGenerado={recargar} />}
       {delegando && <ModalDelegarTarea tarea={delegando} personal={data.personal || []} onCerrar={() => setDelegando(null)} onDelegar={delegar} />}
       {detalle && <ModalDetalleTarea tarea={tareas.find(x => x.id === detalle.id) || detalle} usuario={usuario} data={data} esAdmin={esAdmin}
         onCerrar={() => setDetalle(null)} onRecargar={recargar}
@@ -244,10 +322,62 @@ export function ModalDelegarTarea({ tarea, personal, onCerrar, onDelegar }) {
   );
 }
 
-export function ModalCrearTarea({ usuario, proyectos, personal, onCerrar, onCrear, proyectoFijo = null }) {
+// v8.34.0: Crear ESPACIO administrativo (proyecto interno) — cierre fiscal,
+// implementación, traspaso… Agrupa tareas sin tocar los números de las obras.
+export function ModalCrearEspacio({ usuario, personal, onCerrar, onCreado }) {
+  const [nombre, setNombre] = useState('');
+  const [area, setArea] = useState('Gerencia');
+  const [descripcion, setDescripcion] = useState('');
+  const [responsableId, setResponsableId] = useState('');
+  const [fechaMeta, setFechaMeta] = useState('');
+  const [guardando, setGuardando] = useState(false);
+  const asignables = (personal || []).filter(p => ['admin', 'supervisor', 'facturas', 'almacen', 'chofer'].some(r => tieneRol(p, r)))
+    .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+  const crear = async () => {
+    if (!nombre.trim()) return;
+    setGuardando(true);
+    try {
+      const id = 'pi_' + Date.now();
+      await db.crearProyectoInterno({
+        id, nombre: nombre.trim(), area, descripcion: descripcion.trim() || null,
+        responsableId: responsableId || null, responsableNombre: asignables.find(p => p.id === responsableId)?.nombre || null,
+        fechaMeta: fechaMeta || null, creadoPorId: usuario.id, creadoPorNombre: usuario.nombre,
+      });
+      onCreado(id);
+    } catch (e) { alert('Error: ' + (e?.message || e)); setGuardando(false); }
+  };
+  return (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={onCerrar}>
+      <div className="bg-zinc-900 border-2 border-violet-600 rounded-card max-w-md w-full p-5 space-y-3" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-start"><div className="text-xs tracking-widest uppercase text-violet-400 font-bold">📁 Nuevo espacio administrativo</div><button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button></div>
+        <div className="text-[11px] text-zinc-500">Para trabajo interno (cierre fiscal, implementación, traspasos…). No toca producción ni bonos — eso es de las obras.</div>
+        <Campo label="Nombre"><Input value={nombre} onChange={setNombre} placeholder="Ej: Cierre fiscal 2026" /></Campo>
+        <div className="grid grid-cols-2 gap-3">
+          <Campo label="Área">
+            <select value={area} onChange={e => setArea(e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-violet-600 outline-none px-3 py-3 text-white">
+              {['Finanzas', 'Gerencia', 'Comercial', 'Logística', 'RRHH', 'Operaciones', 'Otra'].map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </Campo>
+          <Campo label="Fecha meta"><Input type="date" value={fechaMeta} onChange={setFechaMeta} /></Campo>
+        </div>
+        <Campo label="Responsable">
+          <select value={responsableId} onChange={e => setResponsableId(e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-violet-600 outline-none px-3 py-3 text-white">
+            <option value="">Sin responsable</option>
+            {asignables.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+          </select>
+        </Campo>
+        <Campo label="Descripción"><textarea value={descripcion} onChange={e => setDescripcion(e.target.value)} rows={2} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-violet-600 outline-none px-3 py-2 text-white text-sm" /></Campo>
+        <button onClick={crear} disabled={guardando || !nombre.trim()} className="w-full bg-violet-600 hover:bg-violet-500 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-3 rounded-card">{guardando ? '…' : 'Crear espacio'}</button>
+      </div>
+    </div>
+  );
+}
+
+export function ModalCrearTarea({ usuario, proyectos, personal, onCerrar, onCrear, proyectoFijo = null, internos = [], espacioFijo = null }) {
   const [titulo, setTitulo] = useState('');
   const [descripcion, setDescripcion] = useState('');
   const [proyectoId, setProyectoId] = useState(proyectoFijo || '');
+  const [espacioId, setEspacioId] = useState(espacioFijo || '');
   const [asignadaAId, setAsignadaAId] = useState('');
   const [supervisorId, setSupervisorId] = useState(usuario.id);
   const [fechaLimite, setFechaLimite] = useState('');
@@ -258,7 +388,7 @@ export function ModalCrearTarea({ usuario, proyectos, personal, onCerrar, onCrea
     const persona = personal.find(p => p.id === asignadaAId);
     onCrear({
       id: 't_' + Date.now() + Math.random(),
-      proyectoId: proyectoId || null, tipo: 'otro', titulo, descripcion,
+      proyectoId: proyectoId || null, proyectoInternoId: espacioId || null, tipo: 'otro', titulo, descripcion,
       asignadaAId: asignadaAId || null, asignadaANombre: persona?.nombre || null,
       supervisorId: supervisorId || null, supervisorNombre: personal.find(p => p.id === supervisorId)?.nombre || null,
       prioridad, fechaLimite: fechaLimite || null,
@@ -270,7 +400,8 @@ export function ModalCrearTarea({ usuario, proyectos, personal, onCerrar, onCrea
         <div className="flex justify-between items-start"><div className="text-xs tracking-widest uppercase text-red-500 font-bold">Nueva tarea</div><button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button></div>
         <Campo label="Título"><Input value={titulo} onChange={setTitulo} /></Campo>
         <Campo label="Descripción"><textarea value={descripcion} onChange={e => setDescripcion(e.target.value)} rows={2} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm" /></Campo>
-        {!proyectoFijo && <Campo label="Proyecto"><select value={proyectoId} onChange={e => setProyectoId(e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="">(General)</option>{proyectos.map(p => <option key={p.id} value={p.id}>{[p.referenciaOdoo, p.cliente || p.nombre].filter(Boolean).join(' · ')}</option>)}</select></Campo>}
+        {!proyectoFijo && <Campo label="Proyecto (obra)"><select value={proyectoId} onChange={e => { setProyectoId(e.target.value); if (e.target.value) setEspacioId(''); }} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="">(General)</option>{proyectos.map(p => <option key={p.id} value={p.id}>{[p.referenciaOdoo, p.cliente || p.nombre].filter(Boolean).join(' · ')}</option>)}</select></Campo>}
+        {!proyectoFijo && internos.length > 0 && <Campo label="📁 Espacio administrativo"><select value={espacioId} onChange={e => { setEspacioId(e.target.value); if (e.target.value) setProyectoId(''); }} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-violet-600 outline-none px-3 py-3 text-white"><option value="">Ninguno</option>{internos.map(i => <option key={i.id} value={i.id}>{i.nombre}</option>)}</select></Campo>}
         <Campo label="Responsable"><select value={asignadaAId} onChange={e => setAsignadaAId(e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="">Sin asignar</option>{asignables.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}</select></Campo>
         <Campo label="Supervisor de la tarea"><select value={supervisorId} onChange={e => setSupervisorId(e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-white"><option value="">Sin supervisor</option>{asignables.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}</select></Campo>
         <div className="grid grid-cols-2 gap-3">

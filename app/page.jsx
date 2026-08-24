@@ -9804,16 +9804,17 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto, onRecargar
     setCargando(true);
     const finInicio = fechaStr(dias[0]);
     const finFin = fechaStr(dias[6]);
-    const todasJornadas = [];
-    for (const p of proyectosFiltrados) {
-      if (p.archivado) continue;
-      try {
-        const lista = await db.listarJornadasProyecto(p.id);
-        lista.forEach(j => {
-          if (j.fecha >= finInicio && j.fecha <= finFin) todasJornadas.push({ ...j, proyecto: p });
-        });
-      } catch {}
-    }
+    // v8.42.2: UNA sola query por rango de fechas. Antes era 1 request POR PROYECTO en
+    // serie (138+ round-trips trayendo TODO el histórico de jornadas de cada uno) — la
+    // vista tardaba muchísimo en cargar. Mismo fix que la nómina en v8.26.5.
+    let todasJornadas = [];
+    try {
+      const proyectosPorId = new Map(proyectosFiltrados.filter(p => !p.archivado).map(p => [p.id, p]));
+      const enRango = await db.listarJornadasEnRango(finInicio, finFin);
+      todasJornadas = enRango
+        .map(j => ({ ...j, proyecto: proyectosPorId.get(j.proyectoId) }))
+        .filter(j => j.proyecto); // respeta visibilidad por rol y archivados
+    } catch (e) { console.warn('Planificación:', e?.message); }
     setJornadasSemana(todasJornadas);
     // Reportes de la semana (para detectar días sin reporte)
     const reps = (data.reportes || []).filter(r => r.fecha >= finInicio && r.fecha <= finFin);

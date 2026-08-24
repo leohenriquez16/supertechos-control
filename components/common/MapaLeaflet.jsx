@@ -32,13 +32,17 @@ const MARKER_COLORS = {
   purple: '#9333ea',
 };
 
-// Genera un ícono SVG de pin personalizado
-function makeSvgIcon(color = '#dc2626', size = 32) {
+// Genera un ícono SVG de pin personalizado. v8.41.0: `numero` pinta el número
+// de la parada dentro del pin (para rutas en orden).
+function makeSvgIcon(color = '#dc2626', size = 32, numero = null) {
+  const centro = numero != null
+    ? `<circle cx="16" cy="16" r="9" fill="white"/><text x="16" y="21" text-anchor="middle" font-family="Arial" font-size="13" font-weight="900" fill="${color}">${numero}</text>`
+    : `<circle cx="16" cy="16" r="6" fill="white" opacity="0.9"/>`;
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size * 1.3}" viewBox="0 0 32 42">
       <path d="M16 0 C7.16 0 0 7.16 0 16 C0 28 16 42 16 42 C16 42 32 28 32 16 C32 7.16 24.84 0 16 0Z"
         fill="${color}" stroke="white" stroke-width="2"/>
-      <circle cx="16" cy="16" r="6" fill="white" opacity="0.9"/>
+      ${centro}
     </svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
@@ -49,6 +53,7 @@ export default function MapaLeaflet({
   height = 320,
   markers = [],
   circle = null,
+  polyline = null, // v8.41.0: { points: [[lat,lng],...], color } — la línea de la ruta en orden
   scrollWheelZoom = false,
   className = '',
 }) {
@@ -56,6 +61,7 @@ export default function MapaLeaflet({
   const mapRef = useRef(null);
   const markersRef = useRef([]);
   const circleRef = useRef(null);
+  const polylineRef = useRef(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -102,10 +108,13 @@ export default function MapaLeaflet({
       }
 
       // Agregar nuevos marcadores
+      // Limpiar polyline anterior
+      if (polylineRef.current) { polylineRef.current.remove(); polylineRef.current = null; }
+
       markers.forEach((m) => {
         if (m.lat == null || m.lng == null) return;
         const colorHex = MARKER_COLORS[m.color] || m.color || MARKER_COLORS.red;
-        const iconUrl = makeSvgIcon(colorHex, 28);
+        const iconUrl = makeSvgIcon(colorHex, m.numero != null ? 32 : 28, m.numero ?? null);
         const icon = L.icon({
           iconUrl,
           iconSize: [28, 36],
@@ -129,6 +138,13 @@ export default function MapaLeaflet({
         marker.addTo(map);
         markersRef.current.push(marker);
       });
+
+      // v8.41.0: línea de la ruta (paradas en orden)
+      if (polyline && Array.isArray(polyline.points) && polyline.points.length > 1) {
+        polylineRef.current = L.polyline(polyline.points, {
+          color: polyline.color || '#22d3ee', weight: 3, opacity: 0.8, dashArray: '8 6',
+        }).addTo(map);
+      }
 
       // Agregar círculo (radio de check-in)
       if (circle && circle.lat != null && circle.lng != null && circle.radius > 0) {
@@ -204,7 +220,7 @@ export default function MapaLeaflet({
       // No destruir el mapa al desmontar para evitar re-inicializaciones costosas
       // Solo limpiar marcadores
     };
-  }, [center?.[0], center?.[1], zoom, JSON.stringify(markers), JSON.stringify(circle)]);
+  }, [center?.[0], center?.[1], zoom, JSON.stringify(markers), JSON.stringify(circle), JSON.stringify(polyline)]);
 
   // Destruir mapa al desmontar el componente completamente
   useEffect(() => {

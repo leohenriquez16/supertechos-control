@@ -9,6 +9,7 @@ import React, { useEffect, useState } from 'react';
 import { Car, Loader2, Plus, X, AlertTriangle, Wrench } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatRD, formatFechaCorta } from '../../lib/helpers/formato';
+import RutasVehiculo from './RutasVehiculo'; // v8.41.0
 
 export const TIPOS_EVENTO = {
   falla_mecanica: { label: 'Falla mecánica', icon: '🔧' },
@@ -42,6 +43,7 @@ export default function MiVehiculo({ usuario, data, onRecargar }) {
   const [reportando, setReportando] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [form, setForm] = useState({ tipo: 'falla_mecanica', descripcion: '', km: '', fecha: hoyRD() });
+  const [verRutas, setVerRutas] = useState(false); // v8.41.0
 
   const cargar = async () => {
     if (!vehiculo) { setLoading(false); return; }
@@ -89,6 +91,9 @@ export default function MiVehiculo({ usuario, data, onRecargar }) {
         {vehiculo.revisionVence && <BadgeVence label="Revisión" fecha={vehiculo.revisionVence} />}
         {vehiculo.proximoMantFecha && <BadgeVence label="Próx. mantenimiento" fecha={vehiculo.proximoMantFecha} />}
       </div>
+
+      <button onClick={() => setVerRutas(true)} className="w-full border border-cyan-800/60 text-cyan-400 hover:bg-cyan-700 hover:text-white text-xs font-black uppercase py-2.5 rounded-card">🚚 Rutas de este vehículo (futuras y pasadas)</button>
+      {verRutas && <RutasVehiculo vehiculo={vehiculo} onCerrar={() => setVerRutas(false)} />}
 
       {!reportando ? (
         <button onClick={() => setReportando(true)} className="w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase py-3 flex items-center justify-center gap-2 text-sm">

@@ -88,6 +88,9 @@ export async function GET(request) {
   // v8.31.0: además, cerrar levantamientos cuya cotización ya salió enviada en Odoo
   resultados.levantamientos = await sincronizarLevantamientosOdoo();
 
+  // v8.32.0: vincular analíticas + detectar sub-cotizaciones + avisar descuadres
+  resultados.analiticas = await sincronizarAnaliticasProyectos();
+
   return Response.json({ ok: true, ...resultados });
 }
 
@@ -143,6 +146,89 @@ export async function sincronizarLevantamientosOdoo() {
         });
         res.tareas++;
       }
+    }
+  } catch (e) { res.errores.push({ error: e?.message || String(e) }); }
+  return res;
+}
+
+// ============================================================
+// v8.32.0: Sincronización PROYECTO ↔ CUENTA ANALÍTICA de Odoo.
+// Convención: el nombre de la analítica comienza con la referencia de la
+// cotización ORIGINAL (ST-C1234…). Las cotizaciones nuevas del proyecto
+// (ampliaciones/etapas/órdenes de cambio) llevan otro número pero en Odoo
+// se les elige LA MISMA analítica → aquí se detectan y registran solas
+// como SUB-COTIZACIONES. Si hay descuadre de presupuesto (valor ERP vs
+// suma de cotizaciones de la analítica) o proyecto sin analítica → correo
+// a Miguel y Felvison (dueños de que esto esté 100% al día).
+// ============================================================
+export async function sincronizarAnaliticasProyectos() {
+  const { matchAnaliticasProyectos } = await import('../../../../lib/odoo');
+  const res = { revisados: 0, vinculados: 0, subCotsDetectadas: 0, sinAnalitica: [], descuadres: [], errores: [] };
+  try {
+    const { data: proyectos } = await supabase.from('proyectos')
+      .select('id, cliente, nombre, referencia_odoo, valor_cotizacion, analitica_odoo_id, sub_cotizaciones')
+      .eq('archivado', false)
+      .in('estado', ['aprobado', 'planificado', 'en_ejecucion', 'parado', 'finalizado_no_entregado', 'finalizado_recibido_conforme'])
+      .not('referencia_odoo', 'is', null);
+    const conRef = (proyectos || []).filter(p => (p.referencia_odoo || '').trim());
+    if (!conRef.length) return res;
+    const mapa = await matchAnaliticasProyectos(conRef.map(p => p.referencia_odoo.trim()));
+
+    for (const p of conRef) {
+      res.revisados++;
+      const m = mapa[p.referencia_odoo.trim()];
+      const etiqueta = [p.referencia_odoo, p.cliente || p.nombre].filter(Boolean).join(' · ');
+      if (!m?.analiticaId) { res.sinAnalitica.push(etiqueta); continue; }
+
+      // Sub-cotizaciones: toda cot de la analítica cuyo número ≠ la referencia original.
+      const subs = (m.cotizaciones || []).filter(c => (c.ref || '').trim().toUpperCase() !== p.referencia_odoo.trim().toUpperCase())
+        .map(c => ({ ref: c.ref, monto: c.monto, estado: c.estado, detectada_at: new Date().toISOString() }));
+      const subsPrevias = new Set((p.sub_cotizaciones || []).map(s => s.ref));
+      const nuevasSubs = subs.filter(s => !subsPrevias.has(s.ref));
+      res.subCotsDetectadas += nuevasSubs.length;
+
+      const upd = {};
+      if (p.analitica_odoo_id !== m.analiticaId) { upd.analitica_odoo_id = m.analiticaId; upd.analitica_odoo_nombre = m.analiticaNombre; }
+      if (nuevasSubs.length || subs.length !== (p.sub_cotizaciones || []).length) upd.sub_cotizaciones = subs;
+      if (Object.keys(upd).length) {
+        const { error } = await supabase.from('proyectos').update(upd).eq('id', p.id);
+        if (error) res.errores.push({ id: p.id, error: error.message });
+        else res.vinculados++;
+      }
+
+      // Presupuesto al día: valor del ERP vs suma de las cotizaciones de la analítica.
+      const sumaOdoo = (m.cotizaciones || []).reduce((s, c) => s + (Number(c.monto) || 0), 0);
+      const valorErp = Number(p.valor_cotizacion) || 0;
+      if (sumaOdoo > 0 && Math.abs(sumaOdoo - valorErp) / sumaOdoo > 0.01) {
+        res.descuadres.push({ etiqueta, valorErp, sumaOdoo, cots: (m.cotizaciones || []).map(c => c.ref).join(', ') });
+      }
+    }
+
+    // Correo a Miguel + Felvison si hay algo que cuadrar
+    if ((res.sinAnalitica.length || res.descuadres.length) && process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL) {
+      const fmt = (n) => 'RD$ ' + Math.round(n).toLocaleString('es-DO');
+      const html = `<div style="font-family:Arial,sans-serif;max-width:680px">
+        <h2 style="color:#D71920">📊 Presupuestos ERP ↔ Analíticas de Odoo — hay que cuadrar</h2>
+        ${res.sinAnalitica.length ? `<h3 style="font-size:15px">Proyectos SIN cuenta analítica que matchee (${res.sinAnalitica.length})</h3>
+          <p style="font-size:12px;color:#666">Regla: el nombre de la analítica debe COMENZAR con la referencia de la cot original (ej. "ST-C1234 - Cliente").</p>
+          <ul style="font-size:13px">${res.sinAnalitica.map(x => `<li>${x}</li>`).join('')}</ul>` : ''}
+        ${res.descuadres.length ? `<h3 style="font-size:15px">Presupuesto descuadrado ERP vs Odoo (${res.descuadres.length})</h3>
+          <table style="border-collapse:collapse;width:100%;font-size:13px">
+            <tr style="background:#f3f3f3"><th style="border:1px solid #ddd;padding:6px;text-align:left">Proyecto</th><th style="border:1px solid #ddd;padding:6px;text-align:right">Valor ERP</th><th style="border:1px solid #ddd;padding:6px;text-align:right">Cots Odoo (sin ITBIS)</th><th style="border:1px solid #ddd;padding:6px;text-align:left">Cotizaciones</th></tr>
+            ${res.descuadres.map(d => `<tr><td style="border:1px solid #ddd;padding:6px">${d.etiqueta}</td><td style="border:1px solid #ddd;padding:6px;text-align:right">${fmt(d.valorErp)}</td><td style="border:1px solid #ddd;padding:6px;text-align:right"><b>${fmt(d.sumaOdoo)}</b></td><td style="border:1px solid #ddd;padding:6px">${d.cots}</td></tr>`).join('')}
+          </table>
+          <p style="font-size:12px;color:#666">Si la diferencia es una sub-cotización nueva (ampliación/etapa/orden de cambio), actualicen el valor del proyecto en el ERP (o apliquen la OC de cambio). Las sub-cots ya quedaron registradas solas en el proyecto.</p>` : ''}
+        <p style="font-size:12px;color:#666">— ERP Super Techos (sincronización diaria)</p></div>`;
+      await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from: process.env.RESEND_FROM_EMAIL,
+          to: ['mmartinez@supertechos.com.do', 'fcalcano@supertechos.com.do'],
+          subject: `📊 ${res.sinAnalitica.length + res.descuadres.length} proyecto(s) por cuadrar ERP ↔ Odoo`,
+          html,
+        }),
+      }).catch(() => {});
     }
   } catch (e) { res.errores.push({ error: e?.message || String(e) }); }
   return res;

@@ -10,6 +10,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Loader2, Plus, MapPin, Building, ChevronRight, ArrowLeft, List, Map as MapIcon, LayoutGrid, Search, User as UserIcon, Calendar, Mail, MessageCircle, Clock, ArrowLeftRight, Tag as TagIcon } from 'lucide-react';
 import { listarProyectosSurveys, listarSitesProyectoSurvey, listarTodosLosSitesSurvey, crearSiteSurvey, COMPANIES, PROJECT_STATUS, SITE_STATUS, SERVICE_LINES, ESCALERA, setEtapaSurvey, actualizarSiteSurvey } from '../../lib/surveys';
+import ModalUbicacionSite from './ModalUbicacionSite'; // v8.45.0
 import * as db from '../../lib/db';
 import MapaLeaflet from '../common/MapaLeaflet';
 import MapaPickerModal from '../common/MapaPickerModal';
@@ -89,6 +90,7 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto, onRec
   const _esAdminInit = (usuario?.roles || []).includes('admin') || (usuario?.roles || []).includes('owner');
   const [vista, setVista] = useState(_esAdminInit ? 'kanban' : 'lista'); // kanban (principal) | lista | mapa
   const [sites, setSites] = useState([]);
+  const [ubicandoSite, setUbicandoSite] = useState(null); // v8.45.0: {site, cliente} asignando ubicación
   const [busqueda, setBusqueda] = useState('');
   const [agruparPor, setAgruparPor] = useState('estado');                // estado | servicio | empresa | levantador | none
   // Filtros (aplican a TODAS las vistas).
@@ -310,6 +312,19 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto, onRec
         />
       )}
 
+      {/* v8.45.0: asignar ubicación a un levantamiento sin GPS (clic en mapa o link Maps) */}
+      {ubicandoSite && (
+        <ModalUbicacionSite
+          site={ubicandoSite.site}
+          cliente={ubicandoSite.cliente}
+          onCerrar={() => setUbicandoSite(null)}
+          onGuardado={(r) => {
+            setSites(prev => prev.map(s => s.id === r.siteId ? { ...s, latitude: r.lat, longitude: r.lng, cliente_id: r.clienteId ?? s.cliente_id, ubicacion_id: r.ubicacionId ?? s.ubicacion_id } : s));
+            setUbicandoSite(null);
+          }}
+        />
+      )}
+
       {/* Excepción: proyecto multi-sitio (Banreservas) */}
       {modalNuevoAbierto && (
         <ModalNuevoProyecto
@@ -435,6 +450,14 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto, onRec
                             <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                               <ServiceLineBadge serviceLine={p.service_line} />
                               {p.requiere_escalera && <EscaleraBadge valor={p.requiere_escalera} />}
+                              {/* v8.45.0: levantamiento sin GPS → asignar (clic en mapa o link) */}
+                              {!coordsProy[p.id] && siteDeProy[p.id] && (
+                                <button onClick={(e) => { e.stopPropagation();
+                                  const st = siteDeProy[p.id];
+                                  const cli = clientesData.find(c => c.id === st?.cliente_id) || clientesData.find(c => (c.nombre || '').trim().toLowerCase() === (p.client_name || '').trim().toLowerCase()) || null;
+                                  setUbicandoSite({ site: st, cliente: cli });
+                                }} className="text-[9px] font-bold px-1.5 py-0.5 rounded-card bg-amber-600/20 text-amber-300 border border-amber-800/60 hover:bg-amber-600 hover:text-black" title="Este levantamiento no tiene ubicación — asígnala">📍 sin ubicación</button>
+                              )}
                               <span className="text-[9px] text-zinc-500 flex items-center gap-0.5 ml-auto" title="Tiempo en esta etapa"><Clock className="w-2.5 h-2.5" /> {tiempoEnEtapa(p)}</span>
                             </div>
                           </div>

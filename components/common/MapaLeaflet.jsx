@@ -75,6 +75,7 @@ export default function MapaLeaflet({
   markers = [],
   circle = null,
   polyline = null, // v8.41.0: { points: [[lat,lng],...], color } — la línea de la ruta en orden
+  onMapClick = null, // v8.45.0: (lat, lng) — elegir un punto haciendo clic en el mapa
   scrollWheelZoom = false,
   className = '',
 }) {
@@ -83,6 +84,8 @@ export default function MapaLeaflet({
   const markersRef = useRef([]);
   const circleRef = useRef(null);
   const polylineRef = useRef(null);
+  const clickCbRef = useRef(null);
+  clickCbRef.current = onMapClick; // siempre el callback más reciente
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -114,6 +117,8 @@ export default function MapaLeaflet({
           attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
           maxZoom: 19,
         }).addTo(mapRef.current);
+        // v8.45.0: clic para elegir punto (si el caller lo pide)
+        mapRef.current.on('click', (e) => { if (clickCbRef.current) clickCbRef.current(e.latlng.lat, e.latlng.lng); });
       }
 
       const map = mapRef.current;

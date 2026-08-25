@@ -717,6 +717,7 @@ export default function App() {
       // v8.44.1: y su módulo ALMACÉN con nombre propio en el menú (antes solo "Inicio").
       ...(tieneRol(usuario, 'almacen') ? [
         { id: 'almacen', label: 'Almacén', icon: Package, vista: 'almacen' },
+        { id: 'rutas', label: 'Rutas', icon: Truck, vista: 'rutas' }, // v8.44.1: el almacén también ve las rutas
         { id: 'vehiculos', label: 'Vehículos', icon: Car, vista: 'vehiculos' },
       ] : []),
       // v8.27.0: cualquier usuario puede reportar un error o dar feedback (Gotera).
@@ -827,7 +828,7 @@ export default function App() {
         {/* v8.39.0: compras (rol facturas = Lily) también entra al Almacén — flujo de compras por renglón */}
         {(esAdmin || tieneRol(usuario, 'almacen') || tieneRol(usuario, 'facturas')) && vista === 'almacen' && <VistaAlmacen usuario={usuario} data={data} onVolver={esAdmin ? volverAtras : undefined} />}
         {vista === 'miVehiculo' && <MiVehiculo usuario={usuario} data={data} onRecargar={recargar} />}
-        {esAdmin && vista === 'rutas' && <VistaRutas usuario={usuario} data={data} onVolver={volverAtras} />}
+        {(esAdmin || tieneRol(usuario, 'almacen')) && vista === 'rutas' && <VistaRutas usuario={usuario} data={data} onVolver={esAdmin ? volverAtras : undefined} />}
         {esAdmin && vista === 'planObras' && <PlanObras usuario={usuario} data={data} onVolver={volverAtras} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('cronograma'); }} onRecargar={recargar} />}
         {tieneRol(usuario, 'owner') && vista === 'carga' && <VistaCarga usuario={usuario} data={data} onVolver={volverAtras} />}
         {vista === 'pendientes' && (

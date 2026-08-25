@@ -521,7 +521,7 @@ export default function App() {
             if (u) {
               setUsuario(u);
               db.setAuditContext({ usuarioId: u.id, usuarioNombre: u.nombre });
-              setVista(tieneRol(u, 'admin') ? 'dashboard' : tieneRol(u, 'supervisor') ? 'inicio' : 'misProyectos');
+              setVista(tieneRol(u, 'admin') ? 'dashboard' : (tieneRol(u, 'supervisor') || tieneRol(u, 'chofer') || tieneRol(u, 'almacen')) ? 'inicio' : 'misProyectos'); // v8.44.1: logística también aterriza en su inicio
             }
           }
         } catch {}
@@ -714,7 +714,9 @@ export default function App() {
       ...((data.vehiculos || []).some(v => v.responsableId === usuario.id && v.activo !== false) ? [{ id: 'miVehiculo', label: 'Mi vehículo', icon: Car, vista: 'miVehiculo' }] : []),
       // v8.32.2: el encargado de almacén administra también la FLOTA de vehículos.
       // (La planificación de Rutas es de Erisdania con apoyo de Miguel — ambos admin.)
+      // v8.44.1: y su módulo ALMACÉN con nombre propio en el menú (antes solo "Inicio").
       ...(tieneRol(usuario, 'almacen') ? [
+        { id: 'almacen', label: 'Almacén', icon: Package, vista: 'almacen' },
         { id: 'vehiculos', label: 'Vehículos', icon: Car, vista: 'vehiculos' },
       ] : []),
       // v8.27.0: cualquier usuario puede reportar un error o dar feedback (Gotera).

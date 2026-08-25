@@ -2434,6 +2434,10 @@ function GestionClientes({ clientes, contactos, proyectos, usuario, onVolver, on
                     <div className="min-w-0 flex-1">
                       <div className="font-bold flex items-center gap-2">{u.nombre}
                         {u.latitud != null && <a href={`https://maps.google.com/?q=${u.latitud},${u.longitud}`} target="_blank" rel="noreferrer" className="text-[10px] text-blue-400 hover:underline flex items-center gap-0.5"><MapPin className="w-3 h-3" /> mapa</a>}
+                        {/* v8.45.2: locación sin GPS → asignarla aquí mismo (abre el modal con el mapa) */}
+                        {u.latitud == null && (
+                          <button onClick={() => setModalUbicacion({ ...u, _abrirMapa: true })} className="text-[9px] font-bold px-1.5 py-0.5 rounded-card bg-amber-600/20 text-amber-300 border border-amber-800/60 hover:bg-amber-600 hover:text-black" title="Esta locación no tiene GPS — asígnalo en el mapa o con el link de Maps">📍 sin GPS — asignar</button>
+                        )}
                       </div>
                       {u.direccion && <div className="text-xs text-zinc-400 truncate">{u.direccion}{u.sector ? ` · ${u.sector}` : ''}</div>}
                       <div className="text-[10px] text-zinc-500 mt-0.5 flex flex-wrap gap-x-3">
@@ -2674,6 +2678,9 @@ function ModalEditarUbicacion({ ubicacion, onCerrar, onGuardar, guardando }) {
   const [link, setLink] = useState('');
   const [extrayendo, setExtrayendo] = useState(false);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  // v8.45.2: elegir el punto con clic en el mapa (mismo patrón que el modal de levantamientos)
+  const [verMapa, setVerMapa] = useState(!!ubicacion?._abrirMapa);
+  const MapaPicker = React.useMemo(() => React.lazy(() => import('../components/common/MapaLeaflet')), []);
 
   const extraer = async () => {
     if (!link.trim()) return;
@@ -2718,6 +2725,24 @@ function ModalEditarUbicacion({ ubicacion, onCerrar, onGuardar, guardando }) {
               <button onClick={extraer} disabled={extrayendo || !link.trim()} className="bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-xs font-bold uppercase px-3 rounded-card">{extrayendo ? '…' : 'Extraer'}</button>
             </div>
             {form.latitud != null && <div className="mt-1.5 text-[11px] text-green-300 flex items-center gap-1"><MapPin className="w-3 h-3" /> {Number(form.latitud).toFixed(5)}, {Number(form.longitud).toFixed(5)} <button onClick={() => { set('latitud', null); set('longitud', null); }} className="text-zinc-500 hover:text-red-400 ml-1">quitar</button></div>}
+            {/* v8.45.2: o elegir el punto exacto con clic en el mapa */}
+            <button onClick={() => setVerMapa(v => !v)} className="mt-1.5 text-[11px] font-bold text-zinc-300 hover:text-white flex items-center gap-1">
+              <MapPin className="w-3 h-3 text-red-500" /> {verMapa ? 'Ocultar mapa' : form.latitud != null ? 'Corregir en el mapa' : 'O elige el punto en el mapa'}
+            </button>
+            {verMapa && (
+              <div className="mt-1.5">
+                <React.Suspense fallback={<div className="bg-zinc-900 border border-zinc-800 rounded-card" style={{ height: 220 }} />}>
+                  <MapaPicker
+                    center={form.latitud != null ? [Number(form.latitud), Number(form.longitud)] : [18.4861, -69.9312]}
+                    zoom={form.latitud != null ? 16 : 11} height={220} scrollWheelZoom={true}
+                    markers={form.latitud != null ? [{ lat: Number(form.latitud), lng: Number(form.longitud), color: 'red', label: form.nombre || 'Ubicación' }] : []}
+                    onMapClick={(lat, lng) => { set('latitud', lat); set('longitud', lng); }}
+                    className="border border-zinc-800"
+                  />
+                </React.Suspense>
+                <div className="text-[10px] text-zinc-500 mt-1">Acércate con zoom y toca el punto exacto{form.latitud != null ? ' (clic de nuevo para moverlo)' : ''}.</div>
+              </div>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-2">
             <input value={form.contactoNombre} onChange={e => set('contactoNombre', e.target.value)} placeholder="Contacto en sitio" className="bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm" />

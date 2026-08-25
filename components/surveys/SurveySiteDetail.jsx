@@ -22,10 +22,12 @@ import ChatterPanel from '../common/ChatterPanel';
 import Lightbox from '../common/Lightbox';
 import MapaLeaflet from '../common/MapaLeaflet';
 import { registrarEvento as chatterEventoSurvey } from '../../lib/chatter';
+import ModalUbicacionSite from './ModalUbicacionSite'; // v8.45.1: asignar/corregir ubicación desde el detalle
 
 export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, data, onVolver, onVerEdificaciones }) {
   // v8.25.38: site en estado local para reflejar ediciones (datos del cliente/dirección).
   const [site, setSite] = useState(siteProp);
+  const [modalUbicacion, setModalUbicacion] = useState(false); // v8.45.1
   useEffect(() => { setSite(siteProp); }, [siteProp]);
   const [editarDatos, setEditarDatos] = useState(false);
   const [formAbierto, setFormAbierto] = useState(false);
@@ -229,6 +231,18 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
           onCerrar={() => setEditarDatos(false)}
           onGuardado={(s) => { setSite(s); setEditarDatos(false); }} />
       )}
+      {/* v8.45.1: la ubicación se asigna/corrige desde el detalle y vive en el cliente */}
+      {modalUbicacion && (
+        <ModalUbicacionSite
+          site={site}
+          cliente={clienteVinculado || (data?.clientes || []).find(c => (c.nombre || '').trim().toLowerCase() === (proyecto?.client_name || '').trim().toLowerCase()) || null}
+          onCerrar={() => setModalUbicacion(false)}
+          onGuardado={(r) => {
+            setSite(prev => ({ ...prev, latitude: r.lat, longitude: r.lng, cliente_id: r.clienteId ?? prev.cliente_id, ubicacion_id: r.ubicacionId ?? prev.ubicacion_id }));
+            setModalUbicacion(false);
+          }}
+        />
+      )}
 
       <FachadaHero site={site} clienteNombre={clienteNombre} />
 
@@ -381,6 +395,11 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
       <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
         <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold mb-2 flex items-center gap-1">
           <MapPin className="w-3 h-3 text-red-500" /> Ubicación
+          {/* v8.45.1: asignar/corregir desde aquí mismo (mapa o link de Google Maps) */}
+          <button onClick={() => setModalUbicacion(true)}
+            className={`ml-auto text-[10px] font-bold px-2 py-1 rounded-card border normal-case tracking-normal ${hasGeo ? 'border-zinc-700 text-zinc-300 hover:border-zinc-500' : 'bg-amber-600/20 text-amber-300 border-amber-800/60 hover:bg-amber-600 hover:text-black'}`}>
+            {hasGeo ? '✎ Corregir ubicación' : '📍 Asignar ubicación'}
+          </button>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
           {/* Dirección */}
@@ -393,9 +412,9 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
             {hasGeo ? (
               <Field label="Coordenadas" value={`${Number(site.latitude).toFixed(5)}, ${Number(site.longitude).toFixed(5)}`} />
             ) : (
-              <div className="text-[11px] text-amber-400 flex items-center gap-1 pt-1">
-                <AlertTriangle className="w-3 h-3" /> Sin coordenadas — agrégalas en "Editar datos".
-              </div>
+              <button onClick={() => setModalUbicacion(true)} className="text-[11px] text-amber-400 hover:text-amber-300 flex items-center gap-1 pt-1 text-left">
+                <AlertTriangle className="w-3 h-3" /> Sin coordenadas — toca para elegirlas en el mapa o pegar el link de Google Maps.
+              </button>
             )}
           </div>
           {/* Mini-mapa */}
@@ -409,10 +428,10 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
               />
             </div>
           ) : (
-            <div className="rounded-card border border-dashed border-zinc-800 bg-zinc-950 flex flex-col items-center justify-center text-zinc-600 min-h-[160px] gap-1">
+            <button onClick={() => setModalUbicacion(true)} className="rounded-card border border-dashed border-zinc-700 bg-zinc-950 hover:border-amber-700 hover:text-amber-300 flex flex-col items-center justify-center text-zinc-500 min-h-[160px] gap-1 w-full">
               <MapPin className="w-6 h-6 opacity-40" />
-              <span className="text-[11px]">Sin ubicación en el mapa</span>
-            </div>
+              <span className="text-[11px]">Sin ubicación — toca para asignarla</span>
+            </button>
           )}
         </div>
       </div>

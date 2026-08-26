@@ -17,7 +17,7 @@ import {
   getSuplementosArea, getPrecioSuplemento, getPrecioTotalM2Area, getSistemasDeArea,
   calcAvanceArea, calcAvanceProyecto,
   calcMateriales, agruparAreasPorSistema, calcMaterialesGrupo,
-  calcDieta, calcAnalisisCosto,
+  calcDieta,
   produccionPorDia,
   calcEstadoPagoProyecto,
 } from '../lib/helpers/calculos';
@@ -67,6 +67,8 @@ import TabEquipoProyecto from '../components/proyecto/tabs/TabEquipoProyecto';
 import TabAvance from '../components/proyecto/tabs/TabAvance';
 // Estado de pago de mano de obra del proyecto
 import TabManoDeObra from '../components/proyecto/tabs/TabManoDeObra';
+// v8.46.0: rentabilidad por partida (reemplaza el viejo TabCosto)
+import TabRentabilidad from '../components/proyecto/tabs/TabRentabilidad';
 // v8.10.8: NuevoProyecto y ModalEditarProyecto extraídos a components/proyecto/
 import NuevoProyecto from '../components/proyecto/NuevoProyecto';
 import ModalEditarProyecto from '../components/proyecto/ModalEditarProyecto';
@@ -5111,7 +5113,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
         <TabBtn active={tab === 'tareasProy'} onClick={() => setTab('tareasProy')}><ClipboardList className="w-3 h-3 inline mr-1" />Tareas</TabBtn>
         {esAdmin && <TabBtn active={tab === 'areas'} onClick={() => setTab('areas')}>🗺️ Áreas</TabBtn>}
         {!esSupervisor && <TabBtn active={tab === 'productos'} onClick={() => setTab('productos')}><Sparkles className="w-3 h-3 inline mr-1" />Productos</TabBtn>}
-        {!esSupervisor && <TabBtn active={tab === 'costo'} onClick={() => setTab('costo')}><DollarSign className="w-3 h-3 inline mr-1" />Costo</TabBtn>}
+        {!esSupervisor && <TabBtn active={tab === 'costo'} onClick={() => setTab('costo')}><DollarSign className="w-3 h-3 inline mr-1" />Rentabilidad</TabBtn>}
         {esAdmin && <TabBtn active={tab === 'mdo'} onClick={() => setTab('mdo')}><Wallet className="w-3 h-3 inline mr-1" />Mano de obra</TabBtn>}
         {!esSupervisor && proyecto.dieta?.habilitada && <TabBtn active={tab === 'dieta'} onClick={() => setTab('dieta')}><Utensils className="w-3 h-3 inline mr-1" />Dieta</TabBtn>}
       </div>
@@ -5130,7 +5132,8 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
       {tab === 'tareasProy' && <TabTareasProyecto usuario={usuario} proyecto={proyecto} data={data} esAdmin={esAdmin} />}
       {tab === 'areas' && esAdmin && <TabAreas proyecto={proyecto} data={data} usuario={usuario} onRecargar={onRecargar} />}
       {tab === 'productos' && !esSupervisor && <TabProductosAdicionales proyecto={proyecto} onActualizarProyecto={onActualizarProyecto} esAdmin={esAdmin} />}
-      {tab === 'costo' && !esSupervisor && <TabCosto proyecto={proyecto} sistema={sistema} sistemas={data.sistemas} reportes={data.reportes} envios={data.envios} config={data.config} />}
+      {/* v8.46.0: TabRentabilidad reemplaza TabCosto — presupuesto por partida + real + proyección */}
+      {tab === 'costo' && !esSupervisor && <TabRentabilidad proyecto={proyecto} data={data} usuario={usuario} esAdmin={esAdmin} />}
       {tab === 'mdo' && esAdmin && <TabManoDeObra proyecto={proyecto} data={data} usuario={usuario} onActualizarProyecto={onActualizarProyecto} onRecargar={onRecargar} />}
       {tab === 'dieta' && !esSupervisor && <TabDieta proyecto={proyecto} reportes={data.reportes} personal={data.personal} onActualizarProyecto={onActualizarProyecto} />}
 
@@ -6393,252 +6396,6 @@ function TabProductosAdicionales({ proyecto, onActualizarProyecto, esAdmin }) {
     </div>
   );
 }
-
-
-// ============================================================
-// TAB COSTO
-// ============================================================
-// v8.19.32: clasifica un movimiento de caja chica en una categoría inferida
-// del concepto/datos_ia. Es heurística por keywords — no perfecto pero útil.
-const clasificarCajaChica = (mov) => {
-  const txt = `${mov.concepto || ''} ${mov.subTipo || ''} ${JSON.stringify(mov.datosIa || {})}`.toLowerCase();
-  if (/desayuno|comida|almuerzo|cena|merienda|agua\s|hielo|alimento|bebida/i.test(txt)) return 'dieta';
-  if (/hotel|habitaci[oó]n|hospedaje|airbnb|cuarto|cabaña/i.test(txt)) return 'hospedaje';
-  if (/gasolina|combustible|diesel|peaje|taxi|uber|transporte|pasaje|grua|grúa/i.test(txt)) return 'transporte';
-  if (/ferreter[ií]a|tornillo|cemento|herramient|brocha|clavo|pintura|saco|cable|pvc/i.test(txt)) return 'materiales_extra';
-  return 'otros';
-};
-
-const CATEGORIAS_GASTO = {
-  dieta:            { label: '🍽️ Dieta · comida y agua', color: 'border-orange-700/50' },
-  hospedaje:        { label: '🏨 Hospedaje',              color: 'border-purple-700/50' },
-  transporte:       { label: '🚛 Transporte y combustible', color: 'border-blue-700/50' },
-  materiales_extra: { label: '🛠️ Materiales / herramientas extra', color: 'border-cyan-700/50' },
-  otros:            { label: '📋 Otros gastos',           color: 'border-zinc-700' },
-};
-
-function TabCosto({ proyecto, sistema, sistemas, reportes, envios, config }) {
-  // v8.19.32: rediseño completo — solo cifras reales, agrupadas por fuente,
-  // con expand por sección. Caja chica del proyecto auto-categorizada.
-  const a = calcAnalisisCosto(proyecto, reportes, envios, sistema, config);
-  const [movimientos, setMovimientos] = useState([]);
-  const [loadingMovs, setLoadingMovs] = useState(true);
-  const [expanded, setExpanded] = useState(new Set());
-
-  useEffect(() => {
-    let cancel = false;
-    (async () => {
-      setLoadingMovs(true);
-      try {
-        const movs = await db.listarMovimientosCajaChica({ proyectoId: proyecto.id });
-        // descartar rechazados y rebotes; solo los aprobados/pendientes cuentan
-        const validos = (movs || []).filter(m => m.tipo === 'gasto_factura' && m.status !== 'rechazado');
-        if (!cancel) setMovimientos(validos);
-      } catch (e) { console.warn('caja chica:', e?.message); }
-      if (!cancel) setLoadingMovs(false);
-    })();
-    return () => { cancel = true; };
-  }, [proyecto.id]);
-
-  // Materiales: agrupar envíos por materialId. Lookup nombre en sistema(s).
-  const materialesPorEnvio = React.useMemo(() => {
-    const proy = envios.filter(e => e.proyectoId === proyecto.id);
-    const map = {};
-    proy.forEach(e => {
-      if (!map[e.materialId]) {
-        // buscar nombre y costo del material en cualquier sistema disponible
-        let mat = null;
-        for (const sId of Object.keys(sistemas || {})) {
-          const s = sistemas[sId];
-          mat = (s?.materiales || []).find(m => m.id === e.materialId);
-          if (mat) break;
-        }
-        if (!mat) mat = (sistema?.materiales || []).find(m => m.id === e.materialId);
-        map[e.materialId] = {
-          materialId: e.materialId,
-          nombre: mat?.nombre || '(material desconocido)',
-          unidad: mat?.unidad || '',
-          costoUnitario: Number(mat?.costo_unidad || 0),
-          cantidad: 0,
-        };
-      }
-      map[e.materialId].cantidad += Number(e.cantidad) || 0;
-    });
-    return Object.values(map)
-      .map(x => ({ ...x, subtotal: x.cantidad * x.costoUnitario }))
-      .sort((x, y) => y.subtotal - x.subtotal);
-  }, [envios, proyecto.id, sistemas, sistema]);
-  const totalMateriales = materialesPorEnvio.reduce((s, x) => s + x.subtotal, 0);
-
-  // Gastos de caja chica agrupados por categoría
-  const gastosPorCategoria = React.useMemo(() => {
-    const map = { dieta: [], hospedaje: [], transporte: [], materiales_extra: [], otros: [] };
-    movimientos.forEach(m => { map[clasificarCajaChica(m)].push(m); });
-    return map;
-  }, [movimientos]);
-  const totalPorCategoria = Object.fromEntries(
-    Object.entries(gastosPorCategoria).map(([k, lista]) => [k, lista.reduce((s, m) => s + Number(m.monto || 0), 0)])
-  );
-  const totalCajaChica = Object.values(totalPorCategoria).reduce((s, n) => s + n, 0);
-
-  // Mano de obra: por ahora usa el cálculo teórico hasta sumar real de detalle_nomina
-  const totalMO = a.costoMO;
-
-  const totalReal = totalMateriales + totalMO + totalCajaChica;
-  const margenReal = a.valorContrato - totalReal;
-  const margenPctReal = a.valorContrato > 0 ? (margenReal / a.valorContrato) * 100 : 0;
-
-  const toggleExpand = (key) => {
-    const next = new Set(expanded);
-    if (next.has(key)) next.delete(key); else next.add(key);
-    setExpanded(next);
-  };
-  const isExpanded = (key) => expanded.has(key);
-
-  const SeccionCosto = ({ k, label, total, color, children, contador, badge }) => {
-    const abierto = isExpanded(k);
-    const tienedetalle = !!children;
-    return (
-      <div className={`border ${color || 'border-zinc-800'} bg-zinc-950/50`}>
-        <button
-          onClick={() => tienedetalle && toggleExpand(k)}
-          disabled={!tienedetalle}
-          className={`w-full px-3 py-2.5 flex items-center justify-between gap-2 ${tienedetalle ? 'hover:bg-zinc-900 cursor-pointer' : 'cursor-default'}`}
-        >
-          <div className="flex items-center gap-2 min-w-0">
-            {tienedetalle && <ChevronDown className={`w-3 h-3 text-zinc-500 transition-transform shrink-0 ${abierto ? 'rotate-180' : ''}`} />}
-            <span className="font-bold text-sm text-white truncate">{label}</span>
-            {typeof contador === 'number' && <span className="text-[10px] text-zinc-500">· {contador}</span>}
-            {badge}
-          </div>
-          <div className="font-black text-sm text-white tabular-nums shrink-0">{formatRD(total)}</div>
-        </button>
-        {abierto && children && (
-          <div className="border-t border-zinc-800 px-3 py-2 bg-black/20">{children}</div>
-        )}
-      </div>
-    );
-  };
-
-  return (
-    <div className="space-y-4">
-      {/* Resumen */}
-      <div className="bg-gradient-to-br from-zinc-900 to-zinc-950 border border-zinc-800 p-4">
-        <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-3">Resumen</div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div><div className="text-[10px] text-zinc-500 uppercase">Contrato</div><div className="text-xl font-black">{formatRD(a.valorContrato)}</div></div>
-          <div><div className="text-[10px] text-zinc-500 uppercase">Costo real</div><div className="text-xl font-black">{formatRD(totalReal)}</div></div>
-          <div>
-            <div className={`text-[10px] uppercase ${margenReal >= 0 ? 'text-green-400' : 'text-red-400'}`}>Margen real</div>
-            <div className={`text-xl font-black ${margenReal >= 0 ? 'text-green-400' : 'text-red-400'}`}>{formatRD(margenReal)}</div>
-            <div className="text-[10px] text-zinc-600">{margenPctReal.toFixed(1)}%</div>
-          </div>
-          <div>
-            <div className="text-[10px] text-zinc-500 uppercase">Objetivo</div>
-            <div className={`text-xl font-black ${margenPctReal >= config.margen_objetivo_pct ? 'text-green-400' : 'text-yellow-400'}`}>{config.margen_objetivo_pct}%</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Secciones colapsables */}
-      <div className="space-y-2">
-        {/* Materiales */}
-        <SeccionCosto
-          k="materiales"
-          label="📦 Materiales (envíos)"
-          total={totalMateriales}
-          contador={materialesPorEnvio.length || null}
-          color="border-zinc-800"
-        >
-          {materialesPorEnvio.length === 0 ? (
-            <div className="text-[11px] text-zinc-500 italic py-2">Aún no hay envíos registrados para este proyecto.</div>
-          ) : (
-            <table className="w-full text-[11px]">
-              <thead><tr className="text-[9px] uppercase tracking-wider text-zinc-500">
-                <th className="text-left py-1">Material</th>
-                <th className="text-right py-1">Cantidad</th>
-                <th className="text-right py-1">Costo unit.</th>
-                <th className="text-right py-1">Subtotal</th>
-              </tr></thead>
-              <tbody>
-                {materialesPorEnvio.map(m => (
-                  <tr key={m.materialId} className="border-t border-zinc-900">
-                    <td className="py-1 text-zinc-300 truncate max-w-[260px]">{m.nombre}</td>
-                    <td className="text-right tabular-nums text-zinc-400">{formatNum(m.cantidad)}{m.unidad ? ` ${m.unidad}` : ''}</td>
-                    <td className="text-right tabular-nums text-zinc-500">{formatRD(m.costoUnitario)}</td>
-                    <td className="text-right tabular-nums font-bold text-white">{formatRD(m.subtotal)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </SeccionCosto>
-
-        {/* Mano de obra */}
-        <SeccionCosto
-          k="mo"
-          label="🔨 Mano de obra"
-          total={totalMO}
-          badge={<span className="text-[8px] bg-yellow-900/40 border border-yellow-700 text-yellow-300 px-1.5 py-0.5 uppercase tracking-wider">aprox</span>}
-          color="border-zinc-800"
-        >
-          <div className="text-[11px] text-zinc-400 space-y-1">
-            <div><b className="text-zinc-300">Cálculo actual:</b> {formatNum(a.m2Total)} m² × RD$ {formatNum(sistema?.costo_mo_m2 || 0)}/m² del sistema "{sistema?.nombre || '—'}"</div>
-            <div className="text-[10px] text-zinc-500 italic">Pendiente: usar lo realmente pagado en cortes cerrados + acumulado live del corte abierto.</div>
-          </div>
-        </SeccionCosto>
-
-        {/* Caja chica por categoría */}
-        {loadingMovs ? (
-          <div className="bg-zinc-950/50 border border-zinc-800 px-3 py-3 text-[11px] text-zinc-500 flex items-center gap-2">
-            <Loader2 className="w-3 h-3 animate-spin text-red-500" /> Cargando gastos de caja chica…
-          </div>
-        ) : (
-          ['dieta', 'transporte', 'hospedaje', 'materiales_extra', 'otros'].map(k => {
-            const cfg = CATEGORIAS_GASTO[k];
-            const lista = gastosPorCategoria[k] || [];
-            if (lista.length === 0) return null;
-            return (
-              <SeccionCosto
-                key={k}
-                k={`cc_${k}`}
-                label={cfg.label}
-                total={totalPorCategoria[k]}
-                contador={lista.length}
-                color={cfg.color}
-              >
-                <div className="space-y-1">
-                  {lista.slice(0, 50).map(m => (
-                    <div key={m.id} className="grid grid-cols-[auto_1fr_auto] gap-2 text-[11px] py-1 border-t border-zinc-900">
-                      <div className="text-zinc-500 text-[10px]">{m.fecha}</div>
-                      <div className="text-zinc-300 truncate">{(m.concepto || '').split('\n').join(' · ').slice(0, 80)}</div>
-                      <div className="text-right tabular-nums font-bold text-white">{formatRD(m.monto)}</div>
-                    </div>
-                  ))}
-                  {lista.length > 50 && <div className="text-[10px] text-zinc-500 italic pt-1">… {lista.length - 50} más (ver tab Caja Chica del maestro)</div>}
-                </div>
-              </SeccionCosto>
-            );
-          })
-        )}
-
-        {/* Total */}
-        <div className="bg-zinc-900 border-t-2 border-red-600 px-3 py-3 flex items-center justify-between mt-2">
-          <span className="text-sm font-black uppercase tracking-wider">Total gastos reales</span>
-          <span className="text-xl font-black text-white tabular-nums">{formatRD(totalReal)}</span>
-        </div>
-      </div>
-
-      <div className="text-[10px] text-zinc-500 italic px-1">
-        Caja chica auto-clasificada por palabras clave en el concepto.
-        Una clasificación manual y MO real (de cortes) llegan en una próxima iteración.
-      </div>
-    </div>
-  );
-}
-
-
-
 
 
 // v8.9.7: Vista de Costos Reales de Materiales

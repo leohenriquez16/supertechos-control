@@ -61,7 +61,8 @@ export default function VistaRutas({ usuario, data, onVolver }) {
       const otras = await db.listarViajes({ desde: hoyRD().slice(0, 8) + '01' }).catch(() => []);
       otras.forEach(v => v.paradas.forEach(p => { if (p.requisicionId) asignadas.add(p.requisicionId); }));
       setViajes(vs);
-      setListas(reqs.filter(r => !asignadas.has(r.id)));
+      // v8.48.0: los alistos en modo RETIRO no van a camión (se firman en el almacén)
+      setListas(reqs.filter(r => !asignadas.has(r.id) && r.modoEntrega !== 'retiro'));
       setDiligencias(dils); setLugares(lugs); setEnAlmacen(viniendo);
     } catch (e) { console.warn('Rutas:', e?.message); }
     setLoading(false);

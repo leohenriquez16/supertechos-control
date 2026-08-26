@@ -85,6 +85,7 @@ import VistaContabilidad from '../components/contabilidad/VistaContabilidad';
 // v8.10.13: VistaNomina extraída
 import VistaNomina from '../components/nomina/VistaNomina';
 import VistaProduccion from '../components/dashboard/VistaProduccion'; // v8.27.73
+import VistaRentabilidad from '../components/dashboard/VistaRentabilidad'; // v8.46.0
 import VistaBonos from '../components/bonos/VistaBonos'; // v8.28.2
 import MisPendientes from '../components/pendientes/MisPendientes'; // v8.28.3
 import RequisicionesProyecto from '../components/logistica/RequisicionesProyecto'; // v8.29.0
@@ -661,6 +662,8 @@ export default function App() {
     { seccion: 'FINANZAS', items: [
       // v8.27.73: dashboard de producción RD$ — v8.27.74: SOLO owner (como Contabilidad)
       ...(tieneRol(usuario, 'owner') ? [{ id: 'produccion', label: 'Producción', icon: TrendingUp, vista: 'produccion' }] : []),
+      // v8.46.0: rentabilidad de todas las obras (presupuesto vs real vs proyección) — SOLO owner
+      ...(tieneRol(usuario, 'owner') ? [{ id: 'rentabilidad', label: 'Rentabilidad', icon: TrendingUp, vista: 'rentabilidad' }] : []),
       // v8.28.2: Bonos por KPIs — la gerencia (admin) ve los puntajes; el owner configura montos/metas.
       { id: 'bonos', label: 'Bonos', icon: Award, vista: 'bonos' },
       // v8.30.2: tablero de carga por persona (ERP+Odoo) — SOLO owner (Leonardo)
@@ -826,6 +829,8 @@ export default function App() {
         )}
         {vista === 'tareas' && <VistaTareas usuario={usuario} data={data} onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }} onCompletarTarea={async (id) => withSync(async () => { await db.completarTarea(id, usuario.id); })} onCrearTarea={async (t) => withSync(async () => { await db.crearTarea(t); })} onEliminarTarea={async (id) => withSync(async () => { await db.eliminarTarea(id); })} />}
         {tieneRol(usuario, 'owner') && vista === 'produccion' && <VistaProduccion usuario={usuario} data={data} onVolver={volverAtras} />}
+        {/* v8.46.0: portafolio de rentabilidad por obra */}
+        {tieneRol(usuario, 'owner') && vista === 'rentabilidad' && <VistaRentabilidad usuario={usuario} data={data} onVolver={volverAtras} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('costo'); }} />}
         {esAdmin && vista === 'bonos' && <VistaBonos usuario={usuario} data={data} onVolver={volverAtras} />}
         {/* v8.39.0: compras (rol facturas = Lily) también entra al Almacén — flujo de compras por renglón */}
         {(esAdmin || tieneRol(usuario, 'almacen') || tieneRol(usuario, 'facturas')) && vista === 'almacen' && <VistaAlmacen usuario={usuario} data={data} onVolver={esAdmin ? volverAtras : undefined} />}

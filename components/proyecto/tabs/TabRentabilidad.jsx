@@ -56,6 +56,7 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
   const [costosDia, setCostosDia] = useState([]);
   const [movimientos, setMovimientos] = useState([]);
   const [odooCompras, setOdooCompras] = useState(null); // { totalCosto, lineas } | null
+  const [salidasOdoo, setSalidasOdoo] = useState(null);  // { pickings, productos } | null
 
   const cargar = async () => {
     setLoading(true);
@@ -79,6 +80,22 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
     setLoading(false);
   };
   useEffect(() => { cargar(); }, [proyecto.id]);
+
+  // v8.47.0: salidas de almacén de Odoo (delivery orders por referencia) — el material
+  // real despachado a la obra, aunque no haya envíos registrados en el ERP.
+  useEffect(() => {
+    let cancel = false;
+    const refs = [proyecto.referenciaOdoo].filter(Boolean);
+    if (!refs.length) { setSalidasOdoo(null); return; }
+    (async () => {
+      try {
+        const res = await fetch(`/api/odoo/salidas-almacen?refs=${encodeURIComponent(refs.join(','))}`);
+        const json = await res.json();
+        if (!cancel && res.ok) setSalidasOdoo(json);
+      } catch { /* Odoo caído no bloquea el tab */ }
+    })();
+    return () => { cancel = true; };
+  }, [proyecto.referenciaOdoo]);
 
   // Compras facturadas en Odoo por cuenta analítica (referencia, no suma al costo)
   useEffect(() => {
@@ -106,10 +123,10 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
     return calcRentabilidadObra({
       presupuesto: sel, proyecto, sistemas: data.sistemas,
       reportes: data.reportes, envios: data.envios || [],
-      movimientosCajaChica: movimientos, estadoPago,
+      movimientosCajaChica: movimientos, estadoPago, salidasOdoo,
       mdoPagadoRd: estadoPago?.montoPagado ?? null, config: data.config || {},
     });
-  }, [sel, proyecto, data.sistemas, data.reportes, data.envios, movimientos, estadoPago, data.config]);
+  }, [sel, proyecto, data.sistemas, data.reportes, data.envios, movimientos, estadoPago, data.config, salidasOdoo]);
 
   const esBorrador = sel?.estado === 'borrador';
   const editable = esBorrador && esAdmin;
@@ -359,6 +376,12 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
                             {formatNum(l.cantidad || 0)} {l.unidad} × {editable
                               ? <InputMini valor={l.costoUnidad} onChange={v => patchLinea(p.id, l.id, { costoUnidad: v })} ancho="w-16" />
                               : (l.costoUnidad != null ? formatRD(l.costoUnidad) : 'por definir')}
+                            {(l.cantidadReal || 0) > 0 && (
+                              <span className="ml-2 text-[10px] text-zinc-500">
+                                despachado {formatNum(l.cantidadReal)} {l.unidad}
+                                {(l.cantidadOdoo || 0) > 0 && <span className="ml-1 text-[8px] bg-purple-900/40 border border-purple-700 text-purple-300 px-1 uppercase">odoo</span>}
+                              </span>
+                            )}
                           </>)}
                           {l.tipo === 'mdo_tarea' && (<>
                             {formatNum(l.m2 || 0)} m² × {editable
@@ -494,6 +517,14 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
         </table>
       </div>
 
+      {rent?.salidasOdooNoMatch?.length > 0 && (
+        <div className="bg-purple-950/30 border border-purple-800/50 px-3 py-2 text-[11px] text-purple-300 space-y-0.5">
+          <div className="font-bold uppercase text-[10px]">Salidas de almacén (Odoo) sin matchear a un material del presupuesto:</div>
+          {rent.salidasOdooNoMatch.map(x => (
+            <div key={x.producto}>· {x.producto} — {formatNum(x.cantidad)} ud. <span className="text-purple-400/70">(agrega keywords Odoo al material del sistema para que cuente)</span></div>
+          ))}
+        </div>
+      )}
       {rent?.sinCosto.length > 0 && (
         <div className="text-[10px] text-yellow-500/80 italic px-1">
           ⚠ {rent.sinCosto.length} material(es) sin costo (excluidos de los totales): {rent.sinCosto.join(', ')}. Colócalos en el borrador o en el sistema.

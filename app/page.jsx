@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed, Building2, Star, MessageCircle, Send, Search, Filter, CloudRain, Calculator, Receipt, Car, Award } from 'lucide-react';
 import * as db from '../lib/db';
+import { completitudPersona } from '../lib/helpers/personas';
 import { leerArchivo, parseMateriales, parseSistemas, descargarPlantilla, comprimirImagen } from '../lib/imports';
 import { obtenerUbicacion, distanciaMetros, formatDistancia, abrirEnMapa } from '../lib/geo';
 import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps } from '../lib/geoutils';
@@ -632,6 +633,9 @@ export default function App() {
   ] : esAdmin ? [
     // v8.35.0: menú reorganizado por ÁREAS del organigrama (Operación, Comercial,
     // Logística, Finanzas) — el ERP se navega como se navega la empresa.
+    // v8.49.0: menú reorganizado — lo de PERSONAS deja de estar disperso (sección
+    // RR.HH. propia), Comercial recibe Clientes/Ubicaciones, Garantías es operativa
+    // y Configuración queda solo con catálogos/ajustes.
     { seccion: 'OPERACIÓN', items: [
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, vista: 'dashboard' },
       // v8.28.3: task manager — tareas diarias generadas solas por responsable
@@ -642,7 +646,8 @@ export default function App() {
       { id: 'planificacion', label: 'Planificación', icon: Calendar, vista: 'planificacion' },
       { id: 'tareas', label: 'Tareas', icon: ClipboardList, vista: 'tareas', badge: tareas.length },
       { id: 'reclamaciones', label: 'Reclamaciones', icon: AlertTriangle, vista: 'reclamaciones' },
-      { id: 'equipoGlobal', label: 'Equipo en obra', icon: Users, vista: 'equipoGlobal' },
+      // v8.49.0: Garantías es operativa (post-venta), no configuración
+      { id: 'garantias', label: 'Garantías', icon: CheckCircle2, vista: 'garantias' },
       { id: 'galeria', label: 'Galería', icon: ImageIcon, vista: 'galeria' },
       // v8.27.0: Gotera — feedback / reporte de errores del ERP en modo ticket.
       { id: 'gotera', label: 'Gotera', icon: CloudRain, vista: 'gotera' },
@@ -651,6 +656,9 @@ export default function App() {
       { id: 'surveys', label: 'Levantamientos', icon: MapPin, vista: 'surveys' },
       { id: 'solicitudes', label: 'Solicitudes', icon: FileText, vista: 'solicitudes', badge: solicitudesNuevas },
       { id: 'citas', label: 'Citas', icon: Calendar, vista: 'citas' },
+      // v8.49.0: Clientes y Ubicaciones son CRM (datos maestros comerciales)
+      { id: 'clientes', label: 'Clientes', icon: Building2, vista: 'clientes' },
+      { id: 'ubicaciones', label: 'Ubicaciones', icon: MapPin, vista: 'ubicaciones' },
     ]},
     { seccion: 'LOGÍSTICA', items: [
       // v8.29.0: cola de almacén y rutas de camiones
@@ -659,17 +667,23 @@ export default function App() {
       // v8.27.38: flota + docs (matrícula/seguro), elegibles en cartas de acceso
       { id: 'vehiculos', label: 'Vehículos', icon: Car, vista: 'vehiculos' },
     ]},
+    // v8.49.0: nueva sección PERSONAL / RR.HH. — consolida todo lo de gente
+    { seccion: 'PERSONAL / RR.HH.', items: [
+      { id: 'personal', label: 'Personal', icon: UserIcon, vista: 'personal' },
+      { id: 'equipoGlobal', label: 'Equipo en obra', icon: Users, vista: 'equipoGlobal' },
+      { id: 'estadisticasPersonal', label: 'Estadísticas', icon: TrendingUp, vista: 'estadisticasPersonal' },
+      { id: 'nomina', label: 'Nómina', icon: Wallet, vista: 'nomina' },
+      // v8.28.2: Bonos por KPIs — la gerencia (admin) ve los puntajes; el owner configura montos/metas.
+      { id: 'bonos', label: 'Bonos', icon: Award, vista: 'bonos' },
+      // v8.30.2: tablero de carga por persona (ERP+Odoo) — SOLO owner (Leonardo)
+      ...(tieneRol(usuario, 'owner') ? [{ id: 'carga', label: 'Carga y Actividad', icon: Zap, vista: 'carga' }] : []),
+    ]},
     { seccion: 'FINANZAS', items: [
       // v8.27.73: dashboard de producción RD$ — v8.27.74: SOLO owner (como Contabilidad)
       ...(tieneRol(usuario, 'owner') ? [{ id: 'produccion', label: 'Producción', icon: TrendingUp, vista: 'produccion' }] : []),
       // v8.46.0: rentabilidad de todas las obras — v8.46.1: SOLO owner o rol 'rentabilidad'
       // (Leo, Felvison, Miguel Martínez — se asigna el rol en Personal)
       ...((tieneRol(usuario, 'owner') || tieneRol(usuario, 'rentabilidad')) ? [{ id: 'rentabilidad', label: 'Rentabilidad', icon: TrendingUp, vista: 'rentabilidad' }] : []),
-      // v8.28.2: Bonos por KPIs — la gerencia (admin) ve los puntajes; el owner configura montos/metas.
-      { id: 'bonos', label: 'Bonos', icon: Award, vista: 'bonos' },
-      // v8.30.2: tablero de carga por persona (ERP+Odoo) — SOLO owner (Leonardo)
-      ...(tieneRol(usuario, 'owner') ? [{ id: 'carga', label: 'Carga y Actividad', icon: Zap, vista: 'carga' }] : []),
-      { id: 'nomina', label: 'Nómina', icon: Wallet, vista: 'nomina' },
       { id: 'cajaChica', label: 'Caja Chica', icon: CreditCard, vista: 'cajaChica' },
       // v8.27.36: Facturas — captura de facturas de gasto para exportar a Odoo.
       { id: 'facturasOdoo', label: 'Facturas', icon: Receipt, vista: 'facturasOdoo' },
@@ -682,12 +696,7 @@ export default function App() {
     { seccion: 'CONFIGURACIÓN', items: [
       { id: 'sistemas', label: 'Sistemas', icon: Settings, vista: 'sistemas' },
       { id: 'categorias', label: 'Categorías', icon: Settings, vista: 'categorias' },
-      { id: 'clientes', label: 'Clientes', icon: Building2, vista: 'clientes' },
-      { id: 'ubicaciones', label: 'Ubicaciones', icon: MapPin, vista: 'ubicaciones' },
-      { id: 'garantias', label: 'Garantías', icon: CheckCircle2, vista: 'garantias' },
-      { id: 'personal', label: 'Personal', icon: UserIcon, vista: 'personal' },
       { id: 'notificaciones', label: 'Notificaciones', icon: Mail, vista: 'notificaciones' },
-      { id: 'estadisticasPersonal', label: 'Estadísticas', icon: TrendingUp, vista: 'estadisticasPersonal' },
     ]},
     { seccion: 'SEGURIDAD', items: [
       { id: 'auditLog', label: 'Registro de actividad', icon: ClipboardList, vista: 'auditLog' },
@@ -3263,6 +3272,8 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
   const [experienciaDe, setExperienciaDe] = useState(null); // v8.9.19
   const [capacidadesDe, setCapacidadesDe] = useState(null); // v8.9.23
   const [busqueda, setBusqueda] = useState(''); // v8.17.2: buscador por nombre/PIN/teléfono
+  const [soloActivos, setSoloActivos] = useState(true); // v8.49.0: por defecto solo activos
+  const [soloIncompletas, setSoloIncompletas] = useState(false); // v8.49.0: fichas incompletas
   const [modalInvitar, setModalInvitar] = useState(false); // v8.14: invitar maestro al app
   const [activando, setActivando] = useState(null); // v8.14.1: persona existente a activar para app
   const [detalleDe, setDetalleDe] = useState(null); // v8.19.74: ficha de la persona con todas las acciones adentro
@@ -3339,6 +3350,18 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
           className="flex-1 bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1 text-xs text-white outline-none focus:border-red-500"
         />
         {busqueda && <button onClick={() => setBusqueda('')} className="text-zinc-500 hover:text-white px-2"><X className="w-3 h-3" /></button>}
+      </div>
+
+      {/* v8.49.0: filtros de activos e incompletas */}
+      <div className="flex items-center gap-2 flex-wrap -mt-2">
+        <button onClick={() => setSoloActivos(v => !v)}
+          className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1.5 rounded-card border ${soloActivos ? 'bg-green-600/20 border-green-600 text-green-300' : 'bg-zinc-950 border-zinc-800 text-zinc-500'}`}>
+          {soloActivos ? '✓ Solo activos' : 'Todos (incl. inactivos)'}
+        </button>
+        <button onClick={() => setSoloIncompletas(v => !v)}
+          className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1.5 rounded-card border ${soloIncompletas ? 'bg-amber-600/20 border-amber-600 text-amber-300' : 'bg-zinc-950 border-zinc-800 text-zinc-500'}`}>
+          {soloIncompletas ? '⚠ Fichas incompletas' : 'Completas + incompletas'}
+        </button>
       </div>
 
       {editando && form && (
@@ -3473,12 +3496,23 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
             </div>
             <Campo label="Gerente / encargado"><Input value={form.gerenteNombre || ''} onChange={v => setForm({ ...form, gerenteNombre: v })} /></Campo>
           </div>
+          {/* v8.49.0: activo / inactivo — inactivo lo saca de listas y planificación */}
+          <label className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 rounded-card p-3 cursor-pointer">
+            <input type="checkbox" checked={form.activo !== false} onChange={e => setForm({ ...form, activo: e.target.checked })} className="w-4 h-4 accent-green-600" />
+            <div className="flex-1">
+              <div className="text-xs font-bold flex items-center gap-1">✅ Activo</div>
+              <div className="text-[10px] text-zinc-500">Desmárcalo si ya no trabaja con nosotros. Los inactivos se ocultan de las listas por defecto.</div>
+            </div>
+          </label>
           <div className="flex gap-2 pt-2"><button onClick={() => { setEditando(null); setForm(null); }} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-3">Cancelar</button><button onClick={guardar} disabled={!form.nombre} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-3 flex items-center justify-center gap-1"><Save className="w-3 h-3" /> Guardar</button></div>
         </div>
       )}
 
       {['admin', 'supervisor', 'maestro', 'ayudante', 'facturas', 'otros'].map(rol => {
         const grupo = personal.filter(p => {
+          // v8.49.0: filtros activos / incompletas
+          if (soloActivos && p.activo === false) return false;
+          if (soloIncompletas && completitudPersona(p).pct >= 100) return false;
           // v8.17.2: búsqueda por nombre o teléfono.
           // v8.17.89: ya no se incluye el PIN en el haystack — el front no
           // recibe PINs (son hash bcrypt server-side).
@@ -3512,7 +3546,10 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
                     {p.foto2x2 ? <img src={p.foto2x2} alt="" className="w-10 h-10 object-cover rounded-sm flex-shrink-0 border border-zinc-700" /> : <UserCircle className="w-10 h-10 text-zinc-500 flex-shrink-0" />}
                     <div className="flex-1 min-w-0">
                       <div className="font-bold text-sm flex items-center gap-2">
-                        <span className="truncate">{p.nombre}</span>
+                        <span className={`truncate ${p.activo === false ? 'text-zinc-500' : ''}`}>{p.nombre}</span>
+                        {/* v8.49.0: completitud + inactivo */}
+                        {p.activo === false && <span className="text-[9px] bg-zinc-800 border border-zinc-700 text-zinc-400 px-1.5 py-0.5 tracking-wider uppercase font-bold flex-shrink-0">Inactivo</span>}
+                        {(() => { const c = completitudPersona(p); if (c.pct >= 100) return null; const cl = c.pct >= 60 ? 'bg-amber-900/40 border-amber-700 text-amber-300' : 'bg-red-900/40 border-red-700 text-red-300'; return <span className={`text-[9px] border px-1.5 py-0.5 tracking-wider uppercase font-bold flex-shrink-0 ${cl}`} title={'Faltan: ' + c.faltan.join(', ')}>{c.pct}%</span>; })()}
                         {/* Anuncios (quedan afuera): pendiente de activación al app */}
                         {p.tienePin && !p.cedulaNumero && !tieneRol(p, 'admin') && !p.pinTemporal && (
                           <span className="text-[9px] bg-yellow-900/50 border border-yellow-700 text-yellow-300 px-1.5 py-0.5 tracking-wider uppercase font-bold flex-shrink-0" title="Aún no ha completado el onboarding del app">⚠ Sin app</span>
@@ -3593,6 +3630,23 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
                     <div className="flex flex-wrap gap-1 mt-2">
                       {chips.map((c, i) => <span key={i} className="text-[9px] bg-zinc-900 border border-zinc-800 rounded-full px-2 py-0.5 text-zinc-300">{c}</span>)}
                     </div>
+                  </div>
+                );
+              })()}
+              {/* v8.49.0: completitud de la ficha */}
+              {(() => {
+                const c = completitudPersona(p);
+                const color = c.pct >= 100 ? '#22c55e' : c.pct >= 60 ? '#f59e0b' : '#ef4444';
+                return (
+                  <div className="px-4 pb-1">
+                    <button onClick={() => { cerrar(); onAbrirPerfil(p); }} className="w-full text-left bg-zinc-900 border border-zinc-800 rounded-card p-2.5 hover:border-red-600">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px] font-bold text-zinc-300">Ficha {c.pct}% completa</span>
+                        <span className="text-[10px] text-zinc-500">{c.llenos}/{c.total} · toca para completar</span>
+                      </div>
+                      <div className="h-1.5 bg-zinc-950 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width: `${c.pct}%`, background: color }} /></div>
+                      {c.faltan.length > 0 && <div className="text-[10px] text-zinc-500 mt-1">Faltan: <span className="text-amber-300">{c.faltan.join(', ')}</span></div>}
+                    </button>
                   </div>
                 );
               })()}
@@ -11607,6 +11661,20 @@ function MiPerfil({ usuario, persona, onVolver, onGuardar }) {
     cedulaReverso: persona.cedulaReverso || '',
     cartaBancaria: persona.cartaBancaria || '',
     buenaConducta: persona.buenaConducta || '',
+    // v8.49.0: RR.HH. completo editable por admin
+    whatsapp: persona.whatsapp || '',
+    fechaNacimiento: persona.fechaNacimiento || '',
+    tipoSangre: persona.tipoSangre || '',
+    contactoEmergenciaNombre: persona.contactoEmergenciaNombre || '',
+    contactoEmergenciaTelefono: persona.contactoEmergenciaTelefono || '',
+    contactoEmergenciaRelacion: persona.contactoEmergenciaRelacion || '',
+    puesto: persona.puesto || '',
+    departamento: persona.departamento || '',
+    banco: persona.banco || '',
+    bancoTipoCuenta: persona.bancoTipoCuenta || '',
+    bancoNumeroCuenta: persona.bancoNumeroCuenta || '',
+    bancoTitularNombre: persona.bancoTitularNombre || '',
+    bancoTitularCedula: persona.bancoTitularCedula || '',
   });
   const [mostrarCedula, setMostrarCedula] = useState(false);
   const [subiendoFoto, setSubiendoFoto] = useState(null);
@@ -11697,14 +11765,52 @@ function MiPerfil({ usuario, persona, onVolver, onGuardar }) {
         </div>
       </div>
 
+      {/* v8.49.0: medidor de completitud de la ficha (admin) — con lo editado en vivo */}
+      {tieneRol(usuario, 'admin') && (() => {
+        const c = completitudPersona({ ...persona, ...form });
+        const color = c.pct >= 100 ? '#22c55e' : c.pct >= 60 ? '#f59e0b' : '#ef4444';
+        return (
+          <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Ficha {c.pct}% completa</span>
+              <span className="text-[10px] text-zinc-500">{c.llenos}/{c.total} campos</span>
+            </div>
+            <div className="h-2 bg-zinc-950 rounded-full overflow-hidden"><div className="h-full rounded-full transition-all" style={{ width: `${c.pct}%`, background: color }} /></div>
+            {c.faltan.length > 0 && <div className="text-[10px] text-zinc-500 mt-1.5">Faltan: <span className="text-amber-300">{c.faltan.join(', ')}</span></div>}
+          </div>
+        );
+      })()}
+
       <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-3">
         <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Contacto</div>
-        <Campo label="Teléfono"><Input value={form.telefono} onChange={v => actualizar('telefono', v)} placeholder="809-555-5555" /></Campo>
+        <div className="grid grid-cols-2 gap-3">
+          <Campo label="Teléfono"><Input value={form.telefono} onChange={v => actualizar('telefono', v)} placeholder="809-555-5555" /></Campo>
+          <Campo label="WhatsApp"><Input value={form.whatsapp} onChange={v => actualizar('whatsapp', v)} placeholder="809-555-5555" /></Campo>
+        </div>
         <Campo label="Dirección"><Input value={form.direccion} onChange={v => actualizar('direccion', v)} placeholder="Calle, sector, ciudad" /></Campo>
+        <div className="grid grid-cols-2 gap-3">
+          <Campo label="Fecha de nacimiento"><Input type="date" value={form.fechaNacimiento} onChange={v => actualizar('fechaNacimiento', v)} /></Campo>
+          <Campo label="Tipo de sangre">
+            <select value={form.tipoSangre || ''} onChange={e => actualizar('tipoSangre', e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm">
+              <option value="">—</option>
+              {['O+','O-','A+','A-','B+','B-','AB+','AB-'].map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </Campo>
+        </div>
         <Campo label="Email (opcional)">
           <Input value={form.email} onChange={v => actualizar('email', v)} type="email" placeholder="nombre@ejemplo.com" />
           <div className="text-[10px] text-zinc-500 mt-1">Si lo llenas, recibirás notificaciones por correo de los reportes.</div>
         </Campo>
+      </div>
+
+      {/* v8.49.0: Contacto de emergencia */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-3">
+        <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Contacto de emergencia</div>
+        <div className="grid grid-cols-2 gap-3">
+          <Campo label="Nombre"><Input value={form.contactoEmergenciaNombre} onChange={v => actualizar('contactoEmergenciaNombre', v)} placeholder="Nombre completo" /></Campo>
+          <Campo label="Teléfono"><Input value={form.contactoEmergenciaTelefono} onChange={v => actualizar('contactoEmergenciaTelefono', v)} placeholder="809-555-5555" /></Campo>
+        </div>
+        <Campo label="Relación"><Input value={form.contactoEmergenciaRelacion} onChange={v => actualizar('contactoEmergenciaRelacion', v)} placeholder="Madre, esposa, hermano…" /></Campo>
       </div>
 
       {/* v8.14: información laboral solo visible a admin */}
@@ -11712,8 +11818,34 @@ function MiPerfil({ usuario, persona, onVolver, onGuardar }) {
         <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-3">
           <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Información laboral</div>
           <div className="grid grid-cols-2 gap-3">
+            <Campo label="Puesto"><Input value={form.puesto} onChange={v => actualizar('puesto', v)} placeholder="Operario, Maestro, Chofer…" /></Campo>
+            <Campo label="Departamento"><Input value={form.departamento} onChange={v => actualizar('departamento', v)} placeholder="Operaciones, Administración…" /></Campo>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
             <Campo label="Fecha de ingreso"><Input type="date" value={form.fechaIngreso} onChange={v => actualizar('fechaIngreso', v)} /></Campo>
             <Campo label="Recomendado por"><Input value={form.recomendadoPor} onChange={v => actualizar('recomendadoPor', v)} placeholder="Nombre" /></Campo>
+          </div>
+        </div>
+      )}
+
+      {/* v8.49.0: Datos bancarios (para nómina por banco) — solo admin */}
+      {tieneRol(usuario, 'admin') && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-3">
+          <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Datos bancarios</div>
+          <div className="grid grid-cols-2 gap-3">
+            <Campo label="Banco"><Input value={form.banco} onChange={v => actualizar('banco', v)} placeholder="Banreservas, Popular…" /></Campo>
+            <Campo label="Tipo de cuenta">
+              <select value={form.bancoTipoCuenta || ''} onChange={e => actualizar('bancoTipoCuenta', e.target.value)} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm">
+                <option value="">—</option>
+                <option value="ahorros">Ahorros</option>
+                <option value="corriente">Corriente</option>
+              </select>
+            </Campo>
+          </div>
+          <Campo label="Número de cuenta"><Input value={form.bancoNumeroCuenta} onChange={v => actualizar('bancoNumeroCuenta', v)} placeholder="000000000" /></Campo>
+          <div className="grid grid-cols-2 gap-3">
+            <Campo label="Titular de la cuenta"><Input value={form.bancoTitularNombre} onChange={v => actualizar('bancoTitularNombre', v)} placeholder="Si no es la persona" /></Campo>
+            <Campo label="Cédula del titular"><Input value={form.bancoTitularCedula} onChange={v => actualizar('bancoTitularCedula', v)} placeholder="000-0000000-0" /></Campo>
           </div>
         </div>
       )}

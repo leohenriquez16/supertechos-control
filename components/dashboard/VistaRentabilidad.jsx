@@ -14,9 +14,10 @@ import { formatRD } from '../../lib/helpers/formato';
 import { calcRentabilidadObra } from '../../lib/helpers/presupuestoObra';
 
 const SEM = {
-  verde: { dot: 'bg-green-500', txt: 'text-green-400' },
-  ambar: { dot: 'bg-yellow-500', txt: 'text-yellow-400' },
-  rojo:  { dot: 'bg-red-500',   txt: 'text-red-400' },
+  estrella: { dot: null, txt: 'text-green-300' },   // ⭐ +45% (o objetivo+15)
+  verde:    { dot: 'bg-green-500', txt: 'text-green-400' },
+  ambar:    { dot: 'bg-orange-500', txt: 'text-orange-400' },
+  rojo:     { dot: 'bg-red-500',   txt: 'text-red-400' },
 };
 
 export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyecto }) {
@@ -101,7 +102,7 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
         {onVolver && <button onClick={onVolver} className="p-1.5 border border-zinc-800 hover:border-zinc-600"><ArrowLeft className="w-4 h-4" /></button>}
         <div>
           <h1 className="text-lg font-black uppercase tracking-wider flex items-center gap-2"><TrendingUp className="w-5 h-5 text-red-500" />Rentabilidad de obras</h1>
-          <p className="text-[11px] text-zinc-500">Presupuesto vigente vs real vs proyección · objetivo por sistema (global {objetivo}%)</p>
+          <p className="text-[11px] text-zinc-500">Presupuesto vigente vs real vs proyección · ⭐ +45 · 🟢 35-45 · 🟠 30-35 · 🔴 debajo de 30 (bandas ancladas al objetivo de cada sistema; global {objetivo}%)</p>
         </div>
         <div className="flex-1" />
         {ocultos.size > 0 && (
@@ -158,7 +159,9 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
                     className={`border-t border-zinc-900 hover:bg-zinc-900/60 cursor-pointer ${ocultos.has(proyecto.id) ? "opacity-40" : ""}`}>
                     <td className="px-4 py-2.5">
                       <div className="flex items-center gap-2 min-w-0">
-                        {sem && <span className={`w-2 h-2 rounded-full shrink-0 ${sem.dot}`} />}
+                        {sem && (sem.dot
+                          ? <span className={`w-2 h-2 rounded-full shrink-0 ${sem.dot}`} />
+                          : <span className="text-[11px] shrink-0" title="Margen estrella">⭐</span>)}
                         <span className="text-zinc-200 font-bold truncate max-w-[380px]">{proyecto.nombre}</span>
                       </div>
                     </td>

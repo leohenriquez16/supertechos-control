@@ -24,7 +24,7 @@ const ESTADO_BADGE = {
   superseded: 'bg-zinc-800 border-zinc-700 text-zinc-400',
 };
 
-const SEMAFORO = { verde: 'text-green-400', ambar: 'text-yellow-400', rojo: 'text-red-400' };
+const SEMAFORO = { estrella: 'text-green-300', verde: 'text-green-400', ambar: 'text-orange-400', rojo: 'text-red-400' };
 
 function CeldaMonto({ valor, cls = '' }) {
   return <td className={`text-right tabular-nums py-1.5 pl-3 ${cls}`}>{valor == null ? <span className="text-zinc-600">—</span> : formatRD(valor)}</td>;
@@ -297,7 +297,7 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
           <div className="text-[10px] text-zinc-500 mt-0.5">ppto {formatRD(t.costoPpto)}</div>
         </div>
         <div className="p-4 bg-zinc-950 border border-red-600/40 rounded-card shadow-card">
-          <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold flex items-center gap-1"><TrendingUp className="w-3 h-3" />Margen proyectado</div>
+          <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold flex items-center gap-1"><TrendingUp className="w-3 h-3" />Margen proyectado{rent?.semaforo === 'estrella' && ' ⭐'}</div>
           <div className={`text-2xl font-black mt-1 ${semColor}`}>{formatRD(t.margenProyectado)}</div>
           <div className={`text-[10px] mt-0.5 ${semColor}`}>{(t.margenPctProyectado || 0).toFixed(1)}% · objetivo {(t.objetivoPct || 30).toFixed(0)}% (por sistema)</div>
         </div>
@@ -324,8 +324,8 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
                 <div><div className="text-[10px] uppercase text-zinc-600">Venta</div><div className="text-sm font-bold tabular-nums">{formatRD(p.ventaRd)}</div></div>
                 <div><div className="text-[10px] uppercase text-zinc-600">Costo proy.</div><div className="text-sm font-bold tabular-nums">{formatRD(p.costoProyectado)}</div></div>
                 <div><div className="text-[10px] uppercase text-zinc-600">Margen</div>
-                  <div className={`text-sm font-black tabular-nums ${mPct >= p.objetivoPct ? 'text-green-400' : mPct >= 0 ? 'text-yellow-400' : 'text-red-400'}`}>
-                    {mPct.toFixed(1)}%
+                  <div className={`text-sm font-black tabular-nums ${SEMAFORO[p.semaforo] || 'text-zinc-300'}`}>
+                    {p.semaforo === 'estrella' && '⭐ '}{mPct.toFixed(1)}%
                   </div>
                 </div>
               </div>

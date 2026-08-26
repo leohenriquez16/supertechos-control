@@ -662,8 +662,9 @@ export default function App() {
     { seccion: 'FINANZAS', items: [
       // v8.27.73: dashboard de producción RD$ — v8.27.74: SOLO owner (como Contabilidad)
       ...(tieneRol(usuario, 'owner') ? [{ id: 'produccion', label: 'Producción', icon: TrendingUp, vista: 'produccion' }] : []),
-      // v8.46.0: rentabilidad de todas las obras (presupuesto vs real vs proyección) — SOLO owner
-      ...(tieneRol(usuario, 'owner') ? [{ id: 'rentabilidad', label: 'Rentabilidad', icon: TrendingUp, vista: 'rentabilidad' }] : []),
+      // v8.46.0: rentabilidad de todas las obras — v8.46.1: SOLO owner o rol 'rentabilidad'
+      // (Leo, Felvison, Miguel Martínez — se asigna el rol en Personal)
+      ...((tieneRol(usuario, 'owner') || tieneRol(usuario, 'rentabilidad')) ? [{ id: 'rentabilidad', label: 'Rentabilidad', icon: TrendingUp, vista: 'rentabilidad' }] : []),
       // v8.28.2: Bonos por KPIs — la gerencia (admin) ve los puntajes; el owner configura montos/metas.
       { id: 'bonos', label: 'Bonos', icon: Award, vista: 'bonos' },
       // v8.30.2: tablero de carga por persona (ERP+Odoo) — SOLO owner (Leonardo)
@@ -829,8 +830,8 @@ export default function App() {
         )}
         {vista === 'tareas' && <VistaTareas usuario={usuario} data={data} onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }} onCompletarTarea={async (id) => withSync(async () => { await db.completarTarea(id, usuario.id); })} onCrearTarea={async (t) => withSync(async () => { await db.crearTarea(t); })} onEliminarTarea={async (id) => withSync(async () => { await db.eliminarTarea(id); })} />}
         {tieneRol(usuario, 'owner') && vista === 'produccion' && <VistaProduccion usuario={usuario} data={data} onVolver={volverAtras} />}
-        {/* v8.46.0: portafolio de rentabilidad por obra */}
-        {tieneRol(usuario, 'owner') && vista === 'rentabilidad' && <VistaRentabilidad usuario={usuario} data={data} onVolver={volverAtras} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('costo'); }} />}
+        {/* v8.46.0: portafolio de rentabilidad por obra — v8.46.1: owner o rol 'rentabilidad' */}
+        {(tieneRol(usuario, 'owner') || tieneRol(usuario, 'rentabilidad')) && vista === 'rentabilidad' && <VistaRentabilidad usuario={usuario} data={data} onVolver={volverAtras} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('costo'); }} />}
         {esAdmin && vista === 'bonos' && <VistaBonos usuario={usuario} data={data} onVolver={volverAtras} />}
         {/* v8.39.0: compras (rol facturas = Lily) también entra al Almacén — flujo de compras por renglón */}
         {(esAdmin || tieneRol(usuario, 'almacen') || tieneRol(usuario, 'facturas')) && vista === 'almacen' && <VistaAlmacen usuario={usuario} data={data} onVolver={esAdmin ? volverAtras : undefined} />}
@@ -2838,6 +2839,8 @@ function GestionSistemas({ sistemas, config, onVolver, onActualizarSistemas, onA
       ...sistemaEditando,
       precio_m2: parseFloat(sistemaEditando.precio_m2) || 0,
       costo_mo_m2: parseFloat(sistemaEditando.costo_mo_m2) || 0,
+      // v8.46.1: margen objetivo POR SISTEMA (%); 0/vacío = usa el global de Configuración
+      margen_objetivo_pct: parseFloat(sistemaEditando.margen_objetivo_pct) || 0,
       tareas: sistemaEditando.tareas.map(t => ({ ...t, peso: parseFloat(t.peso) || 0 })),
       materiales: sistemaEditando.materiales.map(m => ({
         ...m, rinde_m2: parseFloat(m.rinde_m2) || 1, costo_unidad: parseFloat(m.costo_unidad) || 0,
@@ -2891,7 +2894,7 @@ function GestionSistemas({ sistemas, config, onVolver, onActualizarSistemas, onA
         <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Parámetros Generales</div>
         <div className="grid grid-cols-2 gap-3">
           <Campo label="% Costos Indirectos"><Input type="number" value={configEditada.costos_indirectos_pct} onChange={v => setConfigEditada({ ...configEditada, costos_indirectos_pct: v })} /></Campo>
-          <Campo label="% Margen Objetivo"><Input type="number" value={configEditada.margen_objetivo_pct} onChange={v => setConfigEditada({ ...configEditada, margen_objetivo_pct: v })} /></Campo>
+          <Campo label="% Margen Objetivo (global — cada sistema puede fijar el suyo en su ficha)"><Input type="number" value={configEditada.margen_objetivo_pct} onChange={v => setConfigEditada({ ...configEditada, margen_objetivo_pct: v })} /></Campo>
         </div>
         <button onClick={() => onActualizarConfig({ costos_indirectos_pct: parseFloat(configEditada.costos_indirectos_pct) || 0, margen_objetivo_pct: parseFloat(configEditada.margen_objetivo_pct) || 0 })} className="bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase px-4 py-2 flex items-center gap-1"><Save className="w-3 h-3" /> Guardar</button>
       </div>
@@ -3192,7 +3195,7 @@ function EditorSistema({ sistema, setSistema, onGuardar, onCancelar, categorias 
             {categorias.map(c => <option key={c.id} value={c.id}>{c.icono} {c.nombre}</option>)}
           </select>
         </Campo>
-        <div className="grid grid-cols-2 gap-3"><Campo label="Precio venta/m²"><Input type="number" value={sistema.precio_m2} onChange={v => setSistema({ ...sistema, precio_m2: v })} /></Campo><Campo label="Costo mano obra/m²"><Input type="number" value={sistema.costo_mo_m2} onChange={v => setSistema({ ...sistema, costo_mo_m2: v })} /></Campo></div>
+        <div className="grid grid-cols-3 gap-3"><Campo label="Precio venta/m²"><Input type="number" value={sistema.precio_m2} onChange={v => setSistema({ ...sistema, precio_m2: v })} /></Campo><Campo label="Costo mano obra/m²"><Input type="number" value={sistema.costo_mo_m2} onChange={v => setSistema({ ...sistema, costo_mo_m2: v })} /></Campo><Campo label="Margen objetivo % (vacío = global)"><Input type="number" value={sistema.margen_objetivo_pct || ''} onChange={v => setSistema({ ...sistema, margen_objetivo_pct: v })} /></Campo></div>
         <Campo label="Keywords cotización"><Input value={Array.isArray(sistema.keywords_cotizacion) ? sistema.keywords_cotizacion.join(', ') : sistema.keywords_cotizacion} onChange={v => setSistema({ ...sistema, keywords_cotizacion: v })} /></Campo>
       </div>
       <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-3">
@@ -3353,6 +3356,8 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
               {/* v8.29.0: logística — el chofer ve su ruta del día; almacén ve su cola de requisiciones */}
               <RolToggle active={form.roles.includes('chofer')} onClick={() => toggleRol('chofer')}>Chofer</RolToggle>
               <RolToggle active={form.roles.includes('almacen')} onClick={() => toggleRol('almacen')}>Almacén</RolToggle>
+              {/* v8.46.1: rentabilidad — solo quienes tengan este rol (o el owner) ven presupuestos/márgenes */}
+              <RolToggle active={form.roles.includes('rentabilidad')} onClick={() => toggleRol('rentabilidad')}>Rentabilidad</RolToggle>
             </div>
           </Campo>
           {/* v8.17.89: el PIN guardado es hash bcrypt server-side y nunca se
@@ -5118,7 +5123,8 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
         <TabBtn active={tab === 'tareasProy'} onClick={() => setTab('tareasProy')}><ClipboardList className="w-3 h-3 inline mr-1" />Tareas</TabBtn>
         {esAdmin && <TabBtn active={tab === 'areas'} onClick={() => setTab('areas')}>🗺️ Áreas</TabBtn>}
         {!esSupervisor && <TabBtn active={tab === 'productos'} onClick={() => setTab('productos')}><Sparkles className="w-3 h-3 inline mr-1" />Productos</TabBtn>}
-        {!esSupervisor && <TabBtn active={tab === 'costo'} onClick={() => setTab('costo')}><DollarSign className="w-3 h-3 inline mr-1" />Rentabilidad</TabBtn>}
+        {/* v8.46.1: rentabilidad SOLO para owner o rol 'rentabilidad' (no todo admin) */}
+        {(tieneRol(usuario, 'owner') || tieneRol(usuario, 'rentabilidad')) && <TabBtn active={tab === 'costo'} onClick={() => setTab('costo')}><DollarSign className="w-3 h-3 inline mr-1" />Rentabilidad</TabBtn>}
         {esAdmin && <TabBtn active={tab === 'mdo'} onClick={() => setTab('mdo')}><Wallet className="w-3 h-3 inline mr-1" />Mano de obra</TabBtn>}
         {!esSupervisor && proyecto.dieta?.habilitada && <TabBtn active={tab === 'dieta'} onClick={() => setTab('dieta')}><Utensils className="w-3 h-3 inline mr-1" />Dieta</TabBtn>}
       </div>
@@ -5137,8 +5143,8 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
       {tab === 'tareasProy' && <TabTareasProyecto usuario={usuario} proyecto={proyecto} data={data} esAdmin={esAdmin} />}
       {tab === 'areas' && esAdmin && <TabAreas proyecto={proyecto} data={data} usuario={usuario} onRecargar={onRecargar} />}
       {tab === 'productos' && !esSupervisor && <TabProductosAdicionales proyecto={proyecto} onActualizarProyecto={onActualizarProyecto} esAdmin={esAdmin} />}
-      {/* v8.46.0: TabRentabilidad reemplaza TabCosto — presupuesto por partida + real + proyección */}
-      {tab === 'costo' && !esSupervisor && <TabRentabilidad proyecto={proyecto} data={data} usuario={usuario} esAdmin={esAdmin} />}
+      {/* v8.46.0: TabRentabilidad reemplaza TabCosto — v8.46.1: gate owner/rol rentabilidad */}
+      {tab === 'costo' && (tieneRol(usuario, 'owner') || tieneRol(usuario, 'rentabilidad')) && <TabRentabilidad proyecto={proyecto} data={data} usuario={usuario} esAdmin={esAdmin} />}
       {tab === 'mdo' && esAdmin && <TabManoDeObra proyecto={proyecto} data={data} usuario={usuario} onActualizarProyecto={onActualizarProyecto} onRecargar={onRecargar} />}
       {tab === 'dieta' && !esSupervisor && <TabDieta proyecto={proyecto} reportes={data.reportes} personal={data.personal} onActualizarProyecto={onActualizarProyecto} />}
 

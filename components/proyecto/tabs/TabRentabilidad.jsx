@@ -299,7 +299,7 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
         <div className="p-4 bg-zinc-950 border border-red-600/40 rounded-card shadow-card">
           <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold flex items-center gap-1"><TrendingUp className="w-3 h-3" />Margen proyectado</div>
           <div className={`text-2xl font-black mt-1 ${semColor}`}>{formatRD(t.margenProyectado)}</div>
-          <div className={`text-[10px] mt-0.5 ${semColor}`}>{(t.margenPctProyectado || 0).toFixed(1)}% · objetivo {data.config?.margen_objetivo_pct || 30}%</div>
+          <div className={`text-[10px] mt-0.5 ${semColor}`}>{(t.margenPctProyectado || 0).toFixed(1)}% · objetivo {(t.objetivoPct || 30).toFixed(0)}% (por sistema)</div>
         </div>
         <div className="p-4 bg-zinc-900 border border-zinc-800 rounded-card">
           <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">Avance</div>
@@ -318,13 +318,13 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
               <div className="flex items-center gap-2 min-w-0">
                 <ChevronDown className={`w-3 h-3 text-zinc-500 transition-transform shrink-0 ${abierto ? 'rotate-180' : ''}`} />
                 <span className="font-bold text-base text-white truncate">{p.nombre}</span>
-                <span className="text-[10px] text-zinc-500 shrink-0">{formatNum(p.m2)} {p.unidad} · avance {p.avance != null ? `${(p.avance * 100).toFixed(0)}%` : '—'}</span>
+                <span className="text-[10px] text-zinc-500 shrink-0">{formatNum(p.m2)} {p.unidad} · avance {p.avance != null ? `${(p.avance * 100).toFixed(0)}%` : '—'} · objetivo {p.objetivoPct?.toFixed(0)}%</span>
               </div>
               <div className="flex items-center gap-6 shrink-0 text-right">
                 <div><div className="text-[10px] uppercase text-zinc-600">Venta</div><div className="text-sm font-bold tabular-nums">{formatRD(p.ventaRd)}</div></div>
                 <div><div className="text-[10px] uppercase text-zinc-600">Costo proy.</div><div className="text-sm font-bold tabular-nums">{formatRD(p.costoProyectado)}</div></div>
                 <div><div className="text-[10px] uppercase text-zinc-600">Margen</div>
-                  <div className={`text-sm font-black tabular-nums ${mPct >= (data.config?.margen_objetivo_pct || 30) ? 'text-green-400' : mPct >= 0 ? 'text-yellow-400' : 'text-red-400'}`}>
+                  <div className={`text-sm font-black tabular-nums ${mPct >= p.objetivoPct ? 'text-green-400' : mPct >= 0 ? 'text-yellow-400' : 'text-red-400'}`}>
                     {mPct.toFixed(1)}%
                   </div>
                 </div>

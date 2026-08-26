@@ -27,7 +27,7 @@ const ESTADO_BADGE = {
 const SEMAFORO = { verde: 'text-green-400', ambar: 'text-yellow-400', rojo: 'text-red-400' };
 
 function CeldaMonto({ valor, cls = '' }) {
-  return <td className={`text-right tabular-nums py-1 ${cls}`}>{valor == null ? <span className="text-zinc-600">—</span> : formatRD(valor)}</td>;
+  return <td className={`text-right tabular-nums py-1.5 pl-3 ${cls}`}>{valor == null ? <span className="text-zinc-600">—</span> : formatRD(valor)}</td>;
 }
 
 function InputMini({ valor, onChange, ancho = 'w-20' }) {
@@ -241,7 +241,7 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
   const semColor = SEMAFORO[rent?.semaforo] || 'text-zinc-300';
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {/* Header versiones + acciones */}
       <div className="flex flex-wrap items-center gap-2">
         {versiones.map(v => (
@@ -285,25 +285,25 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
       )}
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className="p-3 bg-zinc-900 border border-zinc-800 rounded-card">
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+        <div className="p-4 bg-zinc-900 border border-zinc-800 rounded-card">
           <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">Venta s/ITBIS</div>
-          <div className="text-xl font-black mt-1">{formatRD(t.ventaSinItbisRd)}</div>
+          <div className="text-2xl font-black mt-1">{formatRD(t.ventaSinItbisRd)}</div>
           <div className="text-[10px] text-zinc-500 mt-0.5">{sel.venta?.fuente === 'cotizacion' ? `cotización${sel.venta?.monedaOrigen === 'USD' ? ` · USD @${sel.venta?.tasaUsd}` : ''}` : 'valor derivado'}</div>
         </div>
-        <div className="p-3 bg-zinc-900 border border-zinc-800 rounded-card">
+        <div className="p-4 bg-zinc-900 border border-zinc-800 rounded-card">
           <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">Costo proyectado</div>
-          <div className="text-xl font-black mt-1">{formatRD(t.costoProyectado)}</div>
+          <div className="text-2xl font-black mt-1">{formatRD(t.costoProyectado)}</div>
           <div className="text-[10px] text-zinc-500 mt-0.5">ppto {formatRD(t.costoPpto)}</div>
         </div>
-        <div className="p-3 bg-zinc-950 border border-red-600/40 rounded-card shadow-card">
+        <div className="p-4 bg-zinc-950 border border-red-600/40 rounded-card shadow-card">
           <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold flex items-center gap-1"><TrendingUp className="w-3 h-3" />Margen proyectado</div>
-          <div className={`text-xl font-black mt-1 ${semColor}`}>{formatRD(t.margenProyectado)}</div>
+          <div className={`text-2xl font-black mt-1 ${semColor}`}>{formatRD(t.margenProyectado)}</div>
           <div className={`text-[10px] mt-0.5 ${semColor}`}>{(t.margenPctProyectado || 0).toFixed(1)}% · objetivo {data.config?.margen_objetivo_pct || 30}%</div>
         </div>
-        <div className="p-3 bg-zinc-900 border border-zinc-800 rounded-card">
+        <div className="p-4 bg-zinc-900 border border-zinc-800 rounded-card">
           <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">Avance</div>
-          <div className="text-xl font-black mt-1">{t.avanceGlobalPct != null ? `${t.avanceGlobalPct.toFixed(1)}%` : '—'}</div>
+          <div className="text-2xl font-black mt-1">{t.avanceGlobalPct != null ? `${t.avanceGlobalPct.toFixed(1)}%` : '—'}</div>
           <div className="text-[10px] text-zinc-500 mt-0.5">devengado {formatRD(t.ventaDevengada)}</div>
         </div>
       </div>
@@ -314,32 +314,32 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
         const mPct = p.margenPctProyectado;
         return (
           <div key={p.id} className="border border-zinc-800 bg-zinc-950/50">
-            <button onClick={() => toggle(p.id)} className="w-full px-3 py-2.5 flex items-center justify-between gap-3 hover:bg-zinc-900">
+            <button onClick={() => toggle(p.id)} className="w-full px-4 py-3.5 flex items-center justify-between gap-4 hover:bg-zinc-900">
               <div className="flex items-center gap-2 min-w-0">
                 <ChevronDown className={`w-3 h-3 text-zinc-500 transition-transform shrink-0 ${abierto ? 'rotate-180' : ''}`} />
-                <span className="font-bold text-sm text-white truncate">{p.nombre}</span>
+                <span className="font-bold text-base text-white truncate">{p.nombre}</span>
                 <span className="text-[10px] text-zinc-500 shrink-0">{formatNum(p.m2)} {p.unidad} · avance {p.avance != null ? `${(p.avance * 100).toFixed(0)}%` : '—'}</span>
               </div>
-              <div className="flex items-center gap-4 shrink-0 text-right">
-                <div><div className="text-[9px] uppercase text-zinc-600">Venta</div><div className="text-xs font-bold tabular-nums">{formatRD(p.ventaRd)}</div></div>
-                <div><div className="text-[9px] uppercase text-zinc-600">Costo proy.</div><div className="text-xs font-bold tabular-nums">{formatRD(p.costoProyectado)}</div></div>
-                <div><div className="text-[9px] uppercase text-zinc-600">Margen</div>
-                  <div className={`text-xs font-black tabular-nums ${mPct >= (data.config?.margen_objetivo_pct || 30) ? 'text-green-400' : mPct >= 0 ? 'text-yellow-400' : 'text-red-400'}`}>
+              <div className="flex items-center gap-6 shrink-0 text-right">
+                <div><div className="text-[10px] uppercase text-zinc-600">Venta</div><div className="text-sm font-bold tabular-nums">{formatRD(p.ventaRd)}</div></div>
+                <div><div className="text-[10px] uppercase text-zinc-600">Costo proy.</div><div className="text-sm font-bold tabular-nums">{formatRD(p.costoProyectado)}</div></div>
+                <div><div className="text-[10px] uppercase text-zinc-600">Margen</div>
+                  <div className={`text-sm font-black tabular-nums ${mPct >= (data.config?.margen_objetivo_pct || 30) ? 'text-green-400' : mPct >= 0 ? 'text-yellow-400' : 'text-red-400'}`}>
                     {mPct.toFixed(1)}%
                   </div>
                 </div>
               </div>
             </button>
             {abierto && (
-              <div className="border-t border-zinc-800 px-3 py-2 bg-black/20 space-y-2">
-                <div className="flex items-center gap-2 text-[11px] text-zinc-400">
+              <div className="border-t border-zinc-800 px-4 py-3 bg-black/20 space-y-3">
+                <div className="flex items-center gap-2 text-xs text-zinc-400">
                   Precio venta: {editable
                     ? <InputMini valor={p.venta?.precioM2Rd} onChange={v => patchVentaPartida(p.id, v)} />
                     : <b className="text-zinc-200">{formatRD(p.venta?.precioM2Rd)}</b>}
                   /{p.unidad} · total <b className="text-zinc-200">{formatRD(p.ventaRd)}</b>
                 </div>
-                <table className="w-full text-[11px]">
-                  <thead><tr className="text-[9px] uppercase tracking-wider text-zinc-500">
+                <table className="w-full text-xs md:text-[13px]">
+                  <thead><tr className="text-[10px] uppercase tracking-wider text-zinc-500">
                     <th className="text-left py-1">Concepto</th>
                     <th className="text-right py-1">Base</th>
                     <th className="text-right py-1">Presupuesto</th>
@@ -349,7 +349,7 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
                   <tbody>
                     {p.lineas.map(l => (
                       <tr key={l.id} className="border-t border-zinc-900">
-                        <td className="py-1 text-zinc-300">
+                        <td className="py-1.5 text-zinc-300 pr-2">
                           {l.nombre}
                           {l.tipo === 'pct_venta' && <span className="ml-1 text-[8px] bg-yellow-900/40 border border-yellow-700 text-yellow-300 px-1 uppercase">estimado</span>}
                           {l.tipo === 'material' && l.costoUnidad == null && !editable && <span className="ml-1 text-[8px] bg-red-900/40 border border-red-700 text-red-300 px-1 uppercase">sin costo</span>}
@@ -458,8 +458,8 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
       {/* Consolidado */}
       <div className="bg-gradient-to-br from-zinc-900 to-zinc-950 border border-zinc-800 p-4">
         <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2">Consolidado</div>
-        <table className="w-full text-[12px]">
-          <thead><tr className="text-[9px] uppercase tracking-wider text-zinc-500">
+        <table className="w-full text-sm">
+          <thead><tr className="text-[10px] uppercase tracking-wider text-zinc-500">
             <th className="text-left py-1" />
             <th className="text-right py-1">Presupuesto</th>
             <th className="text-right py-1">Real a la fecha</th>

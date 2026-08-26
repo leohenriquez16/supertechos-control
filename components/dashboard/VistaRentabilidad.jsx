@@ -80,7 +80,7 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
   const objetivo = Number(data.config?.margen_objetivo_pct) || 30;
 
   return (
-    <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
+    <div className="p-4 md:p-8 max-w-[1700px] mx-auto space-y-5">
       <div className="flex items-center gap-3">
         {onVolver && <button onClick={onVolver} className="p-1.5 border border-zinc-800 hover:border-zinc-600"><ArrowLeft className="w-4 h-4" /></button>}
         <div>
@@ -95,16 +95,16 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
       </div>
 
       {/* KPIs del portafolio */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
         {[
           ['Obras con presupuesto', `${tot.obras}`, tot.sinPpto ? `${tot.sinPpto} sin presupuesto` : ''],
           ['Venta s/ITBIS', formatRD(tot.venta), ''],
           ['Costo proyectado', formatRD(tot.costoProyectado), `real ${formatRD(tot.costoReal)}`],
           ['Margen proyectado', formatRD(tot.margen), `${tot.margenPct.toFixed(1)}%`],
         ].map(([l, v, s]) => (
-          <div key={l} className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
+          <div key={l} className="bg-zinc-900 border border-zinc-800 rounded-card p-4">
             <div className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">{l}</div>
-            <div className="text-lg font-black mt-1">{v}</div>
+            <div className="text-2xl font-black mt-1">{v}</div>
             {s && <div className="text-[10px] text-zinc-500 mt-0.5">{s}</div>}
           </div>
         ))}
@@ -114,16 +114,16 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
         <div className="flex justify-center py-12"><Loader2 className="w-5 h-5 animate-spin text-red-500" /></div>
       ) : (
         <div className="bg-zinc-950/50 border border-zinc-800 overflow-x-auto">
-          <table className="w-full text-[11px] min-w-[820px]">
-            <thead><tr className="text-[9px] uppercase tracking-wider text-zinc-500 border-b border-zinc-800">
-              <th className="text-left px-3 py-2">Obra</th>
-              <th className="text-right px-2 py-2">Avance</th>
-              <th className="text-right px-2 py-2">Venta s/ITBIS</th>
-              <th className="text-right px-2 py-2">Costo ppto</th>
-              <th className="text-right px-2 py-2">Costo real</th>
-              <th className="text-right px-2 py-2">Proyección</th>
-              <th className="text-right px-2 py-2">Margen proy.</th>
-              <th className="text-right px-3 py-2">%</th>
+          <table className="w-full text-xs md:text-sm min-w-[980px]">
+            <thead><tr className="text-[10px] uppercase tracking-wider text-zinc-500 border-b border-zinc-800">
+              <th className="text-left px-4 py-2.5">Obra</th>
+              <th className="text-right px-3 py-2.5">Avance</th>
+              <th className="text-right px-3 py-2.5">Venta s/ITBIS</th>
+              <th className="text-right px-3 py-2.5">Costo ppto</th>
+              <th className="text-right px-3 py-2.5">Costo real</th>
+              <th className="text-right px-3 py-2.5">Proyección</th>
+              <th className="text-right px-3 py-2.5">Margen proy.</th>
+              <th className="text-right px-4 py-2.5">%</th>
             </tr></thead>
             <tbody>
               {filas.map(({ proyecto, ppto, rent }) => {
@@ -133,10 +133,10 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
                   <tr key={proyecto.id}
                     onClick={() => onVerProyecto && onVerProyecto(proyecto)}
                     className="border-t border-zinc-900 hover:bg-zinc-900/60 cursor-pointer">
-                    <td className="px-3 py-2">
+                    <td className="px-4 py-2.5">
                       <div className="flex items-center gap-2 min-w-0">
                         {sem && <span className={`w-2 h-2 rounded-full shrink-0 ${sem.dot}`} />}
-                        <span className="text-zinc-200 font-bold truncate max-w-[260px]">{proyecto.nombre}</span>
+                        <span className="text-zinc-200 font-bold truncate max-w-[380px]">{proyecto.nombre}</span>
                       </div>
                     </td>
                     {!ppto ? (
@@ -144,13 +144,13 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
                         <span className="text-[9px] uppercase tracking-wider bg-zinc-800 border border-zinc-700 text-zinc-400 px-2 py-0.5">sin presupuesto → generar en la ficha</span>
                       </td>
                     ) : (<>
-                      <td className="text-right tabular-nums px-2 py-2 text-zinc-400">{t.avanceGlobalPct != null ? `${t.avanceGlobalPct.toFixed(0)}%` : '—'}</td>
-                      <td className="text-right tabular-nums px-2 py-2 text-zinc-300">{formatRD(t.ventaSinItbisRd)}</td>
-                      <td className="text-right tabular-nums px-2 py-2 text-zinc-400">{formatRD(t.costoPpto)}</td>
-                      <td className="text-right tabular-nums px-2 py-2 text-zinc-400">{formatRD(t.costoReal)}</td>
-                      <td className="text-right tabular-nums px-2 py-2 text-zinc-300">{formatRD(t.costoProyectado)}</td>
-                      <td className={`text-right tabular-nums px-2 py-2 font-bold ${sem.txt}`}>{formatRD(t.margenProyectado)}</td>
-                      <td className={`text-right tabular-nums px-3 py-2 font-black ${sem.txt}`}>{(t.margenPctProyectado || 0).toFixed(1)}%</td>
+                      <td className="text-right tabular-nums px-3 py-2.5 text-zinc-400">{t.avanceGlobalPct != null ? `${t.avanceGlobalPct.toFixed(0)}%` : '—'}</td>
+                      <td className="text-right tabular-nums px-3 py-2.5 text-zinc-300">{formatRD(t.ventaSinItbisRd)}</td>
+                      <td className="text-right tabular-nums px-3 py-2.5 text-zinc-400">{formatRD(t.costoPpto)}</td>
+                      <td className="text-right tabular-nums px-3 py-2.5 text-zinc-400">{formatRD(t.costoReal)}</td>
+                      <td className="text-right tabular-nums px-3 py-2.5 text-zinc-300">{formatRD(t.costoProyectado)}</td>
+                      <td className={`text-right tabular-nums px-3 py-2.5 font-bold ${sem.txt}`}>{formatRD(t.margenProyectado)}</td>
+                      <td className={`text-right tabular-nums px-4 py-2.5 font-black ${sem.txt}`}>{(t.margenPctProyectado || 0).toFixed(1)}%</td>
                     </>)}
                   </tr>
                 );
@@ -161,14 +161,14 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
             </tbody>
             <tfoot>
               <tr className="border-t-2 border-red-600 font-black">
-                <td className="px-3 py-2 uppercase text-[10px] text-white">Total portafolio ({tot.obras})</td>
+                <td className="px-4 py-3 uppercase text-[11px] text-white">Total portafolio ({tot.obras})</td>
                 <td />
-                <td className="text-right tabular-nums px-2 py-2">{formatRD(tot.venta)}</td>
+                <td className="text-right tabular-nums px-3 py-3">{formatRD(tot.venta)}</td>
                 <td />
-                <td className="text-right tabular-nums px-2 py-2 text-zinc-300">{formatRD(tot.costoReal)}</td>
-                <td className="text-right tabular-nums px-2 py-2">{formatRD(tot.costoProyectado)}</td>
-                <td className={`text-right tabular-nums px-2 py-2 ${tot.margen >= 0 ? 'text-green-400' : 'text-red-400'}`}>{formatRD(tot.margen)}</td>
-                <td className={`text-right tabular-nums px-3 py-2 ${tot.margenPct >= objetivo ? 'text-green-400' : 'text-yellow-400'}`}>{tot.margenPct.toFixed(1)}%</td>
+                <td className="text-right tabular-nums px-3 py-2.5 text-zinc-300">{formatRD(tot.costoReal)}</td>
+                <td className="text-right tabular-nums px-3 py-3">{formatRD(tot.costoProyectado)}</td>
+                <td className={`text-right tabular-nums px-3 py-3 ${tot.margen >= 0 ? 'text-green-400' : 'text-red-400'}`}>{formatRD(tot.margen)}</td>
+                <td className={`text-right tabular-nums px-4 py-3 ${tot.margenPct >= objetivo ? 'text-green-400' : 'text-yellow-400'}`}>{tot.margenPct.toFixed(1)}%</td>
               </tr>
             </tfoot>
           </table>

@@ -20,7 +20,7 @@ function CopiarBtn({ texto }) {
   if (!texto) return null;
   return (
     <button
-      onClick={async () => { try { await navigator.clipboard.writeText(texto); setOk(true); setTimeout(() => setOk(false), 1200); } catch {} }}
+      onClick={async (e) => { e.stopPropagation(); try { await navigator.clipboard.writeText(texto); setOk(true); setTimeout(() => setOk(false), 1200); } catch {} }}
       title="Copiar" className="text-zinc-500 hover:text-white p-1">
       {ok ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
     </button>
@@ -44,6 +44,7 @@ export default function VistaVehiculos({ usuario, data, onRecargar }) {
   const [inspDe, setInspDe] = useState(null); // vehículo cuyas inspecciones se están viendo (v8.35.3)
   const [licencias, setLicencias] = useState({}); // v8.35.2: licencia por chofer (responsable) para verla en la ficha
   const [tab, setTab] = useState('fichas'); // v8.42.1: 'fichas' | 'flota' (dashboard GPS)
+  const [sel, setSel] = useState(''); // v8.50.0: elegir un vehículo (filtra la lista + abre su ficha)
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -102,18 +103,34 @@ export default function VistaVehiculos({ usuario, data, onRecargar }) {
           <div className="text-sm">No hay vehículos. Toca <b>“Nuevo vehículo”</b> para agregar el primero.</div>
         </div>
       ) : (
+        <>
+        {/* v8.50.0: elegir un vehículo o ver la lista completa */}
+        <div className="mb-4 flex items-center gap-2 flex-wrap">
+          <span className="text-[11px] tracking-widest uppercase text-zinc-500 font-bold">Vehículo:</span>
+          <select
+            value={sel}
+            onChange={(e) => { const id = e.target.value; setSel(id); const veh = vehiculos.find((x) => x.id === id); if (veh) setFichaDe(veh); }}
+            className="bg-zinc-950 border border-zinc-700 rounded-card px-3 py-2 text-sm text-white outline-none focus:border-red-500 min-w-[240px]">
+            <option value="">— Todos (ver la lista) —</option>
+            {vehiculos.map((v) => (
+              <option key={v.id} value={v.id}>{[v.marca, v.modelo, v.placa && `· ${v.placa}`].filter(Boolean).join(' ')}</option>
+            ))}
+          </select>
+          {sel && <button onClick={() => setSel('')} className="text-[11px] font-bold uppercase text-zinc-400 hover:text-white border border-zinc-700 rounded-card px-2.5 py-2">Ver todos</button>}
+          <span className="text-[11px] text-zinc-600 ml-auto">{vehiculos.length} vehículo{vehiculos.length !== 1 ? 's' : ''}</span>
+        </div>
         <div className="grid gap-3 md:grid-cols-2">
-          {vehiculos.map((v) => {
+          {(sel ? vehiculos.filter((v) => v.id === sel) : vehiculos).map((v) => {
             const dias = diasParaVencer(v.seguroVence);
             const seguroBadge = dias == null ? null
               : dias < 0 ? { t: `Seguro vencido hace ${-dias}d`, c: 'bg-red-900/50 text-red-300 border-red-700' }
               : dias <= 30 ? { t: `Seguro vence en ${dias}d`, c: 'bg-amber-900/40 text-amber-300 border-amber-700' }
               : { t: `Seguro al día`, c: 'bg-green-900/30 text-green-400 border-green-800' };
             return (
-              <div key={v.id} className="bg-zinc-900 border border-zinc-800 rounded-card p-4">
+              <div key={v.id} onClick={() => setFichaDe(v)} className="bg-zinc-900 border border-zinc-800 rounded-card p-4 cursor-pointer hover:border-zinc-600 transition-colors" title="Ver ficha completa">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <button onClick={() => setFichaDe(v)} className="text-lg font-black text-left hover:text-red-400" title="Ver ficha completa">{v.marca} {v.modelo} {v.anio ? <span className="text-zinc-500 font-normal">· {v.anio}</span> : ''}</button>
+                    <div className="text-lg font-black text-left">{v.marca} {v.modelo} {v.anio ? <span className="text-zinc-500 font-normal">· {v.anio}</span> : ''}</div>
                     {(() => { // v8.44.0: badge de garantía vigente → mantenimiento en la casa
                       if (!v.garantiaVence) return null;
                       const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo' }).format(new Date());
@@ -131,7 +148,7 @@ export default function VistaVehiculos({ usuario, data, onRecargar }) {
                       {v.estadoOperativo && v.estadoOperativo !== 'activo' && <span className={`ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded-card ${v.estadoOperativo === 'en_taller' ? 'bg-amber-600/20 text-amber-400' : 'bg-red-600/20 text-red-400'}`}>{v.estadoOperativo === 'en_taller' ? '🔧 En taller' : '⛔ Fuera de servicio'}</span>}
                     </div>
                   </div>
-                  <div className="flex gap-1 shrink-0">
+                  <div className="flex gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
                     <button onClick={() => setInspDe(v)} title="Inspecciones" className="p-1.5 text-zinc-400 hover:text-emerald-400 hover:bg-zinc-800 rounded"><Camera className="w-3.5 h-3.5" /></button>
                     <button onClick={() => setLogDe(v)} title="Historial / log" className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded text-[11px] font-bold">📋</button>
                     <button onClick={() => setRutasDe(v)} title="Rutas del vehículo (futuras y pasadas)" className="p-1.5 text-zinc-400 hover:text-cyan-400 hover:bg-zinc-800 rounded text-[11px] font-bold">🚚</button>
@@ -159,13 +176,13 @@ export default function VistaVehiculos({ usuario, data, onRecargar }) {
                   {seguroBadge && <span className={`text-[10px] px-2 py-0.5 rounded-full border ${seguroBadge.c}`}>{seguroBadge.t}{v.seguroVence ? ` (${v.seguroVence})` : ''}</span>}
                   {(() => { const d = diasParaVencer(v.matriculaVence); return d == null ? null : <span className={`text-[10px] px-2 py-0.5 rounded-full border ${d < 0 ? 'bg-red-900/50 text-red-300 border-red-700' : d <= 30 ? 'bg-amber-900/40 text-amber-300 border-amber-700' : 'bg-green-900/30 text-green-400 border-green-800'}`}>{d < 0 ? `Placa vencida ${-d}d` : `Placa ${d}d`}</span>; })()}
                   {v.matriculaPath
-                    ? <button onClick={() => verDoc(v.matriculaPath)} className="text-[11px] flex items-center gap-1 text-blue-400 hover:underline"><FileText className="w-3 h-3" /> Matrícula</button>
+                    ? <button onClick={(e) => { e.stopPropagation(); verDoc(v.matriculaPath); }} className="text-[11px] flex items-center gap-1 text-blue-400 hover:underline"><FileText className="w-3 h-3" /> Matrícula</button>
                     : <span className="text-[11px] text-zinc-600">sin matrícula</span>}
                   {v.seguroPath
-                    ? <button onClick={() => verDoc(v.seguroPath)} className="text-[11px] flex items-center gap-1 text-blue-400 hover:underline"><FileText className="w-3 h-3" /> Seguro</button>
+                    ? <button onClick={(e) => { e.stopPropagation(); verDoc(v.seguroPath); }} className="text-[11px] flex items-center gap-1 text-blue-400 hover:underline"><FileText className="w-3 h-3" /> Seguro</button>
                     : <span className="text-[11px] text-zinc-600">sin seguro</span>}
                   {(v.gpsUrl || v.gpsDeviceId)
-                    ? <button onClick={() => setGpsDe(v)} className="text-[11px] flex items-center gap-1 text-emerald-400 hover:underline font-bold"><MapPin className="w-3 h-3" /> GPS en vivo</button>
+                    ? <button onClick={(e) => { e.stopPropagation(); setGpsDe(v); }} className="text-[11px] flex items-center gap-1 text-emerald-400 hover:underline font-bold"><MapPin className="w-3 h-3" /> GPS en vivo</button>
                     : <span className="text-[11px] text-zinc-600">sin GPS</span>}
                   {/* v8.35.2: licencia del chofer (responsable) — sale de inmediato en la ficha */}
                   {v.responsableId && (() => {
@@ -174,7 +191,7 @@ export default function VistaVehiculos({ usuario, data, onRecargar }) {
                     return (
                       <>
                         {lic?.licenciaPath
-                          ? <button onClick={() => verLicencia(lic.licenciaPath)} className="text-[11px] flex items-center gap-1 text-purple-300 hover:underline"><FileText className="w-3 h-3" /> Licencia{lic.licenciaCategoria ? ` · ${lic.licenciaCategoria}` : ''}</button>
+                          ? <button onClick={(e) => { e.stopPropagation(); verLicencia(lic.licenciaPath); }} className="text-[11px] flex items-center gap-1 text-purple-300 hover:underline"><FileText className="w-3 h-3" /> Licencia{lic.licenciaCategoria ? ` · ${lic.licenciaCategoria}` : ''}</button>
                           : <span className="text-[11px] text-amber-500">⚠ chofer sin licencia</span>}
                         {d != null && <span className={`text-[10px] px-2 py-0.5 rounded-full border ${d < 0 ? 'bg-red-900/50 text-red-300 border-red-700' : d <= 30 ? 'bg-amber-900/40 text-amber-300 border-amber-700' : 'bg-green-900/30 text-green-400 border-green-800'}`}>{d < 0 ? `Lic. vencida ${-d}d` : `Lic. ${d}d`}</span>}
                       </>
@@ -185,6 +202,7 @@ export default function VistaVehiculos({ usuario, data, onRecargar }) {
             );
           })}
         </div>
+        </>
       )}
 
       {logDe && <ModalLogVehiculo usuario={usuario} vehiculo={logDe} personal={data?.personal || []} onCerrar={() => setLogDe(null)} />}
@@ -324,8 +342,8 @@ function ModalVehiculo({ usuario, vehiculo, personal, onCerrar, onGuardado }) {
   );
 
   return (
-    <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-auto">
-      <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-xl w-full p-6 space-y-3.5 my-8">
+    <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-start justify-center p-4 overflow-y-auto">
+      <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-2xl w-full p-6 space-y-3.5 my-8">
         <div className="flex justify-between items-start">
           <div className="text-sm tracking-widest uppercase text-red-500 font-black">{editando ? 'Editar vehículo' : 'Nuevo vehículo'}</div>
           <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>

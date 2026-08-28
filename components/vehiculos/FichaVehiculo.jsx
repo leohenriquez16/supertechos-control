@@ -52,7 +52,7 @@ export default function FichaVehiculo({ vehiculo: v, personal = [], licencia = n
   );
 
   return (
-    <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
+    <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-start justify-center p-4 overflow-y-auto" onClick={onCerrar}>
       <div className="bg-zinc-900 border border-zinc-700 rounded-card max-w-2xl w-full p-6 my-8 space-y-1" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-start gap-3 mb-2">
           <div className="min-w-0">

@@ -10,6 +10,7 @@ import { Loader2, Plus, Package, X, Trash2, Camera } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatFechaCorta } from '../../lib/helpers/formato';
 import { comprimirImagenABlob } from '../../lib/imports';
+import ModalConfirmarRecepcion from './ModalConfirmarRecepcion'; // v8.49.4
 
 // v8.40.0: estados de una diligencia de retiro (material sobrante en obra).
 export const ESTADOS_DILIGENCIA = {
@@ -54,6 +55,7 @@ export default function RequisicionesProyecto({ usuario, proyecto, esAdmin }) {
   const [sobranteListado, setSobranteListado] = useState('');
   const [sobranteFoto, setSobranteFoto] = useState(null);
   const [guardandoSobrante, setGuardandoSobrante] = useState(false);
+  const [confirmandoReq, setConfirmandoReq] = useState(null); // v8.49.4: doble confirmación de recepción
 
   const recargar = async () => {
     setLoading(true);
@@ -202,10 +204,27 @@ export default function RequisicionesProyecto({ usuario, proyecto, esAdmin }) {
                 </div>
                 {r.cotizacionUrl && <a href={r.cotizacionUrl} target="_blank" rel="noreferrer" className="text-[10px] text-blue-400 hover:underline mt-1 inline-block">📎 Ver cotización adjunta</a>}
                 {r.notas && <div className="text-[10px] text-zinc-500 mt-1">📝 {r.notas}</div>}
+                {/* v8.49.4: doble confirmación — la obra confirma el recibido contra la firma del chofer */}
+                {r.estado === 'entregada' && !r.recepcionConfirmadaAt && (
+                  <button onClick={() => setConfirmandoReq(r)}
+                    className="mt-2 w-full bg-green-700 hover:bg-green-600 text-white text-[10px] font-black uppercase py-2 rounded-card">
+                    ✅ Confirmar que la recibimos
+                  </button>
+                )}
+                {r.recepcionConfirmadaAt && (
+                  <div className="text-[10px] text-green-500 mt-1.5">✅ Recibido confirmado por {r.recepcionConfirmadaPorNombre || '—'} ({r.recepcionOrigen === 'oficina' ? 'oficina' : 'obra'})</div>
+                )}
               </div>
             );
           })}
         </div>
+      )}
+
+      {confirmandoReq && (
+        <ModalConfirmarRecepcion req={confirmandoReq} etiqueta={`Solicitud del ${formatFechaCorta((confirmandoReq.createdAt || '').slice(0, 10))} · ${confirmandoReq.items.length} renglones`}
+          usuario={usuario} origen="obra"
+          onCerrar={() => setConfirmandoReq(null)}
+          onConfirmado={async () => { setConfirmandoReq(null); await recargar(); }} />
       )}
 
       {/* ============ v8.40.0: MATERIAL SOBRANTE (retiro por Rutas) ============ */}

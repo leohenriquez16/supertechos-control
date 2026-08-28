@@ -15,6 +15,7 @@ import { formatFechaCorta } from '../../lib/helpers/formato';
 import { comprimirImagenABlob } from '../../lib/imports';
 import FirmaPad, { firmaABlob } from '../common/FirmaPad';
 import { ESTADOS_REQ, ESTADOS_COMPRA } from './RequisicionesProyecto';
+import ModalConfirmarRecepcion from './ModalConfirmarRecepcion'; // v8.49.4
 
 const COLS = [
   { estado: 'pendiente', titulo: '📥 Nuevas', siguiente: 'preparando', btn: 'Empezar a preparar' },
@@ -35,6 +36,7 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
   const [selId, setSelId] = useState(null); // v8.38.0: requisición abierta en el panel
   const [nuevoAbierto, setNuevoAbierto] = useState(false); // v8.48.0: modal nuevo despacho
   const [retiroDe, setRetiroDe] = useState(null); // v8.48.0: alisto en sign-off de retiro
+  const [confirmandoReq, setConfirmandoReq] = useState(null); // v8.49.4: confirmación de oficina
   const puedeCrear = ['admin', 'almacen'].some(rr => usuario?.roles?.includes(rr));
 
   const recargar = async () => {
@@ -258,6 +260,31 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
           })}
         </div>
 
+        {/* v8.49.4: entregadas sin doble confirmación — la oficina (Erisdania) las cierra
+            corroborando con la firma del chofer si la obra no lo ha hecho */}
+        {(() => {
+          const sinConfirmar = reqs.filter(r => r.estado === 'entregada' && !r.recepcionConfirmadaAt);
+          if (!sinConfirmar.length) return null;
+          return (
+            <div className="border border-amber-800/50 bg-amber-950/20 rounded-card p-3">
+              <div className="text-[11px] tracking-widest uppercase text-amber-400 font-bold mb-1.5">⏳ Entregadas sin confirmar de la obra ({sinConfirmar.length})</div>
+              <div className="space-y-1.5">
+                {sinConfirmar.map(r => (
+                  <div key={r.id} className="flex items-center justify-between gap-2 text-xs">
+                    <span className="truncate">{etiqueta(r)} <span className="text-zinc-500">· entregada {formatFechaCorta((r.entregadaAt || '').slice(0, 10))}</span></span>
+                    {puedeCrear && (
+                      <button onClick={() => setConfirmandoReq(r)}
+                        className="shrink-0 text-[10px] font-black uppercase px-2.5 py-1.5 rounded-card bg-green-700 hover:bg-green-600 text-white">
+                        ✅ Confirmar de oficina
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+
         <div className="text-[11px] text-zinc-500 border-t border-zinc-800 pt-2">
           ✓ Entregadas hoy: <b className="text-green-400">{entregadasHoy.length}</b>
         </div>
@@ -282,6 +309,12 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
         <ModalNuevoDespacho usuario={usuario}
           onCerrar={() => setNuevoAbierto(false)}
           onCreado={async () => { setNuevoAbierto(false); await recargar(); }} />
+      )}
+      {confirmandoReq && (
+        <ModalConfirmarRecepcion req={confirmandoReq} etiqueta={etiqueta(confirmandoReq)}
+          usuario={usuario} origen="oficina"
+          onCerrar={() => setConfirmandoReq(null)}
+          onConfirmado={async () => { setConfirmandoReq(null); await recargar(); }} />
       )}
       {retiroDe && (
         <ModalRegistrarRetiro alisto={retiroDe} etiqueta={etiqueta(retiroDe)}

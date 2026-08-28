@@ -37,6 +37,33 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
   const [nuevoAbierto, setNuevoAbierto] = useState(false); // v8.48.0: modal nuevo despacho
   const [retiroDe, setRetiroDe] = useState(null); // v8.48.0: alisto en sign-off de retiro
   const [confirmandoReq, setConfirmandoReq] = useState(null); // v8.49.4: confirmación de oficina
+  // v8.49.5: ventas de Odoo por entregar (salidas de almacén pendientes, read-only)
+  const [odooPend, setOdooPend] = useState(null); // null = no buscado aún
+  const [odooCargando, setOdooCargando] = useState(false);
+  const [importando, setImportando] = useState(null);
+  const buscarVentasOdoo = async () => {
+    setOdooCargando(true);
+    try {
+      const res = await fetch('/api/odoo/salidas-pendientes');
+      const d = await res.json();
+      if (!res.ok || d.error) throw new Error(d.error || res.status);
+      setOdooPend(d.pendientes || []);
+    } catch (e) { alert('No se pudo leer Odoo: ' + (e?.message || e)); }
+    setOdooCargando(false);
+  };
+  const importarVenta = async (v, modo) => {
+    setImportando(v.pickingId);
+    try {
+      await db.crearRequisicion({
+        tipo: 'despacho', modoEntrega: modo, clienteNombre: v.cliente || 'Venta Odoo',
+        referencia: v.origin || v.name, odooPickingId: v.pickingId, odooPickingName: v.name,
+        items: v.items, urgente: false, notas: null,
+        solicitadoPorId: usuario?.id || null, solicitadoPorNombre: usuario?.nombre || null,
+      });
+      await recargar();
+    } catch (e) { alert('Error: ' + (e?.message || e)); }
+    setImportando(null);
+  };
   const puedeCrear = ['admin', 'almacen'].some(rr => usuario?.roles?.includes(rr));
 
   const recargar = async () => {
@@ -119,7 +146,7 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
       <div className={`bg-zinc-900 border rounded-card p-3 ${r.urgente ? 'border-red-800/70' : 'border-zinc-800'}`}>
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="min-w-0">
-            <div className="font-bold text-sm truncate">{etiqueta(r)} {r.tipo === 'despacho' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-card bg-amber-600/20 text-amber-300 align-middle">📦 Despacho</span>} <ModoBadge r={r} /> {r.urgente && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-card bg-red-600/20 text-red-400 align-middle">🔥 Urgente</span>} {r.esCompra && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-card bg-orange-600/20 text-orange-300 align-middle">🛒 Compra</span>}</div>
+            <div className="font-bold text-sm truncate">{etiqueta(r)} {r.tipo === 'despacho' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-card bg-amber-600/20 text-amber-300 align-middle">📦 Despacho</span>} <ModoBadge r={r} /> {r.urgente && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-card bg-red-600/20 text-red-400 align-middle">🔥 Urgente</span>} {r.esCompra && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-card bg-orange-600/20 text-orange-300 align-middle">🛒 Compra</span>} {r.odooPickingName && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-card bg-purple-600/20 text-purple-300 align-middle">🧾 {r.odooPickingName}</span>}</div>
             <div className="text-[10px] text-zinc-500">{formatFechaCorta((r.createdAt || '').slice(0, 10))} · pidió {r.solicitadoPorNombre || '—'} · <span className={ESTADOS_REQ[r.estado]?.color || ''}>{ESTADOS_REQ[r.estado]?.label || r.estado}</span></div>
           </div>
           {col.siguiente && (
@@ -211,6 +238,42 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
         <div className="text-center py-10"><Loader2 className="w-6 h-6 text-red-500 animate-spin mx-auto" /></div>
       ) : (
         <>
+        {/* ===== v8.49.5: ventas de Odoo por entregar → se traen como despachos ===== */}
+        {puedeCrear && (
+          <div className="bg-zinc-950/60 border border-zinc-800/70 rounded-card p-3">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">🧾 Ventas de Odoo por entregar</div>
+              <button onClick={buscarVentasOdoo} disabled={odooCargando}
+                className="text-[10px] font-black uppercase px-2.5 py-1.5 rounded-card border border-zinc-700 text-zinc-300 hover:border-zinc-500 disabled:opacity-50">
+                {odooCargando ? 'Buscando…' : odooPend === null ? 'Buscar en Odoo' : 'Actualizar'}
+              </button>
+            </div>
+            {odooPend !== null && (() => {
+              const importados = new Set(reqs.map(r => r.odooPickingId).filter(Boolean));
+              const nuevas = odooPend.filter(v => !importados.has(v.pickingId));
+              if (!nuevas.length) return <div className="text-xs text-zinc-600 italic mt-2">Sin ventas pendientes de traer{odooPend.length ? ` (${odooPend.length} ya están en la cola)` : ''}.</div>;
+              return (
+                <div className="space-y-1.5 mt-2">
+                  {nuevas.map(v => (
+                    <div key={v.pickingId} className="flex items-center justify-between gap-2 text-xs flex-wrap">
+                      <div className="min-w-0">
+                        <span className="font-bold">{v.cliente || 'Venta'}</span>
+                        <span className="text-zinc-500"> · {v.origin || v.name} · {v.items.length} renglones{v.fecha ? ` · ${v.fecha}` : ''}</span>
+                      </div>
+                      <div className="flex gap-1.5 shrink-0">
+                        <button onClick={() => importarVenta(v, 'retiro')} disabled={importando === v.pickingId}
+                          className="text-[10px] font-black uppercase px-2 py-1.5 rounded-card bg-sky-700 hover:bg-sky-600 disabled:opacity-50 text-white">🙋 Retiro</button>
+                        <button onClick={() => importarVenta(v, 'envio')} disabled={importando === v.pickingId}
+                          className="text-[10px] font-black uppercase px-2 py-1.5 rounded-card bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white">🚚 Envío</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
         {/* ===== Móvil / iPad vertical: tarjetas completas apiladas (igual que siempre) ===== */}
         <div className="lg:hidden space-y-4">
           {COLS.map(col => {

@@ -1,3 +1,4 @@
+import { registrarUsoIA } from '../../../../lib/aiUsageServer'; // v8.42.3: medidor de consumo IA
 // v8.39.0: Lee la COTIZACIÓN adjunta de una requisición-compra con Claude Vision
 // y genera la ORDEN DE COMPRA en BORRADOR en Odoo (Lily la revisa antes de
 // confirmar). Guarda oc_odoo_id/name en la requisición para no duplicar.
@@ -82,6 +83,7 @@ export async function POST(request) {
       return Response.json({ error: `Error de la IA (${ai.status})`, details: t.slice(0, 300) }, { status: 500 });
     }
     const aiData = await ai.json();
+    await registrarUsoIA({ funcion: 'compras_generar_oc', modelo: 'claude-sonnet-4-5-20250929', usage: aiData?.usage });
     let text = (aiData.content || []).filter(c => c.type === 'text').map(c => c.text).join('').trim();
     const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/);
     if (fence) text = fence[1].trim();

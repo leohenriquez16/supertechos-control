@@ -61,7 +61,7 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
   const proyectoDe = (r) => (data.proyectos || []).find(p => p.id === r.proyectoId);
   const etiqueta = (r) => {
     if (r.tipo === 'despacho') return (r.clienteNombre || 'Despacho') + (r.referencia ? ` · ${r.referencia}` : '');
-    const p = proyectoDe(r); return p ? (p.cliente || p.nombre || p.referenciaOdoo) : r.proyectoId;
+    const p = proyectoDe(r); return p ? ([p.referenciaOdoo, p.cliente || p.nombre].filter(Boolean).join(' · ') || r.proyectoId) : r.proyectoId; // v8.49.2 (ticket Miguel M.): incluir código del proyecto
   };
 
   const avanzar = async (r, estado) => {
@@ -76,7 +76,21 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
   };
   // v8.39.0: renglón sin stock → flujo de compras (solicitado → cotizado → esperando → comprado).
   const marcarCompra = async (it, estado) => {
-    try { await db.marcarEstadoCompraItem(it.id, estado || null); await recargar(); }
+    try {
+      await db.marcarEstadoCompraItem(it.id, estado || null);
+      // v8.49.2 (ticket Jacobo): al marcar "comprar", avisar a Compras por correo (fire-and-forget)
+      if (estado === 'comprar') {
+        const r = (reqs || []).find(x => (x.items || []).some(i => i.id === it.id));
+        fetch('/api/email/alerta-compras', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            articulo: it.nombre || it.descripcion || 'Artículo', cantidad: it.cantidad, unidad: it.unidad,
+            proyecto: r ? etiqueta(r) : null, requisicion: r?.id || null, marcadoPor: usuario?.nombre || null,
+          }),
+        }).catch(() => {});
+      }
+      await recargar();
+    }
     catch (e) { alert('Error: ' + (e?.message || e)); }
   };
   const puedeOC = ['admin', 'facturas'].some(r => usuario?.roles?.includes(r));

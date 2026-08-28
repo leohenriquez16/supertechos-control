@@ -76,7 +76,7 @@ export default function VistaRutas({ usuario, data, onVolver }) {
     // eslint-disable-next-line
   }, [viajes, loading]);
 
-  const nombreObra = (pid) => { const p = (data.proyectos || []).find(x => x.id === pid); return p ? (p.cliente || p.nombre || p.referenciaOdoo) : pid; };
+  const nombreObra = (pid) => { const p = (data.proyectos || []).find(x => x.id === pid); return p ? ([p.referenciaOdoo, p.cliente || p.nombre].filter(Boolean).join(' · ') || pid) : pid; }; // v8.49.2: código + cliente
 
   const crearViaje = async () => {
     if (nuevo.tipoEnvio === 'camion' && !nuevo.choferId) { alert('Elige el vehículo (el chofer se toma solo) o asigna un chofer.'); return; }

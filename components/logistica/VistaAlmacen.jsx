@@ -9,7 +9,7 @@
 // siempre (tarjetas completas). Todo clickeable sin hover (el iPad no tiene mouse).
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Loader2, Package, RefreshCw, ChevronRight, Plus, X, Camera } from 'lucide-react';
+import { ArrowLeft, Loader2, Package, RefreshCw, Plus, X, Camera } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatFechaCorta } from '../../lib/helpers/formato';
 import { comprimirImagenABlob } from '../../lib/imports';
@@ -46,15 +46,9 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
   useEffect(() => { recargar(); }, []);
 
   const enCola = (r) => COLS.some(c => c.estado === r.estado);
-  // Auto-selección: la primera de la cola (urgentes primero, por orden de COLS).
+  // v8.49.3: si la requisición abierta en el drawer sale de la cola, cerrarlo.
   useEffect(() => {
-    if (loading) return;
-    if (selId && reqs.some(r => r.id === selId && enCola(r))) return;
-    for (const col of COLS) {
-      const del = reqs.filter(r => r.estado === col.estado).sort((a, b) => (b.urgente - a.urgente) || (a.createdAt || '').localeCompare(b.createdAt || ''));
-      if (del.length) { setSelId(del[0].id); return; }
-    }
-    setSelId(null);
+    if (!loading && selId && !reqs.some(r => r.id === selId && enCola(r))) setSelId(null);
     // eslint-disable-next-line
   }, [reqs, loading]);
 
@@ -214,36 +208,47 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
       {loading ? (
         <div className="text-center py-10"><Loader2 className="w-6 h-6 text-red-500 animate-spin mx-auto" /></div>
       ) : (
-        <div className="lg:flex lg:gap-5 lg:items-start">
-        {/* ===== Cola (izquierda) ===== */}
-        <div className="min-w-0 flex-1 space-y-4">
+        <>
+        {/* ===== Móvil / iPad vertical: tarjetas completas apiladas (igual que siempre) ===== */}
+        <div className="lg:hidden space-y-4">
           {COLS.map(col => {
             const del = reqs.filter(r => r.estado === col.estado)
               .sort((a, b) => (b.urgente - a.urgente) || (a.createdAt || '').localeCompare(b.createdAt || ''));
             return (
               <div key={col.estado}>
                 <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-1.5">{col.titulo} ({del.length})</div>
+                {del.length === 0
+                  ? <div className="text-xs text-zinc-600 italic mb-3">Nada aquí.</div>
+                  : <div className="space-y-2 mb-4">{del.map(r => <DetalleRequisicion key={r.id} r={r} col={col} />)}</div>}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* ===== Desktop: KANBAN de 4 columnas (v8.49.3) — el flujo completo de un vistazo ===== */}
+        <div className="hidden lg:grid grid-cols-4 gap-3 items-start">
+          {COLS.map(col => {
+            const del = reqs.filter(r => r.estado === col.estado)
+              .sort((a, b) => (b.urgente - a.urgente) || (a.createdAt || '').localeCompare(b.createdAt || ''));
+            return (
+              <div key={col.estado} className="bg-zinc-950/60 border border-zinc-800/70 rounded-card p-2 min-h-[140px]">
+                <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2 px-1">{col.titulo} <span className="text-zinc-600">({del.length})</span></div>
                 {del.length === 0 ? (
-                  <div className="text-xs text-zinc-600 italic mb-3">Nada aquí.</div>
+                  <div className="text-xs text-zinc-700 italic px-1 pb-2">Nada aquí.</div>
                 ) : (
-                  <div className="space-y-2 mb-4 lg:space-y-1.5">
+                  <div className="space-y-1.5">
                     {del.map(r => {
                       const despachados = r.items.filter(i => i.despachado).length;
+                      const completo = despachados === r.items.length && r.items.length > 0;
                       return (
-                        <React.Fragment key={r.id}>
-                          {/* Móvil / iPad vertical: la tarjeta completa de siempre */}
-                          <div className="lg:hidden"><DetalleRequisicion r={r} col={col} /></div>
-                          {/* Desktop: fila compacta que abre el panel */}
-                          <button onClick={() => setSelId(r.id)}
-                            className={`hidden lg:flex w-full items-center gap-2.5 px-3 py-2.5 rounded-card border bg-zinc-900 text-left ${selId === r.id ? 'border-amber-500 bg-zinc-800/70' : r.urgente ? 'border-red-800/70 hover:border-red-700' : 'border-zinc-800 hover:border-zinc-600'}`}>
-                            <div className="min-w-0 flex-1">
-                              <div className="text-sm font-bold truncate">{r.urgente && '🔥 '}{r.tipo === 'despacho' && '📦 '}{etiqueta(r)}</div>
-                              <div className="text-[10px] text-zinc-500">{formatFechaCorta((r.createdAt || '').slice(0, 10))} · {r.solicitadoPorNombre || '—'} · {r.modoEntrega === 'retiro' ? '🙋 Retiro' : '🚚 Envío'}</div>
-                            </div>
-                            <span className={`shrink-0 text-[10px] font-bold ${despachados === r.items.length && r.items.length > 0 ? 'text-green-400' : 'text-zinc-400'}`}>☑ {despachados}/{r.items.length}</span>
-                            <ChevronRight className={`w-4 h-4 shrink-0 ${selId === r.id ? 'text-amber-400' : 'text-zinc-600'}`} />
-                          </button>
-                        </React.Fragment>
+                        <button key={r.id} onClick={() => setSelId(r.id)}
+                          className={`w-full text-left px-2.5 py-2 rounded-card border bg-zinc-900 ${selId === r.id ? 'border-amber-500 bg-zinc-800/70' : r.urgente ? 'border-red-800/70 hover:border-red-700' : 'border-zinc-800 hover:border-zinc-600'}`}>
+                          <div className="text-xs font-bold truncate">{r.urgente && '🔥 '}{r.tipo === 'despacho' && '📦 '}{etiqueta(r)}</div>
+                          <div className="flex items-center justify-between mt-0.5">
+                            <span className="text-[10px] text-zinc-500 truncate">{formatFechaCorta((r.createdAt || '').slice(0, 10))} · {r.modoEntrega === 'retiro' ? '🙋' : '🚚'} {r.solicitadoPorNombre || '—'}</span>
+                            <span className={`shrink-0 text-[10px] font-bold ml-1.5 ${completo ? 'text-green-400' : 'text-zinc-400'}`}>☑ {despachados}/{r.items.length}</span>
+                          </div>
+                        </button>
                       );
                     })}
                   </div>
@@ -251,25 +256,26 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
               </div>
             );
           })}
-
-          <div className="text-[11px] text-zinc-500 border-t border-zinc-800 pt-2">
-            ✓ Entregadas hoy: <b className="text-green-400">{entregadasHoy.length}</b>
-          </div>
         </div>
 
-        {/* ===== Detalle (derecha, solo desktop) ===== */}
-        <aside className="hidden lg:block w-[400px] xl:w-[440px] shrink-0">
-          <div className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
-            {reqSel && colSel ? (
-              <DetalleRequisicion r={reqSel} col={colSel} />
-            ) : (
-              <div className="bg-zinc-950/50 border border-dashed border-zinc-800 rounded-card p-6 text-center text-xs text-zinc-600">
-                Elige una requisición de la cola para despacharla aquí.
+        <div className="text-[11px] text-zinc-500 border-t border-zinc-800 pt-2">
+          ✓ Entregadas hoy: <b className="text-green-400">{entregadasHoy.length}</b>
+        </div>
+
+        {/* ===== Drawer de detalle (desktop): clic en una tarjeta del kanban ===== */}
+        {reqSel && colSel && (
+          <div className="hidden lg:block fixed inset-0 z-40" onClick={() => setSelId(null)}>
+            <div className="absolute inset-0 bg-black/50" />
+            <div className="absolute right-0 top-0 h-full w-[440px] xl:w-[480px] bg-zinc-950 border-l border-zinc-800 p-4 overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-3">
+                <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">{colSel.titulo}</div>
+                <button onClick={() => setSelId(null)} className="text-zinc-500 hover:text-white"><X className="w-5 h-5" /></button>
               </div>
-            )}
+              <DetalleRequisicion r={reqSel} col={colSel} />
+            </div>
           </div>
-        </aside>
-        </div>
+        )}
+        </>
       )}
 
       {nuevoAbierto && (

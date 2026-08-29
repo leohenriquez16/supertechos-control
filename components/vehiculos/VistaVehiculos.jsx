@@ -325,12 +325,15 @@ function ModalVehiculo({ usuario, vehiculo, personal, onCerrar, onGuardado }) {
 
   return (
     <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-auto">
-      <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-xl w-full p-6 space-y-3.5 my-8">
+      <div className="bg-zinc-900 border-2 border-red-600 rounded-card max-w-xl md:max-w-4xl w-full p-6 space-y-3.5 my-8">
         <div className="flex justify-between items-start">
           <div className="text-sm tracking-widest uppercase text-red-500 font-black">{editando ? 'Editar vehículo' : 'Nuevo vehículo'}</div>
           <button onClick={onCerrar} className="text-zinc-500"><X className="w-4 h-4" /></button>
         </div>
 
+        {/* v8.49.9: ficha ancha — 2 columnas en desktop, 1 en celular */}
+        <div className="md:grid md:grid-cols-2 md:gap-x-6 space-y-3.5 md:space-y-0">
+        <div className="space-y-3.5">
         <div className="grid grid-cols-2 gap-3">
           <Campo label="Marca"><Input value={form.marca} onChange={(v) => setForm({ ...form, marca: v })} placeholder="Toyota, Honda…" /></Campo>
           <Campo label="Modelo"><Input value={form.modelo} onChange={(v) => setForm({ ...form, modelo: v })} placeholder="Hilux, CR-V…" /></Campo>
@@ -398,6 +401,8 @@ function ModalVehiculo({ usuario, vehiculo, personal, onCerrar, onGuardado }) {
             <div className="text-[10px] text-zinc-500">Se guarda en la persona del chofer y aparece en la ficha del vehículo (con alerta de vencimiento).</div>
           </div>
         )}
+        </div>
+        <div className="space-y-3.5">
         <div className="grid grid-cols-3 gap-3">
           <Campo label="Combustible">
             <select value={form.combustible} onChange={(e) => setForm({ ...form, combustible: e.target.value })} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2 text-white text-sm">
@@ -443,6 +448,9 @@ function ModalVehiculo({ usuario, vehiculo, personal, onCerrar, onGuardado }) {
         </div>
 
         <Campo label="Notas"><Input value={form.notas} onChange={(v) => setForm({ ...form, notas: v })} placeholder="Opcional" /></Campo>
+
+        </div>
+        </div>
 
         <div className="flex gap-2 pt-2 border-t border-zinc-800">
           <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2.5">Cancelar</button>

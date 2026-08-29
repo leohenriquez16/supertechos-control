@@ -77,7 +77,7 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
   const enCola = (r) => COLS.some(c => c.estado === r.estado);
   // v8.49.3: si la requisición abierta en el drawer sale de la cola, cerrarlo.
   useEffect(() => {
-    if (!loading && selId && !reqs.some(r => r.id === selId && enCola(r))) setSelId(null);
+    if (!loading && selId && !reqs.some(r => r.id === selId && (enCola(r) || r.estado === 'entregada'))) setSelId(null);
     // eslint-disable-next-line
   }, [reqs, loading]);
 
@@ -137,6 +137,13 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
   const entregadasHoy = useMemo(() => {
     const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo' }).format(new Date());
     return reqs.filter(r => r.estado === 'entregada' && (r.entregadaAt || '').slice(0, 10) === hoy);
+  }, [reqs]);
+  // v8.49.8: columna de ENTREGADAS de los últimos 7 días (las más nuevas primero)
+  const COL_ENTREGADA = { estado: 'entregada', titulo: '✓ Entregadas · 7 días', siguiente: null, btn: null };
+  const entregadas7 = useMemo(() => {
+    const corte = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
+    return reqs.filter(r => r.estado === 'entregada' && (r.entregadaAt || r.retiradaAt || '').slice(0, 10) >= corte)
+      .sort((a, b) => (b.entregadaAt || b.retiradaAt || '').localeCompare(a.entregadaAt || a.retiradaAt || ''));
   }, [reqs]);
 
   // La tarjeta completa de siempre — se usa inline en móvil y como panel en desktop.
@@ -210,8 +217,8 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
     );
   };
 
-  const reqSel = reqs.find(r => r.id === selId && enCola(r));
-  const colSel = reqSel ? COLS.find(c => c.estado === reqSel.estado) : null;
+  const reqSel = reqs.find(r => r.id === selId && (enCola(r) || r.estado === 'entregada'));
+  const colSel = reqSel ? (COLS.find(c => c.estado === reqSel.estado) || (reqSel.estado === 'entregada' ? COL_ENTREGADA : null)) : null;
 
   return (
     <div className="p-4 md:p-6 max-w-4xl lg:max-w-[1400px] mx-auto space-y-4">
@@ -288,10 +295,16 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
               </div>
             );
           })}
+          {entregadas7.length > 0 && (
+            <div>
+              <div className="text-[11px] tracking-widest uppercase text-green-500 font-bold mb-1.5">{COL_ENTREGADA.titulo} ({entregadas7.length})</div>
+              <div className="space-y-2 mb-4">{entregadas7.map(r => <DetalleRequisicion key={r.id} r={r} col={COL_ENTREGADA} />)}</div>
+            </div>
+          )}
         </div>
 
         {/* ===== Desktop: KANBAN de 4 columnas (v8.49.3) — el flujo completo de un vistazo ===== */}
-        <div className="hidden lg:grid grid-cols-4 gap-3 items-start">
+        <div className="hidden lg:grid grid-cols-5 gap-3 items-start">
           {COLS.map(col => {
             const del = reqs.filter(r => r.estado === col.estado)
               .sort((a, b) => (b.urgente - a.urgente) || (a.createdAt || '').localeCompare(b.createdAt || ''));
@@ -321,6 +334,26 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
               </div>
             );
           })}
+          {/* v8.49.8: columna de entregadas (últimos 7 días) con estado de confirmación */}
+          <div className="bg-zinc-950/60 border border-green-900/40 rounded-card p-2 min-h-[140px]">
+            <div className="text-[11px] tracking-widest uppercase text-green-500 font-bold mb-2 px-1">{COL_ENTREGADA.titulo} <span className="text-zinc-600">({entregadas7.length})</span></div>
+            {entregadas7.length === 0 ? (
+              <div className="text-xs text-zinc-700 italic px-1 pb-2">Nada esta semana.</div>
+            ) : (
+              <div className="space-y-1.5">
+                {entregadas7.map(r => (
+                  <button key={r.id} onClick={() => setSelId(r.id)}
+                    className={`w-full text-left px-2.5 py-2 rounded-card border bg-zinc-900 ${selId === r.id ? 'border-amber-500 bg-zinc-800/70' : 'border-zinc-800 hover:border-zinc-600'}`}>
+                    <div className="text-xs font-bold truncate text-green-300">{r.tipo === 'despacho' && '📦 '}{etiqueta(r)}</div>
+                    <div className="flex items-center justify-between mt-0.5">
+                      <span className="text-[10px] text-zinc-500 truncate">✓ {formatFechaCorta(((r.entregadaAt || r.retiradaAt || '')).slice(0, 10))} · {r.modoEntrega === 'retiro' ? '🙋' : '🚚'}</span>
+                      <span className={`shrink-0 text-[9px] font-bold ml-1 ${r.recepcionConfirmadaAt ? 'text-green-400' : 'text-amber-400'}`}>{r.recepcionConfirmadaAt ? '✅ conf.' : '⏳ sin conf.'}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* v8.49.4: entregadas sin doble confirmación — la oficina (Erisdania) las cierra

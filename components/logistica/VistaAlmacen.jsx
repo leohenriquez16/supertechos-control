@@ -9,12 +9,13 @@
 // siempre (tarjetas completas). Todo clickeable sin hover (el iPad no tiene mouse).
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Loader2, Package, RefreshCw, ChevronRight, Plus, X, Camera } from 'lucide-react';
+import { ArrowLeft, Loader2, Package, RefreshCw, Plus, X, Camera } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatFechaCorta } from '../../lib/helpers/formato';
 import { comprimirImagenABlob } from '../../lib/imports';
 import FirmaPad, { firmaABlob } from '../common/FirmaPad';
 import { ESTADOS_REQ, ESTADOS_COMPRA } from './RequisicionesProyecto';
+import ModalConfirmarRecepcion from './ModalConfirmarRecepcion'; // v8.49.4
 
 const COLS = [
   { estado: 'pendiente', titulo: '📥 Nuevas', siguiente: 'preparando', btn: 'Empezar a preparar' },
@@ -35,6 +36,34 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
   const [selId, setSelId] = useState(null); // v8.38.0: requisición abierta en el panel
   const [nuevoAbierto, setNuevoAbierto] = useState(false); // v8.48.0: modal nuevo despacho
   const [retiroDe, setRetiroDe] = useState(null); // v8.48.0: alisto en sign-off de retiro
+  const [confirmandoReq, setConfirmandoReq] = useState(null); // v8.49.4: confirmación de oficina
+  // v8.49.5: ventas de Odoo por entregar (salidas de almacén pendientes, read-only)
+  const [odooPend, setOdooPend] = useState(null); // null = no buscado aún
+  const [odooCargando, setOdooCargando] = useState(false);
+  const [importando, setImportando] = useState(null);
+  const buscarVentasOdoo = async () => {
+    setOdooCargando(true);
+    try {
+      const res = await fetch('/api/odoo/salidas-pendientes');
+      const d = await res.json();
+      if (!res.ok || d.error) throw new Error(d.error || res.status);
+      setOdooPend(d.pendientes || []);
+    } catch (e) { alert('No se pudo leer Odoo: ' + (e?.message || e)); }
+    setOdooCargando(false);
+  };
+  const importarVenta = async (v, modo) => {
+    setImportando(v.pickingId);
+    try {
+      await db.crearRequisicion({
+        tipo: 'despacho', modoEntrega: modo, clienteNombre: v.cliente || 'Venta Odoo',
+        referencia: v.origin || v.name, odooPickingId: v.pickingId, odooPickingName: v.name,
+        items: v.items, urgente: false, notas: null,
+        solicitadoPorId: usuario?.id || null, solicitadoPorNombre: usuario?.nombre || null,
+      });
+      await recargar();
+    } catch (e) { alert('Error: ' + (e?.message || e)); }
+    setImportando(null);
+  };
   const puedeCrear = ['admin', 'almacen'].some(rr => usuario?.roles?.includes(rr));
 
   const recargar = async () => {
@@ -46,22 +75,16 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
   useEffect(() => { recargar(); }, []);
 
   const enCola = (r) => COLS.some(c => c.estado === r.estado);
-  // Auto-selección: la primera de la cola (urgentes primero, por orden de COLS).
+  // v8.49.3: si la requisición abierta en el drawer sale de la cola, cerrarlo.
   useEffect(() => {
-    if (loading) return;
-    if (selId && reqs.some(r => r.id === selId && enCola(r))) return;
-    for (const col of COLS) {
-      const del = reqs.filter(r => r.estado === col.estado).sort((a, b) => (b.urgente - a.urgente) || (a.createdAt || '').localeCompare(b.createdAt || ''));
-      if (del.length) { setSelId(del[0].id); return; }
-    }
-    setSelId(null);
+    if (!loading && selId && !reqs.some(r => r.id === selId && enCola(r))) setSelId(null);
     // eslint-disable-next-line
   }, [reqs, loading]);
 
   const proyectoDe = (r) => (data.proyectos || []).find(p => p.id === r.proyectoId);
   const etiqueta = (r) => {
     if (r.tipo === 'despacho') return (r.clienteNombre || 'Despacho') + (r.referencia ? ` · ${r.referencia}` : '');
-    const p = proyectoDe(r); return p ? (p.cliente || p.nombre || p.referenciaOdoo) : r.proyectoId;
+    const p = proyectoDe(r); return p ? ([p.referenciaOdoo, p.cliente || p.nombre].filter(Boolean).join(' · ') || r.proyectoId) : r.proyectoId; // v8.49.2 (ticket Miguel M.): incluir código del proyecto
   };
 
   const avanzar = async (r, estado) => {
@@ -76,7 +99,21 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
   };
   // v8.39.0: renglón sin stock → flujo de compras (solicitado → cotizado → esperando → comprado).
   const marcarCompra = async (it, estado) => {
-    try { await db.marcarEstadoCompraItem(it.id, estado || null); await recargar(); }
+    try {
+      await db.marcarEstadoCompraItem(it.id, estado || null);
+      // v8.49.2 (ticket Jacobo): al marcar "comprar", avisar a Compras por correo (fire-and-forget)
+      if (estado === 'comprar') {
+        const r = (reqs || []).find(x => (x.items || []).some(i => i.id === it.id));
+        fetch('/api/email/alerta-compras', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            articulo: it.nombre || it.descripcion || 'Artículo', cantidad: it.cantidad, unidad: it.unidad,
+            proyecto: r ? etiqueta(r) : null, requisicion: r?.id || null, marcadoPor: usuario?.nombre || null,
+          }),
+        }).catch(() => {});
+      }
+      await recargar();
+    }
     catch (e) { alert('Error: ' + (e?.message || e)); }
   };
   const puedeOC = ['admin', 'facturas'].some(r => usuario?.roles?.includes(r));
@@ -109,7 +146,7 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
       <div className={`bg-zinc-900 border rounded-card p-3 ${r.urgente ? 'border-red-800/70' : 'border-zinc-800'}`}>
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="min-w-0">
-            <div className="font-bold text-sm truncate">{etiqueta(r)} {r.tipo === 'despacho' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-card bg-amber-600/20 text-amber-300 align-middle">📦 Despacho</span>} <ModoBadge r={r} /> {r.urgente && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-card bg-red-600/20 text-red-400 align-middle">🔥 Urgente</span>} {r.esCompra && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-card bg-orange-600/20 text-orange-300 align-middle">🛒 Compra</span>}</div>
+            <div className="font-bold text-sm truncate">{etiqueta(r)} {r.tipo === 'despacho' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-card bg-amber-600/20 text-amber-300 align-middle">📦 Despacho</span>} <ModoBadge r={r} /> {r.urgente && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-card bg-red-600/20 text-red-400 align-middle">🔥 Urgente</span>} {r.esCompra && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-card bg-orange-600/20 text-orange-300 align-middle">🛒 Compra</span>} {r.odooPickingName && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-card bg-purple-600/20 text-purple-300 align-middle">🧾 {r.odooPickingName}</span>}</div>
             <div className="text-[10px] text-zinc-500">{formatFechaCorta((r.createdAt || '').slice(0, 10))} · pidió {r.solicitadoPorNombre || '—'} · <span className={ESTADOS_REQ[r.estado]?.color || ''}>{ESTADOS_REQ[r.estado]?.label || r.estado}</span></div>
           </div>
           {col.siguiente && (
@@ -200,36 +237,83 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
       {loading ? (
         <div className="text-center py-10"><Loader2 className="w-6 h-6 text-red-500 animate-spin mx-auto" /></div>
       ) : (
-        <div className="lg:flex lg:gap-5 lg:items-start">
-        {/* ===== Cola (izquierda) ===== */}
-        <div className="min-w-0 flex-1 space-y-4">
+        <>
+        {/* ===== v8.49.5: ventas de Odoo por entregar → se traen como despachos ===== */}
+        {puedeCrear && (
+          <div className="bg-zinc-950/60 border border-zinc-800/70 rounded-card p-3">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">🧾 Ventas de Odoo por entregar</div>
+              <button onClick={buscarVentasOdoo} disabled={odooCargando}
+                className="text-[10px] font-black uppercase px-2.5 py-1.5 rounded-card border border-zinc-700 text-zinc-300 hover:border-zinc-500 disabled:opacity-50">
+                {odooCargando ? 'Buscando…' : odooPend === null ? 'Buscar en Odoo' : 'Actualizar'}
+              </button>
+            </div>
+            {odooPend !== null && (() => {
+              const importados = new Set(reqs.map(r => r.odooPickingId).filter(Boolean));
+              const nuevas = odooPend.filter(v => !importados.has(v.pickingId));
+              if (!nuevas.length) return <div className="text-xs text-zinc-600 italic mt-2">Sin ventas pendientes de traer{odooPend.length ? ` (${odooPend.length} ya están en la cola)` : ''}.</div>;
+              return (
+                <div className="space-y-1.5 mt-2">
+                  {nuevas.map(v => (
+                    <div key={v.pickingId} className="flex items-center justify-between gap-2 text-xs flex-wrap">
+                      <div className="min-w-0">
+                        <span className="font-bold">{v.cliente || 'Venta'}</span>
+                        <span className="text-zinc-500"> · {v.origin || v.name} · {v.items.length} renglones{v.fecha ? ` · ${v.fecha}` : ''}</span>
+                      </div>
+                      <div className="flex gap-1.5 shrink-0">
+                        <button onClick={() => importarVenta(v, 'retiro')} disabled={importando === v.pickingId}
+                          className="text-[10px] font-black uppercase px-2 py-1.5 rounded-card bg-sky-700 hover:bg-sky-600 disabled:opacity-50 text-white">🙋 Retiro</button>
+                        <button onClick={() => importarVenta(v, 'envio')} disabled={importando === v.pickingId}
+                          className="text-[10px] font-black uppercase px-2 py-1.5 rounded-card bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white">🚚 Envío</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* ===== Móvil / iPad vertical: tarjetas completas apiladas (igual que siempre) ===== */}
+        <div className="lg:hidden space-y-4">
           {COLS.map(col => {
             const del = reqs.filter(r => r.estado === col.estado)
               .sort((a, b) => (b.urgente - a.urgente) || (a.createdAt || '').localeCompare(b.createdAt || ''));
             return (
               <div key={col.estado}>
                 <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-1.5">{col.titulo} ({del.length})</div>
+                {del.length === 0
+                  ? <div className="text-xs text-zinc-600 italic mb-3">Nada aquí.</div>
+                  : <div className="space-y-2 mb-4">{del.map(r => <DetalleRequisicion key={r.id} r={r} col={col} />)}</div>}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* ===== Desktop: KANBAN de 4 columnas (v8.49.3) — el flujo completo de un vistazo ===== */}
+        <div className="hidden lg:grid grid-cols-4 gap-3 items-start">
+          {COLS.map(col => {
+            const del = reqs.filter(r => r.estado === col.estado)
+              .sort((a, b) => (b.urgente - a.urgente) || (a.createdAt || '').localeCompare(b.createdAt || ''));
+            return (
+              <div key={col.estado} className="bg-zinc-950/60 border border-zinc-800/70 rounded-card p-2 min-h-[140px]">
+                <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2 px-1">{col.titulo} <span className="text-zinc-600">({del.length})</span></div>
                 {del.length === 0 ? (
-                  <div className="text-xs text-zinc-600 italic mb-3">Nada aquí.</div>
+                  <div className="text-xs text-zinc-700 italic px-1 pb-2">Nada aquí.</div>
                 ) : (
-                  <div className="space-y-2 mb-4 lg:space-y-1.5">
+                  <div className="space-y-1.5">
                     {del.map(r => {
                       const despachados = r.items.filter(i => i.despachado).length;
+                      const completo = despachados === r.items.length && r.items.length > 0;
                       return (
-                        <React.Fragment key={r.id}>
-                          {/* Móvil / iPad vertical: la tarjeta completa de siempre */}
-                          <div className="lg:hidden"><DetalleRequisicion r={r} col={col} /></div>
-                          {/* Desktop: fila compacta que abre el panel */}
-                          <button onClick={() => setSelId(r.id)}
-                            className={`hidden lg:flex w-full items-center gap-2.5 px-3 py-2.5 rounded-card border bg-zinc-900 text-left ${selId === r.id ? 'border-amber-500 bg-zinc-800/70' : r.urgente ? 'border-red-800/70 hover:border-red-700' : 'border-zinc-800 hover:border-zinc-600'}`}>
-                            <div className="min-w-0 flex-1">
-                              <div className="text-sm font-bold truncate">{r.urgente && '🔥 '}{r.tipo === 'despacho' && '📦 '}{etiqueta(r)}</div>
-                              <div className="text-[10px] text-zinc-500">{formatFechaCorta((r.createdAt || '').slice(0, 10))} · {r.solicitadoPorNombre || '—'} · {r.modoEntrega === 'retiro' ? '🙋 Retiro' : '🚚 Envío'}</div>
-                            </div>
-                            <span className={`shrink-0 text-[10px] font-bold ${despachados === r.items.length && r.items.length > 0 ? 'text-green-400' : 'text-zinc-400'}`}>☑ {despachados}/{r.items.length}</span>
-                            <ChevronRight className={`w-4 h-4 shrink-0 ${selId === r.id ? 'text-amber-400' : 'text-zinc-600'}`} />
-                          </button>
-                        </React.Fragment>
+                        <button key={r.id} onClick={() => setSelId(r.id)}
+                          className={`w-full text-left px-2.5 py-2 rounded-card border bg-zinc-900 ${selId === r.id ? 'border-amber-500 bg-zinc-800/70' : r.urgente ? 'border-red-800/70 hover:border-red-700' : 'border-zinc-800 hover:border-zinc-600'}`}>
+                          <div className="text-xs font-bold truncate">{r.urgente && '🔥 '}{r.tipo === 'despacho' && '📦 '}{etiqueta(r)}</div>
+                          <div className="flex items-center justify-between mt-0.5">
+                            <span className="text-[10px] text-zinc-500 truncate">{formatFechaCorta((r.createdAt || '').slice(0, 10))} · {r.modoEntrega === 'retiro' ? '🙋' : '🚚'} {r.solicitadoPorNombre || '—'}</span>
+                            <span className={`shrink-0 text-[10px] font-bold ml-1.5 ${completo ? 'text-green-400' : 'text-zinc-400'}`}>☑ {despachados}/{r.items.length}</span>
+                          </div>
+                        </button>
                       );
                     })}
                   </div>
@@ -237,31 +321,63 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
               </div>
             );
           })}
-
-          <div className="text-[11px] text-zinc-500 border-t border-zinc-800 pt-2">
-            ✓ Entregadas hoy: <b className="text-green-400">{entregadasHoy.length}</b>
-          </div>
         </div>
 
-        {/* ===== Detalle (derecha, solo desktop) ===== */}
-        <aside className="hidden lg:block w-[400px] xl:w-[440px] shrink-0">
-          <div className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
-            {reqSel && colSel ? (
-              <DetalleRequisicion r={reqSel} col={colSel} />
-            ) : (
-              <div className="bg-zinc-950/50 border border-dashed border-zinc-800 rounded-card p-6 text-center text-xs text-zinc-600">
-                Elige una requisición de la cola para despacharla aquí.
+        {/* v8.49.4: entregadas sin doble confirmación — la oficina (Erisdania) las cierra
+            corroborando con la firma del chofer si la obra no lo ha hecho */}
+        {(() => {
+          const sinConfirmar = reqs.filter(r => r.estado === 'entregada' && !r.recepcionConfirmadaAt);
+          if (!sinConfirmar.length) return null;
+          return (
+            <div className="border border-amber-800/50 bg-amber-950/20 rounded-card p-3">
+              <div className="text-[11px] tracking-widest uppercase text-amber-400 font-bold mb-1.5">⏳ Entregadas sin confirmar de la obra ({sinConfirmar.length})</div>
+              <div className="space-y-1.5">
+                {sinConfirmar.map(r => (
+                  <div key={r.id} className="flex items-center justify-between gap-2 text-xs">
+                    <span className="truncate">{etiqueta(r)} <span className="text-zinc-500">· entregada {formatFechaCorta((r.entregadaAt || '').slice(0, 10))}</span></span>
+                    {puedeCrear && (
+                      <button onClick={() => setConfirmandoReq(r)}
+                        className="shrink-0 text-[10px] font-black uppercase px-2.5 py-1.5 rounded-card bg-green-700 hover:bg-green-600 text-white">
+                        ✅ Confirmar de oficina
+                      </button>
+                    )}
+                  </div>
+                ))}
               </div>
-            )}
-          </div>
-        </aside>
+            </div>
+          );
+        })()}
+
+        <div className="text-[11px] text-zinc-500 border-t border-zinc-800 pt-2">
+          ✓ Entregadas hoy: <b className="text-green-400">{entregadasHoy.length}</b>
         </div>
+
+        {/* ===== Drawer de detalle (desktop): clic en una tarjeta del kanban ===== */}
+        {reqSel && colSel && (
+          <div className="hidden lg:block fixed inset-0 z-40" onClick={() => setSelId(null)}>
+            <div className="absolute inset-0 bg-black/50" />
+            <div className="absolute right-0 top-0 h-full w-[440px] xl:w-[480px] bg-zinc-950 border-l border-zinc-800 p-4 overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-3">
+                <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">{colSel.titulo}</div>
+                <button onClick={() => setSelId(null)} className="text-zinc-500 hover:text-white"><X className="w-5 h-5" /></button>
+              </div>
+              <DetalleRequisicion r={reqSel} col={colSel} />
+            </div>
+          </div>
+        )}
+        </>
       )}
 
       {nuevoAbierto && (
         <ModalNuevoDespacho usuario={usuario}
           onCerrar={() => setNuevoAbierto(false)}
           onCreado={async () => { setNuevoAbierto(false); await recargar(); }} />
+      )}
+      {confirmandoReq && (
+        <ModalConfirmarRecepcion req={confirmandoReq} etiqueta={etiqueta(confirmandoReq)}
+          usuario={usuario} origen="oficina"
+          onCerrar={() => setConfirmandoReq(null)}
+          onConfirmado={async () => { setConfirmandoReq(null); await recargar(); }} />
       )}
       {retiroDe && (
         <ModalRegistrarRetiro alisto={retiroDe} etiqueta={etiqueta(retiroDe)}

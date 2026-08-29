@@ -34,7 +34,7 @@ export default function InicioChofer({ usuario, data }) {
     fetch('/api/gps/posiciones').then(r => r.json()).then(d => setGpsUnidades(d.dispositivos || [])).catch(() => {});
   }, []);
 
-  const nombreObra = (pid) => { const p = (data.proyectos || []).find(x => x.id === pid); return p ? (p.cliente || p.nombre || p.referenciaOdoo) : pid; };
+  const nombreObra = (pid) => { const p = (data.proyectos || []).find(x => x.id === pid); return p ? ([p.referenciaOdoo, p.cliente || p.nombre].filter(Boolean).join(' · ') || pid) : pid; }; // v8.49.2: código + cliente
 
   // v8.41.0: la RUTA EN ORDEN en el mapa — pines numerados + línea del recorrido.
   const coordsParada = (p) => {
@@ -210,7 +210,7 @@ function ModalConfirmarEntrega({ v, p, data, procesando, onCerrar, onConfirmar }
     return maestro?.nombre || '';
   });
   const firmaRef = useRef(null);
-  const nombreObra = (() => { const pr = (data.proyectos || []).find(x => x.id === p.proyectoId); return pr ? (pr.cliente || pr.nombre) : (p.lugar || ''); })();
+  const nombreObra = (() => { const pr = (data.proyectos || []).find(x => x.id === p.proyectoId); return pr ? ([pr.referenciaOdoo, pr.cliente || pr.nombre].filter(Boolean).join(' · ')) : (p.lugar || ''); })(); // v8.49.2
 
   const confirmar = async () => {
     if (!fotoFile) { alert('Tira la foto del material entregado.'); return; }

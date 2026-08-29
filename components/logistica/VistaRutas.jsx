@@ -40,6 +40,19 @@ export default function VistaRutas({ usuario, data, onVolver }) {
   const [verMapa, setVerMapa] = useState(false);
   const [gpsUnidades, setGpsUnidades] = useState([]); // v8.43.0: camiones EN VIVO
   const [gestionLugares, setGestionLugares] = useState(false);
+  // v8.49.6: planificador semanal — flota × 7 días para ver compromisos a futuro
+  const [verSemana, setVerSemana] = useState(false);
+  const [viajesSemana, setViajesSemana] = useState([]);
+  const lunesDe = (f) => { const d = new Date(f + 'T12:00:00'); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d.toISOString().slice(0, 10); };
+  const diasSemana = useMemo(() => {
+    const ini = lunesDe(fecha);
+    return Array.from({ length: 7 }, (_, i) => { const d = new Date(ini + 'T12:00:00'); d.setDate(d.getDate() + i); return d.toISOString().slice(0, 10); });
+  }, [fecha]);
+  useEffect(() => {
+    if (!verSemana) return;
+    db.listarViajes({ desde: diasSemana[0], hasta: diasSemana[6] }).then(setViajesSemana).catch(() => setViajesSemana([]));
+    // eslint-disable-next-line
+  }, [verSemana, diasSemana, viajes]);
 
   const choferes = useMemo(() => (data.personal || []).filter(p => tieneRol(p, 'chofer')), [data.personal]);
 
@@ -76,7 +89,7 @@ export default function VistaRutas({ usuario, data, onVolver }) {
     // eslint-disable-next-line
   }, [viajes, loading]);
 
-  const nombreObra = (pid) => { const p = (data.proyectos || []).find(x => x.id === pid); return p ? (p.cliente || p.nombre || p.referenciaOdoo) : pid; };
+  const nombreObra = (pid) => { const p = (data.proyectos || []).find(x => x.id === pid); return p ? ([p.referenciaOdoo, p.cliente || p.nombre].filter(Boolean).join(' · ') || pid) : pid; }; // v8.49.2: código + cliente
 
   const crearViaje = async () => {
     if (nuevo.tipoEnvio === 'camion' && !nuevo.choferId) { alert('Elige el vehículo (el chofer se toma solo) o asigna un chofer.'); return; }
@@ -393,6 +406,7 @@ export default function VistaRutas({ usuario, data, onVolver }) {
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setVerMapa(!verMapa)} className={`text-[10px] font-black uppercase px-2.5 py-2 rounded-card border ${verMapa ? 'bg-cyan-700 border-cyan-700 text-white' : 'border-zinc-700 text-zinc-400 hover:text-white'}`}>🗺 Mapa</button>
+          <button onClick={() => setVerSemana(!verSemana)} className={`text-[10px] font-black uppercase px-2.5 py-2 rounded-card border ${verSemana ? 'bg-cyan-700 border-cyan-700 text-white' : 'border-zinc-700 text-zinc-400 hover:text-white'}`}>📅 Semana</button>
           <button onClick={() => setGestionLugares(true)} className="text-[10px] font-black uppercase px-2.5 py-2 rounded-card border border-zinc-700 text-zinc-400 hover:text-white" title="Suplidores, puertos y almacenes con su ubicación"><MapPin className="w-3.5 h-3.5 inline -mt-0.5" /> Lugares</button>
           <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} className="bg-zinc-900 border border-zinc-700 rounded-card px-2 py-1.5 text-sm" />
           <button onClick={recargar} className="text-zinc-500 hover:text-white"><RefreshCw className="w-4 h-4" /></button>
@@ -404,6 +418,76 @@ export default function VistaRutas({ usuario, data, onVolver }) {
       ) : (
         <div className="lg:flex lg:gap-5 lg:items-start">
         <div className="min-w-0 flex-1 space-y-4">
+          {/* v8.49.6: PLANIFICADOR SEMANAL — flota × 7 días. Clic en un día = saltar a él. */}
+          {verSemana && (() => {
+            const hoy = hoyRD();
+            const flota = (data.vehiculos || []).filter(v => v.activo !== false);
+            const viajesDe = (dia, vh) => viajesSemana.filter(x => x.fecha === dia && (x.vehiculoId === vh.id || (!x.vehiculoId && x.vehiculo && x.vehiculo.includes(vh.placa || '§'))));
+            const otros = (dia) => viajesSemana.filter(x => x.fecha === dia && x.tipoEnvio !== 'camion');
+            const sinFlota = (dia) => viajesSemana.filter(x => x.fecha === dia && x.tipoEnvio === 'camion' && !flota.some(vh => x.vehiculoId === vh.id));
+            const chip = (x) => {
+              const done = x.paradas.length > 0 && x.paradas.every(pp => pp.estado === 'completada');
+              const color = x.estado === 'en_curso' ? 'bg-cyan-700/40 text-cyan-200' : done ? 'bg-green-800/40 text-green-300' : x.estado === 'completado' ? 'bg-green-800/40 text-green-300' : 'bg-zinc-700/50 text-zinc-200';
+              return (
+                <button key={x.id} onClick={() => { setFecha(x.fecha); setViajeSel(x.id); setVerSemana(false); }}
+                  className={`block w-full text-left text-[9px] font-bold px-1 py-0.5 rounded ${color} truncate hover:brightness-125`}
+                  title={`${x.choferNombre || x.vehiculo} · ${x.paradas.length} paradas`}>
+                  {x.tipoEnvio === 'pagado' ? '📮' : x.tipoEnvio === 'subcontratado' ? '🚚' : ''}{(x.choferNombre || x.vehiculo || '').split(' ')[0]} · {x.paradas.length}p
+                </button>
+              );
+            };
+            return (
+              <div className="bg-zinc-900 border border-cyan-800/50 rounded-card p-3 overflow-x-auto">
+                <div className="text-[11px] tracking-widest uppercase text-cyan-400 font-bold mb-2">📅 Semana del {formatFechaCorta(diasSemana[0])} — compromisos por vehículo</div>
+                <table className="w-full border-collapse min-w-[820px]">
+                  <thead>
+                    <tr>
+                      <th className="text-left text-[10px] text-zinc-500 font-bold uppercase px-1.5 py-1 w-36">Vehículo</th>
+                      {diasSemana.map(d => (
+                        <th key={d} className={`px-1 py-1 ${d === hoy ? 'bg-cyan-950/50 rounded-t' : ''}`}>
+                          <button onClick={() => setFecha(d)} className={`text-[10px] font-bold uppercase w-full ${d === fecha ? 'text-cyan-300' : d === hoy ? 'text-cyan-500' : 'text-zinc-500 hover:text-zinc-300'}`}>
+                            {new Date(d + 'T12:00:00').toLocaleDateString('es-DO', { weekday: 'short' })}<br />{formatFechaCorta(d)}
+                          </button>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {flota.map(vh => {
+                      const chofer = (data.personal || []).find(pp => pp.id === vh.responsableId);
+                      return (
+                        <tr key={vh.id} className="border-t border-zinc-800">
+                          <td className="px-1.5 py-1.5 align-top">
+                            <div className="text-[11px] font-bold truncate">{[vh.marca, vh.modelo].filter(Boolean).join(' ')}</div>
+                            <div className="text-[9px] text-zinc-600 truncate">{vh.placa || ''}{chofer ? ` · ${chofer.nombre.split(' ')[0]}` : ''}</div>
+                          </td>
+                          {diasSemana.map(d => {
+                            const del = viajesDe(d, vh);
+                            return (
+                              <td key={d} className={`px-0.5 py-1 align-top ${d === hoy ? 'bg-cyan-950/30' : ''}`}>
+                                {del.length ? <div className="space-y-0.5">{del.map(chip)}</div>
+                                  : <button onClick={() => { setFecha(d); setVerSemana(false); setCreando(true); setNuevo({ tipoEnvio: 'camion', vehiculoId: vh.id, vehiculo: `${vh.marca || ''} ${vh.modelo || ''}${vh.placa ? ` · ${vh.placa}` : ''}`.trim(), choferId: chofer && (chofer.roles || []).includes('chofer') ? chofer.id : '' }); }}
+                                      className="w-full text-[9px] text-zinc-800 hover:text-cyan-500 py-0.5" title="Libre — clic para planificar un viaje">＋</button>}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                    <tr className="border-t border-zinc-800">
+                      <td className="px-1.5 py-1.5 text-[10px] text-zinc-500 font-bold align-top">📮 Envíos / sub-contratados / otros</td>
+                      {diasSemana.map(d => {
+                        const del = [...otros(d), ...sinFlota(d)];
+                        return <td key={d} className={`px-0.5 py-1 align-top ${d === hoy ? 'bg-cyan-950/30' : ''}`}>{del.length ? <div className="space-y-0.5">{del.map(chip)}</div> : null}</td>;
+                      })}
+                    </tr>
+                  </tbody>
+                </table>
+                <div className="text-[9px] text-zinc-600 mt-1.5">⬜ planificado · 🟦 en curso · 🟩 completado · ＋ día libre (clic para planificar). Clic en un viaje abre su detalle.</div>
+              </div>
+            );
+          })()}
+
           {/* v8.40.0: mapa de diligencias — rojo sin asignar · naranja lista sin viaje · azul en viaje · verde completada */}
           {verMapa && (
             <div className="space-y-1.5">

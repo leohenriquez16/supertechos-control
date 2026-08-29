@@ -110,7 +110,8 @@ export default function VistaVehiculos({ usuario, data, onRecargar }) {
               : dias <= 30 ? { t: `Seguro vence en ${dias}d`, c: 'bg-amber-900/40 text-amber-300 border-amber-700' }
               : { t: `Seguro al día`, c: 'bg-green-900/30 text-green-400 border-green-800' };
             return (
-              <div key={v.id} className="bg-zinc-900 border border-zinc-800 rounded-card p-4">
+              <div key={v.id} onClick={(e) => { if (e.target.closest('button, a, input, select, label')) return; setFichaDe(v); }}
+                className="bg-zinc-900 border border-zinc-800 hover:border-zinc-600 rounded-card p-4 cursor-pointer" title="Ver ficha completa">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <button onClick={() => setFichaDe(v)} className="text-lg font-black text-left hover:text-red-400" title="Ver ficha completa">{v.marca} {v.modelo} {v.anio ? <span className="text-zinc-500 font-normal">· {v.anio}</span> : ''}</button>

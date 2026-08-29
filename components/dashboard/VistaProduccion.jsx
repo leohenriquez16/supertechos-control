@@ -10,9 +10,10 @@
 // El peso se busca en TODOS los sistemas del proyecto; si la tarea ya no existe
 // (ids viejos), se reparte 1/nº de tareas del sistema del área (no infla).
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { ArrowLeft, TrendingUp, Filter } from 'lucide-react';
 import { formatRD, formatNum, formatFechaCorta } from '../../lib/helpers/formato';
+import * as db from '../../lib/db'; // v8.42.3: medidor de consumo IA
 
 const PERIODOS = [
   { v: 'dia', label: 'Día', n: 15 },
@@ -51,6 +52,31 @@ export default function VistaProduccion({ usuario, data, onVolver }) {
   const [periodo, setPeriodo] = useState('dia');
   const [incluirRetro, setIncluirRetro] = useState(false);
   const [bucketSel, setBucketSel] = useState(null);
+  // v8.42.3: consumo de IA (ultimos 14 dias)
+  const [usoIA, setUsoIA] = useState([]);
+  useEffect(() => {
+    const desde = new Date(); desde.setDate(desde.getDate() - 14);
+    db.listarUsoIA({ desde: desde.toISOString() }).then(setUsoIA).catch(() => {});
+  }, []);
+  // Precios claude-sonnet-4-5: US$3/M entrada, US$15/M salida
+  const usoIAResumen = useMemo(() => {
+    const porDia = {}, porFuncion = {};
+    let inTot = 0, outTot = 0;
+    usoIA.forEach(u => {
+      const d = String(u.created_at).slice(0, 10);
+      (porDia[d] = porDia[d] || { in: 0, out: 0, n: 0 });
+      porDia[d].in += u.input_tokens; porDia[d].out += u.output_tokens; porDia[d].n += 1;
+      (porFuncion[u.funcion] = porFuncion[u.funcion] || { in: 0, out: 0, n: 0 });
+      porFuncion[u.funcion].in += u.input_tokens; porFuncion[u.funcion].out += u.output_tokens; porFuncion[u.funcion].n += 1;
+      inTot += u.input_tokens; outTot += u.output_tokens;
+    });
+    const usd = (i, o) => (i / 1e6) * 3 + (o / 1e6) * 15;
+    return {
+      dias: Object.entries(porDia).sort((a, b) => b[0].localeCompare(a[0])).slice(0, 14).map(([d, v]) => ({ d, ...v, usd: usd(v.in, v.out) })),
+      funciones: Object.entries(porFuncion).sort((a, b) => usd(b[1].in, b[1].out) - usd(a[1].in, a[1].out)).map(([f, v]) => ({ f, ...v, usd: usd(v.in, v.out) })),
+      totalUsd: usd(inTot, outTot), llamadas: usoIA.length,
+    };
+  }, [usoIA]);
 
   // Enriquecer cada reporte con RD$/m² ponderado una sola vez.
   const filas = useMemo(() => {
@@ -258,6 +284,38 @@ export default function VistaProduccion({ usuario, data, onVolver }) {
           </table>
         </div>
         <div className="text-[10px] text-zinc-600 mt-2">💡 La mediana muestra el proyecto "típico"; el promedio sube por los proyectos grandes. Los proyectos de cotización en USD ya están convertidos a RD$.</div>
+      </div>
+
+      {/* v8.42.3: medidor de consumo de IA (tokens reales por llamada) */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
+        <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-2">
+          Consumo de IA · últimos 14 días — {usoIAResumen.llamadas} llamadas · ≈ US${usoIAResumen.totalUsd.toFixed(2)}
+        </div>
+        {usoIA.length === 0 ? (
+          <div className="text-xs text-zinc-500 italic">Sin registros aún — el medidor empieza a contar desde hoy.</div>
+        ) : (
+          <div className="grid md:grid-cols-2 gap-3">
+            <div>
+              <div className="text-[10px] text-zinc-500 uppercase mb-1">Por función</div>
+              {usoIAResumen.funciones.map(f => (
+                <div key={f.f} className="flex justify-between text-xs py-0.5">
+                  <span className="truncate">{f.f} <span className="text-zinc-600">×{f.n}</span></span>
+                  <span className="text-zinc-400 shrink-0 ml-2">{formatNum((f.in + f.out) / 1000)}k tok · <b className="text-green-400">US${f.usd.toFixed(2)}</b></span>
+                </div>
+              ))}
+            </div>
+            <div>
+              <div className="text-[10px] text-zinc-500 uppercase mb-1">Por día</div>
+              {usoIAResumen.dias.map(d => (
+                <div key={d.d} className="flex justify-between text-xs py-0.5">
+                  <span>{formatFechaCorta(d.d)} <span className="text-zinc-600">×{d.n}</span></span>
+                  <span className={`shrink-0 ml-2 ${d.usd > 5 ? 'text-amber-400 font-bold' : 'text-zinc-400'}`}>{formatNum((d.in + d.out) / 1000)}k tok · US${d.usd.toFixed(2)}{d.usd > 5 ? ' ⚠' : ''}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        <div className="text-[10px] text-zinc-600 mt-2">Estimado con precios de claude-sonnet-4-5 (US$3/M entrada · US$15/M salida). ⚠ = día con más de US$5.</div>
       </div>
     </div>
   );

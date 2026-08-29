@@ -1,3 +1,4 @@
+import { registrarUsoIA } from '../../../lib/aiUsageServer'; // v8.42.3: medidor de consumo IA
 export const runtime = 'edge';
 export const maxDuration = 60;
 
@@ -104,6 +105,7 @@ ${MANUAL_ERP}`;
     }
 
     const data = await response.json();
+    await registrarUsoIA({ funcion: 'asistente', modelo: 'claude-sonnet-4-5-20250929', usage: data?.usage, usuarioNombre: nombreUsuario || (esAdmin ? "admin" : rolUsuario) });
     const respuesta = data.content?.[0]?.text || 'No pude generar respuesta.';
 
     return new Response(JSON.stringify({ respuesta }), {

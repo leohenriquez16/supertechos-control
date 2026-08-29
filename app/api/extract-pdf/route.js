@@ -1,3 +1,4 @@
+import { registrarUsoIA } from '../../../lib/aiUsageServer'; // v8.42.3: medidor de consumo IA
 // v8.17.72: streaming para evitar 504 Gateway Timeout.
 // Antes esperábamos a que Anthropic terminara TODA la respuesta y recién ahí
 // devolvíamos al cliente. Con PDFs de cotización + prompt largo, la generación
@@ -60,6 +61,8 @@ export async function POST(request) {
         const decoder = new TextDecoder();
         const encoder = new TextEncoder();
         let buffer = '';
+        // v8.42.3: capturar tokens del stream (message_start = input, message_delta = output)
+        const usoIA = { input_tokens: 0, output_tokens: 0 };
         try {
           while (true) {
             const { done, value } = await reader.read();
@@ -78,12 +81,15 @@ export async function POST(request) {
                 if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta') {
                   controller.enqueue(encoder.encode(ev.delta.text));
                 }
+                if (ev.type === 'message_start' && ev.message?.usage) usoIA.input_tokens = ev.message.usage.input_tokens || 0;
+                if (ev.type === 'message_delta' && ev.usage) usoIA.output_tokens = ev.usage.output_tokens || 0;
                 // Otros eventos (message_start, content_block_start, ping, etc.) los ignoramos.
               } catch {
                 // línea malformada — seguimos
               }
             }
           }
+          await registrarUsoIA({ funcion: 'extract_pdf_cotizacion', modelo: 'claude-sonnet-4-5-20250929', usage: usoIA });
           controller.close();
         } catch (e) {
           console.error('Stream error:', e);

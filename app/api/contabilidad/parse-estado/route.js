@@ -1,3 +1,4 @@
+import { registrarUsoIA } from '../../../../lib/aiUsageServer'; // v8.42.3: medidor de consumo IA
 // app/api/contabilidad/parse-estado/route.js
 // v8.26.2: [Conciliación bancaria] Parsea un ESTADO DE CUENTA bancario (PDF, foto
 // o CSV/texto) con Claude y devuelve los movimientos como JSON. Mismo patrón que
@@ -81,6 +82,7 @@ export async function POST(request) {
     }
 
     const data = await response.json();
+    await registrarUsoIA({ funcion: 'contabilidad_parse_estado', modelo: 'claude-sonnet-4-5-20250929', usage: data?.usage });
     const text = (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('').trim();
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {

@@ -1,3 +1,4 @@
+import { registrarUsoIA } from '../../../../lib/aiUsageServer'; // v8.42.3: medidor de consumo IA
 // v8.19.45: Endpoint que recibe la foto/base64 de un COMPROBANTE DE PAGO BANCARIO
 // (transferencia, depósito, pago a tercero) y extrae con Claude Vision:
 // monto, fecha del pago, banco, número de referencia/transacción, beneficiario.
@@ -89,6 +90,7 @@ export async function POST(request) {
     }
 
     const data = await response.json();
+    await registrarUsoIA({ funcion: 'parse_comprobante', modelo: 'claude-sonnet-4-5-20250929', usage: data?.usage });
     const text = (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('').trim();
     if (!text) {
       return new Response(JSON.stringify({ error: 'Respuesta vacía del modelo' }), { status: 500 });

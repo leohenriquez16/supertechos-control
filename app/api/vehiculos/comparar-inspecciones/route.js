@@ -1,3 +1,4 @@
+import { registrarUsoIA } from '../../../../lib/aiUsageServer'; // v8.42.3: medidor de consumo IA
 // v8.35.3: Compara dos inspecciones del mismo vehículo con AI (visión) y devuelve
 // las diferencias (daños nuevos, limpieza, odómetro). Mismo patrón que
 // /api/caja-chica/parse-comprobante (edge, fetch directo a Anthropic).
@@ -64,6 +65,7 @@ export async function POST(request) {
     }
 
     const data = await resp.json();
+    await registrarUsoIA({ funcion: 'vehiculos_inspecciones', modelo: 'claude-sonnet-4-5-20250929', usage: data?.usage });
     const text = (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('').trim();
     if (!text) return json({ error: 'Respuesta vacía del modelo' }, 500);
 

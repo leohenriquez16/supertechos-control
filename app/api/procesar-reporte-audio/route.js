@@ -1,3 +1,4 @@
+import { registrarUsoIA } from '../../../lib/aiUsageServer'; // v8.42.3: medidor de consumo IA
 export const runtime = 'edge';
 export const maxDuration = 60;
 
@@ -126,6 +127,7 @@ IMPORTANTE:
     }
 
     const data = await response.json();
+    await registrarUsoIA({ funcion: 'audio_reporte', modelo: 'claude-sonnet-4-5-20250929', usage: data?.usage });
     const textContent = data.content?.[0]?.text || '';
 
     // Extraer JSON del response

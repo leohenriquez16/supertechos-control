@@ -11,6 +11,7 @@ import ModalInspecciones from './ModalInspecciones';
 import VistaFlotaGps from './VistaFlotaGps';
 import RutasVehiculo from './RutasVehiculo'; // v8.41.0
 import FichaVehiculo from './FichaVehiculo'; // v8.44.0
+import VistaBombas from './VistaBombas'; // v8.49.13
 
 const COLORES = ['Blanco', 'Negro', 'Gris', 'Plata', 'Rojo', 'Azul', 'Verde', 'Amarillo', 'Dorado', 'Marrón'];
 
@@ -90,9 +91,12 @@ export default function VistaVehiculos({ usuario, data, onRecargar }) {
       <div className="flex gap-2 mb-4">
         <button onClick={() => setTab('fichas')} className={`text-xs font-bold px-3.5 py-2 rounded-card flex items-center gap-1.5 ${tab === 'fichas' ? 'bg-red-600 text-white' : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white'}`}><Car className="w-3.5 h-3.5" /> Fichas</button>
         <button onClick={() => setTab('flota')} className={`text-xs font-bold px-3.5 py-2 rounded-card flex items-center gap-1.5 ${tab === 'flota' ? 'bg-red-600 text-white' : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white'}`}><Satellite className="w-3.5 h-3.5" /> Flota GPS</button>
+        <button onClick={() => setTab('bombas')} className={`text-xs font-bold px-3.5 py-2 rounded-card flex items-center gap-1.5 ${tab === 'bombas' ? 'bg-red-600 text-white' : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white'}`}>⛽ Bombas</button>
       </div>
 
-      {tab === 'flota' ? (
+      {tab === 'bombas' ? (
+        <VistaBombas />
+      ) : tab === 'flota' ? (
         <VistaFlotaGps usuario={usuario} data={data} />
       ) : cargando ? (
         <div className="py-16 text-center"><Loader2 className="w-6 h-6 text-red-500 animate-spin mx-auto" /></div>

@@ -37,6 +37,22 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
   const [nuevoAbierto, setNuevoAbierto] = useState(false); // v8.48.0: modal nuevo despacho
   const [retiroDe, setRetiroDe] = useState(null); // v8.48.0: alisto en sign-off de retiro
   const [confirmandoReq, setConfirmandoReq] = useState(null); // v8.49.4: confirmación de oficina
+  // v8.49.11 (ticket Erisdania): modificar la solicitud después de enviada
+  const [nuevoItemDe, setNuevoItemDe] = useState(null); // requisicionId con el form abierto
+  const [nuevoItem, setNuevoItem] = useState({ descripcion: '', cantidad: '', unidad: '' });
+  const agregarRenglon = async (r) => {
+    if (!(nuevoItem.descripcion || '').trim()) return alert('Escribe la descripción del renglón.');
+    try {
+      await db.agregarItemRequisicion(r.id, nuevoItem);
+      setNuevoItemDe(null); setNuevoItem({ descripcion: '', cantidad: '', unidad: '' });
+      await recargar();
+    } catch (e) { alert('Error: ' + (e?.message || e)); }
+  };
+  const quitarRenglon = async (it) => {
+    if (!confirm(`¿Quitar el renglón "${it.descripcion}"?`)) return;
+    try { await db.eliminarItemRequisicion(it.id); await recargar(); }
+    catch (e) { alert('Error: ' + (e?.message || e)); }
+  };
   // v8.49.5: ventas de Odoo por entregar (salidas de almacén pendientes, read-only)
   const [odooPend, setOdooPend] = useState(null); // null = no buscado aún
   const [odooCargando, setOdooCargando] = useState(false);
@@ -186,9 +202,30 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
               ) : it.estadoCompra && ESTADOS_COMPRA[it.estadoCompra] ? (
                 <span className={`shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-card ${ESTADOS_COMPRA[it.estadoCompra].color}`}>{ESTADOS_COMPRA[it.estadoCompra].label}</span>
               ) : null}
+              {/* v8.49.11: quitar renglón (admin/almacén, antes de estar lista) */}
+              {puedeCrear && (col.estado === 'pendiente' || col.estado === 'preparando') && !it.despachado && (
+                <button onClick={() => quitarRenglon(it)} className="shrink-0 text-zinc-700 hover:text-red-400" title="Quitar renglón"><X className="w-3.5 h-3.5" /></button>
+              )}
             </div>
           ))}
         </div>
+        {/* v8.49.11 (ticket Erisdania): agregar renglones después de enviada la solicitud */}
+        {puedeCrear && (col.estado === 'pendiente' || col.estado === 'preparando') && (
+          nuevoItemDe === r.id ? (
+            <div className="mt-1.5 flex gap-1.5 items-center">
+              <input value={nuevoItem.descripcion} onChange={e => setNuevoItem({ ...nuevoItem, descripcion: e.target.value })} placeholder="Descripción" autoFocus
+                className="flex-1 bg-zinc-950 border border-zinc-700 rounded-card px-2 py-1.5 text-xs min-w-0" />
+              <input value={nuevoItem.cantidad} onChange={e => setNuevoItem({ ...nuevoItem, cantidad: e.target.value })} placeholder="Cant" type="number"
+                className="w-14 bg-zinc-950 border border-zinc-700 rounded-card px-1.5 py-1.5 text-xs text-right" />
+              <input value={nuevoItem.unidad} onChange={e => setNuevoItem({ ...nuevoItem, unidad: e.target.value })} placeholder="Und"
+                className="w-14 bg-zinc-950 border border-zinc-700 rounded-card px-1.5 py-1.5 text-xs" />
+              <button onClick={() => agregarRenglon(r)} className="shrink-0 bg-amber-600 hover:bg-amber-500 text-white text-[10px] font-black uppercase px-2.5 py-1.5 rounded-card">OK</button>
+              <button onClick={() => setNuevoItemDe(null)} className="shrink-0 text-zinc-600 hover:text-white"><X className="w-4 h-4" /></button>
+            </div>
+          ) : (
+            <button onClick={() => setNuevoItemDe(r.id)} className="mt-1.5 text-[10px] text-amber-400 font-bold flex items-center gap-1"><Plus className="w-3 h-3" /> Agregar renglón</button>
+          )
+        )}
         {r.notas && <div className="text-[10px] text-zinc-500 mt-1">📝 {r.notas}</div>}
         {/* v8.39.0: cotización adjunta + OC en Odoo */}
         {(r.cotizacionUrl || r.ocOdooName) && (

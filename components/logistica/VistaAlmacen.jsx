@@ -35,6 +35,7 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
   const [procesando, setProcesando] = useState(null);
   const [selId, setSelId] = useState(null); // v8.38.0: requisición abierta en el panel
   const [nuevoAbierto, setNuevoAbierto] = useState(false); // v8.48.0: modal nuevo despacho
+  const [autorizacionAbierta, setAutorizacionAbierta] = useState(false); // v8.49.12: retiro en suplidor
   const [retiroDe, setRetiroDe] = useState(null); // v8.48.0: alisto en sign-off de retiro
   const [confirmandoReq, setConfirmandoReq] = useState(null); // v8.49.4: confirmación de oficina
   // v8.49.11 (ticket Erisdania): modificar la solicitud después de enviada
@@ -269,10 +270,16 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
         </div>
         <div className="flex items-center gap-2">
           {puedeCrear && (
+            <>
+            <button onClick={() => setAutorizacionAbierta(true)}
+              className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 text-[11px] font-black uppercase px-3 py-2 rounded-card">
+              📮 Autorizar retiro en suplidor
+            </button>
             <button onClick={() => setNuevoAbierto(true)}
               className="bg-amber-600 hover:bg-amber-500 text-white text-[11px] font-black uppercase px-3 py-2 rounded-card flex items-center gap-1.5">
               <Plus className="w-4 h-4" /> Nuevo despacho
             </button>
+            </>
           )}
           <button onClick={recargar} className="text-zinc-500 hover:text-white"><RefreshCw className="w-4 h-4" /></button>
         </div>
@@ -438,6 +445,9 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
         </>
       )}
 
+      {autorizacionAbierta && (
+        <ModalAutorizacionRetiro usuario={usuario} onCerrar={() => setAutorizacionAbierta(false)} />
+      )}
       {nuevoAbierto && (
         <ModalNuevoDespacho usuario={usuario}
           onCerrar={() => setNuevoAbierto(false)}
@@ -602,6 +612,128 @@ function ModalRegistrarRetiro({ alisto, etiqueta, onCerrar, onListo }) {
           className="w-full bg-sky-700 hover:bg-sky-600 disabled:opacity-50 text-white text-xs font-black uppercase py-2.5 rounded-card flex items-center justify-center gap-2">
           {guardando ? <Loader2 className="w-4 h-4 animate-spin" /> : '✓'} Confirmar retiro
         </button>
+      </div>
+    </div>
+  );
+}
+
+// v8.49.12 (pedido de Leo, ticket Erisdania/Noxida): los requerimientos al suplidor salen
+// del ERP — se registra la autorización y se le envía el correo al suplidor con quién
+// retira (nombre + cédula + vehículo) y la referencia. CC a Compras y a Leo.
+function ModalAutorizacionRetiro({ usuario, onCerrar }) {
+  const [suplidores, setSuplidores] = useState([]);
+  const [supId, setSupId] = useState('');
+  const [email, setEmail] = useState('');
+  const [materiales, setMateriales] = useState('');
+  const [referencia, setReferencia] = useState('');
+  const [retiraNombre, setRetiraNombre] = useState('');
+  const [retiraCedula, setRetiraCedula] = useState('');
+  const [vehiculo, setVehiculo] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const [historial, setHistorial] = useState([]);
+
+  useEffect(() => {
+    db.listarSuplidores().then(setSuplidores).catch(() => {});
+    db.listarAutorizacionesRetiro({ limit: 8 }).then(setHistorial).catch(() => {});
+  }, []);
+  const sup = suplidores.find(x => x.id === supId);
+  useEffect(() => { if (sup) setEmail(sup.email || ''); }, [supId]); // eslint-disable-line
+
+  const enviar = async () => {
+    if (!sup) return alert('Elige el suplidor.');
+    if (!/.+@.+\..+/.test(email)) return alert('Pon el correo del suplidor.');
+    if (!materiales.trim()) return alert('Escribe qué se va a retirar.');
+    if (!retiraNombre.trim()) return alert('¿Quién retira? Escribe el nombre.');
+    if (!confirm(`Se enviará el correo de autorización a ${sup.nombre} (${email}), con copia a Compras y a Leo.\n¿Enviar?`)) return;
+    setEnviando(true);
+    try {
+      if (email !== sup.email) { try { await db.actualizarSuplidor(sup.id, { email }); } catch {} }
+      const autId = await db.crearAutorizacionRetiro({
+        suplidorId: sup.id, suplidorNombre: sup.nombre, suplidorEmail: email,
+        materiales: materiales.trim(), referencia: referencia.trim() || null,
+        retiraNombre: retiraNombre.trim(), retiraCedula: retiraCedula.trim() || null, vehiculo: vehiculo.trim() || null,
+        enviadoPorId: usuario?.id || null, enviadoPorNombre: usuario?.nombre || null,
+      });
+      const res = await fetch('/api/email/autorizacion-retiro', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ para: email, suplidor: sup.nombre, materiales: materiales.trim(), referencia: referencia.trim() || null,
+          retiraNombre: retiraNombre.trim(), retiraCedula: retiraCedula.trim() || null, vehiculo: vehiculo.trim() || null, enviadoPor: usuario?.nombre || null }),
+      });
+      const d = await res.json();
+      if (!res.ok || d.error) throw new Error(d.error || res.status);
+      await db.marcarAutorizacionEnviada(autId);
+      alert(`✅ Autorización enviada a ${sup.nombre}.\nRetira: ${retiraNombre.trim()}`);
+      onCerrar();
+    } catch (e) { alert('No se pudo enviar: ' + (e?.message || e)); }
+    setEnviando(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={onCerrar}>
+      <div className="bg-zinc-900 border border-zinc-700 rounded-card w-full max-w-lg max-h-[90vh] overflow-y-auto p-4 space-y-3" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-black">📮 Autorización de retiro en suplidor</h2>
+          <button onClick={onCerrar} className="text-zinc-500 hover:text-white"><X className="w-5 h-5" /></button>
+        </div>
+        <div className="text-[11px] text-zinc-500">El suplidor recibe el correo con quién está autorizado a retirar (con copia a Compras y a Leo), y queda registrado aquí.</div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">Suplidor *</label>
+            <select value={supId} onChange={e => setSupId(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-2 py-2 text-sm mt-1">
+              <option value="">— Elegir —</option>
+              {suplidores.map(s2 => <option key={s2.id} value={s2.id}>{s2.nombre}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">Correo del suplidor *</label>
+            <input value={email} onChange={e => setEmail(e.target.value)} placeholder="pedidos@suplidor.com"
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-2 py-2 text-sm mt-1" />
+            {sup && !sup.email && email && <div className="text-[10px] text-zinc-500 mt-0.5">Se guardará en la ficha del suplidor para la próxima.</div>}
+          </div>
+        </div>
+        <div>
+          <label className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">Materiales a retirar *</label>
+          <textarea value={materiales} onChange={e => setMateriales(e.target.value)} rows={3}
+            placeholder={'Un renglón por material:\n20 sacos Crown Crete 814\n4 cubetas primer'}
+            className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-2 py-2 text-xs mt-1" />
+        </div>
+        <div>
+          <label className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">Referencia (OC / cotización / factura) — opcional</label>
+          <input value={referencia} onChange={e => setReferencia(e.target.value)} placeholder="OC P00123 / Cot. 4567"
+            className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-2 py-2 text-sm mt-1" />
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          <div className="col-span-2">
+            <label className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">Quién retira *</label>
+            <input value={retiraNombre} onChange={e => setRetiraNombre(e.target.value)} placeholder="Nombre completo"
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-2 py-2 text-sm mt-1" />
+          </div>
+          <div>
+            <label className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">Cédula</label>
+            <input value={retiraCedula} onChange={e => setRetiraCedula(e.target.value)} placeholder="000-0000000-0"
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-2 py-2 text-sm mt-1" />
+          </div>
+        </div>
+        <div>
+          <label className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">Vehículo — opcional</label>
+          <input value={vehiculo} onChange={e => setVehiculo(e.target.value)} placeholder="Camión Isuzu blanco · placa L123456"
+            className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-2 py-2 text-sm mt-1" />
+        </div>
+        <button onClick={enviar} disabled={enviando}
+          className="w-full bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-white text-xs font-black uppercase py-2.5 rounded-card flex items-center justify-center gap-2">
+          {enviando ? <Loader2 className="w-4 h-4 animate-spin" /> : '📮'} Enviar autorización al suplidor
+        </button>
+        {historial.length > 0 && (
+          <div className="border-t border-zinc-800 pt-2">
+            <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-1">Últimas autorizaciones</div>
+            {historial.map(h => (
+              <div key={h.id} className="text-[11px] text-zinc-400 py-0.5 flex justify-between gap-2">
+                <span className="truncate">{h.suplidorNombre} · retira {h.retiraNombre}{h.referencia ? ` · ${h.referencia}` : ''}</span>
+                <span className="shrink-0 text-zinc-600">{formatFechaCorta((h.createdAt || '').slice(0, 10))} {h.emailEnviado ? '✓' : '⚠ sin enviar'}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

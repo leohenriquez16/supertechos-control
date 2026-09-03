@@ -21,6 +21,7 @@ const TIPOS_LUGAR = { suplidor: '🏪 Suplidores', puerto: '⚓ Puertos', almace
 // v8.45.0: parseCoords vive en lib/helpers/geo (compartido); re-export por compatibilidad.
 export { parseCoords } from '../../lib/helpers/geo';
 import { parseCoords } from '../../lib/helpers/geo';
+import { expandirYExtraer } from '../../lib/geoutils'; // v8.49.14: expandir links cortos de Maps
 
 export default function VistaRutas({ usuario, data, onVolver }) {
   const [fecha, setFecha] = useState(hoyRD());
@@ -727,7 +728,8 @@ function ModalLugares({ lugares, suplidores = [], onCerrar, onCambio }) {
 
   const crearSup = async () => {
     if (!supNombre.trim()) { alert('Escribe el nombre del suplidor.'); return; }
-    const c = parseCoords(supUbic);
+    let c = parseCoords(supUbic);
+    if (supUbic.trim() && !c) c = await expandirYExtraer(supUbic.trim()); // v8.49.14: link corto de Maps
     if (supUbic.trim() && !c) { alert('No entendí la ubicación — pega el link de Google Maps o "lat, lng".'); return; }
     setSupGuardando(true);
     try {
@@ -740,7 +742,8 @@ function ModalLugares({ lugares, suplidores = [], onCerrar, onCambio }) {
   };
   const agregarLoc = async (sup) => {
     if (!locNombre.trim()) { alert('Nombre de la locación (ej. "Suc. 27 de Febrero").'); return; }
-    const c = parseCoords(locUbic);
+    let c = parseCoords(locUbic);
+    if (locUbic.trim() && !c) c = await expandirYExtraer(locUbic.trim()); // v8.49.14: link corto de Maps
     if (locUbic.trim() && !c) { alert('Ubicación no entendida — link de Maps o "lat, lng".'); return; }
     try {
       await db.crearLocacionSuplidor({ suplidorId: sup.id, nombre: locNombre.trim(), lat: c?.lat ?? null, lng: c?.lng ?? null });
@@ -765,10 +768,12 @@ function ModalLugares({ lugares, suplidores = [], onCerrar, onCambio }) {
   };
   const crear = async () => {
     if (!nombre.trim()) { alert('Escribe el nombre del lugar.'); return; }
-    if (ubic.trim() && !coords) { alert('No entendí la ubicación. Pega el link de Google Maps (con @lat,lng) o escribe "lat, lng".'); return; }
+    let c = coords;
+    if (ubic.trim() && !c) c = await expandirYExtraer(ubic.trim()); // v8.49.14: link corto de Maps
+    if (ubic.trim() && !c) { alert('No entendí la ubicación. Pega el link de Google Maps o escribe "lat, lng".'); return; }
     setGuardando(true);
     try {
-      await db.crearLugarLogistico({ tipo, nombre: nombre.trim(), lat: coords?.lat ?? null, lng: coords?.lng ?? null });
+      await db.crearLugarLogistico({ tipo, nombre: nombre.trim(), lat: c?.lat ?? null, lng: c?.lng ?? null });
       setNombre(''); setUbic('');
       await onCambio();
     } catch (e) { alert('Error: ' + (e?.message || e)); }

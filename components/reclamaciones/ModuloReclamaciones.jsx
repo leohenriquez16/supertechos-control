@@ -11,6 +11,7 @@ import CalendarioLevantamientos from '../surveys/CalendarioLevantamientos';
 import ChatterPanel from '../common/ChatterPanel';
 import { registrarCreacion as chatterCreacion, registrarCambioEstado as chatterEstado } from '../../lib/chatter';
 import { formatRD } from '../../lib/helpers/formato';
+import { comprimirImagenABlob } from '../../lib/imports'; // v8.49.11: fotos
 
 const fmtFecha = (s) => { if (!s) return '—'; try { return new Date(s + 'T12:00:00').toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return s; } };
 const COLS = [
@@ -154,6 +155,8 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
             </div>
           </div>
           <div className="mt-3 bg-zinc-950 border border-zinc-800 rounded-card p-3 text-sm text-zinc-300">{r.descripcion || 'Sin descripción.'}</div>
+          {/* v8.49.11: fotos del trabajo realizado (ticket Edwin) */}
+          <FotosReclamacion r={r} usuario={usuario} onCambio={() => setReload(x => x + 1)} />
           {/* Estado */}
           <div className="mt-3">
             <div className="text-[10px] uppercase text-zinc-500 mb-1">Estado</div>
@@ -598,10 +601,9 @@ function ModalNuevaReclamacion({ data, usuario, ubicaciones, garantias, onCerrar
         <div className="p-4 space-y-3">
           <div>
             <div className="text-[10px] uppercase text-zinc-500 mb-1">Cliente</div>
-            <select value={clienteId} onChange={e => { setClienteId(e.target.value); setUbicacionId(''); setProyectoId(''); }} className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm">
-              <option value="">— Seleccionar —</option>
-              {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-            </select>
+            {/* v8.49.11 (ticket Edwin): buscador con sugerencias — el select plano no servía con cientos de clientes */}
+            <BuscadorCliente clientes={clientes} clienteId={clienteId}
+              onElegir={(id) => { setClienteId(id); setUbicacionId(''); setProyectoId(''); }} />
           </div>
           {clienteId && (
             <div className="grid grid-cols-2 gap-2">
@@ -634,6 +636,82 @@ function ModalNuevaReclamacion({ data, usuario, ubicaciones, garantias, onCerrar
           <button onClick={onCerrar} className="px-4 bg-zinc-800 text-zinc-400 text-xs font-bold uppercase py-2.5 rounded-card">Cancelar</button>
           <button onClick={guardar} disabled={guardando} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-xs font-black uppercase py-2.5 rounded-card">{guardando ? 'Creando…' : 'Crear reclamación'}</button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// v8.49.11 (ticket Edwin): buscador de cliente con sugerencias en vivo.
+function BuscadorCliente({ clientes, clienteId, onElegir }) {
+  const elegido = clientes.find(c => c.id === clienteId);
+  const [texto, setTexto] = useState('');
+  const [foco, setFoco] = useState(false);
+  const q = texto.toLowerCase().trim();
+  const sugerencias = q.length >= 2 ? clientes.filter(c => (c.nombre || '').toLowerCase().includes(q)).slice(0, 10) : [];
+  if (elegido) {
+    return (
+      <div className="flex items-center gap-2 bg-zinc-900 border-2 border-zinc-800 rounded-card px-3 py-2">
+        <span className="text-sm font-bold flex-1 truncate">{elegido.nombre}</span>
+        <button onClick={() => { onElegir(''); setTexto(''); }} className="text-[10px] uppercase font-bold text-zinc-500 hover:text-white">cambiar</button>
+      </div>
+    );
+  }
+  return (
+    <div className="relative">
+      <input value={texto} onChange={e => setTexto(e.target.value)} onFocus={() => setFoco(true)} onBlur={() => setTimeout(() => setFoco(false), 200)}
+        placeholder="Escribe el nombre del cliente…" autoFocus
+        className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm" />
+      {foco && q.length >= 2 && (
+        <div className="absolute z-30 left-0 right-0 mt-1 bg-zinc-900 border border-zinc-700 rounded-card overflow-hidden shadow-pop max-h-56 overflow-y-auto">
+          {sugerencias.length === 0
+            ? <div className="px-3 py-2 text-xs text-zinc-500">Sin resultados para "{texto}".</div>
+            : sugerencias.map(c => (
+              <button key={c.id} onMouseDown={(e) => { e.preventDefault(); onElegir(c.id); }}
+                className="w-full text-left px-3 py-2 text-xs text-zinc-200 hover:bg-zinc-800 border-t border-zinc-800 first:border-t-0 truncate">{c.nombre}</button>
+            ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// v8.49.11 (ticket Edwin): fotos del trabajo realizado — se comprimen al subir.
+function FotosReclamacion({ r, usuario, onCambio }) {
+  const [subiendo, setSubiendo] = useState(false);
+  const fotos = r.fotos || [];
+  const subir = async (files) => {
+    if (!files?.length) return;
+    setSubiendo(true);
+    try {
+      const nuevas = [];
+      for (const f of Array.from(files).slice(0, 6)) {
+        const blob = await comprimirImagenABlob(f);
+        nuevas.push(await db.subirFotoReclamacion(blob, r.id));
+      }
+      await db.guardarFotosReclamacion(r.id, [...fotos, ...nuevas]);
+      onCambio();
+    } catch (e) { alert('Error subiendo fotos: ' + (e?.message || e)); }
+    setSubiendo(false);
+  };
+  const quitar = async (url) => {
+    if (!confirm('¿Quitar esta foto de la reclamación?')) return;
+    try { await db.guardarFotosReclamacion(r.id, fotos.filter(u => u !== url)); onCambio(); }
+    catch (e) { alert('Error: ' + (e?.message || e)); }
+  };
+  return (
+    <div className="mt-3">
+      <div className="text-[10px] uppercase text-zinc-500 mb-1">📷 Fotos del trabajo ({fotos.length})</div>
+      <div className="flex gap-2 flex-wrap">
+        {fotos.map(u => (
+          <div key={u} className="relative group">
+            <a href={u} target="_blank" rel="noreferrer"><img src={u} alt="" className="w-20 h-20 object-cover rounded-card border border-zinc-800" /></a>
+            <button onClick={() => quitar(u)} className="absolute -top-1.5 -right-1.5 bg-zinc-900 border border-zinc-700 rounded-full p-0.5 text-zinc-400 hover:text-red-400 opacity-0 group-hover:opacity-100"><X className="w-3 h-3" /></button>
+          </div>
+        ))}
+        <label className="w-20 h-20 border border-dashed border-zinc-700 hover:border-red-500 rounded-card flex flex-col items-center justify-center text-zinc-500 hover:text-zinc-300 cursor-pointer text-[10px] gap-1">
+          {subiendo ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Plus className="w-4 h-4" /> Fotos</>}
+          <input type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={e => { subir(e.target.files); e.target.value = ''; }} />
+        </label>
       </div>
     </div>
   );

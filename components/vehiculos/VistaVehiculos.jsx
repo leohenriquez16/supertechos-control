@@ -133,6 +133,7 @@ export default function VistaVehiculos({ usuario, data, onRecargar }) {
                         : <div className="text-[10px] text-zinc-500 mt-0.5">🛡 Garantía vencida</div>;
                     })()}
                     <div className="text-[11px] text-zinc-500">{v.color || 'sin color'}{v.empresa ? ` · ${v.empresa === 'super_techos' ? 'Super Techos' : 'Prouco'}` : ''}{v.tipo ? ` · ${v.tipo}` : ''}</div>
+                    {v.esParticular && <div className="text-[10px] font-bold text-sky-400 mt-0.5">👤 Carro personal — la empresa solo cubre el peaje</div>}
                     <div className="text-[11px] mt-0.5">
                       <span className="text-zinc-500">Responsable: </span>
                       <b>{(data?.personal || []).find(p => p.id === v.responsableId)?.nombre || '— sin asignar —'}</b>

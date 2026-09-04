@@ -118,3 +118,30 @@ grant select on public.peaje_consumo_vehiculo, public.peaje_resumen_mes
   to anon, authenticated, service_role;
 
 notify pgrst, 'reload schema';
+
+-- ------------------------------------------------------------
+-- Ajustes tras la primera carga real (2026-09-04)
+-- ------------------------------------------------------------
+-- Consumo por tag: hace falta para saber QUÉ pendiente urge. Un tag sin un
+-- solo pase no es un problema; uno con RD$28,000 al año sí.
+create or replace view public.peaje_consumo_tag as
+select
+  t.tag,
+  count(*)      as pases,
+  sum(t.monto)  as total,
+  min(t.mes)    as primer_mes,
+  max(t.mes)    as ultimo_mes
+from public.peaje_transacciones t
+where t.tipo = 'PASE'
+group by t.tag;
+
+grant select on public.peaje_consumo_tag to anon, authenticated, service_role;
+
+-- El resto del ERP corre con RLS desactivada (regla del proyecto). Si estas
+-- tablas quedan con RLS activa, el import falla con "violates row-level
+-- security policy".
+alter table public.peaje_tags          disable row level security;
+alter table public.peaje_periodos      disable row level security;
+alter table public.peaje_transacciones disable row level security;
+
+notify pgrst, 'reload schema';

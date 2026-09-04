@@ -31,16 +31,18 @@ export default function VistaPeajes({ usuario, data, onRecargar }) {
   const [mesSel, setMesSel] = useState(null);
   const [resolver, setResolver] = useState(null); // tag que se está identificando
   const [ultimoImport, setUltimoImport] = useState(null);
+  const [consumoTag, setConsumoTag] = useState({});
 
   const vehiculos = data?.vehiculos || [];
 
   const cargar = useCallback(async (mes = null) => {
     setCargando(true);
     try {
-      const [t, r, p] = await Promise.all([
+      const [t, r, p, ct] = await Promise.all([
         db.listarPeajeTags(), db.resumenPeajeMeses(), db.listarPeajePeriodos(),
+        db.consumoPorTag(),
       ]);
-      setTags(t); setResumen(r); setPeriodos(p);
+      setTags(t); setResumen(r); setPeriodos(p); setConsumoTag(ct);
       const m = mes || r[0]?.mes || null;
       setMesSel(m);
       if (m) setConsumoMes(await db.consumoPeajeDelMes(m));
@@ -79,7 +81,12 @@ export default function VistaPeajes({ usuario, data, onRecargar }) {
   };
 
   // --- pendientes: lo que obliga a actuar ---
-  const pendientes = tags.filter(t => t.estado === 'pendiente');
+  // Solo los tags CON consumo. Un tag que nunca ha pasado por un peaje no es un
+  // pendiente: si se listara, el aviso tendría 22 renglones y nadie lo miraría.
+  const pendientes = tags
+    .filter(t => t.estado === 'pendiente' && (consumoTag[t.tag]?.total || 0) > 0)
+    .sort((a, b) => (consumoTag[b.tag]?.total || 0) - (consumoTag[a.tag]?.total || 0));
+  const totalPendiente = pendientes.reduce((a, t) => a + (consumoTag[t.tag]?.total || 0), 0);
   const resMes = resumen.find(r => r.mes === mesSel);
 
   // Conflicto de placa: el tag trae una placa que no está en el ERP, pero hay un
@@ -135,7 +142,8 @@ export default function VistaPeajes({ usuario, data, onRecargar }) {
           <div className="flex items-center gap-2 mb-1">
             <AlertTriangle className="w-4 h-4 text-red-400" />
             <div className="text-sm font-black text-red-300">
-              {pendientes.length} tag{pendientes.length > 1 ? 's' : ''} sin identificar
+              {pendientes.length} tag{pendientes.length > 1 ? 's' : ''} con consumo sin identificar
+              <span className="text-red-400/80"> · {rd(totalPendiente)} en el histórico</span>
             </div>
           </div>
           <div className="text-[11px] text-red-200/80 mb-3">
@@ -151,6 +159,10 @@ export default function VistaPeajes({ usuario, data, onRecargar }) {
                     <div className="text-sm font-bold">{t.nombrePortal || `Tag ${t.tag}`}</div>
                     <div className="text-[11px] text-zinc-500">
                       Tag {t.tag}{t.placaPortal ? ` · placa ${t.placaPortal} (según el portal)` : ' · sin placa en el portal'}
+                    </div>
+                    <div className="text-[11px] text-red-200 font-bold mt-0.5">
+                      {rd(consumoTag[t.tag]?.total || 0)} en {consumoTag[t.tag]?.pases || 0} pases
+                      <span className="font-normal text-zinc-500"> · último {consumoTag[t.tag]?.ultimoMes || '—'}</span>
                     </div>
                     {cand && (
                       <div className="text-[11px] text-amber-300 mt-1 flex items-center gap-1">
@@ -195,7 +207,7 @@ export default function VistaPeajes({ usuario, data, onRecargar }) {
 
       {/* ---------- consumo por vehículo ---------- */}
       <TablaConsumo mesSel={mesSel} tags={tags} vehiculos={vehiculos} consumoMes={consumoMes}
-        onResolver={setResolver} />
+        consumoTag={consumoTag} onResolver={setResolver} />
 
       {/* ---------- historial de subidas ---------- */}
       {periodos.length > 0 && (
@@ -241,16 +253,19 @@ function Tile({ titulo, valor, pie, ok, alerta }) {
 }
 
 // Consumo del mes por tag, con el vehículo al que está enganchado.
-function TablaConsumo({ mesSel, tags, vehiculos, consumoMes, onResolver }) {
+function TablaConsumo({ mesSel, tags, vehiculos, consumoMes, consumoTag, onResolver }) {
   const [pases, setPases] = useState(null); // tag cuyo detalle se está viendo
 
   const filas = tags.map(t => {
     const v = t.vehiculoId ? vehiculos.find(x => x.id === t.vehiculoId) : null;
     const c = t.vehiculoId ? consumoMes[t.vehiculoId] : null;
-    return { ...t, veh: v, monto: c?.monto || 0, pases: c?.pases || 0 };
-  }).sort((a, b) => b.monto - a.monto);
+    const hist = consumoTag[t.tag] || null;
+    return { ...t, veh: v, monto: c?.monto || 0, pases: c?.pases || 0, hist };
+  }).sort((a, b) => (b.monto - a.monto) || ((b.hist?.total || 0) - (a.hist?.total || 0)));
 
-  const conConsumo = filas.filter(f => f.monto > 0 || f.estado === 'pendiente');
+  // Un tag sin vehículo no tiene consumo "del mes" (esa vista es por vehículo),
+  // pero sí histórico: se muestra igual para que se vea lo que está en juego.
+  const conConsumo = filas.filter(f => f.monto > 0 || (f.hist?.total || 0) > 0);
   if (!conConsumo.length) {
     return (
       <div className="py-12 text-center text-zinc-600">
@@ -269,7 +284,8 @@ function TablaConsumo({ mesSel, tags, vehiculos, consumoMes, onResolver }) {
               <th className="text-left font-black uppercase text-[10px] px-3 py-2">Vehículo</th>
               <th className="text-left font-black uppercase text-[10px] px-3 py-2">Tag</th>
               <th className="text-right font-black uppercase text-[10px] px-3 py-2">Pases</th>
-              <th className="text-right font-black uppercase text-[10px] px-3 py-2">Consumo</th>
+              <th className="text-right font-black uppercase text-[10px] px-3 py-2">Mes</th>
+              <th className="text-right font-black uppercase text-[10px] px-3 py-2">Histórico</th>
               <th className="px-3 py-2"></th>
             </tr>
           </thead>
@@ -297,6 +313,9 @@ function TablaConsumo({ mesSel, tags, vehiculos, consumoMes, onResolver }) {
                 <td className="px-3 py-2 text-zinc-500 tabular-nums">{f.tag}</td>
                 <td className="px-3 py-2 text-right tabular-nums text-zinc-400">{f.pases || '—'}</td>
                 <td className="px-3 py-2 text-right tabular-nums font-bold">{f.monto ? rd(f.monto) : '—'}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-zinc-400">
+                  {f.hist ? rd(f.hist.total) : '—'}
+                </td>
                 <td className="px-3 py-2 text-right">
                   {f.estado === 'pendiente'
                     ? <button onClick={() => onResolver(f)} className="text-[10px] font-black uppercase text-red-400 hover:text-red-300">Identificar</button>

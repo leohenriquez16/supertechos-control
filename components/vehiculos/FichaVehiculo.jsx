@@ -7,6 +7,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Car, Edit2, MapPin, Loader2 } from 'lucide-react';
 import { formatFechaCorta } from '../../lib/helpers/formato';
+import * as db from '../../lib/db';
 
 const hoyRD = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo' }).format(new Date());
 const dias = (f) => f ? Math.round((new Date(f + 'T00:00:00') - new Date(hoyRD() + 'T00:00:00')) / 86400000) : null;
@@ -30,6 +31,69 @@ const Seccion = ({ titulo, children }) => (
     {children}
   </div>
 );
+
+// v8.50.0: consumo de peajes del vehículo. Se compara contra su PROPIO promedio
+// (solo meses activos): un camión siempre gasta más que una camioneta, y eso no
+// es una desviación.
+function ConsumoPeajes({ vehiculoId }) {
+  const [meses, setMeses] = useState(null);
+  useEffect(() => {
+    let vivo = true;
+    db.consumoPeajeVehiculo(vehiculoId)
+      .then(r => { if (vivo) setMeses(r); })
+      .catch(() => { if (vivo) setMeses([]); });
+    return () => { vivo = false; };
+  }, [vehiculoId]);
+
+  if (meses === null) return <Loader2 className="w-4 h-4 animate-spin text-zinc-600 my-2" />;
+  if (!meses.length) {
+    return <div className="text-xs text-zinc-500 py-1.5">Sin consumo registrado. Se llena al subir el archivo de Paso Rápido en la pestaña Peajes.</div>;
+  }
+
+  const ult = meses[meses.length - 1];
+  const previos = meses.slice(0, -1);
+  const prom = previos.length ? previos.reduce((a, m) => a + m.monto, 0) / previos.length : 0;
+  const varPct = prom ? Math.round((ult.monto / prom - 1) * 100) : null;
+  const max = Math.max(...meses.map(m => m.monto)) || 1;
+  const rd = (n) => `RD$${Math.round(n).toLocaleString('es-DO')}`;
+
+  return (
+    <>
+      <Fila label={`Consumo ${ult.mes}`}>
+        <b>{rd(ult.monto)}</b> <span className="text-zinc-500">· {ult.pases} pases</span>
+      </Fila>
+      <Fila label="Su promedio">
+        {prom ? <>{rd(prom)} <span className="text-zinc-500">({previos.length} {previos.length === 1 ? 'mes' : 'meses'})</span></> : null}
+      </Fila>
+      {varPct !== null && (
+        <Fila label="Variación">
+          <span className={`font-bold ${varPct > 25 ? 'text-red-400' : varPct < -25 ? 'text-emerald-400' : 'text-zinc-300'}`}>
+            {varPct > 0 ? '+' : ''}{varPct}%
+          </span>
+          {previos.length < 3 && <span className="text-zinc-500 text-xs"> · pocos meses de base</span>}
+        </Fila>
+      )}
+      {(ult.pasesFinde > 0 || ult.pasesNoche > 0) && (
+        <Fila label="Fuera de jornada">
+          <span className="text-xs">
+            {ult.pasesFinde > 0 && <span className="text-amber-400">{ult.pasesFinde} fin de semana</span>}
+            {ult.pasesFinde > 0 && ult.pasesNoche > 0 && <span className="text-zinc-600"> · </span>}
+            {ult.pasesNoche > 0 && <span className="text-sky-400">{ult.pasesNoche} nocturnos</span>}
+          </span>
+        </Fila>
+      )}
+      <div className="flex items-end gap-1 h-12 mt-2.5" title="Últimos meses">
+        {meses.slice(-12).map(m => (
+          <div key={m.mes} className="flex-1 min-w-0 flex flex-col justify-end items-center gap-0.5" title={`${m.mes}: ${rd(m.monto)}`}>
+            <div className={`w-full ${m.mes === ult.mes ? 'bg-red-600' : 'bg-zinc-700'}`}
+                 style={{ height: `${Math.max(2, (m.monto / max) * 34)}px` }} />
+            <div className="text-[8px] text-zinc-600 truncate w-full text-center">{m.mes.slice(5)}</div>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
 
 export default function FichaVehiculo({ vehiculo: v, personal = [], licencia = null, puedeEditar, onCerrar, onEditar, onLog, onRutas, onInspecciones, onGps }) {
   const resp = personal.find(p => p.id === v.responsableId);
@@ -118,6 +182,9 @@ export default function FichaVehiculo({ vehiculo: v, personal = [], licencia = n
               <Fila label="Unidad amarrada">{v.gpsDeviceId ? (gpsViva?.nombre || `#${v.gpsDeviceId}`) : 'sin amarrar'}</Fila>
               <Fila label="Ahora">{gpsViva ? `${gpsViva.velocidad} km/h · ${gpsViva.velocidad > 2 ? 'en movimiento' : gpsViva.online === 'online' ? 'encendido detenido' : 'apagado'}` : null}</Fila>
               <Fila label="Última señal">{gpsViva?.hora || null}</Fila>
+            </Seccion>
+            <Seccion titulo="🛣 Peajes">
+              <ConsumoPeajes vehiculoId={v.id} />
             </Seccion>
           </div>
         </div>

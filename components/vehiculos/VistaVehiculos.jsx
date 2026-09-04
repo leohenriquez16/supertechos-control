@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Car, Plus, Loader2, Edit2, Trash2, Copy, Check, FileText, Upload, X, AlertTriangle, Eye, MapPin, RefreshCw, ExternalLink, Camera, Satellite } from 'lucide-react';
+import { Car, Plus, Loader2, Edit2, Trash2, Copy, Check, FileText, Upload, X, AlertTriangle, Eye, MapPin, RefreshCw, ExternalLink, Camera, Satellite, Receipt } from 'lucide-react';
 import * as db from '../../lib/db';
 import { toast } from '../../lib/toast';
 import { comprimirImagenABlob } from '../../lib/imports';
@@ -12,6 +12,7 @@ import VistaFlotaGps from './VistaFlotaGps';
 import RutasVehiculo from './RutasVehiculo'; // v8.41.0
 import FichaVehiculo from './FichaVehiculo'; // v8.44.0
 import VistaBombas from './VistaBombas'; // v8.49.13
+import VistaPeajes from './VistaPeajes'; // v8.50.0
 
 const COLORES = ['Blanco', 'Negro', 'Gris', 'Plata', 'Rojo', 'Azul', 'Verde', 'Amarillo', 'Dorado', 'Marrón'];
 
@@ -44,7 +45,7 @@ export default function VistaVehiculos({ usuario, data, onRecargar }) {
   const [fichaDe, setFichaDe] = useState(null); // v8.44.0: ficha completa
   const [inspDe, setInspDe] = useState(null); // vehículo cuyas inspecciones se están viendo (v8.35.3)
   const [licencias, setLicencias] = useState({}); // v8.35.2: licencia por chofer (responsable) para verla en la ficha
-  const [tab, setTab] = useState('fichas'); // v8.42.1: 'fichas' | 'flota' (dashboard GPS)
+  const [tab, setTab] = useState('fichas'); // v8.42.1: 'fichas' | 'flota' (GPS) | 'peajes' (v8.50.0)
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -92,12 +93,15 @@ export default function VistaVehiculos({ usuario, data, onRecargar }) {
         <button onClick={() => setTab('fichas')} className={`text-xs font-bold px-3.5 py-2 rounded-card flex items-center gap-1.5 ${tab === 'fichas' ? 'bg-red-600 text-white' : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white'}`}><Car className="w-3.5 h-3.5" /> Fichas</button>
         <button onClick={() => setTab('flota')} className={`text-xs font-bold px-3.5 py-2 rounded-card flex items-center gap-1.5 ${tab === 'flota' ? 'bg-red-600 text-white' : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white'}`}><Satellite className="w-3.5 h-3.5" /> Flota GPS</button>
         <button onClick={() => setTab('bombas')} className={`text-xs font-bold px-3.5 py-2 rounded-card flex items-center gap-1.5 ${tab === 'bombas' ? 'bg-red-600 text-white' : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white'}`}>⛽ Bombas</button>
+        <button onClick={() => setTab('peajes')} className={`text-xs font-bold px-3.5 py-2 rounded-card flex items-center gap-1.5 ${tab === 'peajes' ? 'bg-red-600 text-white' : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white'}`}><Receipt className="w-3.5 h-3.5" /> Peajes</button>
       </div>
 
       {tab === 'bombas' ? (
         <VistaBombas />
       ) : tab === 'flota' ? (
         <VistaFlotaGps usuario={usuario} data={data} />
+      ) : tab === 'peajes' ? (
+        <VistaPeajes usuario={usuario} data={{ ...data, vehiculos }} onRecargar={cargar} />
       ) : cargando ? (
         <div className="py-16 text-center"><Loader2 className="w-6 h-6 text-red-500 animate-spin mx-auto" /></div>
       ) : vehiculos.length === 0 ? (
@@ -217,7 +221,8 @@ export default function VistaVehiculos({ usuario, data, onRecargar }) {
 }
 
 function ModalVehiculo({ usuario, vehiculo, personal, onCerrar, onGuardado }) {
-  const editando = !!vehiculo;
+  // v8.50.0: se puede abrir con datos prellenados y sin id (alta desde Peajes).
+  const editando = !!vehiculo?.id;
   const [guardando, setGuardando] = useState(false);
   const [subiendo, setSubiendo] = useState(null); // 'matricula' | 'seguro' | null
   const [form, setForm] = useState({

@@ -85,6 +85,7 @@ export default function VistaProduccion({ usuario, data, onVolver }) {
     const pesoMapPorProyecto = {}; // proyectoId -> { tareaId: peso/100 }
     const nTareasPorSistema = {};  // sistemaId -> n
     (data.reportes || []).forEach(r => {
+      if (r.reparacion) return; // v8.50.0: retoques fuera del histórico de producción
       if (!r.fecha || r.fecha > hoy || !(r.m2 > 0)) return;
       const proy = (data.proyectos || []).find(p => p.id === r.proyectoId);
       if (!proy || proy.archivado) return;

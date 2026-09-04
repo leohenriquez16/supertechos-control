@@ -82,6 +82,7 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
     setImportando(null);
   };
   const puedeCrear = ['admin', 'almacen'].some(rr => usuario?.roles?.includes(rr));
+  const [compraAbierta, setCompraAbierta] = useState(false); // v8.50.0: solicitud de compra interna
 
   const recargar = async () => {
     setLoading(true);
@@ -100,6 +101,7 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
 
   const proyectoDe = (r) => (data.proyectos || []).find(p => p.id === r.proyectoId);
   const etiqueta = (r) => {
+    if (r.tipo === 'compra') return '🛒 Compra' + (r.referencia ? `: ${r.referencia}` : ' interna (almacén/oficina)'); // v8.50.0
     if (r.tipo === 'despacho') return (r.clienteNombre || 'Despacho') + (r.referencia ? ` · ${r.referencia}` : '');
     const p = proyectoDe(r); return p ? ([p.referenciaOdoo, p.cliente || p.nombre].filter(Boolean).join(' · ') || r.proyectoId) : r.proyectoId; // v8.49.2 (ticket Miguel M.): incluir código del proyecto
   };
@@ -118,8 +120,9 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
   const marcarCompra = async (it, estado) => {
     try {
       await db.marcarEstadoCompraItem(it.id, estado || null);
-      // v8.49.2 (ticket Jacobo): al marcar "comprar", avisar a Compras por correo (fire-and-forget)
-      if (estado === 'comprar') {
+      // v8.49.2 (ticket Jacobo): al marcar "solicitado a compras", avisar por correo (fire-and-forget)
+      // v8.50.0: FIX — el select nunca emite 'comprar' (valores: solicitado/cotizado/…); la alerta jamás disparaba.
+      if (estado === 'solicitado') {
         const r = (reqs || []).find(x => (x.items || []).some(i => i.id === it.id));
         fetch('/api/email/alerta-compras', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -278,6 +281,11 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
             <button onClick={() => setNuevoAbierto(true)}
               className="bg-amber-600 hover:bg-amber-500 text-white text-[11px] font-black uppercase px-3 py-2 rounded-card flex items-center gap-1.5">
               <Plus className="w-4 h-4" /> Nuevo despacho
+            </button>
+            {/* v8.50.0 (tickets Erisdania): solicitud de compra interna — sin obra ni cliente */}
+            <button onClick={() => setCompraAbierta(true)}
+              className="bg-purple-700 hover:bg-purple-600 text-white text-[11px] font-black uppercase px-3 py-2 rounded-card flex items-center gap-1.5">
+              🛒 Solicitud de compra
             </button>
             </>
           )}
@@ -453,6 +461,11 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
           onCerrar={() => setNuevoAbierto(false)}
           onCreado={async () => { setNuevoAbierto(false); await recargar(); }} />
       )}
+      {compraAbierta && (
+        <ModalSolicitudCompra usuario={usuario}
+          onCerrar={() => setCompraAbierta(false)}
+          onCreado={async () => { setCompraAbierta(false); await recargar(); }} />
+      )}
       {confirmandoReq && (
         <ModalConfirmarRecepcion req={confirmandoReq} etiqueta={etiqueta(confirmandoReq)}
           usuario={usuario} origen="oficina"
@@ -470,6 +483,77 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
 
 // v8.48.0: crear un DESPACHO/venta a un cliente (no una obra). Nace en 'pendiente'
 // como borrador que el almacén alista igual que un pedido de obra.
+// v8.50.0 (tickets Erisdania): SOLICITUD DE COMPRA interna — artículos que necesita el
+// almacén/oficina sin pasar por una obra ni por WhatsApp. Nace tipo='compra' + esCompra,
+// modo retiro (no ensucia Rutas), con todos los renglones ya "solicitado a compras".
+function ModalSolicitudCompra({ usuario, onCerrar, onCreado }) {
+  const [motivo, setMotivo] = useState('');
+  const [urgente, setUrgente] = useState(false);
+  const [notas, setNotas] = useState('');
+  const [items, setItems] = useState([{ descripcion: '', cantidad: '', unidad: '' }]);
+  const [guardando, setGuardando] = useState(false);
+  const setItem = (i, campo, val) => setItems(arr => arr.map((it, n) => n === i ? { ...it, [campo]: val } : it));
+  const addItem = () => setItems(arr => [...arr, { descripcion: '', cantidad: '', unidad: '' }]);
+  const delItem = (i) => setItems(arr => arr.length > 1 ? arr.filter((_, n) => n !== i) : arr);
+
+  const guardar = async () => {
+    if (!items.some(it => (it.descripcion || '').trim())) return alert('Agrega al menos un artículo.');
+    setGuardando(true);
+    try {
+      await db.crearRequisicion({
+        tipo: 'compra', esCompra: true, modoEntrega: 'retiro',
+        referencia: motivo.trim() || null, urgente, notas: notas.trim() || null, items,
+        estadoCompraInicial: 'solicitado',
+        solicitadoPorId: usuario?.id || null, solicitadoPorNombre: usuario?.nombre || null,
+      });
+      await onCreado();
+    } catch (e) { alert('Error: ' + (e?.message || e)); setGuardando(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={onCerrar}>
+      <div className="bg-zinc-900 border border-zinc-700 rounded-card w-full max-w-lg max-h-[90vh] overflow-y-auto p-4 space-y-3" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-black flex items-center gap-2">🛒 Solicitud de compra</h2>
+          <button onClick={onCerrar} className="text-zinc-500 hover:text-white"><X className="w-5 h-5" /></button>
+        </div>
+        <div className="text-[10px] text-zinc-500">Para artículos del almacén u oficina que hay que comprar — sin obra. Compras la ve al momento y cada renglón entra directo al flujo de compra.</div>
+        <div>
+          <label className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">Motivo / destino (opcional)</label>
+          <input value={motivo} onChange={e => setMotivo(e.target.value)} placeholder="Reposición almacén, oficina, herramienta…"
+            className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1.5 text-white text-sm mt-1" />
+        </div>
+        <div>
+          <label className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">Artículos a comprar</label>
+          <div className="space-y-1.5 mt-1">
+            {items.map((it, i) => (
+              <div key={i} className="flex gap-1.5 items-center">
+                <input value={it.descripcion} onChange={e => setItem(i, 'descripcion', e.target.value)} placeholder="Descripción"
+                  className="flex-1 bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1.5 text-white text-xs" />
+                <input value={it.cantidad} onChange={e => setItem(i, 'cantidad', e.target.value)} placeholder="Cant" type="number"
+                  className="w-16 bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1.5 text-white text-xs text-right" />
+                <input value={it.unidad} onChange={e => setItem(i, 'unidad', e.target.value)} placeholder="Und"
+                  className="w-16 bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1.5 text-white text-xs" />
+                <button onClick={() => delItem(i)} className="text-zinc-600 hover:text-red-400"><X className="w-4 h-4" /></button>
+              </div>
+            ))}
+          </div>
+          <button onClick={addItem} className="text-[11px] text-purple-400 font-bold mt-1.5 flex items-center gap-1"><Plus className="w-3.5 h-3.5" /> Agregar artículo</button>
+        </div>
+        <label className="flex items-center gap-2 text-xs cursor-pointer">
+          <input type="checkbox" checked={urgente} onChange={e => setUrgente(e.target.checked)} className="w-4 h-4 accent-red-600" /> 🔥 Urgente
+        </label>
+        <textarea value={notas} onChange={e => setNotas(e.target.value)} placeholder="Notas (opcional)" rows={2}
+          className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1.5 text-white text-xs" />
+        <button onClick={guardar} disabled={guardando}
+          className="w-full bg-purple-700 hover:bg-purple-600 disabled:opacity-50 text-white text-xs font-black uppercase py-2.5 rounded-card flex items-center justify-center gap-2">
+          {guardando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Enviar a compras
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ModalNuevoDespacho({ usuario, onCerrar, onCreado }) {
   const [cliente, setCliente] = useState('');
   const [referencia, setReferencia] = useState('');

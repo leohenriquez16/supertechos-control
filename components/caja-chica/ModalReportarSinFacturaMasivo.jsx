@@ -26,7 +26,8 @@ const nuevaFila = () => ({
 });
 
 export default function ModalReportarSinFacturaMasivo({ usuario, proyectos, categorias, onCerrar, onGuardado }) {
-  const [proyectoComunId, setProyectoComunId] = useState(PROYECTO_GENERICO);
+  // v8.50.0: proyecto OBLIGATORIO (ticket Felvison) — arranca vacío, ya no en genérico
+  const [proyectoComunId, setProyectoComunId] = useState('');
   const [filas, setFilas] = useState([nuevaFila()]);
   const [enviando, setEnviando] = useState(false);
   const [resumen, setResumen] = useState(null);
@@ -64,7 +65,8 @@ export default function ModalReportarSinFacturaMasivo({ usuario, proyectos, cate
 
   const filasValidas = filasConErrores.filter(f => f._errores.length === 0);
   const totalLote = filasValidas.reduce((s, f) => s + (parseFloat(f.monto) || 0), 0);
-  const todoOk = filas.length > 0 && filasConErrores.every(f => f._errores.length === 0);
+  const todoOk = filas.length > 0 && filasConErrores.every(f => f._errores.length === 0)
+    && !!proyectoComunId && proyectoComunId !== PROYECTO_GENERICO; // v8.50.0: exige proyecto
 
   const enviar = async () => {
     if (!todoOk) return;
@@ -156,13 +158,14 @@ export default function ModalReportarSinFacturaMasivo({ usuario, proyectos, cate
 
         {/* Proyecto común — v8.17.25: con buscador + orden por últimos usados */}
         <div className="px-4 pt-4 pb-2 border-b border-zinc-800">
-          <label className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">Proyecto (común a todos los gastos)</label>
+          <label className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold">Proyecto * (común a todos los gastos)</label>
           <div className="mt-1">
+            {/* v8.50.0: obligatorio — se quitó la opción de gasto genérico (ticket Felvison) */}
             <ProyectoSelector
               value={proyectoComunId === PROYECTO_GENERICO ? '' : proyectoComunId}
-              onChange={(id) => setProyectoComunId(id || PROYECTO_GENERICO)}
+              onChange={(id) => setProyectoComunId(id || '')}
               proyectos={proyectos || []}
-              etiquetaVacio="🏢 Gasto genérico (sin proyecto)"
+              permitirVacio={false}
               disabled={enviando}
             />
           </div>

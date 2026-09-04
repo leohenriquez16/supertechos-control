@@ -10,7 +10,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Upload, Loader2, AlertTriangle, Check, X, Car, Link2, Ban,
-  TrendingUp, TrendingDown, Calendar, Receipt,
+  Calendar, Receipt, User,
 } from 'lucide-react';
 import * as db from '../../lib/db';
 import { toast } from '../../lib/toast';
@@ -184,12 +184,14 @@ export default function VistaPeajes({ usuario, data, onRecargar }) {
 
       {/* ---------- cuadre del mes ---------- */}
       {resMes && (
-        <div className="grid gap-3 sm:grid-cols-3 mb-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 mb-4">
           <Tile titulo="Total del mes" valor={rd(resMes.total)} pie={`${resMes.pases.toLocaleString()} pases · ${resMes.tags} tags`} />
-          <Tile titulo="Asignado a vehículos" valor={rd(resMes.asignado)}
-            pie={`${resMes.total ? Math.round(resMes.asignado / resMes.total * 100) : 0}% del total`} ok />
-          <Tile titulo="Sin vehículo" valor={rd(resMes.sinAsignar)}
-            pie={`${resMes.tagsSinVehiculo} tag(s) sin identificar`} alerta={resMes.sinAsignar > 0} />
+          <Tile titulo="Flota" valor={rd(resMes.flota)}
+            pie={`${resMes.total ? Math.round(resMes.flota / resMes.total * 100) : 0}% del total`} ok />
+          <Tile titulo="Carros del personal" valor={rd(resMes.particular)}
+            pie="peaje de carros personales" />
+          <Tile titulo="Sin identificar" valor={rd(resMes.sinAsignar)}
+            pie={`${resMes.tagsSinVehiculo} tag(s)`} alerta={resMes.sinAsignar > 0} />
         </div>
       )}
 
@@ -206,8 +208,8 @@ export default function VistaPeajes({ usuario, data, onRecargar }) {
       )}
 
       {/* ---------- consumo por vehículo ---------- */}
-      <TablaConsumo mesSel={mesSel} tags={tags} vehiculos={vehiculos} consumoMes={consumoMes}
-        consumoTag={consumoTag} onResolver={setResolver} />
+      <TablaConsumo mesSel={mesSel} tags={tags} vehiculos={vehiculos} personal={data?.personal || []}
+        consumoMes={consumoMes} consumoTag={consumoTag} onResolver={setResolver} />
 
       {/* ---------- historial de subidas ---------- */}
       {periodos.length > 0 && (
@@ -232,6 +234,7 @@ export default function VistaPeajes({ usuario, data, onRecargar }) {
         <ModalIdentificar
           tagInfo={resolver}
           vehiculos={vehiculos}
+          personal={data?.personal || []}
           sugerido={conflictoDe(resolver.tag)}
           usuario={usuario}
           onCerrar={() => setResolver(null)}
@@ -253,7 +256,7 @@ function Tile({ titulo, valor, pie, ok, alerta }) {
 }
 
 // Consumo del mes por tag, con el vehículo al que está enganchado.
-function TablaConsumo({ mesSel, tags, vehiculos, consumoMes, consumoTag, onResolver }) {
+function TablaConsumo({ mesSel, tags, vehiculos, personal = [], consumoMes, consumoTag, onResolver }) {
   const [pases, setPases] = useState(null); // tag cuyo detalle se está viendo
 
   const filas = tags.map(t => {
@@ -295,8 +298,15 @@ function TablaConsumo({ mesSel, tags, vehiculos, consumoMes, consumoTag, onResol
                 <td className="px-3 py-2">
                   {f.veh ? (
                     <>
-                      <div className="font-bold text-zinc-200">{f.veh.marca} {f.veh.modelo}</div>
-                      <div className="text-[10px] text-zinc-500">{f.veh.placa || 'sin placa'}</div>
+                      <div className="font-bold text-zinc-200">
+                        {f.veh.marca} {f.veh.modelo}
+                        {f.veh.esParticular && <span className="ml-1.5 text-[9px] font-black uppercase text-sky-400 border border-sky-800 rounded px-1 py-0.5">Personal</span>}
+                      </div>
+                      <div className="text-[10px] text-zinc-500">
+                        {f.veh.placa || 'sin placa'}
+                        {f.veh.esParticular && f.veh.responsableId && personal.find(p => p.id === f.veh.responsableId)
+                          ? ` · ${personal.find(p => p.id === f.veh.responsableId).nombre}` : ''}
+                      </div>
                     </>
                   ) : f.estado === 'fuera_flota' ? (
                     <>
@@ -374,11 +384,12 @@ function DetallePases({ tag, mes, onCerrar }) {
 // ------------------------------------------------------------
 // Identificar un tag. Tres salidas, ninguna es "después".
 // ------------------------------------------------------------
-function ModalIdentificar({ tagInfo, vehiculos, sugerido, usuario, onCerrar, onListo }) {
+function ModalIdentificar({ tagInfo, vehiculos, personal = [], sugerido, usuario, onCerrar, onListo }) {
   const [modo, setModo] = useState(sugerido ? 'unificar' : 'asignar');
   const [vehiculoId, setVehiculoId] = useState(sugerido?.id || '');
   const [placaFinal, setPlacaFinal] = useState(tagInfo.placaPortal || '');
   const [nota, setNota] = useState('');
+  const [personaId, setPersonaId] = useState('');
   const [guardando, setGuardando] = useState(false);
 
   const veh = vehiculos.find(v => v.id === vehiculoId);
@@ -386,7 +397,16 @@ function ModalIdentificar({ tagInfo, vehiculos, sugerido, usuario, onCerrar, onL
   const guardar = async () => {
     setGuardando(true);
     try {
-      if (modo === 'fuera') {
+      if (modo === 'persona') {
+        if (!personaId) throw new Error('Elige de quién es el carro.');
+        const [marca, ...resto] = (tagInfo.nombrePortal || '').split(' ');
+        await db.asignarTagAPersona({
+          tag: tagInfo.tag, personaId, vehiculoId: vehiculoId || null,
+          datos: { marca: marca || 'Sin marca', modelo: resto.join(' '), placa: tagInfo.placaPortal || '' },
+          usuario,
+        });
+        toast.success('Asignado al carro personal');
+      } else if (modo === 'fuera') {
         await db.marcarTagFueraDeFlota(tagInfo.tag, nota, usuario);
         toast.success('Marcado fuera de flota');
       } else if (modo === 'unificar') {
@@ -463,11 +483,28 @@ function ModalIdentificar({ tagInfo, vehiculos, sugerido, usuario, onCerrar, onL
             )}
           </Opcion>
 
+          <Opcion activo={modo === 'persona'} onClick={() => setModo('persona')}
+            icono={<User className="w-4 h-4" />} titulo="Es el carro personal de un empleado"
+            sub="El peaje lo paga la empresa: cuenta como gasto, pero no como gasto de flota">
+            <select value={personaId} onChange={e => setPersonaId(e.target.value)}
+              className="w-full bg-zinc-950 border border-zinc-700 rounded-card px-3 py-2 text-sm">
+              <option value="">— ¿de quién es el carro? —</option>
+              {personal.filter(p => p.activo !== false)
+                .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''))
+                .map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+            </select>
+            <div className="text-[11px] text-zinc-500 mt-2">
+              Se crea la ficha del vehículo a nombre de esa persona, marcada como particular.
+              No entra en Flota GPS ni en los costos de operación, y su gasto queda sumado
+              aparte en “Carros del personal”.
+            </div>
+          </Opcion>
+
           <Opcion activo={modo === 'fuera'} onClick={() => setModo('fuera')}
-            icono={<Ban className="w-4 h-4" />} titulo="No es un vehículo de la flota"
-            sub="Deja de pedir identificación, pero sigue sumando al total de la cuenta">
+            icono={<Ban className="w-4 h-4" />} titulo="No es de la empresa ni de un empleado"
+            sub="Para un tag ajeno. Deja de pedir identificación, pero sigue sumando al total de la cuenta">
             <input value={nota} onChange={e => setNota(e.target.value)} maxLength={120}
-              placeholder="¿Por qué? Ej: vehículo particular de la familia"
+              placeholder="¿Por qué? Ej: tag de un tercero, pendiente de dar de baja"
               className="w-full bg-zinc-950 border border-zinc-700 rounded-card px-3 py-2 text-sm" />
           </Opcion>
         </div>

@@ -9,6 +9,7 @@ import * as db from '../../lib/db';
 import { formatNum } from '../../lib/helpers/formato';
 import { getTipoGarantia, serviciosDeTipo } from '../../lib/garantiasCatalogo';
 import MapaLeaflet from '../common/MapaLeaflet';
+import ModalCartaGarantia from './ModalCartaGarantia'; // v8.50.0: carta de garantía PDF
 
 const fmtFecha = (s) => { if (!s) return '—'; try { return new Date(s + 'T12:00:00').toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return s; } };
 const diasHasta = (s) => { if (!s) return null; const h = new Date(); h.setHours(0, 0, 0, 0); return Math.round((new Date(s + 'T12:00:00') - h) / 86400000); };
@@ -39,6 +40,7 @@ export default function VistaGarantias({ data, usuario, onVolver, onVerProyecto 
   const [reload, setReload] = useState(0);
   const [vistaMant, setVistaMant] = useState('lista'); // lista|calendario
   const [expGar, setExpGar] = useState(null); // garantía expandida (ficha de cobertura/servicios)
+  const [cartaDe, setCartaDe] = useState(null); // v8.50.0: garantía a la que se le genera la carta
   const [mesCal, setMesCal] = useState(() => new Date());
   const [mesCalAuto, setMesCalAuto] = useState(false);
   const [diaSel, setDiaSel] = useState(null); // 'YYYY-MM-DD' seleccionado en el calendario
@@ -171,6 +173,11 @@ export default function VistaGarantias({ data, usuario, onVolver, onVerProyecto 
         </div>
         {abierto && (
           <div className="border-t border-zinc-800 p-3 space-y-3">
+            {/* v8.50.0 (ticket Miguel M.): carta de garantía en PDF con membrete, leída de ESTA garantía */}
+            <button onClick={() => setCartaDe(g)}
+              className="bg-red-600 hover:bg-red-500 text-white text-[10px] font-black uppercase px-3 py-1.5 rounded-card">
+              📄 Generar carta de garantía
+            </button>
             {g.suspendida && <div className="text-[11px] text-orange-300 bg-orange-900/15 border border-orange-800/40 rounded-card px-2 py-1.5">⏸ Garantía <b>suspendida</b>: hay una inspección obligatoria vencida. Se reactiva al marcarla como realizada en la pestaña Mantenimientos.</div>}
             {(g.cobertura || tipo?.cobertura) && (
               <div><div className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-0.5">Cobertura</div><div className="text-xs text-zinc-300">{g.cobertura || tipo?.cobertura}</div></div>
@@ -475,6 +482,16 @@ export default function VistaGarantias({ data, usuario, onVolver, onVerProyecto 
             })()}
           </div>
         )
+      )}
+      {cartaDe && (
+        <ModalCartaGarantia
+          garantia={cartaDe}
+          clienteNombre={clienteNombre(cartaDe)}
+          proyecto={proyById(cartaDe.proyectoId)}
+          ubicacionNombre={ubic(cartaDe.ubicacionId)?.nombre || ''}
+          mantenimientos={mantenimientos}
+          onCerrar={() => setCartaDe(null)}
+        />
       )}
     </div>
   );

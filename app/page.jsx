@@ -75,6 +75,7 @@ import NuevoProyecto from '../components/proyecto/NuevoProyecto';
 import ModalEditarProyecto from '../components/proyecto/ModalEditarProyecto';
 // v8.17.41: carta de acceso de personal al cliente
 import ModalCartaAcceso from '../components/proyecto/ModalCartaAcceso';
+import ModalCartaGarantia from '../components/garantias/ModalCartaGarantia'; // v8.50.0
 import ModalListaHerramientas from '../components/proyecto/ModalListaHerramientas';
 import SeccionArchivosProyecto from '../components/proyecto/SeccionArchivosProyecto';
 // v8.17.52: reportar avance del día en proyectos de unidades (baños, balcones, etc)
@@ -5215,6 +5216,20 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
 function TabInfo({ proyecto, clientes = [], contactos = [], documentos = [], sistemas = {}, usuario, personal = [], vehiculos = [], esAdmin, esSupervisor, onRecargar }) {
   // v8.17.41: modal carta de acceso del personal
   const [modalCarta, setModalCarta] = useState(false);
+  // v8.50.0 (ticket Miguel M.): carta de garantía desde Info tras "Recibido conforme".
+  // Lee la garantía REAL creada al cambiar de estado (no recalcula del sistema).
+  const [cartaGarantia, setCartaGarantia] = useState(null); // { garantia, mantenimientos } | 'cargando'
+  const abrirCartaGarantia = async () => {
+    setCartaGarantia('cargando');
+    try {
+      const gs = await db.listarGarantias();
+      const g = (gs || []).find(x => x.proyectoId === proyecto.id && x.estado !== 'anulada');
+      if (!g) { alert('Este proyecto no tiene garantía registrada todavía. Pasa la obra a "Finalizado Recibido Conforme" para crearla.'); setCartaGarantia(null); return; }
+      let mants = [];
+      try { mants = await db.listarMantenimientos({ garantiaId: g.id }); } catch { mants = []; }
+      setCartaGarantia({ garantia: g, mantenimientos: mants });
+    } catch (e) { alert('Error: ' + (e?.message || e)); setCartaGarantia(null); }
+  };
   // v8.17.62: modal lista de herramientas
   const [modalHerramientas, setModalHerramientas] = useState(false);
   // v8.17.67: sincronización de factura desde Odoo
@@ -5431,7 +5446,15 @@ function TabInfo({ proyecto, clientes = [], contactos = [], documentos = [], sis
           <div><div className="text-zinc-500">Ref. Odoo</div><div className="font-mono">{proyecto.referenciaOdoo || '—'}</div></div>
           <div><div className="text-zinc-500">Ref. Proyecto</div><div>{proyecto.referenciaProyecto || '—'}</div></div>
           <div><div className="text-zinc-500">Inicio</div><div>{proyecto.fecha_inicio ? formatFechaCorta(proyecto.fecha_inicio) : '—'}</div></div>
-          <div><div className="text-zinc-500">Entrega</div><div>{proyecto.fecha_entrega ? formatFechaCorta(proyecto.fecha_entrega) : '—'}</div></div>
+          <div><div className="text-zinc-500">Entrega</div><div>{proyecto.fecha_entrega ? formatFechaCorta(proyecto.fecha_entrega) : '—'}</div>
+            {/* v8.50.0: carta de garantía disponible tras recibido conforme */}
+            {['finalizado_recibido_conforme', 'facturado', 'cobrado'].includes(proyecto.estado) && (
+              <button onClick={abrirCartaGarantia} disabled={cartaGarantia === 'cargando'}
+                className="mt-1 text-[10px] font-black uppercase text-red-400 hover:text-red-300 disabled:opacity-50">
+                {cartaGarantia === 'cargando' ? 'Buscando…' : '📄 Carta de garantía'}
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

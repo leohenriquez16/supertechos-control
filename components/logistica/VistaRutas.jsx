@@ -54,7 +54,13 @@ export default function VistaRutas({ usuario, data, onVolver }) {
     // eslint-disable-next-line
   }, [verSemana, diasSemana, viajes]);
 
-  const choferes = useMemo(() => (data.personal || []).filter(p => tieneRol(p, 'chofer')), [data.personal]);
+  // v8.50.0 (ticket Erisdania): además del rol 'chofer', cuenta como chofer quien sea
+  // RESPONSABLE de un vehículo activo de la flota (maestros asignados a proyectos con
+  // vehículo suelen llevar materiales) — sin tener que darles el rol.
+  const choferes = useMemo(() => {
+    const respIds = new Set((data.vehiculos || []).filter(v => v.activo !== false && v.responsableId).map(v => v.responsableId));
+    return (data.personal || []).filter(p => tieneRol(p, 'chofer') || respIds.has(p.id));
+  }, [data.personal, data.vehiculos]);
 
   const recargar = async () => {
     setLoading(true);
@@ -466,7 +472,7 @@ export default function VistaRutas({ usuario, data, onVolver }) {
                             return (
                               <td key={d} className={`px-0.5 py-1 align-top ${d === hoy ? 'bg-cyan-950/30' : ''}`}>
                                 {del.length ? <div className="space-y-0.5">{del.map(chip)}</div>
-                                  : <button onClick={() => { setFecha(d); setVerSemana(false); setCreando(true); setNuevo({ tipoEnvio: 'camion', vehiculoId: vh.id, vehiculo: `${vh.marca || ''} ${vh.modelo || ''}${vh.placa ? ` · ${vh.placa}` : ''}`.trim(), choferId: chofer && (chofer.roles || []).includes('chofer') ? chofer.id : '' }); }}
+                                  : <button onClick={() => { setFecha(d); setVerSemana(false); setCreando(true); setNuevo({ tipoEnvio: 'camion', vehiculoId: vh.id, vehiculo: `${vh.marca || ''} ${vh.modelo || ''}${vh.placa ? ` · ${vh.placa}` : ''}`.trim(), choferId: chofer ? chofer.id : '' /* v8.50.0: responsable entra aunque no tenga rol chofer */ }); }}
                                       className="w-full text-[9px] text-zinc-800 hover:text-cyan-500 py-0.5" title="Libre — clic para planificar un viaje">＋</button>}
                               </td>
                             );
@@ -607,7 +613,7 @@ export default function VistaRutas({ usuario, data, onVolver }) {
                 {nuevo.tipoEnvio === 'camion' && (
                   <select value={nuevo.vehiculoId || ''} onChange={e => {
                     const v = (data.vehiculos || []).find(x => x.id === e.target.value);
-                    const resp = v ? (data.personal || []).find(p => p.id === v.responsableId && (p.roles || []).includes('chofer')) : null;
+                    const resp = v ? (data.personal || []).find(p => p.id === v.responsableId) : null; // v8.50.0: sin exigir rol chofer
                     setNuevo({
                       ...nuevo, vehiculoId: v?.id || '', cambiarChofer: false,
                       vehiculo: v ? `${v.marca || ''} ${v.modelo || ''}${v.placa ? ` · ${v.placa}` : ''}`.trim() : '',

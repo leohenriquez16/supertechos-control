@@ -1245,6 +1245,7 @@ export default function App() {
                 proyectoId: proy.id, areaId: ln.areaId, tareaId: ln.tareaId,
                 fecha: meta.fecha, nota: meta.nota || null,
                 supervisor: usuario.nombre, supervisorId: usuario.id,
+                ...(meta.reparacion ? { reparacion: true } : {}),
                 ...(ln.rollos != null ? { rollos: ln.rollos } : {}),
                 ...(ln.m2 != null ? { m2: ln.m2 } : {}),
                 ...(ln.cubetas != null ? { cubetas: ln.cubetas } : {}),
@@ -8154,7 +8155,7 @@ function FormReporte({ usuario, proyecto, reportes, sistema, sistemas, estadosAr
   const areasBloqueadasRep = new Set((estadosArea || []).filter(e => e.proyectoId === proyecto.id && e.estado === 'bloqueada').map(e => e.areaId));
   const areasReportables = (proyecto.areas || []).filter(a => !areasBloqueadasRep.has(a.id));
   const [paso, setPaso] = useState(1);
-  const [form, setForm] = useState({ areaId: '', tareaId: '', m2: '', rollos: '', cubetas: '', fecha: new Date().toISOString().split('T')[0], nota: '' });
+  const [form, setForm] = useState({ areaId: '', tareaId: '', m2: '', rollos: '', cubetas: '', fecha: new Date().toISOString().split('T')[0], nota: '', reparacion: false });
   const [fotos, setFotos] = useState([]);
   const [comprimiendo, setComprimiendo] = useState(false);
   const [enviado, setEnviado] = useState(false);
@@ -8170,7 +8171,7 @@ function FormReporte({ usuario, proyecto, reportes, sistema, sistemas, estadosAr
   const m2Rest = area && tarea ? Math.max(0, area.m2 - m2Ac) : 0;
   const m2Rep = !tarea ? 0 : tarea.reporta === 'rollos' ? (parseFloat(form.rollos) || 0) * 8.5 : parseFloat(form.m2) || 0;
 
-  const construir = (vals) => ({ proyectoId: proyecto.id, areaId: form.areaId, tareaId: form.tareaId, fecha: form.fecha, nota: form.nota, supervisor: usuario.nombre, supervisorId: usuario.id, ...vals });
+  const construir = (vals) => ({ proyectoId: proyecto.id, areaId: form.areaId, tareaId: form.tareaId, fecha: form.fecha, nota: form.nota, supervisor: usuario.nombre, supervisorId: usuario.id, ...(form.reparacion ? { reparacion: true } : {}), ...vals });
 
   const agregarFotos = async (files) => {
     if (!files?.length) return;
@@ -8260,6 +8261,11 @@ function FormReporte({ usuario, proyecto, reportes, sistema, sistemas, estadosAr
         {tarea.reporta === 'm2_y_cubetas' && <><Label>📐 m²</Label><Input type="number" value={form.m2} onChange={v => setForm({ ...form, m2: v })} /><Label>🪣 Cubetas</Label><Input type="number" value={form.cubetas} onChange={v => setForm({ ...form, cubetas: v })} step="0.1" /></>}
         {tarea.reporta === 'm2' && <><Label>📐 m²</Label><Input type="number" value={form.m2} onChange={v => setForm({ ...form, m2: v })} /></>}
         {tarea.reporta === 'unidades' && <><Label>Unidades</Label><Input type="number" value={form.m2} onChange={v => setForm({ ...form, m2: v })} /></>}
+        {/* v8.50.0 (ticket Miguel M.): retoque en área ya trabajada — no suma avance ni nómina */}
+        <label className="flex items-center gap-2 text-xs cursor-pointer bg-zinc-900 border border-zinc-800 rounded-card px-3 py-2">
+          <input type="checkbox" checked={!!form.reparacion} onChange={e => setForm({ ...form, reparacion: e.target.checked })} className="w-4 h-4 accent-amber-500" />
+          <span>🔧 <b>Reparación / retoque</b> <span className="text-zinc-500">— área ya reportada: no suma avance, producción ni pago</span></span>
+        </label>
 
         {/* BLOQUE DE FOTOS OPCIONALES */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 space-y-2">
@@ -8291,6 +8297,7 @@ function FormReporteLote({ usuario, proyecto, reportes, sistema, sistemas, estad
 
   const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
   const [nota, setNota] = useState('');
+  const [reparacion, setReparacion] = useState(false); // v8.50.0: lote de retoques
   const [lineas, setLineas] = useState([]); // { areaId, tareaId, m2?|rollos?|cubetas? }
   const [fotos, setFotos] = useState([]);
   const [comprimiendo, setComprimiendo] = useState(false);
@@ -8389,7 +8396,7 @@ function FormReporteLote({ usuario, proyecto, reportes, sistema, sistemas, estad
   const guardar = async () => {
     if (!lineas.length || guardando) return;
     setGuardando(true);
-    const ok = await onGuardarLote(lineas, fotos, { fecha, nota });
+    const ok = await onGuardarLote(lineas, fotos, { fecha, nota, reparacion });
     if (ok) { setResumen({ n: lineas.length, fotos: fotos.length, total: totalEstimado }); setEnviado(true); }
     setGuardando(false);
   };
@@ -8558,6 +8565,11 @@ function FormReporteLote({ usuario, proyecto, reportes, sistema, sistemas, estad
       </div>
 
       <div><Label>Nota (opcional)</Label><Input value={nota} onChange={v => setNota(v)} placeholder="Aplica a todo el lote" /></div>
+      {/* v8.50.0: lote de reparaciones/retoques — no suma avance ni nómina */}
+      <label className="flex items-center gap-2 text-xs cursor-pointer bg-zinc-900 border border-zinc-800 rounded-card px-3 py-2">
+        <input type="checkbox" checked={reparacion} onChange={e => setReparacion(e.target.checked)} className="w-4 h-4 accent-amber-500" />
+        <span>🔧 <b>Reparación / retoque</b> <span className="text-zinc-500">— no suma avance, producción ni pago</span></span>
+      </label>
 
       <BotonPrincipal disabled={!lineas.length || guardando} onClick={guardar}>{guardando ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : `Guardar lote (${lineas.length})`}</BotonPrincipal>
     </div>

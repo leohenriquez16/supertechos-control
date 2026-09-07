@@ -109,12 +109,31 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
     return ordered.map(k => ({ key: k, label: labelOf(k), items: map.get(k) }));
   }, [filtradas, agruparPor, columnasRecl]);
 
+  // v8.50.0 (ticket Edwin): al cambiar el estado local se sincroniza también la etapa
+  // Odoo (odoo_stage) — antes la tarjeta no se movía de columna en el Kanban.
   const cambiarEstado = async (id, estado) => {
     const estadoPrev = recs.find(r => r.id === id)?.estado;
-    setRecs(prev => prev.map(r => r.id === id ? { ...r, estado } : r)); // optimista
+    const odooStage = MAP_LOCAL_ODOO[estado] || 'New';
+    setRecs(prev => prev.map(r => r.id === id ? { ...r, estado, odooStage } : r)); // optimista
     try {
-      await db.actualizarReclamacion(id, { estado });
+      await db.actualizarReclamacion(id, { estado, odooStage });
       try { await chatterEstado('reclamacion', id, estadoPrev, estado, usuario, 'estado'); } catch {}
+    } catch (e) { alert('Error: ' + (e.message || e)); setReload(x => x + 1); }
+  };
+
+  // v8.50.0: soltar una tarjeta en una columna del Kanban la mueve a ESA etapa Odoo
+  // (y ajusta el estado local equivalente). El drag&drop existía pero estaba muerto.
+  const MAP_ODOO_LOCAL = { 'New': 'abierta', 'On Hold': 'en_proceso', 'Agendado': 'en_proceso', 'Visita Programada': 'en_proceso', 'In Progress': 'en_proceso', 'Solucion Cotizada espera Aprobación': 'en_proceso', 'Solved': 'resuelta', 'Cancelled': 'rechazada' };
+  const soltarEnColumna = async (col) => {
+    if (!dragId) return;
+    const id = dragId;
+    const estadoPrev = recs.find(r => r.id === id)?.estado;
+    const estado = MAP_ODOO_LOCAL[col] || estadoPrev || 'en_proceso';
+    setDragId(null); setDropCol(null);
+    setRecs(prev => prev.map(r => r.id === id ? { ...r, estado, odooStage: col } : r));
+    try {
+      await db.actualizarReclamacion(id, { estado, odooStage: col });
+      try { await chatterEstado('reclamacion', id, estadoPrev, `${estado} · ${col}`, usuario, 'estado'); } catch {}
     } catch (e) { alert('Error: ' + (e.message || e)); setReload(x => x + 1); }
   };
 
@@ -283,7 +302,10 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
           {columnasRecl.map(col => {
             const items = filtradas.filter(r => estadoOdoo(r) === col);
             return (
-              <div key={col} className="w-60 flex-shrink-0 bg-zinc-950 border border-zinc-800 rounded-card">
+              <div key={col}
+                onDragOver={(e) => { e.preventDefault(); if (dropCol !== col) setDropCol(col); }}
+                onDrop={(e) => { e.preventDefault(); soltarEnColumna(col); }}
+                className={`w-60 flex-shrink-0 bg-zinc-950 border rounded-card ${dropCol === col && dragId ? 'border-red-600' : 'border-zinc-800'}`}>
                 <div className="px-3 py-2 flex items-center justify-between border-b border-zinc-800">
                   <span className="text-[10px] uppercase tracking-widest font-bold text-zinc-300 truncate">{col}</span>
                   <span className="text-[9px] text-zinc-600">{items.length}</span>

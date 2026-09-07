@@ -150,6 +150,9 @@ export default function ModalReportarGasto({ usuario, proyectos = [], proyectoId
   const guardar = async () => {
     const monto = parseFloat(datos.monto);
     if (!monto || monto <= 0) { toast.warning('Ingresa un monto válido'); return; }
+    // v8.50.0: proyecto OBLIGATORIO (ticket Felvison) — sin obra asignada el gasto
+    // no aparece en la rentabilidad de ninguna obra.
+    if (!datos.proyectoId) { toast.warning('Selecciona el proyecto del gasto (obligatorio)'); return; }
     if (!fotoData && !sinFoto && !sinFactura) { toast.warning('Falta la foto de la factura (o marca "sin foto" / "sin factura")'); return; }
     // v8.16.1: validaciones especiales para sin factura
     if (sinFactura) {
@@ -416,12 +419,14 @@ export default function ModalReportarGasto({ usuario, proyectos = [], proyectoId
               </Campo>
             </div>
 
-            <Campo label="Proyecto (opcional)">
-              {/* v8.17.25: selector con buscador + orden por últimos usados */}
+            <Campo label="Proyecto *">
+              {/* v8.17.25: selector con buscador + orden por últimos usados
+                  v8.50.0: obligatorio — sin opción "sin proyecto" (ticket Felvison) */}
               <ProyectoSelector
                 value={datos.proyectoId}
                 onChange={(id) => setDatos({ ...datos, proyectoId: id })}
                 proyectos={proyectos}
+                permitirVacio={false}
               />
               {proyectos.length === 0 && (
                 <div className="text-[10px] text-zinc-500 mt-1">

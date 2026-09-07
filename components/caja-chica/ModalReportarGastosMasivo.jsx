@@ -452,7 +452,8 @@ function FilaFacturaMobile({ borrador: b, duplicadosEnLote, proyectos, categoria
               className={`w-full border px-2 py-1.5 text-xs ${b.datos.proyectoSeleccion ? 'bg-zinc-900 border-zinc-700' : 'bg-red-950/30 border-red-700'} text-white`}
             >
               <option value="">— Elegir —</option>
-              <option value={PROYECTO_GENERICO}>🌐 Gasto genérico (sin proyecto)</option>
+              {/* v8.50.0: se quitó "gasto genérico" — proyecto obligatorio (ticket Felvison);
+                  para obras que no están en el ERP queda "Otro proyecto (Nº cotización)" */}
               {proyectos.length > 0 && (
                 <optgroup label="Mis proyectos">
                   {proyectos.map(p => (

@@ -144,10 +144,15 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
   // v8.26.10: BRIGADAS — cada maestro de la obra puede tener su propio tipo de MDO
   // (él + sus ayudantes): una brigada por día y otra por m² en la misma obra.
   // Se persiste como overrides por persona en costos_dia_proyecto (la nómina ya los respeta).
+  // v8.50.3 (ticket Miguel M., caso Osman): el SUPERVISOR también puede tener su propio
+  // modo de pago (p.ej. por día) aunque la obra tenga varios maestros — antes no había
+  // dónde configurárselo. También entran los maestros de las brigadas (v8.27.22).
   const maestrosBrigada = [...new Set([
+    form.supervisorId,
     form.maestroId,
     ...(form.areas || []).map(a => a.maestroAreaId),
     ...Object.values(form.maestrosTareas || {}),
+    ...(form.brigadas || []).map(b => b.maestroId),
   ].filter(Boolean))].map(id => getPersona(data.personal, id)).filter(Boolean);
   const ayudantesDeBrigada = (mid) => (data.personal || []).filter(p => tieneRol(p, 'ayudante') && p.maestroId === mid);
   const ovDe = (pid) => costosDia.find(c => c.personaId === pid) || {};
@@ -949,8 +954,8 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
           {maestrosBrigada.length > 0 && (
             <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3 space-y-2">
               <div>
-                <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1">Modo de pago por brigada (opcional)</div>
-                <div className="text-[10px] text-zinc-500">Cada maestro puede cobrar distinto al modo general de la obra: una brigada por día y otra por m². "Por día" se aplica también a sus ayudantes. La nómina lo respeta automáticamente.</div>
+                <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1">Modo de pago por persona (supervisor y brigadas · opcional)</div>
+                <div className="text-[10px] text-zinc-500">El supervisor y cada maestro pueden cobrar distinto al modo general de la obra: el supervisor por día, una brigada por día y otra por m². "Por día" se aplica también a sus ayudantes. La nómina lo respeta automáticamente.</div>
               </div>
               {loadingCostos ? (
                 <Loader2 className="w-4 h-4 animate-spin text-zinc-500" />
@@ -962,8 +967,8 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
                   <div key={m.id} className="border border-zinc-800 rounded-card p-2 space-y-1.5 bg-zinc-900/40">
                     <div className="flex items-center gap-2">
                       <div className="flex-1 min-w-0">
-                        <div className="text-xs font-bold truncate">{m.nombre}</div>
-                        <div className="text-[9px] text-zinc-500">{ayus.length} ayudante{ayus.length !== 1 ? 's' : ''} en su brigada</div>
+                        <div className="text-xs font-bold truncate">{m.nombre} {m.id === form.supervisorId && <span className="text-[9px] font-bold text-sky-400 ml-1">SUPERVISOR</span>}</div>
+                        <div className="text-[9px] text-zinc-500">{m.id === form.supervisorId && ayus.length === 0 ? 'supervisor de la obra' : `${ayus.length} ayudante${ayus.length !== 1 ? 's' : ''} en su brigada`}</div>
                       </div>
                       <select
                         value={modoSel}
@@ -1002,7 +1007,7 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
                       <div className="space-y-1 pt-1 border-t border-zinc-800/60">
                         {[m, ...ayus].map(p => (
                           <div key={p.id} className="flex items-center gap-2">
-                            <div className="flex-1 min-w-0 text-[11px] truncate text-zinc-300">{p.nombre}{p.id === m.id && <span className="text-zinc-600 text-[9px] ml-1">(maestro)</span>}</div>
+                            <div className="flex-1 min-w-0 text-[11px] truncate text-zinc-300">{p.nombre}{p.id === m.id && <span className="text-zinc-600 text-[9px] ml-1">{m.id === form.supervisorId ? '(supervisor)' : '(maestro)'}</span>}</div>
                             <span className="text-[9px] text-zinc-600">RD$/día</span>
                             <input
                               key={'cd_' + p.id + '_' + (getCostoPersona(p.id) || 0)}

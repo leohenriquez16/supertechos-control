@@ -1369,11 +1369,13 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
   }, [initialExpandedId, vistaInicialAplicada]);
 
   // v8.6: Detalle filtrado por modo "solo maestros"
+  // v8.50.3: un SUPERVISOR con pago en el corte (p.ej. por día — caso Osman) no se
+  // oculta con el filtro; si no, su fila desaparece y el total visible no cuadra.
   const detalleFiltrado = React.useMemo(() => {
     if (!soloMaestros) return detalle;
     return detalle.filter(r => {
       const persona = data.personal.find(p => p.id === r.personaId);
-      return persona?.roles?.includes('maestro');
+      return persona?.roles?.includes('maestro') || (persona?.roles?.includes('supervisor') && r.montoTotal !== 0);
     });
   }, [detalle, soloMaestros, data.personal]);
 
@@ -1486,10 +1488,26 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
   const excluidosCorte = React.useMemo(() =>
     (data.reportes || []).filter(r => r.fecha >= corte.fechaInicio && r.fecha <= corte.fechaFin && r.excluirNomina),
   [data.reportes, corte.fechaInicio, corte.fechaFin]);
+  // v8.50.3 (ticket Miguel M., caso Despertar): exclusión MANUAL de cualquier reporte del
+  // corte — antes solo se podía excluir lo que el detector de gemelos encontraba, y un
+  // trabajo pagado por adelantado (ajuste en la quincena anterior) no dispara el detector.
+  const [buscarExcluir, setBuscarExcluir] = useState('');
+  const candidatosExcluir = React.useMemo(() => {
+    const q = buscarExcluir.trim().toLowerCase();
+    if (q.length < 2) return [];
+    return (data.reportes || [])
+      .filter(r => r.fecha >= corte.fechaInicio && r.fecha <= corte.fechaFin && (r.m2 > 0) && !r.excluirNomina)
+      .map(r => { const proy = data.proyectos.find(p => p.id === r.proyectoId); return { r, proy, ref: `${proy?.referenciaOdoo || ''} ${proy?.cliente || ''} ${proy?.nombre || ''}`.trim() }; })
+      .filter(x => x.ref.toLowerCase().includes(q))
+      .slice(0, 12);
+  }, [buscarExcluir, data.reportes, data.proyectos, corte.fechaInicio, corte.fechaFin]);
   const toggleExclusion = async (rep, excluir) => {
-    const accion = excluir ? 'EXCLUIR del pago' : 'restaurar al pago';
-    if (!confirm(`¿${accion} el reporte del ${rep.fecha} (${formatNum(rep.m2)} m²)?`)) return;
-    try { await db.marcarExclusionNominaReporte(rep.id, excluir); await recargarTodo(); }
+    let motivo;
+    if (excluir) {
+      motivo = prompt(`EXCLUIR del pago el reporte del ${rep.fecha} (${formatNum(rep.m2)} m²).\n\n¿Por qué? (obligatorio — ej: "ya pagado por adelantado en la quincena anterior")`);
+      if (!motivo || !motivo.trim()) return;
+    } else if (!confirm(`¿Restaurar al pago el reporte del ${rep.fecha} (${formatNum(rep.m2)} m²)?`)) return;
+    try { await db.marcarExclusionNominaReporte(rep.id, excluir, { motivo: motivo?.trim(), porId: usuario?.id }); await recargarTodo(); }
     catch (e) { alert('Error: ' + (e.message || e)); }
   };
 
@@ -2095,11 +2113,13 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
         ))}</div>}
       </div>
 
-      {/* v8.27.77: posibles m² duplicados de la quincena anterior (ticket Miguel) */}
-      {corte.estado === 'abierto' && (sospechosos.filter(s => !s.r.excluirNomina).length > 0 || excluidosCorte.length > 0) && (
+      {/* v8.27.77: posibles m² duplicados de la quincena anterior (ticket Miguel)
+          v8.50.3: + exclusión MANUAL de cualquier reporte del corte (caso Despertar:
+          trabajo pagado por adelantado con un ajuste — el detector no lo ve) */}
+      {corte.estado === 'abierto' && (
         <div className="bg-amber-950/20 border border-amber-800 rounded-card p-3 space-y-2">
-          <div className="text-[11px] tracking-widest uppercase text-amber-300 font-bold">⚠ Posibles m² duplicados de la quincena anterior</div>
-          <div className="text-[10px] text-zinc-500">Reportes de este corte con la MISMA obra, área, tarea y m² que un reporte de los 31 días anteriores. Si ese trabajo ya se pagó, exclúyelo — el corte se recalcula al momento.</div>
+          <div className="text-[11px] tracking-widest uppercase text-amber-300 font-bold">⚠ Excluir trabajo ya pagado</div>
+          <div className="text-[10px] text-zinc-500">Un reporte excluido NO se paga en este corte pero SIGUE contando avance y producción (el trabajo se hizo). Úsalo cuando el pago ya salió antes — por adelanto, ajuste o duplicado. El corte se recalcula al momento.</div>
           {sospechosos.filter(s => !s.r.excluirNomina).map(({ r, gemelo, proyRef }) => (
             <div key={r.id} className="flex items-center justify-between gap-2 bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1.5 text-xs">
               <div className="min-w-0">
@@ -2109,6 +2129,23 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
               <button onClick={() => toggleExclusion(r, true)} className="shrink-0 text-[10px] font-bold uppercase px-2 py-1 bg-amber-700 hover:bg-amber-600 text-white rounded-card">Excluir del pago</button>
             </div>
           ))}
+          <div className="pt-1 border-t border-amber-900/40">
+            <input value={buscarExcluir} onChange={e => setBuscarExcluir(e.target.value)}
+              placeholder="Buscar la obra para excluir un reporte a mano (ej: Despertar)…"
+              className="w-full bg-zinc-950 border-2 border-zinc-700 focus:border-amber-600 rounded-card px-3 py-2 text-xs text-white placeholder-zinc-500 outline-none" />
+            {candidatosExcluir.map(({ r, proy, ref }) => (
+              <div key={r.id} className="flex items-center justify-between gap-2 bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1.5 text-xs mt-1">
+                <div className="min-w-0">
+                  <div className="font-bold truncate">{ref || r.proyectoId}</div>
+                  <div className="text-[10px] text-zinc-500">{formatFechaCorta(r.fecha)} · {formatNum(r.m2)} m²{r.nota ? ` · ${r.nota}` : ''}</div>
+                </div>
+                <button onClick={() => toggleExclusion(r, true)} className="shrink-0 text-[10px] font-bold uppercase px-2 py-1 bg-amber-700 hover:bg-amber-600 text-white rounded-card">Excluir del pago</button>
+              </div>
+            ))}
+            {buscarExcluir.trim().length >= 2 && candidatosExcluir.length === 0 && (
+              <div className="text-[10px] text-zinc-500 mt-1">Sin reportes de esa obra en este corte (o ya están excluidos).</div>
+            )}
+          </div>
           {excluidosCorte.length > 0 && (
             <div className="pt-1 border-t border-amber-900/40">
               <div className="text-[10px] text-zinc-500 mb-1">Excluidos de este corte ({excluidosCorte.length}):</div>
@@ -2116,7 +2153,7 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
                 const proy = data.proyectos.find(p => p.id === r.proyectoId);
                 return (
                   <div key={r.id} className="flex items-center justify-between gap-2 text-[11px] text-zinc-400 py-0.5">
-                    <span className="truncate line-through">{proy?.referenciaOdoo || r.proyectoId} · {formatFechaCorta(r.fecha)} · {formatNum(r.m2)} m²</span>
+                    <span className="truncate"><span className="line-through">{proy?.referenciaOdoo || r.proyectoId} · {formatFechaCorta(r.fecha)} · {formatNum(r.m2)} m²</span>{r.excluirNominaMotivo && <span className="text-amber-400/80 no-underline ml-1.5">— {r.excluirNominaMotivo}</span>}</span>
                     <button onClick={() => toggleExclusion(r, false)} className="shrink-0 text-[10px] underline hover:text-white">restaurar</button>
                   </div>
                 );

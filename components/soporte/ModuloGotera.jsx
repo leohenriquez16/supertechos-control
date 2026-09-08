@@ -44,6 +44,19 @@ const MODULOS = [
 const fmtFecha = (s) => { if (!s) return '—'; try { return new Date(s).toLocaleString('es-DO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }); } catch { return s; } };
 const rolPrincipal = (u) => (u?.roles || [])[0] || '—';
 
+// v8.50.7 (pedido de Leo): al marcar RESUELTO, correo automático al reportante (CC Leo)
+// con la respuesta — la gente no volvía a entrar a Gotera y no se enteraba.
+function avisarResuelto(t, personal, respuesta, resueltoPor) {
+  try {
+    const rep = (personal || []).find(pp => pp.id === t.reportadoPorId);
+    if (!rep?.email) return;
+    fetch('/api/email/ticket-resuelto', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ para: rep.email, nombre: rep.nombre, titulo: t.titulo, respuesta: respuesta || t.respuesta || null, resueltoPor }),
+    }).catch(() => {});
+  } catch { /* nunca romper el flujo */ }
+}
+
 export default function ModuloGotera({ usuario, data, onVolver }) {
   const esOwner = tieneRol(usuario, 'owner') || tieneRol(usuario, 'admin');
   const [loading, setLoading] = useState(true);
@@ -93,6 +106,7 @@ export default function ModuloGotera({ usuario, data, onVolver }) {
       const campos = { estado };
       if (estado === 'resuelto') { campos.notificarSolicitante = true; campos.resueltoPorId = usuario.id; }
       await db.actualizarTicketSoporte(id, campos);
+      if (estado === 'resuelto') { const t = tickets.find(x => x.id === id); if (t) avisarResuelto(t, data?.personal, null, usuario.nombre); } // v8.50.7
     } catch (e) { alert('Error: ' + (e.message || e)); setTickets(ts => ts.map(t => t.id === id ? { ...t, estado: prev } : t)); }
   };
 
@@ -220,7 +234,7 @@ export default function ModuloGotera({ usuario, data, onVolver }) {
       )}
 
       {modalNuevo && <ModalNuevoTicket usuario={usuario} onCerrar={() => setModalNuevo(false)} onCreado={() => { setModalNuevo(false); setReload(x => x + 1); toast.success('Reporte enviado. ¡Gracias!'); }} />}
-      {sel && <FichaTicket ticket={sel} usuario={usuario} esOwner={esOwner} onCerrar={() => setSel(null)} onCambio={() => { setReload(x => x + 1); setSel(null); }} />}
+      {sel && <FichaTicket data={data} ticket={sel} usuario={usuario} esOwner={esOwner} onCerrar={() => setSel(null)} onCambio={() => { setReload(x => x + 1); setSel(null); }} />}
     </div>
   );
 }
@@ -389,7 +403,7 @@ function GrabadorVoz({ audioBlob, onAudio }) {
 }
 
 // ============ FICHA DEL TICKET ============
-function FichaTicket({ ticket, usuario, esOwner, onCerrar, onCambio }) {
+function FichaTicket({ ticket, usuario, data, esOwner, onCerrar, onCambio }) {
   const [t, setT] = useState(ticket);
   const [respuesta, setRespuesta] = useState(ticket.respuesta || '');
   const [guardando, setGuardando] = useState(false);
@@ -423,6 +437,7 @@ function FichaTicket({ ticket, usuario, esOwner, onCerrar, onCambio }) {
       if (estado === 'resuelto') { campos.notificarSolicitante = true; campos.resueltoPorId = usuario.id; campos.respuesta = respuesta || null; }
       const upd = await db.actualizarTicketSoporte(t.id, campos);
       setT(upd);
+      if (estado === 'resuelto') avisarResuelto(t, data?.personal, respuesta, usuario.nombre); // v8.50.7
       if (estado === 'cerrado' || estado === 'resuelto') { onCambio(); }
     } catch (e) { alert('Error: ' + (e.message || e)); }
     setGuardando(false);

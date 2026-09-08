@@ -11,6 +11,7 @@ import * as db from '../../lib/db';
 import { formatRD, formatFechaCorta } from '../../lib/helpers/formato';
 import RutasVehiculo from './RutasVehiculo'; // v8.41.0
 import ModalReportarAveria from './ModalReportarAveria'; // v8.51.0: flujo guiado con protocolo
+import ModalBombas from './ModalBombas'; // v8.51.1: bombas de la tarjeta flotilla para el chofer
 
 export const TIPOS_EVENTO = {
   falla_mecanica: { label: 'Falla mecánica', icon: '🔧' },
@@ -46,6 +47,7 @@ export default function MiVehiculo({ usuario, data, onRecargar }) {
   const [guardando, setGuardando] = useState(false);
   const [form, setForm] = useState({ tipo: 'falla_mecanica', descripcion: '', km: '', fecha: hoyRD() });
   const [verRutas, setVerRutas] = useState(false); // v8.41.0
+  const [verBombas, setVerBombas] = useState(false); // v8.51.1
   const [averiando, setAveriando] = useState(false); // v8.51.0
   const [solicitandoMant, setSolicitandoMant] = useState(false); // v8.51.0: solicitud de mantenimiento → cita
   const [mantNota, setMantNota] = useState('');
@@ -107,6 +109,12 @@ export default function MiVehiculo({ usuario, data, onRecargar }) {
     setGuardando(false);
   };
 
+  // v8.51.1: abrir matrícula/seguro (URL firmada del bucket de vehículos)
+  const verDocumento = async (path) => {
+    try { const url = await db.obtenerUrlDocVehiculo(path, 3600); if (url) window.open(url, '_blank'); }
+    catch { alert('No se pudo abrir el documento — avisa a la oficina.'); }
+  };
+
   const abiertos = eventos.filter(e => e.estado !== 'resuelto');
 
   return (
@@ -124,8 +132,25 @@ export default function MiVehiculo({ usuario, data, onRecargar }) {
         {vehiculo.proximoMantFecha && <BadgeVence label="Próx. mantenimiento" fecha={vehiculo.proximoMantFecha} />}
       </div>
 
-      <button onClick={() => setVerRutas(true)} className="w-full border border-cyan-800/60 text-cyan-400 hover:bg-cyan-700 hover:text-white text-xs font-black uppercase py-2.5 rounded-card">🚚 Rutas de este vehículo (futuras y pasadas)</button>
+      <div className="grid grid-cols-2 gap-1.5">
+        <button onClick={() => setVerRutas(true)} className="border border-cyan-800/60 text-cyan-400 hover:bg-cyan-700 hover:text-white text-xs font-black uppercase py-2.5 rounded-card">🚚 Rutas del vehículo</button>
+        {/* v8.51.1: dónde echar combustible con la tarjeta flotilla (Waze directo) */}
+        <button onClick={() => setVerBombas(true)} className="border border-orange-800/60 text-orange-400 hover:bg-orange-700 hover:text-white text-xs font-black uppercase py-2.5 rounded-card">⛽ Bombas (tarjeta)</button>
+      </div>
+      {/* v8.51.1: DOCUMENTOS del vehículo en la mano del chofer — para cuando
+          AMET/DIGESETT pida matrícula o seguro no hay que llamar a la oficina. */}
+      {(vehiculo.matriculaPath || vehiculo.seguroPath) && (
+        <div className="grid grid-cols-2 gap-1.5">
+          {vehiculo.matriculaPath && (
+            <button onClick={() => verDocumento(vehiculo.matriculaPath)} className="border border-zinc-700 text-zinc-300 hover:border-zinc-500 hover:text-white text-xs font-black uppercase py-2.5 rounded-card">📄 Matrícula</button>
+          )}
+          {vehiculo.seguroPath && (
+            <button onClick={() => verDocumento(vehiculo.seguroPath)} className="border border-zinc-700 text-zinc-300 hover:border-zinc-500 hover:text-white text-xs font-black uppercase py-2.5 rounded-card">📄 Seguro</button>
+          )}
+        </div>
+      )}
       {verRutas && <RutasVehiculo vehiculo={vehiculo} onCerrar={() => setVerRutas(false)} />}
+      {verBombas && <ModalBombas onCerrar={() => setVerBombas(false)} />}
 
       {/* v8.51.0: avería EN RUTA → flujo guiado que muestra el protocolo primero */}
       <button onClick={() => setAveriando(true)} className="w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase py-3 flex items-center justify-center gap-2 text-sm rounded-card">

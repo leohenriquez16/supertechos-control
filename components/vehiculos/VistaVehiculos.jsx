@@ -495,7 +495,7 @@ function ModalLogVehiculo({ usuario, vehiculo, personal, onCerrar }) {
   const [eventos, setEventos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [agregando, setAgregando] = useState(false);
-  const [form, setForm] = useState({ tipo: 'mantenimiento', descripcion: '', km: '', costoRd: '', taller: '', fecha: new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo' }).format(new Date()) });
+  const [form, setForm] = useState({ tipo: 'mantenimiento', descripcion: '', km: '', costoRd: '', taller: '', fecha: new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo' }).format(new Date()), enTallerAhora: false });
   const TIPOS = { mantenimiento: '🛢️ Mantenimiento', falla_mecanica: '🔧 Falla mecánica', choque: '💥 Choque', dano: '🔨 Daño', gomas: '🛞 Gomas', inspeccion: '🔎 Inspección', otro: '📝 Otro' };
   const ESTADOS = { abierto: ['Abierto', 'bg-red-600/20 text-red-400'], en_taller: ['En taller', 'bg-amber-600/20 text-amber-400'], resuelto: ['Resuelto ✓', 'bg-green-600/20 text-green-400'] };
 
@@ -509,17 +509,25 @@ function ModalLogVehiculo({ usuario, vehiculo, personal, onCerrar }) {
   const guardar = async () => {
     if (!(form.descripcion || '').trim()) { toast.warning('Describe el evento.'); return; }
     try {
-      await db.crearEventoVehiculo({ vehiculoId: vehiculo.id, ...form, descripcion: form.descripcion.trim(), reportadoPorId: usuario.id, reportadoPorNombre: usuario.nombre, estado: (form.tipo === 'mantenimiento' || form.tipo === 'inspeccion') ? 'resuelto' : 'abierto' });
-      setAgregando(false); setForm({ ...form, descripcion: '', km: '', costoRd: '', taller: '' });
-      toast.success('Evento registrado.');
+      // v8.51.0 (caso "¿está de mantenimiento el KIA?"): mantenimiento EN CURSO se
+      // registra con "está en el taller ahora" → el vehículo pasa a EN TALLER y
+      // todo el equipo lo ve en la vista Flota (nadie pregunta por WhatsApp).
+      const enTallerAhora = (form.tipo === 'mantenimiento' || form.tipo === 'falla_mecanica') && form.enTallerAhora;
+      await db.crearEventoVehiculo({ vehiculoId: vehiculo.id, ...form, descripcion: form.descripcion.trim(), reportadoPorId: usuario.id, reportadoPorNombre: usuario.nombre, estado: enTallerAhora ? 'en_taller' : (form.tipo === 'mantenimiento' || form.tipo === 'inspeccion') ? 'resuelto' : 'abierto' });
+      if (enTallerAhora) await db.marcarVehiculoEnTaller(vehiculo.id).catch(() => {});
+      setAgregando(false); setForm({ ...form, descripcion: '', km: '', costoRd: '', taller: '', enTallerAhora: false });
+      toast.success(enTallerAhora ? 'Registrado — el vehículo quedó EN TALLER (visible para todo el equipo).' : 'Evento registrado.');
       await cargar();
     } catch (e) { toast.error('Error: ' + (e?.message || e)); }
   };
   const setEstado = async (ev, estado) => {
     // v8.51.0: resolver pasa por el CIERRE CON TRAZABILIDAD (diagnóstico + checklist).
     if (estado === 'resuelto') { setCerrando(ev); return; }
-    try { await db.actualizarEventoVehiculo(ev.id, { estado }); await cargar(); }
-    catch (e) { toast.error('Error: ' + (e?.message || e)); }
+    try {
+      await db.actualizarEventoVehiculo(ev.id, { estado });
+      if (estado === 'en_taller') await db.marcarVehiculoEnTaller(vehiculo.id).catch(() => {}); // v8.51.0
+      await cargar();
+    } catch (e) { toast.error('Error: ' + (e?.message || e)); }
   };
   // v8.51.0: cierre con causa raíz, costo y checklist de retorno a servicio.
   const [cerrando, setCerrando] = useState(null);
@@ -572,6 +580,13 @@ function ModalLogVehiculo({ usuario, vehiculo, personal, onCerrar }) {
               <input type="number" value={form.costoRd} onChange={e => setForm({ ...form, costoRd: e.target.value })} placeholder="Costo RD$" className="bg-zinc-900 border border-zinc-700 rounded-card px-2 py-2 text-xs" />
               <input value={form.taller} onChange={e => setForm({ ...form, taller: e.target.value })} placeholder="Taller / proveedor" className="bg-zinc-900 border border-zinc-700 rounded-card px-2 py-2 text-xs" />
             </div>
+            {/* v8.51.0: mantenimiento/falla EN CURSO → el vehículo queda EN TALLER visible para todos */}
+            {(form.tipo === 'mantenimiento' || form.tipo === 'falla_mecanica') && (
+              <label className="flex items-center gap-2 text-[11px] text-amber-300 bg-amber-950/30 border border-amber-800 rounded-card px-2 py-1.5">
+                <input type="checkbox" checked={!!form.enTallerAhora} onChange={e => setForm({ ...form, enTallerAhora: e.target.checked })} className="accent-amber-500" />
+                🔧 El vehículo está en el taller AHORA (queda no disponible y todo el equipo lo ve)
+              </label>
+            )}
             <div className="flex gap-2">
               <button onClick={guardar} className="flex-1 bg-red-600 hover:bg-red-700 text-white text-[11px] font-black uppercase py-2 rounded-card">Guardar</button>
               <button onClick={() => setAgregando(false)} className="text-[11px] text-zinc-400 uppercase font-bold px-2">Cancelar</button>

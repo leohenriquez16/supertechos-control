@@ -10,6 +10,7 @@ import { Car, Loader2, Plus, X, AlertTriangle, Wrench } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatRD, formatFechaCorta } from '../../lib/helpers/formato';
 import RutasVehiculo from './RutasVehiculo'; // v8.41.0
+import ModalReportarAveria from './ModalReportarAveria'; // v8.51.0: flujo guiado con protocolo
 
 export const TIPOS_EVENTO = {
   falla_mecanica: { label: 'Falla mecánica', icon: '🔧' },
@@ -44,6 +45,7 @@ export default function MiVehiculo({ usuario, data, onRecargar }) {
   const [guardando, setGuardando] = useState(false);
   const [form, setForm] = useState({ tipo: 'falla_mecanica', descripcion: '', km: '', fecha: hoyRD() });
   const [verRutas, setVerRutas] = useState(false); // v8.41.0
+  const [averiando, setAveriando] = useState(false); // v8.51.0
 
   const cargar = async () => {
     if (!vehiculo) { setLoading(false); return; }
@@ -95,9 +97,24 @@ export default function MiVehiculo({ usuario, data, onRecargar }) {
       <button onClick={() => setVerRutas(true)} className="w-full border border-cyan-800/60 text-cyan-400 hover:bg-cyan-700 hover:text-white text-xs font-black uppercase py-2.5 rounded-card">🚚 Rutas de este vehículo (futuras y pasadas)</button>
       {verRutas && <RutasVehiculo vehiculo={vehiculo} onCerrar={() => setVerRutas(false)} />}
 
+      {/* v8.51.0: avería EN RUTA → flujo guiado que muestra el protocolo primero */}
+      <button onClick={() => setAveriando(true)} className="w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase py-3 flex items-center justify-center gap-2 text-sm rounded-card">
+        🚨 Se dañó / avería ahora mismo
+      </button>
+      {averiando && (
+        <ModalReportarAveria vehiculo={vehiculo} usuario={usuario}
+          onCerrar={() => setAveriando(false)}
+          onReportada={async ({ gravedad }) => {
+            setAveriando(false); await cargar(); onRecargar?.();
+            alert(gravedad === 'critica'
+              ? 'Reportado ✓ — el vehículo quedó FUERA DE SERVICIO y la oficina fue avisada. No lo muevas hasta nuevo aviso.'
+              : 'Reportado ✓ — la oficina fue avisada. Coordina el taller con flota.');
+          }} />
+      )}
+
       {!reportando ? (
-        <button onClick={() => setReportando(true)} className="w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase py-3 flex items-center justify-center gap-2 text-sm">
-          <Plus className="w-4 h-4" /> Reportar algo del vehículo
+        <button onClick={() => setReportando(true)} className="w-full border border-zinc-700 hover:border-zinc-500 text-zinc-300 font-black uppercase py-2.5 flex items-center justify-center gap-2 text-xs rounded-card">
+          <Plus className="w-4 h-4" /> Reportar otra cosa (mantenimiento, daño…)
         </button>
       ) : (
         <div className="bg-zinc-900 border-2 border-red-600 rounded-card p-3 space-y-2">

@@ -621,7 +621,9 @@ export default function VistaRutas({ usuario, data, onVolver }) {
                     });
                   }} className="flex-1 bg-zinc-950 border-2 border-cyan-700 rounded-card px-2 py-2 text-sm font-bold min-w-[160px]">
                     <option value="">🚛 Elegir vehículo de la flota…</option>
-                    {(data.vehiculos || []).filter(v => v.activo !== false).map(v => <option key={v.id} value={v.id}>{[v.marca, v.modelo, v.placa].filter(Boolean).join(' ')}</option>)}
+                    {/* v8.51.0: un vehículo con avería (fuera de servicio / en taller) no se ofrece para viajes */}
+                    {(data.vehiculos || []).filter(v => v.activo !== false && v.estadoOperativo !== 'fuera_servicio' && v.estadoOperativo !== 'en_taller').map(v => <option key={v.id} value={v.id}>{[v.marca, v.modelo, v.placa].filter(Boolean).join(' ')}</option>)}
+                    {(data.vehiculos || []).filter(v => v.activo !== false && (v.estadoOperativo === 'fuera_servicio' || v.estadoOperativo === 'en_taller')).map(v => <option key={v.id} value={v.id} disabled>🚫 {[v.marca, v.modelo, v.placa].filter(Boolean).join(' ')} — {v.estadoOperativo === 'en_taller' ? 'en taller' : 'fuera de servicio'}</option>)}
                   </select>
                 )}
               </div>

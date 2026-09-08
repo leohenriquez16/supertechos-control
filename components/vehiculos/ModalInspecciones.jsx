@@ -8,6 +8,7 @@ import { Loader2, X, Camera, Check, Sparkles, ShieldCheck, History, AlertTriangl
 import * as db from '../../lib/db';
 import { toast } from '../../lib/toast';
 import { comprimirImagenABlob } from '../../lib/imports';
+import { CHECKLIST_INSPECCION } from '../../lib/protocolosAverias'; // v8.51.0
 
 const ANGULOS = db.ANGULOS_INSPECCION; // [{ k, label }]
 const ESTADOS = [
@@ -171,6 +172,7 @@ function CapturaInspeccion({ vehiculo, usuario, autorizacion, onListo }) {
   const [estado, setEstado] = useState('bueno');
   const [notas, setNotas] = useState('');
   const [guardando, setGuardando] = useState(false);
+  const [checklist, setChecklist] = useState({}); // v8.51.0: k -> 'ok'|'atencion'|'malo'
 
   const capturar = async (angulo, file) => {
     if (!file) return;
@@ -184,19 +186,33 @@ function CapturaInspeccion({ vehiculo, usuario, autorizacion, onListo }) {
 
   const guardar = async () => {
     if (faltan.length) { toast.warning(`Faltan fotos: ${faltan.map((a) => a.label).join(', ')}`); return; }
+    // v8.51.0: el checklist de niveles es obligatorio — es la prevención de averías.
+    const sinMarcar = CHECKLIST_INSPECCION.filter((c) => !checklist[c.k]);
+    if (sinMarcar.length) { toast.warning(`Marca el checklist: ${sinMarcar.map((c) => c.label).join(', ')}`); return; }
     setGuardando(true);
     try {
       const ins = await db.crearInspeccion({
         vehiculoId: vehiculo.id, realizadaPorId: usuario?.id, realizadaPorNombre: usuario?.nombre,
         tipo: autorizacion ? 'remota_autorizada' : 'oficina',
         autorizadaPorId: autorizacion?.autorizada_por_id || null, autorizadaPorNombre: autorizacion?.autorizada_por_nombre || null,
-        odometroKm: odometro, estadoGeneral: estado, notas,
+        odometroKm: odometro, estadoGeneral: estado, notas, checklist,
       });
       for (const a of ANGULOS) {
         await db.subirFotoInspeccion({ file: fotos[a.k].blob, inspeccionId: ins.id, angulo: a.k });
       }
+      // v8.51.0: ítem en MALO ⇒ nace el evento de falla solo (trazabilidad de prevención).
+      const malos = CHECKLIST_INSPECCION.filter((c) => checklist[c.k] === 'malo');
+      for (const c of malos) {
+        await db.crearEventoVehiculo({
+          vehiculoId: vehiculo.id, tipo: 'falla_mecanica', fecha: new Date().toISOString().slice(0, 10),
+          km: odometro || null, descripcion: `🔎 Detectado en inspección: ${c.label} en MAL estado`,
+          reportadoPorId: usuario?.id || null, reportadoPorNombre: usuario?.nombre || null,
+          sintoma: c.k === 'coolant' || c.k === 'fugas' ? 'sobrecalentamiento' : c.k === 'frenos_liquido' ? 'frenos' : c.k === 'gomas' ? 'goma' : 'otro',
+          gravedad: 'media',
+        }).catch(() => {});
+      }
       if (autorizacion) { try { await db.marcarAutorizacionUsada(autorizacion.id, ins.id); } catch {} }
-      toast.success('Inspección guardada.');
+      toast.success(malos.length ? `Inspección guardada — se abrió ${malos.length} evento(s) por ítems en malo.` : 'Inspección guardada.');
       onListo();
     } catch (e) { toast.error('Error guardando: ' + (e?.message || e)); setGuardando(false); }
   };
@@ -225,6 +241,24 @@ function CapturaInspeccion({ vehiculo, usuario, autorizacion, onListo }) {
             </label>
           );
         })}
+      </div>
+
+      {/* v8.51.0: checklist de niveles y estado — la prevención de averías (el
+          sobrecalentamiento se anuncia semanas antes en el coolant y las mangueras) */}
+      <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2.5 space-y-1.5">
+        <div className="text-[10px] uppercase text-zinc-400 font-bold">Checklist de niveles y estado (obligatorio)</div>
+        {CHECKLIST_INSPECCION.map((c) => (
+          <div key={c.k} className="flex items-center justify-between gap-2">
+            <span className="text-[11px] text-zinc-300 min-w-0 truncate">{c.label}</span>
+            <div className="flex gap-1 shrink-0">
+              {[['ok', '✓ OK', 'bg-emerald-700 border-emerald-700 text-white'], ['atencion', '⚠', 'bg-amber-700 border-amber-700 text-white'], ['malo', '✗ Malo', 'bg-red-700 border-red-700 text-white']].map(([v, l, on]) => (
+                <button key={v} onClick={() => setChecklist({ ...checklist, [c.k]: v })}
+                  className={`text-[10px] font-bold px-2 py-1 rounded-card border ${checklist[c.k] === v ? on : 'border-zinc-700 text-zinc-500 hover:text-white'}`}>{l}</button>
+              ))}
+            </div>
+          </div>
+        ))}
+        <div className="text-[9px] text-zinc-600">Un ítem en "Malo" abre automáticamente el evento de falla en el historial.</div>
       </div>
 
       <div className="grid grid-cols-2 gap-2">

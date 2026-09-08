@@ -13,8 +13,21 @@ import RutasVehiculo from './RutasVehiculo'; // v8.41.0
 import FichaVehiculo from './FichaVehiculo'; // v8.44.0
 import VistaBombas from './VistaBombas'; // v8.49.13
 import VistaPeajes from './VistaPeajes'; // v8.50.0
+import { CHECKLIST_RETORNO } from '../../lib/protocolosAverias'; // v8.51.0
+import { imprimirProtocoloGuantera } from './imprimirProtocoloGuantera'; // v8.51.0
 
 const COLORES = ['Blanco', 'Negro', 'Gris', 'Plata', 'Rojo', 'Azul', 'Verde', 'Amarillo', 'Dorado', 'Marrón'];
+
+// v8.51.0: miniaturas de las fotos de una avería (URLs firmadas del bucket de vehículos).
+function FotosEvento({ paths }) {
+  const [urls, setUrls] = useState(null);
+  const cargar = async () => {
+    const u = await Promise.all(paths.map(p => db.obtenerUrlFotoInspeccion(p).catch(() => null)));
+    setUrls(u.filter(Boolean));
+  };
+  if (urls === null) return <button onClick={cargar} className="text-blue-400 hover:underline">📷 {paths.length} foto{paths.length !== 1 ? 's' : ''}</button>;
+  return <span className="flex gap-1">{urls.map((u, i) => <a key={i} href={u} target="_blank" rel="noreferrer"><img src={u} alt="" className="w-10 h-10 object-cover rounded border border-zinc-700" /></a>)}</span>;
+}
 
 // Botón de copiar al portapapeles con feedback.
 function CopiarBtn({ texto }) {
@@ -94,6 +107,8 @@ export default function VistaVehiculos({ usuario, data, onRecargar }) {
         <button onClick={() => setTab('flota')} className={`text-xs font-bold px-3.5 py-2 rounded-card flex items-center gap-1.5 ${tab === 'flota' ? 'bg-red-600 text-white' : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white'}`}><Satellite className="w-3.5 h-3.5" /> Flota GPS</button>
         <button onClick={() => setTab('bombas')} className={`text-xs font-bold px-3.5 py-2 rounded-card flex items-center gap-1.5 ${tab === 'bombas' ? 'bg-red-600 text-white' : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white'}`}>⛽ Bombas</button>
         <button onClick={() => setTab('peajes')} className={`text-xs font-bold px-3.5 py-2 rounded-card flex items-center gap-1.5 ${tab === 'peajes' ? 'bg-red-600 text-white' : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white'}`}><Receipt className="w-3.5 h-3.5" /> Peajes</button>
+        {/* v8.51.0: protocolo de averías imprimible para la guantera */}
+        <button onClick={imprimirProtocoloGuantera} className="text-xs font-bold px-3.5 py-2 rounded-card bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white ml-auto" title="Imprimir el protocolo de averías para la guantera de cada vehículo">🖨 Protocolo guantera</button>
       </div>
 
       {tab === 'bombas' ? (
@@ -501,9 +516,35 @@ function ModalLogVehiculo({ usuario, vehiculo, personal, onCerrar }) {
     } catch (e) { toast.error('Error: ' + (e?.message || e)); }
   };
   const setEstado = async (ev, estado) => {
-    const nota = estado === 'resuelto' ? (prompt('Nota de cierre (qué se hizo / costo):') || '') : null;
-    try { await db.actualizarEventoVehiculo(ev.id, { estado, resueltoNota: nota }); await cargar(); }
+    // v8.51.0: resolver pasa por el CIERRE CON TRAZABILIDAD (diagnóstico + checklist).
+    if (estado === 'resuelto') { setCerrando(ev); return; }
+    try { await db.actualizarEventoVehiculo(ev.id, { estado }); await cargar(); }
     catch (e) { toast.error('Error: ' + (e?.message || e)); }
+  };
+  // v8.51.0: cierre con causa raíz, costo y checklist de retorno a servicio.
+  const [cerrando, setCerrando] = useState(null);
+  const [cierre, setCierre] = useState({ diagnostico: '', nota: '', costoRd: '', taller: '', checks: {} });
+  const cerrarEvento = async () => {
+    if (!cierre.diagnostico.trim()) { toast.warning('Escribe el diagnóstico / causa raíz.'); return; }
+    const faltan = CHECKLIST_RETORNO.filter(c => !cierre.checks[c.k]);
+    const esAveria = ['falla_mecanica', 'choque'].includes(cerrando.tipo);
+    if (esAveria && faltan.length > 0) { toast.warning('Marca el checklist de retorno a servicio completo: ' + faltan.map(f => f.label).join(', ')); return; }
+    try {
+      await db.actualizarEventoVehiculo(cerrando.id, {
+        estado: 'resuelto', resueltoNota: cierre.nota.trim() || null,
+        diagnostico: cierre.diagnostico.trim(), costoRd: cierre.costoRd || null,
+        taller: cierre.taller || cerrando.taller || null,
+        retornoChecklist: esAveria ? cierre.checks : null,
+      });
+      // Si ya no quedan averías abiertas, el vehículo vuelve a servicio.
+      const restantes = eventos.filter(e => e.id !== cerrando.id && e.estado !== 'resuelto' && e.gravedad === 'critica');
+      if (restantes.length === 0 && vehiculo.estadoOperativo !== 'activo') {
+        await db.reactivarVehiculo(vehiculo.id).catch(() => {});
+        toast.success('Evento cerrado ✓ — vehículo REACTIVADO en servicio.');
+      } else toast.success('Evento cerrado ✓');
+      setCerrando(null); setCierre({ diagnostico: '', nota: '', costoRd: '', taller: '', checks: {} });
+      await cargar();
+    } catch (e) { toast.error('Error: ' + (e?.message || e)); }
   };
 
   return (
@@ -550,11 +591,46 @@ function ModalLogVehiculo({ usuario, vehiculo, personal, onCerrar }) {
                     <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-card ${cls}`}>{lbl}</span>
                   </div>
                   <div className="text-[11px] text-zinc-400 mt-0.5">{ev.descripcion}</div>
+                  {/* v8.51.0: trazabilidad de la avería */}
+                  {(ev.gravedad || ev.lat != null || (ev.fotos || []).length > 0) && (
+                    <div className="text-[10px] mt-0.5 flex gap-2 flex-wrap items-center">
+                      {ev.gravedad === 'critica' && <span className="font-bold text-red-400">🔴 crítica — fuera de servicio</span>}
+                      {ev.gravedad === 'media' && <span className="font-bold text-amber-400">🟡 media</span>}
+                      {ev.lat != null && <a href={`https://maps.google.com/?q=${ev.lat},${ev.lng}`} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">📍 dónde pasó</a>}
+                      {(ev.fotos || []).length > 0 && <FotosEvento paths={ev.fotos} />}
+                    </div>
+                  )}
+                  {ev.diagnostico && <div className="text-[10px] text-emerald-400/90 mt-0.5">🔍 Causa: {ev.diagnostico}</div>}
                   <div className="text-[10px] text-zinc-600 mt-0.5">{ev.fecha}{ev.km ? ` · ${ev.km.toLocaleString()} km` : ''}{ev.costoRd ? ` · RD$ ${ev.costoRd.toLocaleString()}` : ''}{ev.taller ? ` · ${ev.taller}` : ''} · por {ev.reportadoPorNombre || '—'}{ev.resueltoNota ? ` · cierre: ${ev.resueltoNota}` : ''}</div>
-                  {ev.estado !== 'resuelto' && (
+                  {ev.estado !== 'resuelto' && cerrando?.id !== ev.id && (
                     <div className="flex gap-1.5 mt-1.5">
                       {ev.estado !== 'en_taller' && <button onClick={() => setEstado(ev, 'en_taller')} className="text-[10px] font-black uppercase px-2 py-1 rounded-card bg-amber-700/40 text-amber-300 hover:bg-amber-700/60">🔧 En taller</button>}
                       <button onClick={() => setEstado(ev, 'resuelto')} className="text-[10px] font-black uppercase px-2 py-1 rounded-card bg-green-700/40 text-green-300 hover:bg-green-700/60">✓ Resolver</button>
+                    </div>
+                  )}
+                  {/* v8.51.0: cierre con trazabilidad — causa raíz + checklist de retorno */}
+                  {cerrando?.id === ev.id && (
+                    <div className="mt-2 bg-zinc-900 border border-green-800/60 rounded-card p-2 space-y-1.5">
+                      <input value={cierre.diagnostico} onChange={e => setCierre({ ...cierre, diagnostico: e.target.value })} placeholder="Diagnóstico / causa raíz * (ej: manguera superior reventada)" className="w-full bg-zinc-950 border border-zinc-700 rounded-card px-2 py-1.5 text-xs" />
+                      <input value={cierre.nota} onChange={e => setCierre({ ...cierre, nota: e.target.value })} placeholder="Qué se hizo (ej: manguera nueva + coolant)" className="w-full bg-zinc-950 border border-zinc-700 rounded-card px-2 py-1.5 text-xs" />
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <input type="number" value={cierre.costoRd} onChange={e => setCierre({ ...cierre, costoRd: e.target.value })} placeholder="Costo RD$" className="bg-zinc-950 border border-zinc-700 rounded-card px-2 py-1.5 text-xs" />
+                        <input value={cierre.taller} onChange={e => setCierre({ ...cierre, taller: e.target.value })} placeholder="Taller" className="bg-zinc-950 border border-zinc-700 rounded-card px-2 py-1.5 text-xs" />
+                      </div>
+                      {['falla_mecanica', 'choque'].includes(ev.tipo) && (
+                        <div className="space-y-1 pt-1 border-t border-zinc-800">
+                          <div className="text-[9px] font-black uppercase text-zinc-400">Checklist de retorno a servicio</div>
+                          {CHECKLIST_RETORNO.map(c => (
+                            <label key={c.k} className="flex items-center gap-2 text-[11px] text-zinc-300">
+                              <input type="checkbox" checked={!!cierre.checks[c.k]} onChange={e => setCierre({ ...cierre, checks: { ...cierre.checks, [c.k]: e.target.checked } })} className="accent-green-600" /> {c.label}
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                      <div className="flex gap-2">
+                        <button onClick={cerrarEvento} className="flex-1 bg-green-700 hover:bg-green-600 text-white text-[10px] font-black uppercase py-1.5 rounded-card">Cerrar evento</button>
+                        <button onClick={() => setCerrando(null)} className="text-[10px] text-zinc-400 uppercase font-bold px-2">Cancelar</button>
+                      </div>
                     </div>
                   )}
                 </div>

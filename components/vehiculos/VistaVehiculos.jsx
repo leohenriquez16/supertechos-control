@@ -497,7 +497,7 @@ function ModalLogVehiculo({ usuario, vehiculo, personal, onCerrar }) {
   const [agregando, setAgregando] = useState(false);
   const [form, setForm] = useState({ tipo: 'mantenimiento', descripcion: '', km: '', costoRd: '', taller: '', fecha: new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo' }).format(new Date()), enTallerAhora: false });
   const TIPOS = { mantenimiento: '🛢️ Mantenimiento', falla_mecanica: '🔧 Falla mecánica', choque: '💥 Choque', dano: '🔨 Daño', gomas: '🛞 Gomas', inspeccion: '🔎 Inspección', otro: '📝 Otro' };
-  const ESTADOS = { abierto: ['Abierto', 'bg-red-600/20 text-red-400'], en_taller: ['En taller', 'bg-amber-600/20 text-amber-400'], resuelto: ['Resuelto ✓', 'bg-green-600/20 text-green-400'] };
+  const ESTADOS = { abierto: ['Abierto', 'bg-red-600/20 text-red-400'], cita: ['🗓 Cita programada', 'bg-sky-600/20 text-sky-300'], en_taller: ['En taller', 'bg-amber-600/20 text-amber-400'], resuelto: ['Resuelto ✓', 'bg-green-600/20 text-green-400'] };
 
   const cargar = async () => {
     setLoading(true);
@@ -527,6 +527,17 @@ function ModalLogVehiculo({ usuario, vehiculo, personal, onCerrar }) {
       await db.actualizarEventoVehiculo(ev.id, { estado });
       if (estado === 'en_taller') await db.marcarVehiculoEnTaller(vehiculo.id).catch(() => {}); // v8.51.0
       await cargar();
+    } catch (e) { toast.error('Error: ' + (e?.message || e)); }
+  };
+  // v8.51.0: programar la cita de mantenimiento (Erisdania) — queda en el evento.
+  const [citando, setCitando] = useState(null);
+  const [cita, setCita] = useState({ fecha: '', taller: '' });
+  const programarCita = async () => {
+    if (!cita.fecha) { toast.warning('Elige la fecha de la cita.'); return; }
+    try {
+      await db.actualizarEventoVehiculo(citando.id, { estado: 'cita', citaFecha: cita.fecha, citaTaller: cita.taller || null, taller: cita.taller || null });
+      toast.success('Cita programada — el responsable la ve en "Mi vehículo".');
+      setCitando(null); await cargar();
     } catch (e) { toast.error('Error: ' + (e?.message || e)); }
   };
   // v8.51.0: cierre con causa raíz, costo y checklist de retorno a servicio.
@@ -617,10 +628,28 @@ function ModalLogVehiculo({ usuario, vehiculo, personal, onCerrar }) {
                   )}
                   {ev.diagnostico && <div className="text-[10px] text-emerald-400/90 mt-0.5">🔍 Causa: {ev.diagnostico}</div>}
                   <div className="text-[10px] text-zinc-600 mt-0.5">{ev.fecha}{ev.km ? ` · ${ev.km.toLocaleString()} km` : ''}{ev.costoRd ? ` · RD$ ${ev.costoRd.toLocaleString()}` : ''}{ev.taller ? ` · ${ev.taller}` : ''} · por {ev.reportadoPorNombre || '—'}{ev.resueltoNota ? ` · cierre: ${ev.resueltoNota}` : ''}</div>
-                  {ev.estado !== 'resuelto' && cerrando?.id !== ev.id && (
-                    <div className="flex gap-1.5 mt-1.5">
+                  {ev.citaFecha && ev.estado !== 'resuelto' && (
+                    <div className="text-[10px] font-bold text-sky-300 mt-0.5">🗓 Cita: {ev.citaFecha}{ev.citaTaller ? ` en ${ev.citaTaller}` : ''}</div>
+                  )}
+                  {ev.estado !== 'resuelto' && cerrando?.id !== ev.id && citando?.id !== ev.id && (
+                    <div className="flex gap-1.5 mt-1.5 flex-wrap">
+                      {/* v8.51.0 (caso Wilfin/KIA): la solicitud de mantenimiento se convierte en CITA en el ERP */}
+                      {ev.estado === 'abierto' && <button onClick={() => { setCitando(ev); setCita({ fecha: '', taller: ev.taller || '' }); }} className="text-[10px] font-black uppercase px-2 py-1 rounded-card bg-sky-700/40 text-sky-300 hover:bg-sky-700/60">📅 Programar cita</button>}
                       {ev.estado !== 'en_taller' && <button onClick={() => setEstado(ev, 'en_taller')} className="text-[10px] font-black uppercase px-2 py-1 rounded-card bg-amber-700/40 text-amber-300 hover:bg-amber-700/60">🔧 En taller</button>}
                       <button onClick={() => setEstado(ev, 'resuelto')} className="text-[10px] font-black uppercase px-2 py-1 rounded-card bg-green-700/40 text-green-300 hover:bg-green-700/60">✓ Resolver</button>
+                    </div>
+                  )}
+                  {/* v8.51.0: programar la cita — fecha + taller, queda visible para el responsable */}
+                  {citando?.id === ev.id && (
+                    <div className="mt-2 bg-zinc-900 border border-sky-800/60 rounded-card p-2 space-y-1.5">
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <input type="date" value={cita.fecha} onChange={e => setCita({ ...cita, fecha: e.target.value })} className="bg-zinc-950 border border-zinc-700 rounded-card px-2 py-1.5 text-xs [color-scheme:dark]" />
+                        <input value={cita.taller} onChange={e => setCita({ ...cita, taller: e.target.value })} placeholder="Taller / dealer" className="bg-zinc-950 border border-zinc-700 rounded-card px-2 py-1.5 text-xs" />
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={programarCita} className="flex-1 bg-sky-700 hover:bg-sky-600 text-white text-[10px] font-black uppercase py-1.5 rounded-card">Guardar cita</button>
+                        <button onClick={() => setCitando(null)} className="text-[10px] text-zinc-400 uppercase font-bold px-2">Cancelar</button>
+                      </div>
                     </div>
                   )}
                   {/* v8.51.0: cierre con trazabilidad — causa raíz + checklist de retorno */}

@@ -23,6 +23,7 @@ export const TIPOS_EVENTO = {
 };
 export const ESTADOS_EVENTO = {
   abierto: { label: 'Abierto', color: 'bg-red-600/20 text-red-400' },
+  cita: { label: '🗓 Cita programada', color: 'bg-sky-600/20 text-sky-300' }, // v8.51.0
   en_taller: { label: 'En taller', color: 'bg-amber-600/20 text-amber-400' },
   resuelto: { label: 'Resuelto ✓', color: 'bg-green-600/20 text-green-400' },
 };
@@ -46,6 +47,9 @@ export default function MiVehiculo({ usuario, data, onRecargar }) {
   const [form, setForm] = useState({ tipo: 'falla_mecanica', descripcion: '', km: '', fecha: hoyRD() });
   const [verRutas, setVerRutas] = useState(false); // v8.41.0
   const [averiando, setAveriando] = useState(false); // v8.51.0
+  const [solicitandoMant, setSolicitandoMant] = useState(false); // v8.51.0: solicitud de mantenimiento → cita
+  const [mantNota, setMantNota] = useState('');
+  const [mantKm, setMantKm] = useState('');
 
   const cargar = async () => {
     if (!vehiculo) { setLoading(false); return; }
@@ -73,6 +77,32 @@ export default function MiVehiculo({ usuario, data, onRecargar }) {
       setReportando(false); setForm({ tipo: 'falla_mecanica', descripcion: '', km: '', fecha: hoyRD() });
       await cargar(); onRecargar?.();
       alert('Reportado ✓ — el encargado de flota lo verá al momento.');
+    } catch (e) { alert('Error: ' + (e?.message || e)); }
+    setGuardando(false);
+  };
+
+  // v8.51.0: solicitar mantenimiento → evento abierto + correo a la oficina (Erisdania coordina la cita)
+  const solicitarMantenimiento = async () => {
+    if (!mantNota.trim()) { alert('Escribe qué necesita el vehículo.'); return; }
+    setGuardando(true);
+    try {
+      await db.crearEventoVehiculo({
+        vehiculoId: vehiculo.id, tipo: 'mantenimiento', fecha: hoyRD(),
+        km: mantKm || null, descripcion: `🛢 Solicitud de mantenimiento: ${mantNota.trim()}`,
+        reportadoPorId: usuario.id, reportadoPorNombre: usuario.nombre, estado: 'abierto',
+      });
+      const veh = [vehiculo.marca, vehiculo.modelo, vehiculo.placa].filter(Boolean).join(' ');
+      db.enviarCorreoReporte(
+        ['eperez@supertechos.com.do', 'mmartinez@supertechos.com.do'],
+        `🛢 Solicitud de mantenimiento — ${veh}`,
+        `<div style="font-family:sans-serif"><h2 style="color:#d97706">🛢 Solicitud de mantenimiento</h2>
+        <p><b>Vehículo:</b> ${veh}<br/><b>Solicita:</b> ${usuario.nombre}<br/><b>Necesita:</b> ${mantNota.trim()}${mantKm ? `<br/><b>Odómetro:</b> ${mantKm} km` : ''}</p>
+        <p>Coordina la cita con el taller y prográmala en el ERP (Vehículos → historial → 📅 Programar cita) — el responsable la verá en "Mi vehículo". Si está en garantía, va a la casa/dealer.</p></div>`,
+        { cc: 'lhenriquez@supertechos.com.do' }
+      );
+      setSolicitandoMant(false); setMantNota(''); setMantKm('');
+      await cargar(); onRecargar?.();
+      alert('Solicitud enviada ✓ — la oficina coordina la cita y te aparecerá aquí.');
     } catch (e) { alert('Error: ' + (e?.message || e)); }
     setGuardando(false);
   };
@@ -112,9 +142,32 @@ export default function MiVehiculo({ usuario, data, onRecargar }) {
           }} />
       )}
 
+      {/* v8.51.0 (caso Wilfin/KIA): SOLICITAR mantenimiento — Erisdania coordina la cita
+          con el taller y la pone en el ERP; el responsable la ve aquí mismo. */}
+      {!solicitandoMant ? (
+        <button onClick={() => setSolicitandoMant(true)} className="w-full border border-amber-700 text-amber-300 hover:bg-amber-700 hover:text-black font-black uppercase py-2.5 flex items-center justify-center gap-2 text-xs rounded-card">
+          🛢 Solicitar mantenimiento
+        </button>
+      ) : (
+        <div className="bg-zinc-900 border-2 border-amber-600 rounded-card p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] tracking-widest uppercase font-bold text-amber-400">🛢 Solicitud de mantenimiento</span>
+            <button onClick={() => setSolicitandoMant(false)} className="text-zinc-500"><X className="w-4 h-4" /></button>
+          </div>
+          <textarea value={mantNota} onChange={e => setMantNota(e.target.value)} rows={2}
+            placeholder="¿Qué necesita? Ej: cambio de aceite y filtros, ya toca por kilometraje"
+            className="w-full bg-zinc-950 border border-zinc-700 rounded-card px-2 py-2 text-sm" />
+          <input type="number" value={mantKm} onChange={e => setMantKm(e.target.value)} placeholder="Kilometraje actual" className="w-full bg-zinc-950 border border-zinc-700 rounded-card px-2 py-2 text-sm" />
+          <button onClick={solicitarMantenimiento} disabled={guardando} className="w-full bg-amber-600 hover:bg-amber-500 disabled:opacity-60 text-black text-xs font-black uppercase py-2.5 rounded-card">
+            {guardando ? 'Enviando…' : 'Enviar solicitud'}
+          </button>
+          <div className="text-[10px] text-zinc-500">La oficina coordina la cita con el taller y te aparece aquí con fecha y lugar.</div>
+        </div>
+      )}
+
       {!reportando ? (
         <button onClick={() => setReportando(true)} className="w-full border border-zinc-700 hover:border-zinc-500 text-zinc-300 font-black uppercase py-2.5 flex items-center justify-center gap-2 text-xs rounded-card">
-          <Plus className="w-4 h-4" /> Reportar otra cosa (mantenimiento, daño…)
+          <Plus className="w-4 h-4" /> Reportar otra cosa (daño, gomas…)
         </button>
       ) : (
         <div className="bg-zinc-900 border-2 border-red-600 rounded-card p-3 space-y-2">
@@ -163,6 +216,10 @@ export default function MiVehiculo({ usuario, data, onRecargar }) {
                       <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-card ${est.color}`}>{est.label}</span>
                     </div>
                     <div className="text-[11px] text-zinc-400 mt-0.5">{e.descripcion}</div>
+                    {/* v8.51.0: la cita programada por la oficina, visible para el responsable */}
+                    {e.citaFecha && e.estado !== 'resuelto' && (
+                      <div className="text-[11px] font-bold text-sky-300 mt-0.5">🗓 Cita: {formatFechaCorta(e.citaFecha)}{e.citaTaller ? ` en ${e.citaTaller}` : ''} — lleva el vehículo ese día</div>
+                    )}
                     <div className="text-[10px] text-zinc-600 mt-0.5">{formatFechaCorta(e.fecha)}{e.km ? ` · ${e.km.toLocaleString()} km` : ''}{e.costoRd ? ` · ${formatRD(e.costoRd)}` : ''}{e.taller ? ` · ${e.taller}` : ''}{e.resueltoNota ? ` · ${e.resueltoNota}` : ''}</div>
                   </div>
                 );

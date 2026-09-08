@@ -13,6 +13,10 @@ ALTER TABLE public.vehiculo_eventos ADD COLUMN IF NOT EXISTS fotos JSONB DEFAULT
 ALTER TABLE public.vehiculo_eventos ADD COLUMN IF NOT EXISTS diagnostico TEXT;        -- causa raíz al resolver
 ALTER TABLE public.vehiculo_eventos ADD COLUMN IF NOT EXISTS en_taller_at TIMESTAMPTZ;
 ALTER TABLE public.vehiculo_eventos ADD COLUMN IF NOT EXISTS retorno_checklist JSONB; -- {probado,niveles,tablero,frenos}
+-- Solicitud de mantenimiento → CITA (caso Wilfin/KIA: el responsable solicita,
+-- Erisdania coordina la cita con el taller y queda en el ERP).
+ALTER TABLE public.vehiculo_eventos ADD COLUMN IF NOT EXISTS cita_fecha DATE;
+ALTER TABLE public.vehiculo_eventos ADD COLUMN IF NOT EXISTS cita_taller TEXT;
 
 -- Prevención: checklist de la inspección mensual (además de las 6 fotos).
 -- {coolant|aceite|frenos_liquido|correas_mangueras|gomas|luces|fugas: 'ok'|'atencion'|'malo'}

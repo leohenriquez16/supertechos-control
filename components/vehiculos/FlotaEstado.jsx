@@ -43,6 +43,9 @@ export default function FlotaEstado({ data }) {
             <span className="text-zinc-600"> — desde el {formatFechaCorta(ev.fecha)}{ev.taller ? ` · ${ev.taller}` : ''}</span>
           </div>
         )}
+        {ev?.citaFecha && ev.estado !== 'resuelto' && (
+          <div className="text-[11px] font-bold text-sky-300 mt-0.5">🗓 Cita de mantenimiento: {formatFechaCorta(ev.citaFecha)}{ev.citaTaller ? ` en ${ev.citaTaller}` : ''}</div>
+        )}
         <div className="text-[10px] text-zinc-600 mt-0.5">
           {respDe(v) ? `Responsable: ${respDe(v)}` : 'Sin responsable asignado'}
           {v.proximoMantFecha ? ` · próx. mantenimiento ${formatFechaCorta(v.proximoMantFecha)}` : v.proximoMantKm ? ` · próx. mant. ${Number(v.proximoMantKm).toLocaleString()} km` : ''}

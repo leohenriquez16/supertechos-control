@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed, Building2, Star, MessageCircle, Send, Search, Filter, CloudRain, Calculator, Receipt, Car, Award } from 'lucide-react';
+import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed, Building2, Star, MessageCircle, Send, Search, Filter, CloudRain, Calculator, Receipt, Car, Award, Gauge } from 'lucide-react';
 import * as db from '../lib/db';
 import { completitudPersona } from '../lib/helpers/personas';
 import { leerArchivo, parseMateriales, parseSistemas, descargarPlantilla, comprimirImagen } from '../lib/imports';
@@ -104,6 +104,7 @@ import CelebracionReporte from '../components/reportes/CelebracionReporte'; // v
 import RachaCard from '../components/reportes/RachaCard'; // v8.30.4
 // v8.19.1: Módulo Levantamientos (surveys)
 import ModuloSurveys from '../components/surveys/ModuloSurveys';
+import TorreControl from '../components/surveys/TorreControl'; // v8.52.0
 import ModuloSolicitudes from '../components/solicitudes/ModuloSolicitudes';
 import VistaGarantias from '../components/garantias/VistaGarantias';
 import ModuloReclamaciones from '../components/reclamaciones/ModuloReclamaciones';
@@ -655,6 +656,7 @@ export default function App() {
     ]},
     { seccion: 'COMERCIAL', items: [
       { id: 'surveys', label: 'Levantamientos', icon: MapPin, vista: 'surveys' },
+      { id: 'torreControl', label: 'Torre de Control', icon: Gauge, vista: 'torreControl' }, // v8.52.0
       { id: 'solicitudes', label: 'Solicitudes', icon: FileText, vista: 'solicitudes', badge: solicitudesNuevas },
       { id: 'citas', label: 'Citas', icon: Calendar, vista: 'citas' },
       // v8.49.0: Clientes y Ubicaciones son CRM (datos maestros comerciales)
@@ -866,6 +868,7 @@ export default function App() {
         {vista === 'miProduccion' && tieneRol(usuario, 'maestro') && <VistaMiProduccion usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'miCajaChica' && (tieneRol(usuario, 'maestro') || tieneRol(usuario, 'supervisor')) && usuario.cajaChicaHabilitada && <VistaMiCajaChica usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} />}
         {vista === 'surveys' && (esAdmin || tieneRol(usuario, 'supervisor')) && <ModuloSurveys usuario={usuario} data={data} onRecargar={recargar} />}
+        {vista === 'torreControl' && (esAdmin || tieneRol(usuario, 'supervisor')) && <TorreControl onVolver={() => setVista('dashboard')} />}
         {vista === 'solicitudes' && (esAdmin || tieneRol(usuario, 'supervisor')) && <ModuloSolicitudes usuario={usuario} onRecargar={recargar} />}
         {/* v8.27.0: Gotera — disponible para TODOS los usuarios (reportar); owner/admin ven el kanban completo */}
         {vista === 'gotera' && <ModuloGotera usuario={usuario} data={data} onVolver={() => setVista(esAdmin ? 'dashboard' : 'misProyectos')} />}

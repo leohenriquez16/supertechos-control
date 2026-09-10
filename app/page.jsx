@@ -98,7 +98,6 @@ import TabCambios from '../components/cambios/TabCambios'; // v8.30.0
 import PlanObras from '../components/planificacion/PlanObras'; // v8.30.1
 import VistaCarga from '../components/carga/VistaCarga'; // v8.30.2
 import MiVehiculo from '../components/vehiculos/MiVehiculo'; // v8.33.0
-import FlotaEstado from '../components/vehiculos/FlotaEstado'; // v8.51.0: estado de la flota para todo el equipo
 import VistaTareas from '../components/tareas/VistaTareas'; // v8.33.1: task manager estilo Asana
 import TabTareasProyecto from '../components/tareas/TabTareasProyecto'; // v8.33.3
 import CelebracionReporte from '../components/reportes/CelebracionReporte'; // v8.30.4
@@ -728,10 +727,9 @@ export default function App() {
       // v8.33.2: Tareas siempre visible para todos los miembros (antes solo con tareas asignadas)
       { id: 'tareas', label: 'Tareas', icon: ClipboardList, vista: 'tareas', badge: tareas.filter(t => t.asignadaAId === usuario.id).length || undefined },
       // v8.33.0: responsable de un vehículo → "Mi vehículo" (ficha + reportar fallas/daños)
+      // v8.51.1: el equipo de campo SOLO ve su propio vehículo (decisión Leonardo —
+      // la vista de flota completa es de oficina: módulo Vehículos de admin/almacén).
       ...((data.vehiculos || []).some(v => v.responsableId === usuario.id && v.activo !== false) ? [{ id: 'miVehiculo', label: 'Mi vehículo', icon: Car, vista: 'miVehiculo' }] : []),
-      // v8.51.0 (caso "¿está de mantenimiento el KIA?"): TODO el equipo ve el estado
-      // de la flota en vivo (solo lectura) — se acabó preguntar por WhatsApp.
-      ...(!tieneRol(usuario, 'almacen') && (data.vehiculos || []).length > 0 ? [{ id: 'flotaEstado', label: 'Flota', icon: Car, vista: 'flotaEstado' }] : []),
       // v8.32.2: el encargado de almacén administra también la FLOTA de vehículos.
       // (La planificación de Rutas es de Erisdania con apoyo de Miguel — ambos admin.)
       // v8.44.1: y su módulo ALMACÉN con nombre propio en el menú (antes solo "Inicio").
@@ -850,7 +848,6 @@ export default function App() {
         {/* v8.39.0: compras (rol facturas = Lily) también entra al Almacén — flujo de compras por renglón */}
         {(esAdmin || tieneRol(usuario, 'almacen') || tieneRol(usuario, 'facturas')) && vista === 'almacen' && <VistaAlmacen usuario={usuario} data={data} onVolver={esAdmin ? volverAtras : undefined} />}
         {vista === 'miVehiculo' && <MiVehiculo usuario={usuario} data={data} onRecargar={recargar} />}
-        {vista === 'flotaEstado' && <FlotaEstado data={data} />}
         {(esAdmin || tieneRol(usuario, 'almacen')) && vista === 'rutas' && <VistaRutas usuario={usuario} data={data} onVolver={esAdmin ? volverAtras : undefined} />}
         {esAdmin && vista === 'planObras' && <PlanObras usuario={usuario} data={data} onVolver={volverAtras} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('cronograma'); }} onRecargar={recargar} />}
         {tieneRol(usuario, 'owner') && vista === 'carga' && <VistaCarga usuario={usuario} data={data} onVolver={volverAtras} />}

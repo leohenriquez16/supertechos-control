@@ -10,6 +10,7 @@ import { Loader2, Truck, Play, Flag, RefreshCw, CheckCircle2, Camera, X } from '
 import * as db from '../../lib/db';
 import { comprimirImagenABlob } from '../../lib/imports';
 import FirmaPad, { firmaABlob } from '../common/FirmaPad';
+import ModalBombas from '../vehiculos/ModalBombas'; // v8.51.1: bombas de la tarjeta flotilla
 
 const hoyRD = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo' }).format(new Date());
 const hora = (iso) => iso ? new Date(iso).toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit', hour12: true }) : '';
@@ -21,6 +22,7 @@ export default function InicioChofer({ usuario, data }) {
   const [mapaDe, setMapaDe] = useState(null); // v8.41.0: viaje cuyo mapa de ruta se muestra
   const [entregando, setEntregando] = useState(null); // v8.42.0: {v,p} parada de ENTREGA confirmándose (foto + firma)
   const [gpsUnidades, setGpsUnidades] = useState([]); // v8.43.0
+  const [verBombas, setVerBombas] = useState(false); // v8.51.1
 
   const recargar = async () => {
     setLoading(true);
@@ -126,6 +128,10 @@ export default function InicioChofer({ usuario, data }) {
           <RefreshCw className="w-3.5 h-3.5" /> Refrescar
         </button>
       </div>
+
+      {/* v8.51.1: dónde echar combustible con la tarjeta flotilla — en la mano del chofer */}
+      <button onClick={() => setVerBombas(true)} className="w-full border border-orange-800/60 text-orange-400 hover:bg-orange-700 hover:text-white text-xs font-black uppercase py-2.5 rounded-card">⛽ Bombas de la tarjeta flotilla (con Waze)</button>
+      {verBombas && <ModalBombas onCerrar={() => setVerBombas(false)} />}
 
       {loading ? (
         <div className="text-center py-8"><Loader2 className="w-6 h-6 text-red-500 animate-spin mx-auto" /></div>

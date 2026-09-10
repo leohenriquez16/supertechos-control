@@ -202,6 +202,9 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
                   <option value="cotizado">💲 Cotizado</option>
                   <option value="esperando_aprobacion">⏳ Esperando aprobación</option>
                   <option value="comprado">✓ Comprado</option>
+                  {/* v8.51.6 (ticket Erisdania): no disponible, pero sin pasar por Compras */}
+                  <option value="comprar_en_ruta">🚚 No disponible · se compra en la ruta</option>
+                  <option value="compra_maestro">👷 No disponible · maestro lo compra</option>
                 </select>
               ) : it.estadoCompra && ESTADOS_COMPRA[it.estadoCompra] ? (
                 <span className={`shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-card ${ESTADOS_COMPRA[it.estadoCompra].color}`}>{ESTADOS_COMPRA[it.estadoCompra].label}</span>

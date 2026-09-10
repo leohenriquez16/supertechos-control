@@ -35,6 +35,10 @@ export const ESTADOS_COMPRA = {
   cotizado:             { label: '💲 Cotizado', color: 'bg-blue-600/20 text-blue-300' },
   esperando_aprobacion: { label: '⏳ Esperando aprobación', color: 'bg-amber-600/20 text-amber-300' },
   comprado:             { label: '✓ Comprado', color: 'bg-green-600/20 text-green-400' },
+  // v8.51.6 (ticket Erisdania): el artículo NO está en almacén pero no pasa por Compras:
+  // se compra/retira en el suplidor durante la ruta, o el maestro lo compra él mismo en obra.
+  comprar_en_ruta:      { label: '🚚 No disponible · se compra en la ruta', color: 'bg-cyan-600/20 text-cyan-300' },
+  compra_maestro:       { label: '👷 No disponible · maestro lo compra', color: 'bg-purple-600/20 text-purple-300' },
 };
 
 const itemVacio = () => ({ descripcion: '', cantidad: '', unidad: '' });

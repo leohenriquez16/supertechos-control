@@ -10,7 +10,8 @@ import { construirCorreoTorre } from '../../../../lib/helpers/torreControlEmail'
 export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
 
-const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_KEY);
+// v8.52.3: service_role — solicitudes_levantamiento tiene RLS (solo service_role la lee).
+const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_KEY);
 const hoyRD = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo' }).format(new Date());
 const addDias = (f, n) => { const d = new Date(f + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
 

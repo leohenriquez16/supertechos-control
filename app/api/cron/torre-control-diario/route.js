@@ -4,7 +4,7 @@
 // Protegido por Authorization: Bearer <CRON_SECRET>. ?dry=1 devuelve el resumen sin enviar.
 
 import { createClient } from '@supabase/supabase-js';
-import { evaluarSlaLevantamiento } from '../../../../lib/helpers/slaLevantamiento';
+import { evaluarSlaLevantamiento, metricasCiclo } from '../../../../lib/helpers/slaLevantamiento';
 import { construirCorreoTorre } from '../../../../lib/helpers/torreControlEmail';
 
 export const maxDuration = 60;
@@ -45,8 +45,34 @@ export async function GET(request) {
 
   const ahora = new Date();
   const items = (proys || []).map((p) => ({ ...p, sol: solPorLev[p.id] || null, recepcionAt: solPorLev[p.id]?.created_at || p.created_at }));
+
+  // v8.53.0 (Fase 3A): verdad de Odoo. Trae el estado real de la cotización (draft|sent|sale)
+  // por referencia_odoo de los sites, para cerrar el embudo con la realidad y detectar fugas
+  // (marcada cotizada pero en borrador → nunca enviada). Best-effort: si Odoo falla, sigue igual.
+  try {
+    const ids = items.map((it) => it.id);
+    const { data: sites } = await supabase.schema('surveys').from('sites')
+      .select('project_id, referencia_odoo').in('project_id', ids).not('referencia_odoo', 'is', null);
+    const refsPorProy = {};
+    (sites || []).forEach((s) => { const r = (s.referencia_odoo || '').trim(); if (r) (refsPorProy[s.project_id] = refsPorProy[s.project_id] || []).push(r); });
+    const todasRefs = [...new Set(Object.values(refsPorProy).flat())];
+    if (todasRefs.length) {
+      const { estadoCotizacionesOdoo } = await import('../../../../lib/odoo');
+      const estados = await estadoCotizacionesOdoo(todasRefs);
+      const rank = { sale: 3, sent: 2, draft: 1, cancel: 0 }; // el mejor estado entre sus refs
+      items.forEach((it) => {
+        const refs = refsPorProy[it.id] || [];
+        let best = null;
+        refs.forEach((r) => { const e = estados[r]; if (e && (best === null || (rank[e] ?? -1) > (rank[best] ?? -1))) best = e; });
+        it.odooCotState = best;
+      });
+    }
+  } catch (e) { console.warn('torre odoo estado:', e?.message); }
+
   const evaluados = items.map((it) => ({ it, sla: evaluarSlaLevantamiento(it, ahora) }));
   const activos = evaluados.filter((e) => !e.sla.terminal);
+  const ciclo = metricasCiclo(evaluados, iniMes);                              // tiempos del mes
+  const sinEnviar = evaluados.filter((e) => e.sla.cotizadaSinEnviar);          // fuga: en borrador
 
   const orden = { rojo: 0, amarillo: 1 };
   const atascados = activos.filter((e) => e.sla.atascado).sort((a, b) => (orden[a.sla.semaforo] ?? 9) - (orden[b.sla.semaforo] ?? 9) || b.sla.horasEnEtapa - a.sla.horasEnEtapa);
@@ -60,7 +86,7 @@ export async function GET(request) {
 
   const { asunto, html } = construirCorreoTorre({
     ayer, activos: activos.length, atascados, enSla, cuello, nuevos, movidos, enviados, nombreProy,
-    totalMes: mesRes?.count || 0, totalAnio: anioRes?.count || 0,
+    totalMes: mesRes?.count || 0, totalAnio: anioRes?.count || 0, ciclo, sinEnviar,
   });
 
   const envList = String(process.env.TORRE_CONTROL_EMAILS || '').split(/[,;\s]+/).filter(Boolean);
@@ -68,7 +94,7 @@ export async function GET(request) {
   const cc = ['mmartinez@supertechos.com.do', 'lhenriquez@supertechos.com.do'];
 
   const dry = new URL(request.url).searchParams.get('dry');
-  if (dry) return Response.json({ ok: true, dry: true, dia: ayer, asunto, activos: activos.length, atascados: atascados.length, nuevos: nuevos.length, movidos: movidos.length, enviados: enviados.length, totalMes: mesRes?.count || 0, totalAnio: anioRes?.count || 0, to, cc, html });
+  if (dry) return Response.json({ ok: true, dry: true, dia: ayer, asunto, activos: activos.length, atascados: atascados.length, nuevos: nuevos.length, movidos: movidos.length, enviados: enviados.length, totalMes: mesRes?.count || 0, totalAnio: anioRes?.count || 0, ciclo, sinEnviar: sinEnviar.length, to, cc, html });
 
   const resp = await fetch('https://api.resend.com/emails', {
     method: 'POST',

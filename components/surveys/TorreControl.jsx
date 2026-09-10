@@ -8,6 +8,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { RefreshCw, Loader2, Gauge, PauseCircle, Wrench, ArrowLeft } from 'lucide-react';
 import { listarTorreControl, marcarVisitaPorCliente, marcarConsultaTecnica } from '../../lib/surveys';
 import { evaluarSlaLevantamiento, formatHoras, metricasCiclo } from '../../lib/helpers/slaLevantamiento';
+import TorreReclamaciones from './TorreReclamaciones'; // v8.53.1 Fase 3B
 
 const SEM = {
   rojo: { punto: 'bg-red-500', txt: 'text-red-400', label: 'Vencido' },
@@ -24,6 +25,7 @@ export default function TorreControl({ onVolver }) {
   const [odooEstados, setOdooEstados] = useState({}); // v8.53.0: { projectId: draft|sent|sale }
   const [loading, setLoading] = useState(true);
   const [soloAtascados, setSoloAtascados] = useState(false);
+  const [tab, setTab] = useState('lev'); // v8.53.1 Fase 3B: 'lev' | 'recl'
 
   const cargar = async () => {
     setLoading(true);
@@ -90,12 +92,21 @@ export default function TorreControl({ onVolver }) {
           {onVolver && <button onClick={onVolver} className="text-zinc-500 hover:text-white"><ArrowLeft className="w-4 h-4" /></button>}
           <div>
             <h1 className="text-2xl font-black flex items-center gap-2"><Gauge className="w-6 h-6 text-red-500" /> Torre de Control</h1>
-            <div className="text-[11px] text-zinc-500">Levantamientos: del formulario a la cotización · meta 72h</div>
+            <div className="text-[11px] text-zinc-500">Control diario de los embudos comerciales y de servicio</div>
           </div>
         </div>
-        <button onClick={cargar} className="text-zinc-500 hover:text-white"><RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /></button>
+        {tab === 'lev' && <button onClick={cargar} className="text-zinc-500 hover:text-white"><RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /></button>}
       </div>
 
+      {/* Pestañas */}
+      <div className="flex gap-1 border-b border-zinc-800">
+        {[['lev', 'Levantamientos'], ['recl', 'Reclamaciones']].map(([k, lbl]) => (
+          <button key={k} onClick={() => setTab(k)} className={`px-4 py-2 text-sm font-bold border-b-2 -mb-px ${tab === k ? 'border-red-500 text-white' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>{lbl}</button>
+        ))}
+      </div>
+
+      {tab === 'recl' ? <TorreReclamaciones /> : (
+      <>
       {/* Resumen / semáforo */}
       <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
         <Kpi n={resumen.total} label="Activos" color="text-white" onClick={() => setSoloAtascados(false)} active={!soloAtascados} />
@@ -173,6 +184,8 @@ export default function TorreControl({ onVolver }) {
         </div>
       )}
       <div className="text-[10px] text-zinc-600 pt-1">🟢 en SLA · 🟡 pasó el SLA de la etapa · 🔴 el doble o más · 🔵 en pausa por fecha del cliente. Meta global: 72h de tiempo controlable del formulario a la cotización enviada.</div>
+      </>
+      )}
     </div>
   );
 }

@@ -4,7 +4,7 @@
 // Vistas: Kanban (por estado, drag&drop) · Lista · Mapa · Ficha de detalle.
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { ArrowLeft, Loader2, AlertTriangle, Plus, X, MapPin, Search, MessageCircle, Mail, Building2, Wrench, Trash2 } from 'lucide-react';
+import { ArrowLeft, Loader2, AlertTriangle, Plus, X, MapPin, Search, MessageCircle, Mail, Building2, Wrench, Trash2, FileText, Upload, CheckCircle2 } from 'lucide-react';
 import * as db from '../../lib/db';
 import MapaLeaflet from '../common/MapaLeaflet';
 import CalendarioLevantamientos from '../surveys/CalendarioLevantamientos';
@@ -12,6 +12,7 @@ import ChatterPanel from '../common/ChatterPanel';
 import { registrarCreacion as chatterCreacion, registrarCambioEstado as chatterEstado } from '../../lib/chatter';
 import { formatRD } from '../../lib/helpers/formato';
 import { comprimirImagenABlob } from '../../lib/imports'; // v8.49.11: fotos
+import { evaluarSlaReclamacion, SLA_SEVERIDAD_HORAS } from '../../lib/helpers/slaReclamaciones'; // v8.53.1 Fase 3B
 
 const fmtFecha = (s) => { if (!s) return '—'; try { return new Date(s + 'T12:00:00').toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return s; } };
 const COLS = [
@@ -157,6 +158,9 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
     const r = recs.find(x => x.id === sel.id) || sel;
     const g = garantias.find(x => x.id === r.garantiaId);
     const p = proyById(r.proyectoId);
+    const slaR = evaluarSlaReclamacion(r); // v8.53.1 Fase 3B
+    const SLA_TXT = { rojo: 'text-red-400', amarillo: 'text-amber-400', verde: 'text-green-400', exito: 'text-emerald-400', exitoTarde: 'text-amber-400', cerrado: 'text-zinc-400' };
+    const SLA_LBL = { rojo: 'SLA vencido', amarillo: 'SLA en riesgo', verde: 'En SLA', exito: 'Informe entregado', exitoTarde: 'Entregado (tarde)', cerrado: 'Cerrada' };
     return (
       <div className="space-y-4 max-w-3xl mx-auto">
         <button onClick={() => setSel(null)} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button>
@@ -171,6 +175,8 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
               <div>{CANAL_ICON[r.canal] || r.canal}</div>
               <div>Abierta {fmtFecha(r.fechaApertura)}</div>
               <div className={`uppercase font-bold ${SEV[r.severidad] || ''}`}>Sev. {r.severidad}</div>
+              <div className={`font-bold ${SLA_TXT[slaR.semaforo] || 'text-zinc-400'}`} title={`Meta ${slaR.severidad}: ${Math.round(slaR.slaTotal / 24)}d`}>● {SLA_LBL[slaR.semaforo] || ''}</div>
+              {slaR.resueltaSinInforme && <div className="text-amber-400 font-bold">⚠ Falta entregar informe</div>}
             </div>
           </div>
           <div className="mt-3 bg-zinc-950 border border-zinc-800 rounded-card p-3 text-sm text-zinc-300">{r.descripcion || 'Sin descripción.'}</div>
@@ -185,6 +191,8 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
           </div>
           {/* Resolución: qué y cuándo se hizo */}
           <ResolucionReclamacion r={r} onGuardado={() => setReload(x => x + 1)} />
+          {/* v8.53.1 (Fase 3B): hito informe de solución entregado al cliente — cierra el ciclo */}
+          <InformeSolucionReclamacion r={r} onGuardado={() => setReload(x => x + 1)} />
           {/* v8.26.8: pago de mano de obra de la reclamación → cae a nómina como ajuste */}
           <PagoManoObraReclamacion r={r} data={data} usuario={usuario} permitido={esOwnerApp || esAdminApp} />
           <div className="mt-3 flex gap-2 flex-wrap">
@@ -482,6 +490,83 @@ function ResolucionReclamacion({ r, onGuardado }) {
         <div className="text-sm text-zinc-300">
           <div className="text-[11px] text-zinc-500 mb-1">{r.fechaResuelta ? `Realizado el ${fmtFecha(r.fechaResuelta)}` : 'Sin fecha registrada'}</div>
           <div className="whitespace-pre-wrap">{r.trabajoRealizado || 'Sin descripción del trabajo realizado.'}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- v8.53.1 (Fase 3B): Informe de solución entregado al cliente ----------
+// Cierra el ciclo de la reclamación. Sube el PDF del informe + registra la fecha de entrega.
+function InformeSolucionReclamacion({ r, onGuardado }) {
+  const entregado = !!r.informeEntregadoAt;
+  const hoyISO = () => new Date().toISOString().slice(0, 10);
+  const [fecha, setFecha] = useState(r.informeEntregadoAt ? r.informeEntregadoAt.slice(0, 10) : hoyISO());
+  const [url, setUrl] = useState(r.informeUrl || '');
+  const [nombre, setNombre] = useState(r.informeNombre || '');
+  const [subiendo, setSubiendo] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+  const [editando, setEditando] = useState(!entregado);
+  useEffect(() => {
+    setFecha(r.informeEntregadoAt ? r.informeEntregadoAt.slice(0, 10) : hoyISO());
+    setUrl(r.informeUrl || ''); setNombre(r.informeNombre || ''); setEditando(!r.informeEntregadoAt);
+  }, [r.id]);
+
+  const subirPDF = async (file) => {
+    if (!file) return;
+    setSubiendo(true);
+    try {
+      const u = await db.subirInformeReclamacion(file, r.id, file.name);
+      setUrl(u); setNombre(file.name);
+    } catch (e) { alert('No se pudo subir el PDF: ' + (e.message || e)); }
+    setSubiendo(false);
+  };
+  const guardar = async () => {
+    if (!fecha) { alert('Indica la fecha de entrega del informe.'); return; }
+    setGuardando(true);
+    try {
+      await db.actualizarReclamacion(r.id, {
+        informeEntregadoAt: new Date(fecha + 'T12:00:00').toISOString(),
+        informeUrl: url || null, informeNombre: nombre || null,
+      });
+      setEditando(false);
+      if (onGuardado) await onGuardado();
+    } catch (e) { alert('Error: ' + (e.message || e)); }
+    setGuardando(false);
+  };
+
+  return (
+    <div className={`mt-3 rounded-card p-3 border ${entregado && !editando ? 'bg-emerald-950/30 border-emerald-800/60' : 'bg-zinc-950 border-zinc-800'}`}>
+      <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-2 flex items-center justify-between">
+        <span className="flex items-center gap-1"><FileText className="w-3 h-3" /> Informe de solución entregado al cliente</span>
+        {entregado && !editando && <button onClick={() => setEditando(true)} className="text-red-400 hover:underline text-[10px] normal-case tracking-normal">Editar</button>}
+      </div>
+      {editando ? (
+        <div className="space-y-2">
+          <div>
+            <div className="text-[10px] text-zinc-500 mb-1">Fecha de entrega al cliente</div>
+            <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} className="bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1.5 text-xs text-white outline-none focus:border-red-600" />
+          </div>
+          <div>
+            <div className="text-[10px] text-zinc-500 mb-1">PDF del informe (opcional pero recomendado)</div>
+            {url ? (
+              <div className="flex items-center gap-2 text-xs">
+                <a href={url} target="_blank" rel="noreferrer" className="text-emerald-400 hover:underline flex items-center gap-1"><FileText className="w-3 h-3" /> {nombre || 'Ver PDF'}</a>
+                <button onClick={() => { setUrl(''); setNombre(''); }} className="text-zinc-500 hover:text-red-400"><X className="w-3 h-3" /></button>
+              </div>
+            ) : (
+              <label className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-card border border-zinc-700 text-xs cursor-pointer hover:border-zinc-500 ${subiendo ? 'opacity-60' : ''}`}>
+                {subiendo ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />} {subiendo ? 'Subiendo…' : 'Subir PDF'}
+                <input type="file" accept="application/pdf" className="hidden" disabled={subiendo} onChange={e => subirPDF(e.target.files?.[0])} />
+              </label>
+            )}
+          </div>
+          <button onClick={guardar} disabled={guardando || subiendo} className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-zinc-800 text-white text-[10px] font-black uppercase px-3 py-1.5 rounded-card flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> {guardando ? 'Guardando…' : 'Marcar informe entregado'}</button>
+        </div>
+      ) : (
+        <div className="text-sm text-zinc-300">
+          <div className="text-emerald-400 font-bold flex items-center gap-1"><CheckCircle2 className="w-4 h-4" /> Entregado el {fmtFecha(r.informeEntregadoAt.slice(0, 10))}</div>
+          {r.informeUrl && <a href={r.informeUrl} target="_blank" rel="noreferrer" className="text-[11px] text-emerald-400 hover:underline flex items-center gap-1 mt-1"><FileText className="w-3 h-3" /> {r.informeNombre || 'Ver PDF del informe'}</a>}
         </div>
       )}
     </div>

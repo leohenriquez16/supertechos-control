@@ -5,6 +5,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { evaluarSlaLevantamiento, metricasCiclo } from '../../../../lib/helpers/slaLevantamiento';
+import { evaluarSlaReclamacion, metricasCicloReclam } from '../../../../lib/helpers/slaReclamaciones';
 import { construirCorreoTorre } from '../../../../lib/helpers/torreControlEmail';
 
 export const maxDuration = 60;
@@ -84,9 +85,28 @@ export async function GET(request) {
   const enviados = (proys || []).filter((p) => p.cotizado_at && p.cotizado_at >= iniAyer && p.cotizado_at < finAyer);
   const movidos = movs || [];
 
+  // v8.53.2 (Fase 3B-2): sección RECLAMACIONES del correo (de creada → informe entregado).
+  let reclam = null;
+  try {
+    const { data: recs } = await supabase.from('reclamaciones')
+      .select('id, codigo, cliente_nombre, severidad, estado, fecha_apertura, fecha_resuelta, informe_entregado_at, created_at, archivado')
+      .eq('archivado', false);
+    const evR = (recs || []).map((r) => ({ r, sla: evaluarSlaReclamacion({ ...r, clienteNombre: r.cliente_nombre }, ahora) }));
+    const activasR = evR.filter((e) => !e.sla.terminal);
+    const ordenR = { rojo: 0, amarillo: 1, verde: 2 };
+    const atascadasR = activasR.filter((e) => e.sla.atascado).sort((a, b) => (ordenR[a.sla.semaforo] ?? 9) - (ordenR[b.sla.semaforo] ?? 9) || b.sla.horasTotales - a.sla.horasTotales);
+    const sinInforme = evR.filter((e) => e.sla.resueltaSinInforme);
+    const nuevasR = (recs || []).filter((r) => { const f = r.fecha_apertura || r.created_at; return f && f >= iniAyer && f < finAyer; });
+    const informesAyer = (recs || []).filter((r) => r.informe_entregado_at && r.informe_entregado_at >= iniAyer && r.informe_entregado_at < finAyer);
+    reclam = {
+      activas: activasR.length, atascadas: atascadasR, enSla: activasR.length - atascadasR.length,
+      sinInforme, nuevas: nuevasR, informesAyer, cicloR: metricasCicloReclam(evR, iniMes),
+    };
+  } catch (e) { console.warn('torre reclamaciones:', e?.message); }
+
   const { asunto, html } = construirCorreoTorre({
     ayer, activos: activos.length, atascados, enSla, cuello, nuevos, movidos, enviados, nombreProy,
-    totalMes: mesRes?.count || 0, totalAnio: anioRes?.count || 0, ciclo, sinEnviar,
+    totalMes: mesRes?.count || 0, totalAnio: anioRes?.count || 0, ciclo, sinEnviar, reclam,
   });
 
   const envList = String(process.env.TORRE_CONTROL_EMAILS || '').split(/[,;\s]+/).filter(Boolean);
@@ -94,7 +114,7 @@ export async function GET(request) {
   const cc = ['mmartinez@supertechos.com.do', 'lhenriquez@supertechos.com.do'];
 
   const dry = new URL(request.url).searchParams.get('dry');
-  if (dry) return Response.json({ ok: true, dry: true, dia: ayer, asunto, activos: activos.length, atascados: atascados.length, nuevos: nuevos.length, movidos: movidos.length, enviados: enviados.length, totalMes: mesRes?.count || 0, totalAnio: anioRes?.count || 0, ciclo, sinEnviar: sinEnviar.length, to, cc, html });
+  if (dry) return Response.json({ ok: true, dry: true, dia: ayer, asunto, activos: activos.length, atascados: atascados.length, nuevos: nuevos.length, movidos: movidos.length, enviados: enviados.length, totalMes: mesRes?.count || 0, totalAnio: anioRes?.count || 0, ciclo, sinEnviar: sinEnviar.length, reclam: reclam ? { activas: reclam.activas, atascadas: reclam.atascadas.length, sinInforme: reclam.sinInforme.length, nuevas: reclam.nuevas.length, informesAyer: reclam.informesAyer.length, cicloR: reclam.cicloR } : null, to, cc, html });
 
   const resp = await fetch('https://api.resend.com/emails', {
     method: 'POST',

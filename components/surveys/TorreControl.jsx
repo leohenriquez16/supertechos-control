@@ -7,7 +7,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { RefreshCw, Loader2, Gauge, PauseCircle, Wrench, ArrowLeft } from 'lucide-react';
 import { listarTorreControl, marcarVisitaPorCliente, marcarConsultaTecnica } from '../../lib/surveys';
-import { evaluarSlaLevantamiento, formatHoras } from '../../lib/helpers/slaLevantamiento';
+import { evaluarSlaLevantamiento, formatHoras, metricasCiclo } from '../../lib/helpers/slaLevantamiento';
 
 const SEM = {
   rojo: { punto: 'bg-red-500', txt: 'text-red-400', label: 'Vencido' },
@@ -21,6 +21,7 @@ const ORDEN = { rojo: 0, amarillo: 1, pausa: 2, verde: 3 };
 
 export default function TorreControl({ onVolver }) {
   const [items, setItems] = useState(null);
+  const [odooEstados, setOdooEstados] = useState({}); // v8.53.0: { projectId: draft|sent|sale }
   const [loading, setLoading] = useState(true);
   const [soloAtascados, setSoloAtascados] = useState(false);
 
@@ -29,6 +30,12 @@ export default function TorreControl({ onVolver }) {
     try { setItems(await listarTorreControl()); }
     catch (e) { console.warn('TorreControl:', e?.message); setItems([]); }
     setLoading(false);
+    // v8.53.0 (Fase 3A): estado real de Odoo en paralelo (no bloquea la vista si falla/tarda).
+    try {
+      const r = await fetch('/api/torre-control/estado-odoo');
+      const j = await r.json();
+      if (j?.estados) setOdooEstados(j.estados);
+    } catch (e) { console.warn('torre odoo:', e?.message); }
   };
   useEffect(() => { cargar(); }, []);
 
@@ -44,10 +51,19 @@ export default function TorreControl({ onVolver }) {
     } catch (e) { alert('Error: ' + (e?.message || e)); }
   };
 
-  const activos = useMemo(() => {
+  const evaluados = useMemo(() => {
     const ahora = new Date();
-    return (items || []).map((it) => ({ it, sla: evaluarSlaLevantamiento(it, ahora) })).filter((e) => !e.sla.terminal);
-  }, [items]);
+    return (items || []).map((it) => {
+      const conOdoo = { ...it, odooCotState: odooEstados[it.id] || null };
+      return { it: conOdoo, sla: evaluarSlaLevantamiento(conOdoo, ahora) };
+    });
+  }, [items, odooEstados]);
+  const activos = useMemo(() => evaluados.filter((e) => !e.sla.terminal), [evaluados]);
+  const ciclo = useMemo(() => {
+    const iniMes = new Date(); iniMes.setDate(1); iniMes.setHours(0, 0, 0, 0);
+    return metricasCiclo(evaluados, iniMes.toISOString());
+  }, [evaluados]);
+  const sinEnviar = useMemo(() => evaluados.filter((e) => e.sla.cotizadaSinEnviar), [evaluados]);
 
   const resumen = useMemo(() => {
     const r = { rojo: 0, amarillo: 0, pausa: 0, verde: 0, complejos: 0, total: activos.length };
@@ -89,6 +105,26 @@ export default function TorreControl({ onVolver }) {
         <Kpi n={resumen.verde} label="En SLA" color="text-green-400" />
         <Kpi n={resumen.complejos} label="Complejos" color="text-fuchsia-400" />
       </div>
+
+      {/* v8.53.0 (Fase 3A): FUGA — marcadas cotizadas pero en borrador en Odoo (no enviadas) */}
+      {sinEnviar.length > 0 && (
+        <div className="bg-amber-950/40 border border-amber-700/60 rounded-card px-3 py-2.5">
+          <div className="text-amber-300 font-bold text-sm flex items-center gap-1.5"><Wrench className="w-4 h-4" /> {sinEnviar.length} cotizada{sinEnviar.length !== 1 ? 's' : ''} en borrador en Odoo — no enviada{sinEnviar.length !== 1 ? 's' : ''} al cliente</div>
+          <div className="text-[11px] text-amber-500/80 mt-0.5">Están en "Cotización Realizada" pero la cotización sigue en borrador. El embudo no cierra hasta enviarla.</div>
+          <div className="text-[11px] text-amber-200 mt-1">{sinEnviar.map((e) => e.it.client_name || 'Sin cliente').join(' · ')}</div>
+        </div>
+      )}
+
+      {/* v8.53.0 (Fase 3A): tiempo de ciclo del mes (recepción → cotización enviada) */}
+      {ciclo.n > 0 && (
+        <div className="bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs">
+          <span className="text-zinc-500 uppercase tracking-wider font-bold text-[10px]">Ciclo del mes</span>
+          <span>Mediana <b className="text-white">{formatHoras(ciclo.mediana)}</b></span>
+          <span className="text-zinc-500">Promedio <b className="text-zinc-300">{formatHoras(ciclo.prom)}</b></span>
+          <span>Dentro de 72h <b className={ciclo.pct72 >= 80 ? 'text-green-400' : ciclo.pct72 >= 50 ? 'text-amber-400' : 'text-red-400'}>{ciclo.pct72}%</b></span>
+          <span className="text-zinc-500">{ciclo.n} cotizada{ciclo.n !== 1 ? 's' : ''}</span>
+        </div>
+      )}
 
       {loading ? (
         <div className="py-16 text-center"><Loader2 className="w-6 h-6 text-red-500 animate-spin mx-auto" /></div>

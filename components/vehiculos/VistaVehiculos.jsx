@@ -59,6 +59,7 @@ export default function VistaVehiculos({ usuario, data, onRecargar }) {
   const [inspDe, setInspDe] = useState(null); // vehículo cuyas inspecciones se están viendo (v8.35.3)
   const [licencias, setLicencias] = useState({}); // v8.35.2: licencia por chofer (responsable) para verla en la ficha
   const [tab, setTab] = useState('fichas'); // v8.42.1: 'fichas' | 'flota' (GPS) | 'peajes' (v8.50.0)
+  const [sel, setSel] = useState(''); // v8.51.5: elegir un vehículo (filtra la lista + abre su ficha)
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -125,8 +126,24 @@ export default function VistaVehiculos({ usuario, data, onRecargar }) {
           <div className="text-sm">No hay vehículos. Toca <b>“Nuevo vehículo”</b> para agregar el primero.</div>
         </div>
       ) : (
+        <>
+        {/* v8.51.5: elegir un vehículo o ver la lista completa */}
+        <div className="mb-4 flex items-center gap-2 flex-wrap">
+          <span className="text-[11px] tracking-widest uppercase text-zinc-500 font-bold">Vehículo:</span>
+          <select
+            value={sel}
+            onChange={(e) => { const id = e.target.value; setSel(id); const veh = vehiculos.find((x) => x.id === id); if (veh) setFichaDe(veh); }}
+            className="bg-zinc-950 border border-zinc-700 rounded-card px-3 py-2 text-sm text-white outline-none focus:border-red-500 min-w-[240px]">
+            <option value="">— Todos (ver la lista) —</option>
+            {vehiculos.map((v) => (
+              <option key={v.id} value={v.id}>{[v.marca, v.modelo, v.placa && `· ${v.placa}`].filter(Boolean).join(' ')}</option>
+            ))}
+          </select>
+          {sel && <button onClick={() => setSel('')} className="text-[11px] font-bold uppercase text-zinc-400 hover:text-white border border-zinc-700 rounded-card px-2.5 py-2">Ver todos</button>}
+          <span className="text-[11px] text-zinc-600 ml-auto">{vehiculos.length} vehículo{vehiculos.length !== 1 ? 's' : ''}</span>
+        </div>
         <div className="grid gap-3 md:grid-cols-2">
-          {vehiculos.map((v) => {
+          {(sel ? vehiculos.filter((v) => v.id === sel) : vehiculos).map((v) => {
             const dias = diasParaVencer(v.seguroVence);
             const seguroBadge = dias == null ? null
               : dias < 0 ? { t: `Seguro vencido hace ${-dias}d`, c: 'bg-red-900/50 text-red-300 border-red-700' }
@@ -210,6 +227,7 @@ export default function VistaVehiculos({ usuario, data, onRecargar }) {
             );
           })}
         </div>
+        </>
       )}
 
       {logDe && <ModalLogVehiculo usuario={usuario} vehiculo={logDe} personal={data?.personal || []} onCerrar={() => setLogDe(null)} />}

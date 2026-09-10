@@ -11,6 +11,7 @@ import ModalDetalleProduccion from './ModalDetalleProduccion';
 import ModalDetalleAprobados from './ModalDetalleAprobados';
 import AutoFitText from '../common/AutoFitText'; // v8.17.30: ajustar números a celda
 import MiProduccionCard from './MiProduccionCard'; // v8.19.19: widget personal del corte
+import CardActividad from './CardActividad'; // v8.51.6: KPI levantamientos + reclamaciones
 
 export default function Dashboard({ usuario, data, onVerProyecto, onNuevoProyecto, onImportarOdoo, tareas, onCompletarTarea, jornadasHoy, onCambiarEstadoRapido }) {
   const hoy = new Date().toISOString().split('T')[0];
@@ -212,6 +213,9 @@ export default function Dashboard({ usuario, data, onVerProyecto, onNuevoProyect
       {data.config?.mostrarMiProduccionNomina && usuario && (
         <div className="lg:col-span-12"><MiProduccionCard usuario={usuario} data={data} /></div>
       )}
+
+      {/* v8.51.6: KPI de actividad — levantamientos hechos + reclamaciones atendidas */}
+      <div className="lg:col-span-12"><CardActividad /></div>
 
       {/* v8.9.14: Alerta de proyectos aprobados atascados */}
       {proyectosAprobadosAtrasados.length > 0 && (

@@ -28,15 +28,26 @@ export default function TorreReclamaciones({ data }) {
   const [loading, setLoading] = useState(true);
   const [soloAtascadas, setSoloAtascadas] = useState(false);
 
+  const [csat, setCsat] = useState([]); // v8.54.1 C3/C4
   const cargar = async () => {
     setLoading(true);
     try {
-      const [r, u, c] = await Promise.all([db.listarReclamaciones(), db.listarUbicacionesCliente(null), db.listarContactos(null)]);
-      setRecs(r); setUbicaciones(u || []); setContactos(c || []);
+      const [r, u, c, cal] = await Promise.all([db.listarReclamaciones(), db.listarUbicacionesCliente(null), db.listarContactos(null), db.listarCalificaciones({ entityType: 'reclamacion' })]);
+      setRecs(r); setUbicaciones(u || []); setContactos(c || []); setCsat(cal || []);
     } catch (e) { console.warn('TorreReclamaciones:', e?.message); setRecs([]); }
     setLoading(false);
   };
   useEffect(() => { cargar(); }, []);
+
+  // CSAT del mes (calificaciones respondidas).
+  const csatMes = useMemo(() => {
+    const iniMes = new Date(); iniMes.setDate(1); iniMes.setHours(0, 0, 0, 0);
+    const resp = (csat || []).filter((c) => c.calificacion != null && c.respondidoAt && new Date(c.respondidoAt) >= iniMes);
+    const n = resp.length;
+    const prom = n ? resp.reduce((a, c) => a + c.calificacion, 0) / n : null;
+    const pendientes = (csat || []).filter((c) => c.calificacion == null).length;
+    return { n, prom, pendientes };
+  }, [csat]);
 
   const evaluados = useMemo(() => {
     const ahora = new Date();
@@ -121,6 +132,16 @@ export default function TorreReclamaciones({ data }) {
           <span className="text-zinc-500">Promedio <b className="text-zinc-300">{formatHoras(ciclo.prom)}</b></span>
           <span>Dentro de SLA <b className={ciclo.pct >= 80 ? 'text-green-400' : ciclo.pct >= 50 ? 'text-amber-400' : 'text-red-400'}>{ciclo.pct}%</b></span>
           <span className="text-zinc-500">{ciclo.n} entregada{ciclo.n !== 1 ? 's' : ''}</span>
+        </div>
+      )}
+
+      {(csatMes.n > 0 || csatMes.pendientes > 0) && (
+        <div className="bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs">
+          <span className="text-zinc-500 uppercase tracking-wider font-bold text-[10px]">Satisfacción (CSAT)</span>
+          {csatMes.n > 0
+            ? <span>⭐ <b className={csatMes.prom >= 4 ? 'text-green-400' : csatMes.prom >= 3 ? 'text-amber-400' : 'text-red-400'}>{csatMes.prom.toFixed(1)}</b> <span className="text-zinc-500">/5 · {csatMes.n} este mes</span></span>
+            : <span className="text-zinc-500">Sin respuestas este mes</span>}
+          {csatMes.pendientes > 0 && <span className="text-zinc-500">{csatMes.pendientes} esperando respuesta</span>}
         </div>
       )}
 

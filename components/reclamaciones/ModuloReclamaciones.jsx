@@ -9,7 +9,7 @@ import * as db from '../../lib/db';
 import MapaLeaflet from '../common/MapaLeaflet';
 import CalendarioLevantamientos from '../surveys/CalendarioLevantamientos';
 import ChatterPanel from '../common/ChatterPanel';
-import { registrarCreacion as chatterCreacion, registrarCambioEstado as chatterEstado } from '../../lib/chatter';
+import { registrarCreacion as chatterCreacion, registrarCambioEstado as chatterEstado, registrarComunicacion } from '../../lib/chatter';
 import { formatRD } from '../../lib/helpers/formato';
 import { comprimirImagenABlob } from '../../lib/imports'; // v8.49.11: fotos
 import { evaluarSlaReclamacion, SLA_SEVERIDAD_HORAS } from '../../lib/helpers/slaReclamaciones'; // v8.53.1 Fase 3B
@@ -152,6 +152,8 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
     const tel = (u?.contactoTelefono || cli?.telefonoPrincipal || proyById(r.proyectoId)?.contactoClienteTelefono || '').replace(/\D/g, '').replace(/^(?!1)(8[024]9)/, '1$1');
     const msg = `Hola, le saluda Super Techos sobre su reclamación${r.referenciaCotizacion ? ` (cot. ${r.referenciaCotizacion})` : ''}. `;
     window.open(`https://wa.me/${tel}?text=${encodeURIComponent(msg)}`, '_blank');
+    // v8.54.0 (C1): queda registrado en la bitácora de comunicación.
+    try { registrarComunicacion('reclamacion', r.id, { canal: 'whatsapp', direccion: 'saliente', cuerpo: 'Se abrió WhatsApp para contactar al cliente.', autor: usuario }); } catch { /* noop */ }
   };
 
   // ---------- FICHA DE DETALLE ----------
@@ -532,6 +534,8 @@ function InformeSolucionReclamacion({ r, onGuardado }) {
         informeEntregadoAt: new Date(fecha + 'T12:00:00').toISOString(),
         informeUrl: url || null, informeNombre: nombre || null,
       });
+      // v8.54.0 (C1): la entrega del informe queda en la bitácora de comunicación (solo la 1ª vez).
+      if (!entregado) { try { registrarComunicacion('reclamacion', r.id, { canal: 'correo', direccion: 'saliente', cuerpo: `Informe de solución entregado al cliente${nombre ? ` (${nombre})` : ''}.`, meta: { informeUrl: url || null } }); } catch { /* noop */ } }
       setEditando(false);
       if (onGuardado) await onGuardado();
     } catch (e) { alert('Error: ' + (e.message || e)); }

@@ -32,7 +32,7 @@ function normalizarTelefonoUrl(tel) {
   return digitos;
 }
 
-export default function QuickActions({ site, proyecto, surveyorNombre }) {
+export default function QuickActions({ site, proyecto, surveyorNombre, onWhatsApp }) {
   const tieneGeo = site.latitude != null && site.longitude != null;
   const telMovil = (site.mobile_phone || '').replace(/\D/g, '');
   const telOficina = (site.office_phone || '').replace(/\D/g, '');
@@ -74,6 +74,7 @@ export default function QuickActions({ site, proyecto, surveyorNombre }) {
         external
         color="#25d366"
         title={waUrl ? 'Abrir WhatsApp con mensaje' : 'Sin teléfono móvil'}
+        onClick={onWhatsApp}
       />
       <ActionButton
         icon={Map}
@@ -97,7 +98,7 @@ export default function QuickActions({ site, proyecto, surveyorNombre }) {
   );
 }
 
-function ActionButton({ icon: Icon, label, href, disabled, external, color, title }) {
+function ActionButton({ icon: Icon, label, href, disabled, external, color, title, onClick }) {
   const baseStyle = disabled
     ? 'bg-zinc-900 border-zinc-800 text-zinc-700 cursor-not-allowed'
     : 'bg-zinc-900 border-zinc-700 hover:border-red-600 text-zinc-100';
@@ -119,6 +120,7 @@ function ActionButton({ icon: Icon, label, href, disabled, external, color, titl
       href={href}
       target={external ? '_blank' : undefined}
       rel={external ? 'noopener noreferrer' : undefined}
+      onClick={onClick}
       className={`${baseStyle} border p-3 flex flex-col items-center gap-1 text-center transition-colors`}
       title={title}
     >

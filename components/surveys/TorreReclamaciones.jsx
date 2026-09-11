@@ -20,15 +20,18 @@ const SEM = {
 };
 const ORDEN = { rojo: 0, amarillo: 1, verde: 2 };
 
-export default function TorreReclamaciones() {
+export default function TorreReclamaciones({ data }) {
   const [recs, setRecs] = useState(null);
+  const [ubicaciones, setUbicaciones] = useState([]);
   const [loading, setLoading] = useState(true);
   const [soloAtascadas, setSoloAtascadas] = useState(false);
 
   const cargar = async () => {
     setLoading(true);
-    try { setRecs(await db.listarReclamaciones()); }
-    catch (e) { console.warn('TorreReclamaciones:', e?.message); setRecs([]); }
+    try {
+      const [r, u] = await Promise.all([db.listarReclamaciones(), db.listarUbicacionesCliente(null)]);
+      setRecs(r); setUbicaciones(u || []);
+    } catch (e) { console.warn('TorreReclamaciones:', e?.message); setRecs([]); }
     setLoading(false);
   };
   useEffect(() => { cargar(); }, []);
@@ -50,7 +53,22 @@ export default function TorreReclamaciones() {
     return r;
   }, [activas]);
 
-  const nombre = (r) => r.clienteNombre || r.codigo || 'Sin cliente';
+  // v8.53.3: el nombre vive en clientes (por cliente_id) — cliente_nombre casi siempre viene vacío.
+  // Las reclamaciones van amarradas a la UBICACIÓN del cliente (cliente_ubicaciones).
+  const clienteDe = (id) => (data?.clientes || []).find((c) => c.id === id);
+  const proyById = (id) => (data?.proyectos || []).find((p) => p.id === id);
+  const ubicDe = (id) => ubicaciones.find((u) => u.id === id);
+  const nombre = (r) => clienteDe(r.clienteId)?.nombre || proyById(r.proyectoId)?.cliente || r.clienteNombre || r.codigo || 'Sin cliente';
+  const ubicNombre = (r) => ubicDe(r.ubicacionId)?.nombre || '';
+  // v8.53.3: persona de contacto localizable (WhatsApp o correo). Ubicación → cliente.
+  const contactoDe = (r) => {
+    const u = ubicDe(r.ubicacionId); const c = clienteDe(r.clienteId);
+    const nom = u?.contactoNombre || '';
+    const tel = (u?.contactoTelefono || c?.telefonoPrincipal || '').trim();
+    const email = (c?.emailPrincipal || '').trim();
+    return { nom, tel, email, localizable: !!(tel || email) };
+  };
+  const sinContacto = useMemo(() => activas.filter((e) => !contactoDe(e.r).localizable), [activas, ubicaciones, data]);
   const visibles = useMemo(() => {
     const base = soloAtascadas ? activas.filter((e) => e.sla.atascado) : activas;
     return [...base].sort((a, b) => (ORDEN[a.sla.semaforo] ?? 9) - (ORDEN[b.sla.semaforo] ?? 9) || b.sla.horasTotales - a.sla.horasTotales);
@@ -87,6 +105,15 @@ export default function TorreReclamaciones() {
         </div>
       )}
 
+      {/* Sin contacto localizable (WhatsApp o correo) — no se puede dar seguimiento al cliente */}
+      {sinContacto.length > 0 && (
+        <div className="bg-amber-950/40 border border-amber-700/60 rounded-card px-3 py-2.5">
+          <div className="text-amber-300 font-bold text-sm">⚠ {sinContacto.length} sin contacto localizable del cliente</div>
+          <div className="text-[11px] text-amber-500/80 mt-0.5">No tienen ni WhatsApp ni correo para dar seguimiento. Asígnale a la ubicación/cliente un contacto con teléfono (WS) o correo.</div>
+          <div className="text-[11px] text-amber-200 mt-1">{sinContacto.map((e) => nombre(e.r)).join(' · ')}</div>
+        </div>
+      )}
+
       {ciclo.n > 0 && (
         <div className="bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs">
           <span className="text-zinc-500 uppercase tracking-wider font-bold text-[10px]">Ciclo del mes</span>
@@ -117,7 +144,10 @@ export default function TorreReclamaciones() {
                   <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${s.punto}`} title={s.label} />
                   <div className="min-w-0">
                     <div className="font-bold text-sm truncate">{nombre(r)}</div>
-                    <div className="text-[10px] text-zinc-500 truncate">{r.codigo || ''}{r.referenciaCotizacion ? ` · ${r.referenciaCotizacion}` : ''}{sla.resueltaSinInforme ? ' · ⚠ falta informe' : ''}</div>
+                    <div className="text-[10px] text-zinc-500 truncate">{[ubicNombre(r), r.codigo, r.referenciaCotizacion].filter(Boolean).join(' · ')}{sla.resueltaSinInforme ? ' · ⚠ falta informe' : ''}</div>
+                    {(() => { const ct = contactoDe(r); return ct.localizable
+                      ? <div className="text-[10px] text-zinc-400 truncate">{[ct.nom, ct.tel && `📱 ${ct.tel}`, ct.email && `✉ ${ct.email}`].filter(Boolean).join(' · ')}</div>
+                      : <div className="text-[10px] text-amber-400 font-bold truncate">⚠ Sin contacto localizable (falta WhatsApp o correo)</div>; })()}
                   </div>
                 </div>
                 <div className="md:col-span-2 text-xs uppercase"><span className="md:hidden text-zinc-500">Sev: </span>{sla.severidad}</div>

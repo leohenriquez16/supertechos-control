@@ -868,7 +868,7 @@ export default function App() {
         {vista === 'miProduccion' && tieneRol(usuario, 'maestro') && <VistaMiProduccion usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'miCajaChica' && (tieneRol(usuario, 'maestro') || tieneRol(usuario, 'supervisor')) && usuario.cajaChicaHabilitada && <VistaMiCajaChica usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} />}
         {vista === 'surveys' && (esAdmin || tieneRol(usuario, 'supervisor')) && <ModuloSurveys usuario={usuario} data={data} onRecargar={recargar} />}
-        {vista === 'torreControl' && (esAdmin || tieneRol(usuario, 'supervisor')) && <TorreControl onVolver={() => setVista('dashboard')} />}
+        {vista === 'torreControl' && (esAdmin || tieneRol(usuario, 'supervisor')) && <TorreControl data={data} onVolver={() => setVista('dashboard')} />}
         {vista === 'solicitudes' && (esAdmin || tieneRol(usuario, 'supervisor')) && <ModuloSolicitudes usuario={usuario} onRecargar={recargar} />}
         {/* v8.27.0: Gotera — disponible para TODOS los usuarios (reportar); owner/admin ven el kanban completo */}
         {vista === 'gotera' && <ModuloGotera usuario={usuario} data={data} onVolver={() => setVista(esAdmin ? 'dashboard' : 'misProyectos')} />}

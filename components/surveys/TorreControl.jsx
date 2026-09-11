@@ -20,7 +20,7 @@ const SEM = {
 };
 const ORDEN = { rojo: 0, amarillo: 1, pausa: 2, verde: 3 };
 
-export default function TorreControl({ onVolver }) {
+export default function TorreControl({ data, onVolver }) {
   const [items, setItems] = useState(null);
   const [odooEstados, setOdooEstados] = useState({}); // v8.53.0: { projectId: draft|sent|sale }
   const [loading, setLoading] = useState(true);
@@ -105,7 +105,7 @@ export default function TorreControl({ onVolver }) {
         ))}
       </div>
 
-      {tab === 'recl' ? <TorreReclamaciones /> : (
+      {tab === 'recl' ? <TorreReclamaciones data={data} /> : (
       <>
       {/* Resumen / semáforo */}
       <div className="grid grid-cols-3 md:grid-cols-6 gap-2">

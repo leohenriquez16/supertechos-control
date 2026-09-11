@@ -89,10 +89,31 @@ export async function GET(request) {
   let reclam = null;
   try {
     const { data: recs } = await supabase.from('reclamaciones')
-      .select('id, codigo, cliente_nombre, severidad, estado, fecha_apertura, fecha_resuelta, informe_entregado_at, created_at, archivado')
+      .select('id, codigo, cliente_id, cliente_nombre, ubicacion_id, proyecto_id, severidad, estado, fecha_apertura, fecha_resuelta, informe_entregado_at, created_at, archivado')
       .eq('archivado', false);
+    // v8.53.3: el nombre vive en clientes (cliente_nombre casi siempre vacío) y la reclamación
+    // va amarrada a la UBICACIÓN del cliente (cliente_ubicaciones) — resolvemos ambos.
+    const [{ data: clis }, { data: ubis }, { data: prys }] = await Promise.all([
+      supabase.from('clientes').select('id, nombre, telefono_principal, email_principal'),
+      supabase.from('cliente_ubicaciones').select('id, nombre, contacto_nombre, contacto_telefono'),
+      supabase.from('proyectos').select('id, cliente'),
+    ]);
+    const cliMap = Object.fromEntries((clis || []).map((c) => [c.id, c]));
+    const ubiMap = Object.fromEntries((ubis || []).map((u) => [u.id, u]));
+    const pryMap = Object.fromEntries((prys || []).map((p) => [p.id, p.cliente]));
+    (recs || []).forEach((r) => {
+      const c = cliMap[r.cliente_id]; const u = ubiMap[r.ubicacion_id];
+      r.cliente_nombre = c?.nombre || pryMap[r.proyecto_id] || r.cliente_nombre || null;
+      r.ubic_nombre = u?.nombre || null;
+      // Contacto localizable (WhatsApp o correo): ubicación → cliente.
+      r.contacto_nombre = u?.contacto_nombre || '';
+      r.contacto_tel = (u?.contacto_telefono || c?.telefono_principal || '').trim();
+      r.contacto_email = (c?.email_principal || '').trim();
+      r.sin_contacto = !(r.contacto_tel || r.contacto_email);
+    });
     const evR = (recs || []).map((r) => ({ r, sla: evaluarSlaReclamacion({ ...r, clienteNombre: r.cliente_nombre }, ahora) }));
     const activasR = evR.filter((e) => !e.sla.terminal);
+    const sinContacto = activasR.filter((e) => e.r.sin_contacto);
     const ordenR = { rojo: 0, amarillo: 1, verde: 2 };
     const atascadasR = activasR.filter((e) => e.sla.atascado).sort((a, b) => (ordenR[a.sla.semaforo] ?? 9) - (ordenR[b.sla.semaforo] ?? 9) || b.sla.horasTotales - a.sla.horasTotales);
     const sinInforme = evR.filter((e) => e.sla.resueltaSinInforme);
@@ -100,7 +121,7 @@ export async function GET(request) {
     const informesAyer = (recs || []).filter((r) => r.informe_entregado_at && r.informe_entregado_at >= iniAyer && r.informe_entregado_at < finAyer);
     reclam = {
       activas: activasR.length, atascadas: atascadasR, enSla: activasR.length - atascadasR.length,
-      sinInforme, nuevas: nuevasR, informesAyer, cicloR: metricasCicloReclam(evR, iniMes),
+      sinInforme, sinContacto, nuevas: nuevasR, informesAyer, cicloR: metricasCicloReclam(evR, iniMes),
     };
   } catch (e) { console.warn('torre reclamaciones:', e?.message); }
 
@@ -114,7 +135,7 @@ export async function GET(request) {
   const cc = ['mmartinez@supertechos.com.do', 'lhenriquez@supertechos.com.do'];
 
   const dry = new URL(request.url).searchParams.get('dry');
-  if (dry) return Response.json({ ok: true, dry: true, dia: ayer, asunto, activos: activos.length, atascados: atascados.length, nuevos: nuevos.length, movidos: movidos.length, enviados: enviados.length, totalMes: mesRes?.count || 0, totalAnio: anioRes?.count || 0, ciclo, sinEnviar: sinEnviar.length, reclam: reclam ? { activas: reclam.activas, atascadas: reclam.atascadas.length, sinInforme: reclam.sinInforme.length, nuevas: reclam.nuevas.length, informesAyer: reclam.informesAyer.length, cicloR: reclam.cicloR } : null, to, cc, html });
+  if (dry) return Response.json({ ok: true, dry: true, dia: ayer, asunto, activos: activos.length, atascados: atascados.length, nuevos: nuevos.length, movidos: movidos.length, enviados: enviados.length, totalMes: mesRes?.count || 0, totalAnio: anioRes?.count || 0, ciclo, sinEnviar: sinEnviar.length, reclam: reclam ? { activas: reclam.activas, atascadas: reclam.atascadas.length, sinInforme: reclam.sinInforme.length, sinContacto: reclam.sinContacto.length, nuevas: reclam.nuevas.length, informesAyer: reclam.informesAyer.length, cicloR: reclam.cicloR } : null, to, cc, html });
 
   const resp = await fetch('https://api.resend.com/emails', {
     method: 'POST',

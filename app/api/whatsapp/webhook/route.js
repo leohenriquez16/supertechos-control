@@ -1,7 +1,9 @@
 // v8.19.63: Webhook de WhatsApp Cloud API (Meta).
 // - GET:  verificación del webhook (Meta llama con hub.challenge).
-// - POST: recibe mensajes entrantes → crea una reclamación (canal=whatsapp),
-//         intenta matchear el cliente por teléfono, y responde un acuse.
+// - POST: recibe mensajes entrantes, matchea el cliente por teléfono y responde un acuse.
+//   v8.54.2 (C2): si el cliente tiene una reclamación ABIERTA reciente (≤7 días), el mensaje
+//   se PEGA a esa (no se duplica); si no, crea una nueva. Todo entrante y el acuse saliente
+//   quedan en la BITÁCORA de comunicación del ticket (chatter_mensajes, canal whatsapp).
 // Server-side (nodejs). Verifica la firma X-Hub-Signature-256 si hay APP_SECRET.
 
 import { createClient } from '@supabase/supabase-js';
@@ -76,16 +78,45 @@ export async function POST(request) {
         }
       }
 
-      // Crear la reclamación entrante.
-      const id = 'rec_' + Date.now() + Math.random().toString(36).slice(2, 6);
-      await sb.from('reclamaciones').insert({
-        id, cliente_id: clienteId, canal: 'whatsapp', estado: 'abierta', severidad: 'media',
-        descripcion: msg.texto,
-        notas: `WhatsApp de ${msg.contactName || 'cliente'} (${msg.from})${clienteId ? '' : ' — sin match de cliente, asignar manual'}`,
-      });
+      // v8.54.2 (C2): si el cliente tiene una reclamación ABIERTA reciente (≤7 días), la
+      // respuesta se PEGA a esa (no se duplica). Si no, se crea una nueva.
+      let reclId = null;
+      if (clienteId) {
+        const hace7 = new Date(Date.now() - 7 * 86400000).toISOString();
+        const { data: abiertas } = await sb.from('reclamaciones')
+          .select('id, updated_at, created_at, fecha_apertura')
+          .eq('cliente_id', clienteId).eq('archivado', false)
+          .in('estado', ['abierta', 'en_proceso'])
+          .order('created_at', { ascending: false }).limit(5);
+        const reciente = (abiertas || []).find((r) => (r.updated_at || r.created_at || r.fecha_apertura || '') >= hace7);
+        if (reciente) reclId = reciente.id;
+      }
+      const esNueva = !reclId;
+      if (esNueva) {
+        reclId = 'rec_' + Date.now() + Math.random().toString(36).slice(2, 6);
+        await sb.from('reclamaciones').insert({
+          id: reclId, cliente_id: clienteId, canal: 'whatsapp', estado: 'abierta', severidad: 'media',
+          descripcion: msg.texto,
+          notas: `WhatsApp de ${msg.contactName || 'cliente'} (${msg.from})${clienteId ? '' : ' — sin match de cliente, asignar manual'}`,
+        });
+      } else {
+        // Reabre/mantiene la conversación viva (updated_at) sin cambiar el estado.
+        try { await sb.from('reclamaciones').update({ updated_at: new Date().toISOString() }).eq('id', reclId); } catch { /* noop */ }
+      }
 
-      // Acuse al cliente (dentro de la ventana de 24h porque él inició).
-      await enviarWhatsAppTexto(msg.from, `Gracias${clienteNombre ? ' ' + clienteNombre : ''}, recibimos tu mensaje en Super Techos. Un asesor te contactará a la brevedad. 🧰`);
+      // v8.54.2 (C2): el mensaje del cliente queda en la BITÁCORA (entrante).
+      const chatterRow = (dir, canalTxt, cuerpo, autorNombre) => ({
+        id: 'ch_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+        entity_type: 'reclamacion', entity_id: String(reclId),
+        tipo: 'comunicacion', evento: 'comunicacion', canal: canalTxt, direccion: dir,
+        cuerpo, autor_nombre: autorNombre,
+      });
+      try { await sb.from('chatter_mensajes').insert(chatterRow('entrante', 'whatsapp', msg.texto, msg.contactName || clienteNombre || 'Cliente')); } catch { /* noop */ }
+
+      // Acuse al cliente (dentro de la ventana de 24h porque él inició) — también a la bitácora.
+      const acuse = `Gracias${clienteNombre ? ' ' + clienteNombre : ''}, recibimos tu mensaje en Super Techos. Un asesor te contactará a la brevedad. 🧰`;
+      await enviarWhatsAppTexto(msg.from, acuse);
+      try { await sb.from('chatter_mensajes').insert(chatterRow('saliente', 'whatsapp', acuse + ' (acuse automático)', 'Sistema')); } catch { /* noop */ }
     }
   } catch (e) {
     console.error('whatsapp webhook error:', e?.message);

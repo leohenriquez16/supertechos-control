@@ -21,7 +21,7 @@ import { imprimirInformeFotografico } from './imprimirInformeFotografico';
 import ChatterPanel from '../common/ChatterPanel';
 import Lightbox from '../common/Lightbox';
 import MapaLeaflet from '../common/MapaLeaflet';
-import { registrarEvento as chatterEventoSurvey } from '../../lib/chatter';
+import { registrarEvento as chatterEventoSurvey, registrarComunicacion } from '../../lib/chatter';
 import ModalUbicacionSite from './ModalUbicacionSite'; // v8.45.1: asignar/corregir ubicación desde el detalle
 
 export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, data, onVolver, onVerEdificaciones }) {
@@ -388,7 +388,8 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
         <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold mb-2">
           Acciones rápidas
         </div>
-        <QuickActions site={site} proyecto={proyecto} surveyorNombre={usuario?.nombre} />
+        <QuickActions site={site} proyecto={proyecto} surveyorNombre={usuario?.nombre}
+          onWhatsApp={() => { try { registrarComunicacion('levantamiento', proyecto?.id, { canal: 'whatsapp', direccion: 'saliente', cuerpo: `Se abrió WhatsApp para contactar sobre ${site?.name || 'el levantamiento'}.`, autor: usuario }); } catch { /* noop */ } }} />
       </div>
 
       {/* v8.26.13: Ubicación — dirección visible + mini-mapa al lado */}

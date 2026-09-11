@@ -10,6 +10,7 @@ import * as db from '../../lib/db';
 import { evaluarSlaReclamacion, metricasCicloReclam } from '../../lib/helpers/slaReclamaciones';
 import { formatHoras } from '../../lib/helpers/slaLevantamiento';
 import { resolverContacto } from '../../lib/helpers/contactoCliente'; // v8.53.4
+import { ultimasComunicaciones } from '../../lib/chatter'; // v8.54.2 C2
 
 const SEM = {
   rojo: { punto: 'bg-red-500', txt: 'text-red-400', label: 'Vencida' },
@@ -29,11 +30,12 @@ export default function TorreReclamaciones({ data }) {
   const [soloAtascadas, setSoloAtascadas] = useState(false);
 
   const [csat, setCsat] = useState([]); // v8.54.1 C3/C4
+  const [ultimasCom, setUltimasCom] = useState({}); // v8.54.2 C2: { reclId: {direccion, canal, createdAt} }
   const cargar = async () => {
     setLoading(true);
     try {
-      const [r, u, c, cal] = await Promise.all([db.listarReclamaciones(), db.listarUbicacionesCliente(null), db.listarContactos(null), db.listarCalificaciones({ entityType: 'reclamacion' })]);
-      setRecs(r); setUbicaciones(u || []); setContactos(c || []); setCsat(cal || []);
+      const [r, u, c, cal, com] = await Promise.all([db.listarReclamaciones(), db.listarUbicacionesCliente(null), db.listarContactos(null), db.listarCalificaciones({ entityType: 'reclamacion' }), ultimasComunicaciones('reclamacion')]);
+      setRecs(r); setUbicaciones(u || []); setContactos(c || []); setCsat(cal || []); setUltimasCom(com || {});
     } catch (e) { console.warn('TorreReclamaciones:', e?.message); setRecs([]); }
     setLoading(false);
   };
@@ -55,6 +57,8 @@ export default function TorreReclamaciones({ data }) {
   }, [recs]);
   const activas = useMemo(() => evaluados.filter((e) => !e.sla.terminal), [evaluados]);
   const sinInforme = useMemo(() => evaluados.filter((e) => e.sla.resueltaSinInforme), [evaluados]);
+  // v8.54.2 (C2): "sin responder" = la última comunicación del ticket fue ENTRANTE (el cliente escribió).
+  const sinResponder = useMemo(() => activas.filter((e) => ultimasCom[e.r.id]?.direccion === 'entrante'), [activas, ultimasCom]);
   const ciclo = useMemo(() => {
     const iniMes = new Date(); iniMes.setDate(1); iniMes.setHours(0, 0, 0, 0);
     return metricasCicloReclam(evaluados, iniMes.toISOString());
@@ -122,6 +126,15 @@ export default function TorreReclamaciones({ data }) {
           <div className="text-amber-300 font-bold text-sm">⚠ {sinContacto.length} sin contacto localizable del cliente</div>
           <div className="text-[11px] text-amber-500/80 mt-0.5">No tienen ni WhatsApp ni correo para dar seguimiento. Asígnale a la ubicación/cliente un contacto con teléfono (WS) o correo.</div>
           <div className="text-[11px] text-amber-200 mt-1">{sinContacto.map((e) => nombre(e.r)).join(' · ')}</div>
+        </div>
+      )}
+
+      {/* v8.54.2 (C2): sin responder — el cliente escribió y no le hemos contestado */}
+      {sinResponder.length > 0 && (
+        <div className="bg-blue-950/40 border border-blue-700/60 rounded-card px-3 py-2.5">
+          <div className="text-blue-300 font-bold text-sm">💬 {sinResponder.length} sin responder — el cliente escribió</div>
+          <div className="text-[11px] text-blue-400/80 mt-0.5">La última comunicación fue del cliente y aún no le hemos contestado.</div>
+          <div className="text-[11px] text-blue-200 mt-1">{sinResponder.map((e) => nombre(e.r)).join(' · ')}</div>
         </div>
       )}
 

@@ -14,6 +14,7 @@ import { formatRD } from '../../lib/helpers/formato';
 import { comprimirImagenABlob } from '../../lib/imports'; // v8.49.11: fotos
 import { evaluarSlaReclamacion, SLA_SEVERIDAD_HORAS } from '../../lib/helpers/slaReclamaciones'; // v8.53.1 Fase 3B
 import { resolverContacto, contactoLocalizable } from '../../lib/helpers/contactoCliente'; // v8.53.4
+import SolicitarCalificacion from '../common/SolicitarCalificacion'; // v8.54.1 C3
 
 const fmtFecha = (s) => { if (!s) return '—'; try { return new Date(s + 'T12:00:00').toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return s; } };
 const COLS = [
@@ -198,6 +199,8 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
           <ResolucionReclamacion r={r} onGuardado={() => setReload(x => x + 1)} />
           {/* v8.53.1 (Fase 3B): hito informe de solución entregado al cliente — cierra el ciclo */}
           <InformeSolucionReclamacion r={r} onGuardado={() => setReload(x => x + 1)} />
+          {/* v8.54.1 (C3): calificación del cliente (CSAT) */}
+          <SolicitarCalificacion entityType="reclamacion" entityId={r.id} clienteNombre={clienteNombre(r)} contexto="la atención de su reclamación" usuario={usuario} />
           {/* v8.26.8: pago de mano de obra de la reclamación → cae a nómina como ajuste */}
           <PagoManoObraReclamacion r={r} data={data} usuario={usuario} permitido={esOwnerApp || esAdminApp} />
           <div className="mt-3 flex gap-2 flex-wrap">

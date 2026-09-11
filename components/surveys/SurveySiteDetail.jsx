@@ -19,6 +19,7 @@ import EditorCita from './EditorCita';
 import { imprimirLevantamiento } from './imprimirLevantamiento';
 import { imprimirInformeFotografico } from './imprimirInformeFotografico';
 import ChatterPanel from '../common/ChatterPanel';
+import SolicitarCalificacion from '../common/SolicitarCalificacion'; // v8.54.1 C3
 import Lightbox from '../common/Lightbox';
 import MapaLeaflet from '../common/MapaLeaflet';
 import { registrarEvento as chatterEventoSurvey, registrarComunicacion } from '../../lib/chatter';
@@ -635,6 +636,7 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
         </div>
       )}
 
+      <SolicitarCalificacion entityType="levantamiento" entityId={proyecto?.id} clienteNombre={proyecto?.client_name || ''} contexto="su levantamiento" usuario={usuario} />
       <ChatterPanel entityType="levantamiento" entityId={proyecto?.id} usuario={usuario} anclaFecha={proyecto?.created_at} anclaTitulo="Solicitud recibida" />
 
       {/* v8.22.6: eliminación con autorización del owner — al final, debajo del chatter */}

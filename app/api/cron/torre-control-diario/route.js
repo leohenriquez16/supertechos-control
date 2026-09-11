@@ -6,6 +6,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { evaluarSlaLevantamiento, metricasCiclo } from '../../../../lib/helpers/slaLevantamiento';
 import { evaluarSlaReclamacion, metricasCicloReclam } from '../../../../lib/helpers/slaReclamaciones';
+import { resolverContacto } from '../../../../lib/helpers/contactoCliente';
 import { construirCorreoTorre } from '../../../../lib/helpers/torreControlEmail';
 
 export const maxDuration = 60;
@@ -89,27 +90,33 @@ export async function GET(request) {
   let reclam = null;
   try {
     const { data: recs } = await supabase.from('reclamaciones')
-      .select('id, codigo, cliente_id, cliente_nombre, ubicacion_id, proyecto_id, severidad, estado, fecha_apertura, fecha_resuelta, informe_entregado_at, created_at, archivado')
+      .select('id, codigo, cliente_id, cliente_nombre, ubicacion_id, contacto_id, proyecto_id, severidad, estado, fecha_apertura, fecha_resuelta, informe_entregado_at, created_at, archivado')
       .eq('archivado', false);
-    // v8.53.3: el nombre vive en clientes (cliente_nombre casi siempre vacío) y la reclamación
-    // va amarrada a la UBICACIÓN del cliente (cliente_ubicaciones) — resolvemos ambos.
-    const [{ data: clis }, { data: ubis }, { data: prys }] = await Promise.all([
-      supabase.from('clientes').select('id, nombre, telefono_principal, email_principal'),
+    // v8.53.4: nombre por cliente_id; ubicación (cliente_ubicaciones); contacto AMARRADO a
+    // contactos del cliente (empresa) o el cliente mismo (persona) — vía resolverContacto.
+    const [{ data: clis }, { data: ubis }, { data: prys }, { data: cons }] = await Promise.all([
+      supabase.from('clientes').select('id, nombre, tipo, telefono_principal, email_principal'),
       supabase.from('cliente_ubicaciones').select('id, nombre, contacto_nombre, contacto_telefono'),
       supabase.from('proyectos').select('id, cliente'),
+      supabase.from('contactos').select('id, nombre, telefono, whatsapp, email'),
     ]);
     const cliMap = Object.fromEntries((clis || []).map((c) => [c.id, c]));
     const ubiMap = Object.fromEntries((ubis || []).map((u) => [u.id, u]));
     const pryMap = Object.fromEntries((prys || []).map((p) => [p.id, p.cliente]));
+    const conMap = Object.fromEntries((cons || []).map((c) => [c.id, c]));
     (recs || []).forEach((r) => {
       const c = cliMap[r.cliente_id]; const u = ubiMap[r.ubicacion_id];
       r.cliente_nombre = c?.nombre || pryMap[r.proyecto_id] || r.cliente_nombre || null;
       r.ubic_nombre = u?.nombre || null;
-      // Contacto localizable (WhatsApp o correo): ubicación → cliente.
-      r.contacto_nombre = u?.contacto_nombre || '';
-      r.contacto_tel = (u?.contacto_telefono || c?.telefono_principal || '').trim();
-      r.contacto_email = (c?.email_principal || '').trim();
-      r.sin_contacto = !(r.contacto_tel || r.contacto_email);
+      const info = resolverContacto({
+        cliente: c ? { tipo: c.tipo, nombre: c.nombre, telefonoPrincipal: c.telefono_principal, emailPrincipal: c.email_principal } : null,
+        contacto: conMap[r.contacto_id] || null,
+        ubicacion: u ? { contactoNombre: u.contacto_nombre, contactoTelefono: u.contacto_telefono } : null,
+      });
+      r.contacto_nombre = info.nombre || '';
+      r.contacto_tel = info.tel || '';
+      r.contacto_email = info.email || '';
+      r.sin_contacto = !info.localizable;
     });
     const evR = (recs || []).map((r) => ({ r, sla: evaluarSlaReclamacion({ ...r, clienteNombre: r.cliente_nombre }, ahora) }));
     const activasR = evR.filter((e) => !e.sla.terminal);

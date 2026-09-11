@@ -13,6 +13,7 @@ import { registrarCreacion as chatterCreacion, registrarCambioEstado as chatterE
 import { formatRD } from '../../lib/helpers/formato';
 import { comprimirImagenABlob } from '../../lib/imports'; // v8.49.11: fotos
 import { evaluarSlaReclamacion, SLA_SEVERIDAD_HORAS } from '../../lib/helpers/slaReclamaciones'; // v8.53.1 Fase 3B
+import { resolverContacto, contactoLocalizable } from '../../lib/helpers/contactoCliente'; // v8.53.4
 
 const fmtFecha = (s) => { if (!s) return '—'; try { return new Date(s + 'T12:00:00').toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return s; } };
 const COLS = [
@@ -180,6 +181,8 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
             </div>
           </div>
           <div className="mt-3 bg-zinc-950 border border-zinc-800 rounded-card p-3 text-sm text-zinc-300">{r.descripcion || 'Sin descripción.'}</div>
+          {/* v8.53.4: contacto del cliente amarrado a sus contactos (empresa) o el cliente (persona) */}
+          <ContactoReclamacion r={r} cliente={clienteDe(r.clienteId)} ubicacion={ubic(r.ubicacionId)} onGuardado={() => setReload(x => x + 1)} />
           {/* v8.49.11: fotos del trabajo realizado (ticket Edwin) */}
           <FotosReclamacion r={r} usuario={usuario} onCambio={() => setReload(x => x + 1)} />
           {/* Estado */}
@@ -672,27 +675,138 @@ function ReclamacionesTabla({ grupos, agrupado, clienteNombre, ubicNombre, estad
 }
 
 // ---------- MODAL NUEVA RECLAMACIÓN ----------
+// v8.53.4: selector de contacto del cliente (tabla contactos). Solo para EMPRESAS; para
+// clientes PERSONA el contacto es el cliente mismo, así que no se muestra. Carga los contactos
+// del cliente y solo ofrece los localizables (con WhatsApp o correo).
+function SelectorContactoCliente({ clienteId, value, onChange, autoPrincipal = true }) {
+  const [contactos, setContactos] = useState([]);
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    if (!clienteId) { setContactos([]); return; }
+    let cancel = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const cs = await db.listarContactos(clienteId);
+        if (cancel) return;
+        setContactos(cs);
+        if (autoPrincipal && !value) {
+          const pr = cs.find(c => c.esPrincipal && contactoLocalizable(c)) || cs.find(c => contactoLocalizable(c));
+          if (pr) onChange(pr.id);
+        }
+      } catch { if (!cancel) setContactos([]); }
+      if (!cancel) setLoading(false);
+    })();
+    return () => { cancel = true; };
+  }, [clienteId]);
+
+  const localizables = contactos.filter(contactoLocalizable);
+  if (loading) return <div className="text-[11px] text-zinc-500">Cargando contactos…</div>;
+  if (!localizables.length) return (
+    <div className="text-[11px] text-amber-400 bg-amber-950/30 border border-amber-800/50 rounded-card px-2 py-1.5">
+      ⚠ Este cliente no tiene contactos con WhatsApp o correo. Agrégalo en la ficha del cliente (Clientes → Contactos) para poder crear la reclamación.
+    </div>
+  );
+  return (
+    <select value={value || ''} onChange={e => onChange(e.target.value || null)} className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-2 text-white text-xs">
+      <option value="">— Elige contacto —</option>
+      {localizables.map(c => <option key={c.id} value={c.id}>{c.nombre}{c.cargo ? ` (${c.cargo})` : ''} · {(c.whatsapp || c.telefono) ? `📱 ${c.whatsapp || c.telefono}` : ''}{c.email ? ` ✉ ${c.email}` : ''}</option>)}
+    </select>
+  );
+}
+
+// v8.53.4: panel de contacto del cliente en el detalle. Empresa → contacto de sus `contactos`
+// (asignable); persona → el cliente es el contacto. Marca cuando falta un contacto localizable.
+function ContactoReclamacion({ r, cliente, ubicacion, onGuardado }) {
+  const esEmpresa = !cliente || cliente.tipo !== 'persona';
+  const [contactos, setContactos] = useState([]);
+  const [editando, setEditando] = useState(false);
+  const [sel, setSel] = useState(r.contactoId || '');
+  const [guardando, setGuardando] = useState(false);
+  useEffect(() => {
+    if (!esEmpresa || !r.clienteId) { setContactos([]); return; }
+    let cancel = false;
+    (async () => { try { const cs = await db.listarContactos(r.clienteId); if (!cancel) setContactos(cs); } catch { if (!cancel) setContactos([]); } })();
+    return () => { cancel = true; };
+  }, [r.clienteId, esEmpresa]);
+  useEffect(() => { setSel(r.contactoId || ''); setEditando(false); }, [r.id]);
+
+  const asignado = contactos.find(c => c.id === r.contactoId) || null;
+  const info = resolverContacto({ cliente, contacto: asignado, ubicacion });
+  const localizables = contactos.filter(contactoLocalizable);
+
+  const guardar = async () => {
+    setGuardando(true);
+    try { await db.actualizarReclamacion(r.id, { contactoId: sel || null }); setEditando(false); if (onGuardado) await onGuardado(); }
+    catch (e) { alert('Error: ' + (e.message || e)); }
+    setGuardando(false);
+  };
+
+  const bordeAlerta = (info.requiereAsignar || !info.localizable);
+  return (
+    <div className={`mt-3 rounded-card p-3 border ${bordeAlerta ? 'bg-amber-950/30 border-amber-800/60' : 'bg-zinc-950 border-zinc-800'}`}>
+      <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-2 flex items-center justify-between">
+        <span className="flex items-center gap-1"><MessageCircle className="w-3 h-3" /> Contacto del cliente {esEmpresa ? '' : '(cliente personal)'}</span>
+        {esEmpresa && !editando && <button onClick={() => setEditando(true)} className="text-red-400 hover:underline text-[10px] normal-case tracking-normal">{r.contactoId ? 'Cambiar' : 'Asignar'}</button>}
+      </div>
+      {esEmpresa && editando ? (
+        <div className="space-y-2">
+          {localizables.length ? (
+            <select value={sel || ''} onChange={e => setSel(e.target.value)} className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-2 text-white text-xs">
+              <option value="">— Elige contacto —</option>
+              {localizables.map(c => <option key={c.id} value={c.id}>{c.nombre}{c.cargo ? ` (${c.cargo})` : ''} · {(c.whatsapp || c.telefono) ? `📱 ${c.whatsapp || c.telefono}` : ''}{c.email ? ` ✉ ${c.email}` : ''}</option>)}
+            </select>
+          ) : <div className="text-[11px] text-amber-400">Este cliente no tiene contactos con WhatsApp o correo. Agrégalo en la ficha del cliente.</div>}
+          <div className="flex gap-2">
+            <button onClick={() => setEditando(false)} className="px-3 bg-zinc-800 text-zinc-400 text-[10px] font-bold uppercase py-1.5 rounded-card">Cancelar</button>
+            <button onClick={guardar} disabled={guardando || !sel} className="bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-[10px] font-black uppercase px-3 py-1.5 rounded-card">{guardando ? 'Guardando…' : 'Guardar contacto'}</button>
+          </div>
+        </div>
+      ) : (
+        info.localizable ? (
+          <div className="text-sm text-zinc-200">
+            <span className="font-bold">{info.nombre || (info.esPersona ? cliente?.nombre : 'Contacto')}</span>
+            <span className="text-zinc-400 text-xs"> · {[info.tel && `📱 ${info.tel}`, info.email && `✉ ${info.email}`].filter(Boolean).join(' · ')}</span>
+            {info.requiereAsignar && <div className="text-[11px] text-amber-400 mt-1">⚠ Falta asignar un contacto formal del cliente (se está usando el dato de la ubicación/cliente).</div>}
+          </div>
+        ) : (
+          <div className="text-[12px] text-amber-400 font-bold">⚠ Sin contacto localizable — {esEmpresa ? 'asigna un contacto del cliente con WhatsApp o correo.' : 'completa el teléfono o correo del cliente en su ficha.'}</div>
+        )
+      )}
+    </div>
+  );
+}
+
 function ModalNuevaReclamacion({ data, usuario, ubicaciones, garantias, onCerrar, onCreada }) {
   const [clienteId, setClienteId] = useState('');
   const [ubicacionId, setUbicacionId] = useState('');
   const [proyectoId, setProyectoId] = useState('');
+  const [contactoId, setContactoId] = useState('');
   const [descripcion, setDescripcion] = useState('');
   const [severidad, setSeveridad] = useState('media');
   const [canal, setCanal] = useState('interno');
   const [guardando, setGuardando] = useState(false);
 
   const clientes = (data.clientes || []).filter(c => !c.archivado);
+  const cli = clientes.find(c => c.id === clienteId);
+  const esEmpresa = cli && cli.tipo !== 'persona'; // v8.53.4: persona = el cliente es el contacto
+  const clientePersonaLocalizable = cli && !esEmpresa && !!((cli.telefonoPrincipal || '').trim() || (cli.emailPrincipal || '').trim());
   const ubicsCli = ubicaciones.filter(u => u.clienteId === clienteId);
   const proysCli = (data.proyectos || []).filter(p => !p.archivado && p.clienteId === clienteId);
   const garantiaDeProy = garantias.find(g => g.proyectoId === proyectoId);
 
   const guardar = async () => {
+    if (!clienteId) { alert('Elige el cliente.'); return; }
     if (!descripcion.trim()) { alert('Describe la reclamación.'); return; }
+    // v8.53.4: contacto obligatorio con WhatsApp o correo (empresa: de sus contactos; persona: el cliente).
+    if (esEmpresa && !contactoId) { alert('Elige un contacto del cliente (con WhatsApp o correo) para dar seguimiento.'); return; }
+    if (!esEmpresa && !clientePersonaLocalizable) { alert('Este cliente (persona) no tiene teléfono ni correo. Complétalo en su ficha para poder contactarlo.'); return; }
     setGuardando(true);
     try {
       const proy = (data.proyectos || []).find(p => p.id === proyectoId);
       const rec = await db.crearReclamacion({
         clienteId: clienteId || null, ubicacionId: ubicacionId || null, proyectoId: proyectoId || null,
+        contactoId: esEmpresa ? (contactoId || null) : null,
         garantiaId: garantiaDeProy?.id || null, referenciaCotizacion: proy?.referenciaOdoo || null,
         canal, descripcion: descripcion.trim(), severidad,
       });
@@ -710,9 +824,10 @@ function ModalNuevaReclamacion({ data, usuario, ubicaciones, garantias, onCerrar
             <div className="text-[10px] uppercase text-zinc-500 mb-1">Cliente</div>
             {/* v8.49.11 (ticket Edwin): buscador con sugerencias — el select plano no servía con cientos de clientes */}
             <BuscadorCliente clientes={clientes} clienteId={clienteId}
-              onElegir={(id) => { setClienteId(id); setUbicacionId(''); setProyectoId(''); }} />
+              onElegir={(id) => { setClienteId(id); setUbicacionId(''); setProyectoId(''); setContactoId(''); }} />
           </div>
           {clienteId && (
+            <>
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <div className="text-[10px] uppercase text-zinc-500 mb-1">Ubicación</div>
@@ -723,6 +838,18 @@ function ModalNuevaReclamacion({ data, usuario, ubicaciones, garantias, onCerrar
                 <select value={proyectoId} onChange={e => setProyectoId(e.target.value)} className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-2 text-white text-xs"><option value="">—</option>{proysCli.map(p => <option key={p.id} value={p.id}>{p.referenciaProyecto || p.referenciaOdoo || p.nombre}</option>)}</select>
               </div>
             </div>
+            {/* v8.53.4: contacto del cliente — obligatorio para empresas (de sus contactos, con WS/correo) */}
+            <div>
+              <div className="text-[10px] uppercase text-zinc-500 mb-1">Contacto del cliente *</div>
+              {esEmpresa
+                ? <SelectorContactoCliente clienteId={clienteId} value={contactoId} onChange={setContactoId} />
+                : <div className={`text-[11px] rounded-card px-2 py-1.5 border ${clientePersonaLocalizable ? 'text-zinc-300 bg-zinc-900 border-zinc-800' : 'text-amber-400 bg-amber-950/30 border-amber-800/50'}`}>
+                    {clientePersonaLocalizable
+                      ? <>Cliente personal — el contacto es el cliente: {[cli.telefonoPrincipal && `📱 ${cli.telefonoPrincipal}`, cli.emailPrincipal && `✉ ${cli.emailPrincipal}`].filter(Boolean).join(' · ')}</>
+                      : <>⚠ Cliente personal sin teléfono ni correo. Complétalo en su ficha para poder contactarlo.</>}
+                  </div>}
+            </div>
+            </>
           )}
           <div>
             <div className="text-[10px] uppercase text-zinc-500 mb-1">Descripción *</div>

@@ -9,6 +9,7 @@ import { RefreshCw, Loader2, FileText } from 'lucide-react';
 import * as db from '../../lib/db';
 import { evaluarSlaReclamacion, metricasCicloReclam } from '../../lib/helpers/slaReclamaciones';
 import { formatHoras } from '../../lib/helpers/slaLevantamiento';
+import { resolverContacto } from '../../lib/helpers/contactoCliente'; // v8.53.4
 
 const SEM = {
   rojo: { punto: 'bg-red-500', txt: 'text-red-400', label: 'Vencida' },
@@ -23,14 +24,15 @@ const ORDEN = { rojo: 0, amarillo: 1, verde: 2 };
 export default function TorreReclamaciones({ data }) {
   const [recs, setRecs] = useState(null);
   const [ubicaciones, setUbicaciones] = useState([]);
+  const [contactos, setContactos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [soloAtascadas, setSoloAtascadas] = useState(false);
 
   const cargar = async () => {
     setLoading(true);
     try {
-      const [r, u] = await Promise.all([db.listarReclamaciones(), db.listarUbicacionesCliente(null)]);
-      setRecs(r); setUbicaciones(u || []);
+      const [r, u, c] = await Promise.all([db.listarReclamaciones(), db.listarUbicacionesCliente(null), db.listarContactos(null)]);
+      setRecs(r); setUbicaciones(u || []); setContactos(c || []);
     } catch (e) { console.warn('TorreReclamaciones:', e?.message); setRecs([]); }
     setLoading(false);
   };
@@ -60,15 +62,13 @@ export default function TorreReclamaciones({ data }) {
   const ubicDe = (id) => ubicaciones.find((u) => u.id === id);
   const nombre = (r) => clienteDe(r.clienteId)?.nombre || proyById(r.proyectoId)?.cliente || r.clienteNombre || r.codigo || 'Sin cliente';
   const ubicNombre = (r) => ubicDe(r.ubicacionId)?.nombre || '';
-  // v8.53.3: persona de contacto localizable (WhatsApp o correo). Ubicación → cliente.
-  const contactoDe = (r) => {
-    const u = ubicDe(r.ubicacionId); const c = clienteDe(r.clienteId);
-    const nom = u?.contactoNombre || '';
-    const tel = (u?.contactoTelefono || c?.telefonoPrincipal || '').trim();
-    const email = (c?.emailPrincipal || '').trim();
-    return { nom, tel, email, localizable: !!(tel || email) };
-  };
-  const sinContacto = useMemo(() => activas.filter((e) => !contactoDe(e.r).localizable), [activas, ubicaciones, data]);
+  // v8.53.4: contacto amarrado a los contactos del cliente (empresa) o el cliente mismo (persona).
+  const contactoDe = (r) => resolverContacto({
+    cliente: clienteDe(r.clienteId),
+    contacto: contactos.find((c) => c.id === r.contactoId) || null,
+    ubicacion: ubicDe(r.ubicacionId),
+  });
+  const sinContacto = useMemo(() => activas.filter((e) => !contactoDe(e.r).localizable), [activas, ubicaciones, contactos, data]);
   const visibles = useMemo(() => {
     const base = soloAtascadas ? activas.filter((e) => e.sla.atascado) : activas;
     return [...base].sort((a, b) => (ORDEN[a.sla.semaforo] ?? 9) - (ORDEN[b.sla.semaforo] ?? 9) || b.sla.horasTotales - a.sla.horasTotales);
@@ -146,7 +146,7 @@ export default function TorreReclamaciones({ data }) {
                     <div className="font-bold text-sm truncate">{nombre(r)}</div>
                     <div className="text-[10px] text-zinc-500 truncate">{[ubicNombre(r), r.codigo, r.referenciaCotizacion].filter(Boolean).join(' · ')}{sla.resueltaSinInforme ? ' · ⚠ falta informe' : ''}</div>
                     {(() => { const ct = contactoDe(r); return ct.localizable
-                      ? <div className="text-[10px] text-zinc-400 truncate">{[ct.nom, ct.tel && `📱 ${ct.tel}`, ct.email && `✉ ${ct.email}`].filter(Boolean).join(' · ')}</div>
+                      ? <div className="text-[10px] text-zinc-400 truncate">{[ct.nombre, ct.tel && `📱 ${ct.tel}`, ct.email && `✉ ${ct.email}`].filter(Boolean).join(' · ')}{ct.requiereAsignar ? ' · ⚠ asignar contacto' : ''}</div>
                       : <div className="text-[10px] text-amber-400 font-bold truncate">⚠ Sin contacto localizable (falta WhatsApp o correo)</div>; })()}
                   </div>
                 </div>

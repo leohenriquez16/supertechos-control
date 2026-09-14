@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import dynamic from 'next/dynamic'; // v8.55.0: carga perezosa de vistas
 import { createPortal } from 'react-dom';
 import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed, Building2, Star, MessageCircle, Send, Search, Filter, CloudRain, Calculator, Receipt, Car, Award, Gauge } from 'lucide-react';
 import * as db from '../lib/db';
@@ -42,7 +43,7 @@ import MiProduccionCard from '../components/dashboard/MiProduccionCard';
 import Sidebar from '../components/sidebar/Sidebar';
 import ToastContainer from '../components/common/ToastContainer';
 import ChatterPanel from '../components/common/ChatterPanel';
-import SettingsNotificaciones from '../components/settings/SettingsNotificaciones';
+const SettingsNotificaciones = cargarVista(() => import('../components/settings/SettingsNotificaciones'), CargandoVista);
 import { registrarCreacion as chatterCreacion, registrarCambioEstado as chatterEstado } from '../lib/chatter';
 // v8.10.4: Campo e Input extraídos
 import Campo from '../components/common/Campo';
@@ -53,83 +54,112 @@ import AutoFitText from '../components/common/AutoFitText';
 import ToggleDensidad, { useDensidad } from '../components/common/ToggleDensidad';
 import { BadgeEmpresa } from '../components/common/Badge';
 // v8.10.4: ModalEditarReporte extraído
-import ModalEditarReporte from '../components/proyecto/modales/ModalEditarReporte';
 // v8.10.4: ModalReporteAvancePDF extraído (incluye ReportePDFContenido)
-import ModalReporteAvancePDF from '../components/proyecto/modales/ModalReporteAvancePDF';
-import ModalReporteFinalPDF from '../components/proyecto/modales/ModalReporteFinalPDF'; // v8.27.79
+const ModalReporteAvancePDF = cargarVista(() => import('../components/proyecto/modales/ModalReporteAvancePDF'), CargandoModal);
+const ModalReporteFinalPDF = cargarVista(() => import('../components/proyecto/modales/ModalReporteFinalPDF'), CargandoModal); // v8.27.79
 // v8.10.5: Tabs simples extraídas
-import TabFotos from '../components/proyecto/tabs/TabFotos';
-import TabUnidades from '../components/proyecto/tabs/TabUnidades';
-import TabDieta from '../components/proyecto/tabs/TabDieta';
-import TabCronograma from '../components/proyecto/tabs/TabCronograma';
+const TabFotos = cargarVista(() => import('../components/proyecto/tabs/TabFotos'), CargandoVista);
+const TabUnidades = cargarVista(() => import('../components/proyecto/tabs/TabUnidades'), CargandoVista);
+const TabDieta = cargarVista(() => import('../components/proyecto/tabs/TabDieta'), CargandoVista);
+const TabCronograma = cargarVista(() => import('../components/proyecto/tabs/TabCronograma'), CargandoVista);
 // v8.10.7: Tabs complejas extraídas
-import TabAsistencia from '../components/proyecto/tabs/TabAsistencia';
-import TabEquipoProyecto from '../components/proyecto/tabs/TabEquipoProyecto';
-import TabAvance from '../components/proyecto/tabs/TabAvance';
+const TabAsistencia = cargarVista(() => import('../components/proyecto/tabs/TabAsistencia'), CargandoVista);
+const TabEquipoProyecto = cargarVista(() => import('../components/proyecto/tabs/TabEquipoProyecto'), CargandoVista);
+const TabAvance = cargarVista(() => import('../components/proyecto/tabs/TabAvance'), CargandoVista);
 // Estado de pago de mano de obra del proyecto
-import TabManoDeObra from '../components/proyecto/tabs/TabManoDeObra';
+const TabManoDeObra = cargarVista(() => import('../components/proyecto/tabs/TabManoDeObra'), CargandoVista);
 // v8.46.0: rentabilidad por partida (reemplaza el viejo TabCosto)
-import TabRentabilidad from '../components/proyecto/tabs/TabRentabilidad';
+const TabRentabilidad = cargarVista(() => import('../components/proyecto/tabs/TabRentabilidad'), CargandoVista);
 // v8.10.8: NuevoProyecto y ModalEditarProyecto extraídos a components/proyecto/
-import NuevoProyecto from '../components/proyecto/NuevoProyecto';
-import ModalEditarProyecto from '../components/proyecto/ModalEditarProyecto';
+const NuevoProyecto = cargarVista(() => import('../components/proyecto/NuevoProyecto'), CargandoVista);
+const ModalEditarProyecto = cargarVista(() => import('../components/proyecto/ModalEditarProyecto'), CargandoModal);
 // v8.17.41: carta de acceso de personal al cliente
-import ModalCartaAcceso from '../components/proyecto/ModalCartaAcceso';
-import ModalCartaGarantia from '../components/garantias/ModalCartaGarantia'; // v8.50.0
-import ModalListaHerramientas from '../components/proyecto/ModalListaHerramientas';
-import SeccionArchivosProyecto from '../components/proyecto/SeccionArchivosProyecto';
+const ModalCartaAcceso = cargarVista(() => import('../components/proyecto/ModalCartaAcceso'), CargandoModal);
+const ModalListaHerramientas = cargarVista(() => import('../components/proyecto/ModalListaHerramientas'), CargandoModal);
+const SeccionArchivosProyecto = cargarVista(() => import('../components/proyecto/SeccionArchivosProyecto'), CargandoVista);
 // v8.17.52: reportar avance del día en proyectos de unidades (baños, balcones, etc)
-import ModalReportarAvanceUnidades from '../components/proyecto/ModalReportarAvanceUnidades';
+const ModalReportarAvanceUnidades = cargarVista(() => import('../components/proyecto/ModalReportarAvanceUnidades'), CargandoModal);
 // v8.17.49: propiedades de la empresa (apartamento Punta Cana, etc)
-import VistaPropiedadesEmpresa from '../components/propiedades/VistaPropiedadesEmpresa';
+const VistaPropiedadesEmpresa = cargarVista(() => import('../components/propiedades/VistaPropiedadesEmpresa'), CargandoVista);
 // v8.26.0: módulo Contabilidad (DGII 606/607/608 + IT-1), Fase 1
-import VistaContabilidad from '../components/contabilidad/VistaContabilidad';
+const VistaContabilidad = cargarVista(() => import('../components/contabilidad/VistaContabilidad'), CargandoVista);
 // v8.10.13: VistaNomina extraída
 import VistaNomina from '../components/nomina/VistaNomina';
-import VistaProduccion from '../components/dashboard/VistaProduccion'; // v8.27.73
-import VistaRentabilidad from '../components/dashboard/VistaRentabilidad'; // v8.46.0
-import VistaBonos from '../components/bonos/VistaBonos'; // v8.28.2
+const VistaProduccion = cargarVista(() => import('../components/dashboard/VistaProduccion'), CargandoVista); // v8.27.73
+const VistaRentabilidad = cargarVista(() => import('../components/dashboard/VistaRentabilidad'), CargandoVista); // v8.46.0
+const VistaBonos = cargarVista(() => import('../components/bonos/VistaBonos'), CargandoVista); // v8.28.2
 import MisPendientes from '../components/pendientes/MisPendientes'; // v8.28.3
-import RequisicionesProyecto from '../components/logistica/RequisicionesProyecto'; // v8.29.0
-import VistaAlmacen from '../components/logistica/VistaAlmacen'; // v8.29.0
-import VistaRutas from '../components/logistica/VistaRutas'; // v8.29.0
+const RequisicionesProyecto = cargarVista(() => import('../components/logistica/RequisicionesProyecto'), CargandoVista); // v8.29.0
+const VistaAlmacen = cargarVista(() => import('../components/logistica/VistaAlmacen'), CargandoVista); // v8.29.0
+const VistaRutas = cargarVista(() => import('../components/logistica/VistaRutas'), CargandoVista); // v8.29.0
 import InicioChofer from '../components/logistica/InicioChofer'; // v8.29.0
-import TabCambios from '../components/cambios/TabCambios'; // v8.30.0
-import PlanObras from '../components/planificacion/PlanObras'; // v8.30.1
-import VistaCarga from '../components/carga/VistaCarga'; // v8.30.2
-import MiVehiculo from '../components/vehiculos/MiVehiculo'; // v8.33.0
-import VistaTareas from '../components/tareas/VistaTareas'; // v8.33.1: task manager estilo Asana
-import TabTareasProyecto from '../components/tareas/TabTareasProyecto'; // v8.33.3
+const TabCambios = cargarVista(() => import('../components/cambios/TabCambios'), CargandoVista); // v8.30.0
+const PlanObras = cargarVista(() => import('../components/planificacion/PlanObras'), CargandoVista); // v8.30.1
+const VistaCarga = cargarVista(() => import('../components/carga/VistaCarga'), CargandoVista); // v8.30.2
+const MiVehiculo = cargarVista(() => import('../components/vehiculos/MiVehiculo'), CargandoVista); // v8.33.0
+const VistaTareas = cargarVista(() => import('../components/tareas/VistaTareas'), CargandoVista); // v8.33.1: task manager estilo Asana
+const TabTareasProyecto = cargarVista(() => import('../components/tareas/TabTareasProyecto'), CargandoVista); // v8.33.3
 import CelebracionReporte from '../components/reportes/CelebracionReporte'; // v8.30.4
 import RachaCard from '../components/reportes/RachaCard'; // v8.30.4
 // v8.19.1: Módulo Levantamientos (surveys)
-import ModuloSurveys from '../components/surveys/ModuloSurveys';
-import TorreControl from '../components/surveys/TorreControl'; // v8.52.0
-import ModuloSolicitudes from '../components/solicitudes/ModuloSolicitudes';
-import VistaGarantias from '../components/garantias/VistaGarantias';
-import ModuloReclamaciones from '../components/reclamaciones/ModuloReclamaciones';
-import ModuloGotera from '../components/soporte/ModuloGotera';
-import VistaMisAsignaciones from '../components/maestro/VistaMisAsignaciones';
+const ModuloSurveys = cargarVista(() => import('../components/surveys/ModuloSurveys'), CargandoVista);
+const TorreControl = cargarVista(() => import('../components/surveys/TorreControl'), CargandoVista); // v8.52.0
+const ModuloSolicitudes = cargarVista(() => import('../components/solicitudes/ModuloSolicitudes'), CargandoVista);
+const VistaGarantias = cargarVista(() => import('../components/garantias/VistaGarantias'), CargandoVista);
+const ModuloReclamaciones = cargarVista(() => import('../components/reclamaciones/ModuloReclamaciones'), CargandoVista);
+const ModuloGotera = cargarVista(() => import('../components/soporte/ModuloGotera'), CargandoVista);
+const VistaMisAsignaciones = cargarVista(() => import('../components/maestro/VistaMisAsignaciones'), CargandoVista);
 import InicioSupervisor from '../components/maestro/InicioSupervisor';
 import ClimaWidget from '../components/maestro/ClimaWidget';
-import VistaCitas from '../components/surveys/VistaCitas';
-import VistaUbicaciones from '../components/ubicaciones/VistaUbicaciones';
-import CubicacionesProyecto from '../components/proyecto/CubicacionesProyecto';
+const VistaCitas = cargarVista(() => import('../components/surveys/VistaCitas'), CargandoVista);
+const VistaUbicaciones = cargarVista(() => import('../components/ubicaciones/VistaUbicaciones'), CargandoVista);
+const CubicacionesProyecto = cargarVista(() => import('../components/proyecto/CubicacionesProyecto'), CargandoModal);
 // v8.12: Caja Chica + Dieta
-import VistaMiCajaChica from '../components/caja-chica/VistaMiCajaChica';
-import VistaCajaChicaAdmin from '../components/caja-chica/VistaCajaChicaAdmin';
-import VistaFacturasOdoo from '../components/facturas/VistaFacturasOdoo';
-import VistaVehiculos from '../components/vehiculos/VistaVehiculos';
-import VistaProveedoresCajaChica from '../components/caja-chica/VistaProveedoresCajaChica';
-import VistaCategoriasCajaChica from '../components/caja-chica/VistaCategoriasCajaChica';
+const VistaMiCajaChica = cargarVista(() => import('../components/caja-chica/VistaMiCajaChica'), CargandoVista);
+const VistaCajaChicaAdmin = cargarVista(() => import('../components/caja-chica/VistaCajaChicaAdmin'), CargandoVista);
+const VistaFacturasOdoo = cargarVista(() => import('../components/facturas/VistaFacturasOdoo'), CargandoVista);
+const VistaVehiculos = cargarVista(() => import('../components/vehiculos/VistaVehiculos'), CargandoVista);
+const VistaProveedoresCajaChica = cargarVista(() => import('../components/caja-chica/VistaProveedoresCajaChica'), CargandoVista);
+const VistaCategoriasCajaChica = cargarVista(() => import('../components/caja-chica/VistaCategoriasCajaChica'), CargandoVista);
 // v8.10.14: VistaMapa extraída con Leaflet interactivo
-import VistaMapa from '../components/proyecto/VistaMapa';
+const VistaMapa = cargarVista(() => import('../components/proyecto/VistaMapa'), CargandoVista);
 // v8.10.23: Modal importar desde Odoo
-import ModalImportarOdoo from '../components/proyecto/ModalImportarOdoo';
+const ModalImportarOdoo = cargarVista(() => import('../components/proyecto/ModalImportarOdoo'), CargandoModal);
 // v8.14: Onboarding obligatorio para maestros
 import PantallaCambiarPin from '../components/onboarding/PantallaCambiarPin';
 import WizardOnboarding from '../components/onboarding/WizardOnboarding';
-import ModalInvitarMaestro from '../components/onboarding/ModalInvitarMaestro';
+const ModalInvitarMaestro = cargarVista(() => import('../components/onboarding/ModalInvitarMaestro'), CargandoModal);
+// v8.55.0 (Fase A · velocidad en campo): las vistas/modales/tabs condicionales se cargan BAJO
+// DEMANDA (next/dynamic). El celular ya no baja las 52 vistas al abrir el ERP, solo el cascarón y
+// lo que abre. Sin cambios de lógica ni navegación. Helpers (function declarations → hoisted):
+//  - CargandoVista: fallback en flujo para vistas y tabs.
+//  - CargandoModal: fallback overlay para modales (sin salto de layout).
+//  - VistaNoDisponible + cargarVista: si el chunk no baja (señal caída o versión nueva tras un deploy),
+//    se muestra un aviso con "Reintentar" en vez de tumbar la app y perder el estado.
+function CargandoVista() {
+  return <div className="flex items-center justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-red-500" /></div>;
+}
+function CargandoModal() {
+  return <div className="fixed inset-0 z-[60] bg-black/70 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-red-500" /></div>;
+}
+// dynamic() pasa las props al componente resuelto: si viene onCerrar (es un modal), se muestra
+// como overlay y deja CERRAR sin recargar; si no, es una vista/tab y va en flujo.
+function VistaNoDisponible({ onCerrar } = {}) {
+  const tarjeta = (
+    <div className="m-4 max-w-sm w-full bg-zinc-900 border border-amber-700/60 rounded-card p-4 text-center">
+      <div className="text-amber-300 font-bold text-sm">No se pudo cargar esta sección</div>
+      <div className="text-[11px] text-zinc-500 mt-1">Puede ser la conexión o que hay una versión nueva del ERP.</div>
+      <div className="flex gap-2 justify-center mt-3">
+        {onCerrar && <button onClick={onCerrar} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-[10px] font-bold uppercase px-3 py-1.5 rounded-card">Cerrar</button>}
+        <button onClick={() => window.location.reload()} className="bg-red-600 hover:bg-red-700 text-white text-[10px] font-black uppercase px-3 py-1.5 rounded-card">Reintentar</button>
+      </div>
+    </div>
+  );
+  return onCerrar ? <div className="fixed inset-0 z-[60] bg-black/70 flex items-center justify-center">{tarjeta}</div> : tarjeta;
+}
+function cargarVista(importer, loading) {
+  return dynamic(() => importer().catch(() => ({ default: VistaNoDisponible })), { ssr: false, loading });
+}
 import { registrarBiometria, loginConBiometria } from '../lib/biometria';
 
 // ============================================================

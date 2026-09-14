@@ -7,7 +7,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Building, FileText, Receipt } from 'lucide-react';
+import { X, Building, FileText, Receipt, Download } from 'lucide-react';
 import { formatRD, formatNum, formatFechaCorta } from '../../lib/helpers/formato';
 import { EMPRESAS_RECEPTORAS } from '../../lib/constants';
 import ModalDetalleMovimiento from './ModalDetalleMovimiento';
@@ -85,6 +85,40 @@ export default function ModalGastosProyecto({ proyecto, movimientos, usuario, da
     onCambio?.();
   };
 
+  // v8.27.65: exportar los movimientos del proyecto a CSV (Excel). Respeta el filtro de
+  // categoría activo. Columnas útiles para contabilidad: fecha, persona, categoría,
+  // proveedor, concepto, empresa, RNC, NCF, status, monto.
+  const exportarCSV = () => {
+    const esc = (v) => {
+      const s = v == null ? '' : String(v);
+      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const cols = ['Fecha', 'Persona', 'Categoría', 'Proveedor', 'Concepto', 'Empresa', 'RNC', 'NCF', 'Status', 'Monto'];
+    const filas = movimientosFiltrados.map((m) => {
+      const persona = data.personal.find((p) => p.id === m.personaId);
+      const catId = m.datosIA?.categoria_sugerida;
+      const cat = catId ? categoriasMap.get(catId) : null;
+      const emp = m.empresaReceptora ? EMPRESAS_RECEPTORAS[m.empresaReceptora] : null;
+      return [
+        m.fecha || '', persona?.nombre || '', cat?.nombre || (catId ? '' : 'Sin categoría'),
+        m.proveedor || '', m.concepto || '', emp?.label || m.empresaReceptora || '',
+        m.rnc || m.datosIA?.rnc || '', m.datosIA?.ncf || '', m.status || '',
+        Number(m.monto || 0).toFixed(2),
+      ].map(esc).join(',');
+    });
+    const total = movimientosFiltrados.reduce((s, m) => s + Number(m.monto || 0), 0);
+    const totalRow = ['', '', '', '', '', '', '', '', 'TOTAL', total.toFixed(2)].map(esc).join(',');
+    const csv = '﻿' + [cols.join(','), ...filas, totalRow].join('\n') + '\n';
+    const ref = (proyecto.referenciaOdoo || proyecto.nombre || 'proyecto').replace(/[^\w.-]+/g, '_');
+    const hoy = new Date().toISOString().split('T')[0];
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `gastos-${ref}-${hoy}.csv`;
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 100);
+  };
+
   // v8.17.85: renderizar con React.createPortal directo a document.body para
   // evitar que cualquier containing block del shell (md:ml-60, transform, etc.)
   // recorte o desplace el modal. Mismo patrón que la hover-card del Kanban.
@@ -106,13 +140,23 @@ export default function ModalGastosProyecto({ proyecto, movimientos, usuario, da
               <div className="text-base font-black truncate">{proyecto.nombre}</div>
               {proyecto.referenciaOdoo && <div className="text-[11px] text-zinc-500 font-mono">{proyecto.referenciaOdoo}</div>}
             </div>
-            <button
-              onClick={onCerrar}
-              className="bg-zinc-800 hover:bg-red-600 text-white px-3 py-2 text-xs font-black uppercase tracking-wider flex items-center gap-1 flex-shrink-0"
-              title="Cerrar (ESC)"
-            >
-              <X className="w-4 h-4" /> Cerrar
-            </button>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button
+                onClick={exportarCSV}
+                disabled={movimientosFiltrados.length === 0}
+                className="bg-zinc-800 hover:bg-green-700 disabled:opacity-40 disabled:hover:bg-zinc-800 text-white px-3 py-2 text-xs font-black uppercase tracking-wider flex items-center gap-1"
+                title="Exportar movimientos a Excel/CSV"
+              >
+                <Download className="w-4 h-4" /> Exportar{filtroCategoria ? ' (filtrado)' : ''}
+              </button>
+              <button
+                onClick={onCerrar}
+                className="bg-zinc-800 hover:bg-red-600 text-white px-3 py-2 text-xs font-black uppercase tracking-wider flex items-center gap-1"
+                title="Cerrar (ESC)"
+              >
+                <X className="w-4 h-4" /> Cerrar
+              </button>
+            </div>
           </div>
 
           {/* Stats row */}

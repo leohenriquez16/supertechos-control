@@ -1,0 +1,204 @@
+<!-- @dsCard group="Señalética Interna" -->
+<link rel="stylesheet" href="senaletica.css">
+<style>
+  body { margin: 0; }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  .intro { padding: 34px 32px 8px; }
+  .intro .lead {
+    font-size: 15px; font-weight: 300; line-height: 1.65;
+    color: var(--gris-600); max-width: 76ch; margin: 0 0 26px;
+  }
+  .intro .lead b { font-weight: 600; color: var(--negro-mate); }
+
+  .princ { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1px;
+           background: var(--gris-200); border: 1px solid var(--gris-200); margin-bottom: 34px; }
+  .princ div { background: var(--blanco); padding: 16px 14px; }
+  .princ .n { font-size: 10px; font-weight: 700; color: var(--rojo-st); letter-spacing: .1em; }
+  .princ .t { font-size: 12.5px; font-weight: 600; margin-top: 7px; line-height: 1.35; }
+
+  h2.sec {
+    font-size: 13px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+    margin: 0 0 4px; padding: 0 32px;
+  }
+  .sec-line { margin: 0 32px 20px; max-width: 210px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .tbl-wrap { padding: 0 32px 30px; overflow-x: auto; }
+  thead th {
+    text-align: left; font-weight: 600; font-size: 10.5px; letter-spacing: .11em;
+    text-transform: uppercase; color: var(--blanco); background: var(--negro-mate);
+    padding: 10px 12px; white-space: nowrap;
+  }
+  tbody td { padding: 11px 12px; border-bottom: 1px solid var(--gris-200); vertical-align: top; }
+  tbody tr:nth-child(even) td { background: var(--gris-50); }
+  td.fam { font-weight: 600; white-space: nowrap; }
+  td.fam small { display: block; font-weight: 300; color: var(--gris-400); font-size: 10.5px; margin-top: 2px; letter-spacing: .06em; }
+  td.qty { font-weight: 700; text-align: right; white-space: nowrap; }
+  td.mat { color: var(--gris-600); font-weight: 300; }
+
+  .pill { display: inline-block; font-size: 9.5px; font-weight: 700; letter-spacing: .1em;
+          text-transform: uppercase; padding: 3px 9px; white-space: nowrap; }
+  .pill.ok   { background: var(--verde-prouco); color: var(--negro-mate); }
+  .pill.next { background: var(--rojo-st); color: var(--blanco); }
+  .pill.wait { background: var(--gris-200); color: var(--gris-600); }
+
+  .zonas { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; padding: 0 32px 34px; }
+  .zona { border: 1px solid var(--gris-200); }
+  .zona h3 { margin: 0; background: var(--gris-100); padding: 11px 16px; font-size: 11px;
+             font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+  .zona ul { margin: 0; padding: 14px 16px 16px 30px; font-size: 12.5px; font-weight: 300;
+             color: var(--gris-600); line-height: 1.85; }
+  .zona ul b { font-weight: 600; color: var(--negro-mate); }
+
+  .alerta { margin: 0 32px 34px; border-left: 4px solid var(--rojo-st);
+            background: var(--gris-50); padding: 16px 20px; }
+  .alerta h4 { margin: 0 0 6px; font-size: 11.5px; font-weight: 700; letter-spacing: .1em;
+               text-transform: uppercase; }
+  .alerta p { margin: 0; font-size: 12.5px; font-weight: 300; line-height: 1.6; color: var(--gris-600); }
+  .alerta code { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px;
+                 background: var(--gris-200); padding: 1px 5px; }
+</style>
+
+<div class="ds-page wrap">
+
+  <div class="ds-head">
+    <h1>Línea gráfica interna — plan maestro</h1>
+    <p>Oficina Calle Arena #1, Mar Azul · Super Techos | Prouco</p>
+  </div>
+
+  <div class="intro">
+    <p class="lead">
+      La remodelación (<b>García Checo Construcciones</b>, plano 01/26/26) entrega una nave con
+      concreto pulido, conduits negros vistos y carpintería en madera clara. La gráfica no compite
+      con eso: lo ordena. <b>Las puertas de cristal ya están resueltas y fabricadas</b> — este plan
+      extiende esa misma línea al resto de la oficina, pieza por pieza.
+    </p>
+
+    <div class="princ">
+      <div><div class="n">01</div><div class="t">Menos es más</div></div>
+      <div><div class="n">02</div><div class="t">Negro mate dominante</div></div>
+      <div><div class="n">03</div><div class="t">Rojo y verde solo como acento</div></div>
+      <div><div class="n">04</div><div class="t">El cristal es protagonista</div></div>
+      <div><div class="n">05</div><div class="t">Integrada a la arquitectura</div></div>
+    </div>
+  </div>
+
+  <h2 class="sec">Familias del sistema</h2>
+  <div class="linea-corporativa sec-line"><i></i></div>
+
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Familia</th><th>Piezas</th><th style="text-align:right">Cant.</th>
+          <th>Material</th><th>Estado</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="fam">F1 · Puertas de cristal<small>Ya fabricado</small></td>
+          <td>Principal, Oficinas (lobby), Oficinas (patio), Salón de Conferencias — 2 caras c/u</td>
+          <td class="qty">8</td>
+          <td class="mat">Vinil de corte premium mate + esmerilado en chevrones</td>
+          <td><span class="pill ok">Hecho</span></td>
+        </tr>
+        <tr>
+          <td class="fam">F2 · Identificación de áreas<small>Puertas ciegas y muros</small></td>
+          <td>Salón de Reuniones, Kitchenette, Estar, Baño oficina, Baño almacén, Archivo, Cuarto de Máquina, Almacén A/B/C</td>
+          <td class="qty">11</td>
+          <td class="mat">Acrílico 3 mm negro mate, letra en vinil blanco, separadores de aluminio</td>
+          <td><span class="pill next">Siguiente</span></td>
+        </tr>
+        <tr>
+          <td class="fam">F3 · Señalización obligatoria<small>Bomberos / Min. Trabajo</small></td>
+          <td>Salida de emergencia, ruta de evacuación, extintor, botiquín, no fumar, aforo, punto de encuentro, riesgo eléctrico</td>
+          <td class="qty">~20</td>
+          <td class="mat">PVC 3 mm fotoluminiscente donde la norma lo exige</td>
+          <td><span class="pill next">Siguiente</span></td>
+        </tr>
+        <tr>
+          <td class="fam">F4 · Placas de escritorio<small>Nombre + puesto</small></td>
+          <td>Un tent 250 × 65 mm por puesto de cubículo</td>
+          <td class="qty">~14</td>
+          <td class="mat">Acrílico 3 mm, impresión UV directa</td>
+          <td><span class="pill next">Siguiente</span></td>
+        </tr>
+        <tr>
+          <td class="fam">F5 · Misión, visión y valores<small>Panel de cultura</small></td>
+          <td>Panel único en el muro del área de cubículos o en el Estar</td>
+          <td class="qty">1</td>
+          <td class="mat">Vinil impreso sobre PVC 5 mm, montaje al ras</td>
+          <td><span class="pill wait">Espera texto</span></td>
+        </tr>
+        <tr>
+          <td class="fam">F6 · Recepción institucional<small>Manual §6</small></td>
+          <td>Lockup corpóreo tras el mostrador, con iluminación indirecta</td>
+          <td class="qty">1</td>
+          <td class="mat">Letras en PVC 19 mm laminado negro mate + acrílico a color</td>
+          <td><span class="pill wait">Por definir</span></td>
+        </tr>
+        <tr>
+          <td class="fam">F7 · Almacén y 5S<small>Manual §7</small></td>
+          <td>Identificación de racks y pasillos, marcado de piso, tableros 5S, zonas de carga</td>
+          <td class="qty">~30</td>
+          <td class="mat">Vinil de piso antideslizante + PVC 3 mm en racks</td>
+          <td><span class="pill wait">Fase 2</span></td>
+        </tr>
+        <tr>
+          <td class="fam">F8 · Wayfinding<small>Pasillo de circulación</small></td>
+          <td>Directorio general y flechas direccionales en el pasillo</td>
+          <td class="qty">3</td>
+          <td class="mat">Acrílico 3 mm, mismo sistema que F2</td>
+          <td><span class="pill wait">Fase 2</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 class="sec">Inventario por zona</h2>
+  <div class="linea-corporativa sec-line"><i></i></div>
+
+  <div class="zonas">
+    <div class="zona">
+      <h3>Franja administrativa</h3>
+      <ul>
+        <li><b>Recepción</b> — lockup corpóreo (F6) + directorio (F8)</li>
+        <li><b>Estantes / Archivo</b> — identificación de área (F2)</li>
+        <li><b>Baño</b> — área (F2)</li>
+        <li><b>Kitchenette</b> — área (F2) + normas de convivencia</li>
+        <li><b>Cubículos</b> — placas de escritorio (F4) + panel MVV (F5)</li>
+        <li><b>Estar</b> — área (F2)</li>
+        <li><b>Salón de Reuniones</b> — área (F2); su puerta de cristal ya está hecha</li>
+      </ul>
+    </div>
+    <div class="zona">
+      <h3>Nave, almacén y exteriores</h3>
+      <ul>
+        <li><b>Almacén A / B / C</b> — área (F2) + racks y pasillos (F7)</li>
+        <li><b>Área de Carga y Descarga</b> — marcado de piso y advertencias (F7)</li>
+        <li><b>Cuarto de Máquina</b> — área (F2) + riesgo eléctrico (F3)</li>
+        <li><b>Baño de almacén</b> — área (F2)</li>
+        <li><b>Rampas y portones</b> — advertencia de circulación (F3)</li>
+        <li><b>Parqueos</b> — punto de encuentro de evacuación (F3)</li>
+        <li><b>Entrada Oficinas Administrativas</b> — direccional (F8)</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="alerta">
+    <h4>Conflicto de tokens que hay que resolver</h4>
+    <p>
+      El proyecto <code>Super Techos Design System</code> de marketing usa <b>Rubik / Barlow</b> y rojo
+      <code>#FF1F14</code>. El paquete de puertas ya fabricado usa <b>Montserrat</b> y
+      <code>#D71920</code> / <code>#8CC63F</code>. Para señalética interna manda
+      <code>senaletica.css</code> — es lo que ya está cortado en vinil y pegado en el cristal.
+      Cambiarlo ahora obligaría a rehacer las 8 caras de puerta.
+    </p>
+  </div>
+
+  <div class="ds-foot">
+    <span>Super Techos SRL &nbsp;|&nbsp; Prouco Group Dominicana</span>
+    <div class="fr"></div><div class="fv"></div>
+  </div>
+
+</div>

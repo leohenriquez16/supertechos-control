@@ -1,0 +1,49 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "supertechos",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 3000
+    },
+    {
+      "name": "dashboard-correos",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8777",
+        "--directory",
+        "/Users/leonardohenrinquez/correos-agente"
+      ],
+      "port": 8777
+    },
+    {
+      "name": "casa-he",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "/Users/leonardohenrinquez/Projects/casa-henriquez-encarnacion",
+        "run",
+        "dev"
+      ],
+      "port": 3210
+    },
+    {
+      "name": "finanzas-dashboard",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8791",
+        "--directory",
+        "/private/tmp/claude-501/-Users-leonardohenrinquez-Projects-supertechos-control/bf880a9c-a335-4df9-bb56-16991e187aba/scratchpad"
+      ],
+      "port": 8791
+    }
+  ]
+}

@@ -1,0 +1,186 @@
+<!-- @dsCard group="Señalética Interna" -->
+<link rel="stylesheet" href="senaletica.css">
+<style>
+  body { margin: 0; }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  .blk { padding: 30px 32px; border-bottom: 1px solid var(--gris-200); }
+  h2.sec { font-size: 13px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; margin: 0 0 4px; }
+  .sec-line { margin: 0 0 22px; max-width: 210px; }
+  .desc { font-size: 13px; font-weight: 300; line-height: 1.65; color: var(--gris-600); max-width: 74ch; margin: 0 0 24px; }
+  .desc b { font-weight: 600; color: var(--negro-mate); }
+
+  /* ---- LA PLACA — 1 px = 1 mm ---- */
+  .placa {
+    width: 300px; height: 150px; background: var(--negro-mate);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    box-shadow: 0 6px 18px rgba(0,0,0,.16);
+  }
+  .placa .picto-w { margin-bottom: 11px; }
+  .placa .picto { stroke: var(--blanco); }
+  .placa .txt {
+    font-family: var(--font); font-weight: 700; color: var(--blanco);
+    text-transform: uppercase; letter-spacing: .02em; line-height: 1.05; text-align: center;
+  }
+  .placa .lc { width: 120px; margin-top: 13px; }
+  .placa .sub {
+    font-family: var(--font); font-weight: 300; font-size: 9px; letter-spacing: .14em;
+    text-transform: uppercase; color: rgba(255,255,255,.62); margin-top: 9px;
+  }
+
+  .placa.compacta { width: 200px; height: 100px; }
+  .placa.compacta .lc { width: 78px; margin-top: 9px; }
+  .placa.compacta .picto-w { margin-bottom: 7px; }
+
+  .grid { display: flex; flex-wrap: wrap; gap: 40px; align-items: flex-start; }
+  .item .cap { font-size: 11px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase;
+               color: var(--gris-400); margin-top: 14px; }
+  .item .cap b { display: block; font-weight: 600; color: var(--negro-mate); letter-spacing: .06em;
+                 font-size: 11.5px; margin-bottom: 3px; }
+
+  /* anatomia */
+  .anat { display: flex; gap: 44px; align-items: center; }
+  .anat-lines { flex: 1; }
+  .anat-row { display: flex; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--gris-100); font-size: 12.5px; }
+  .anat-row .k { flex: 0 0 44px; font-family: ui-monospace, Menlo, monospace; font-size: 10.5px;
+                 color: var(--rojo-st); font-weight: 700; padding-top: 2px; }
+  .anat-row .v { font-weight: 300; color: var(--gris-600); line-height: 1.55; }
+  .anat-row .v b { font-weight: 600; color: var(--negro-mate); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  thead th { text-align: left; font-weight: 600; font-size: 10.5px; letter-spacing: .11em;
+             text-transform: uppercase; color: var(--blanco); background: var(--negro-mate); padding: 10px 12px; }
+  tbody td { padding: 10px 12px; border-bottom: 1px solid var(--gris-200); }
+  tbody tr:nth-child(even) td { background: var(--gris-50); }
+  td.b { font-weight: 600; }
+  td.m { color: var(--gris-600); font-weight: 300; }
+  td.r { text-align: right; font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; white-space: nowrap; }
+</style>
+
+<div class="ds-page wrap">
+
+  <div class="ds-head">
+    <h1>F2 · Identificación de áreas</h1>
+    <p>Puertas ciegas y muros · 11 piezas</p>
+  </div>
+
+  <div class="blk">
+    <h2 class="sec">El formato</h2>
+    <div class="linea-corporativa sec-line"><i></i></div>
+    <p class="desc">
+      Placa de <b>acrílico 3 mm negro mate</b> con letra en vinil blanco, montada sobre separadores
+      de aluminio anodizado negro a 15 mm del muro. El negro se come el fondo blanco de la pared y
+      hace juego con los conduits vistos; la sombra del separador da profundidad sin necesidad de
+      marco. Dos tamaños: <b>300 × 150 mm</b> estándar y <b>200 × 100 mm</b> para baños y espacios
+      de servicio.
+    </p>
+
+    <div class="grid">
+      <div class="item">
+        <div class="placa">
+          <div class="picto-w">
+            <svg width="34" height="34" viewBox="0 0 32 32"><g class="picto">
+              <rect x="4" y="7" width="24" height="18"/><path d="M4 12h24"/><path d="M9 18h6"/>
+            </g></svg>
+          </div>
+          <div class="txt" style="font-size:26px">SALÓN DE<br>REUNIONES</div>
+          <div class="linea-corporativa lc"><i></i></div>
+        </div>
+        <div class="cap"><b>Estándar</b>300 × 150 mm · rótulo 26 mm</div>
+      </div>
+
+      <div class="item">
+        <div class="placa">
+          <div class="picto-w">
+            <svg width="34" height="34" viewBox="0 0 32 32"><g class="picto">
+              <path d="M9 5v9a4 4 0 0 0 8 0V5"/><path d="M13 14v13"/><path d="M23 5v22"/><path d="M20 5h6v7h-6z"/>
+            </g></svg>
+          </div>
+          <div class="txt" style="font-size:28px">KITCHENETTE</div>
+          <div class="linea-corporativa lc"><i></i></div>
+        </div>
+        <div class="cap"><b>Estándar · una línea</b>300 × 150 mm · rótulo 28 mm</div>
+      </div>
+
+      <div class="item">
+        <div class="placa compacta">
+          <div class="picto-w">
+            <svg width="24" height="24" viewBox="0 0 32 32"><g class="picto">
+              <circle cx="16" cy="10" r="4"/><path d="M8 27v-5a8 8 0 0 1 16 0v5"/>
+            </g></svg>
+          </div>
+          <div class="txt" style="font-size:19px">BAÑO</div>
+          <div class="linea-corporativa lc"><i></i></div>
+        </div>
+        <div class="cap"><b>Compacta</b>200 × 100 mm · rótulo 19 mm</div>
+      </div>
+
+      <div class="item">
+        <div class="placa">
+          <div class="picto-w">
+            <svg width="34" height="34" viewBox="0 0 32 32"><g class="picto">
+              <rect x="5" y="6" width="22" height="20"/><path d="M5 13h22"/><path d="M5 19.5h22"/><path d="M16 6v20"/>
+            </g></svg>
+          </div>
+          <div class="txt" style="font-size:28px">ALMACÉN A</div>
+          <div class="linea-corporativa lc"><i></i></div>
+          <div class="sub">MATERIA PRIMA</div>
+        </div>
+        <div class="cap"><b>Con submensaje</b>300 × 150 mm · sublínea 9 mm</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="blk">
+    <h2 class="sec">Anatomía</h2>
+    <div class="linea-corporativa sec-line"><i></i></div>
+    <div class="anat">
+      <div class="placa" style="flex:0 0 auto">
+        <div class="picto-w">
+          <svg width="34" height="34" viewBox="0 0 32 32"><g class="picto">
+            <rect x="4" y="10" width="24" height="16"/><path d="M12 10V7h8v3"/><path d="M13 18h6"/>
+          </g></svg>
+        </div>
+        <div class="txt" style="font-size:28px">ARCHIVO</div>
+        <div class="linea-corporativa lc"><i></i></div>
+      </div>
+      <div class="anat-lines">
+        <div class="anat-row"><div class="k">01</div><div class="v"><b>Pictograma</b> — 34 mm de alto, stroke 2, blanco. Centrado al eje vertical. Se omite cuando el área no tiene un símbolo claro.</div></div>
+        <div class="anat-row"><div class="k">02</div><div class="v"><b>Rótulo</b> — Montserrat Bold, 26–28 mm de altura de caja, mayúsculas, interlínea 1.05. Máximo dos líneas.</div></div>
+        <div class="anat-row"><div class="k">03</div><div class="v"><b>Línea corporativa</b> — 120 mm de ancho, grosor 3 mm, centrada. Es lo único que lleva color.</div></div>
+        <div class="anat-row"><div class="k">04</div><div class="v"><b>Submensaje</b> — opcional, Light 9 mm, caps espaciadas 0.14em, blanco al 62%.</div></div>
+        <div class="anat-row"><div class="k">05</div><div class="v"><b>Márgenes</b> — 22 mm arriba y abajo, 20 mm a los lados. El bloque completo va centrado óptico, no geométrico.</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="blk" style="border-bottom:none">
+    <h2 class="sec">Listado de producción</h2>
+    <div class="linea-corporativa sec-line"><i></i></div>
+    <table>
+      <thead><tr><th>Área</th><th>Pictograma</th><th>Submensaje</th><th style="text-align:right">Tamaño</th></tr></thead>
+      <tbody>
+        <tr><td class="b">Salón de Reuniones</td><td class="m">Mesa</td><td class="m">—</td><td class="r">300 × 150</td></tr>
+        <tr><td class="b">Kitchenette</td><td class="m">Cubiertos</td><td class="m">—</td><td class="r">300 × 150</td></tr>
+        <tr><td class="b">Estar</td><td class="m">—</td><td class="m">—</td><td class="r">300 × 150</td></tr>
+        <tr><td class="b">Archivo</td><td class="m">Maletín</td><td class="m">—</td><td class="r">300 × 150</td></tr>
+        <tr><td class="b">Baño (oficina)</td><td class="m">Persona</td><td class="m">—</td><td class="r">200 × 100</td></tr>
+        <tr><td class="b">Baño (almacén)</td><td class="m">Persona</td><td class="m">—</td><td class="r">200 × 100</td></tr>
+        <tr><td class="b">Cuarto de Máquina</td><td class="m">Rayo</td><td class="m">Acceso restringido</td><td class="r">300 × 150</td></tr>
+        <tr><td class="b">Almacén A</td><td class="m">Estante</td><td class="m">Por confirmar</td><td class="r">300 × 150</td></tr>
+        <tr><td class="b">Almacén B</td><td class="m">Estante</td><td class="m">Por confirmar</td><td class="r">300 × 150</td></tr>
+        <tr><td class="b">Almacén C</td><td class="m">Estante</td><td class="m">Por confirmar</td><td class="r">300 × 150</td></tr>
+        <tr><td class="b">Área de Carga y Descarga</td><td class="m">Camión</td><td class="m">—</td><td class="r">300 × 150</td></tr>
+      </tbody>
+    </table>
+    <p class="desc" style="margin:22px 0 0">
+      <b>Falta definir:</b> qué guarda cada almacén (A / B / C) para escribir el submensaje. Sin eso
+      las tres placas salen iguales y no resuelven nada.
+    </p>
+  </div>
+
+  <div class="ds-foot">
+    <span>F2 · Identificación de áreas</span>
+    <div class="fr"></div><div class="fv"></div>
+  </div>
+
+</div>

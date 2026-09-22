@@ -1,0 +1,219 @@
+/* =============================================================
+   SEÑALÉTICA INTERNA — Super Techos | Prouco
+   Oficina Calle Arena #1, Mar Azul · Remodelación 2026
+
+   Fuente de verdad: el paquete de puertas de cristal ya fabricado
+   (MANUAL_Senalizacion_Puertas, 29-jul-2026) + Manual de Identidad v0.1.
+
+   OJO: estos valores NO son los de colors_and_type.css del design
+   system de marketing (Rubik / #FF1F14). Para señalética interna manda
+   este archivo, porque es lo que ya está cortado en vinil.
+   ============================================================= */
+
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;800&display=swap');
+
+:root {
+  /* ---------- COLOR — negro dominante, rojo y verde SOLO acento ---------- */
+  --negro-mate:      #111111;   /* color dominante del sistema */
+  --rojo-st:         #D71920;   /* acento Super Techos */
+  --verde-prouco:    #8CC63F;   /* acento Prouco */
+  --blanco:          #FFFFFF;
+
+  /* Neutros de apoyo (documentación y mockups, no van en vinil) */
+  --gris-900:        #1C1C1C;
+  --gris-600:        #555555;
+  --gris-400:        #8A8A8A;
+  --gris-200:        #DCDCDC;
+  --gris-100:        #EFEFEF;
+  --gris-50:         #F7F7F7;
+
+  /* Vidrio esmerilado (patrón de privacidad en chevrones) */
+  --esmerilado:      rgba(255,255,255,0.62);
+
+  /* ---------- TIPOGRAFÍA ---------- */
+  /* Manual v0.1 pide SemiBold / Medium / Light.
+     El paquete de puertas se cortó en Bold para los rótulos grandes. */
+  --font:            "Montserrat", "Helvetica Neue", Arial, sans-serif;
+  --w-rotulo:        700;   /* rótulo principal — OFICINAS, EMPUJE */
+  --w-titulo:        600;   /* títulos de documento */
+  --w-medio:         500;   /* instrucción secundaria */
+  --w-ligero:        300;   /* notas, pies, cotas */
+
+  --track-rotulo:    0.02em;
+  --track-eyebrow:   0.16em;   /* caps espaciadas de apoyo */
+
+  /* ---------- LÍNEA CORPORATIVA ----------
+     La firma del sistema. Va SIEMPRE bajo el rótulo.
+     Cota real en puertas: 15 cm rojo + 0.8 cm negro + 15 cm verde,
+     grosor 3 mm. En proporción: 48.7% / 2.6% / 48.7%. */
+  --linea-rojo-pct:   48.7%;
+  --linea-negro-pct:   2.6%;
+  --linea-verde-pct:  48.7%;
+  --linea-grosor:     3px;   /* = 3 mm a escala 1:1 */
+
+  /* ---------- TIRA TRANSVERSAL ----------
+     Cruza todo el ancho a 0.30 m del rótulo, rojo izq / verde der,
+     grosor 6 mm, con respiro de 4 cm alrededor del lockup. */
+  --tira-grosor:      6px;
+  --tira-respiro:     40px;
+
+  /* ---------- ZONAS DE EXCLUSIÓN (puertas de cristal) ---------- */
+  --excl-tirador-w:   600px;   /* 60 cm */
+  --excl-tirador-h:   800px;   /* 80 cm */
+  --altura-centro:   1500px;   /* 1.50 m desde piso terminado */
+}
+
+/* =============================================================
+   LÍNEA CORPORATIVA — el elemento firma
+   Uso: <div class="linea-corporativa"></div> debajo del rótulo.
+   El ancho lo define el contenedor; las proporciones no cambian.
+   ============================================================= */
+.linea-corporativa {
+  display: flex;
+  height: var(--linea-grosor);
+  width: 100%;
+  line-height: 0;
+}
+.linea-corporativa::before {
+  content: "";
+  width: var(--linea-rojo-pct);
+  background: var(--rojo-st);
+}
+.linea-corporativa::after {
+  content: "";
+  width: var(--linea-verde-pct);
+  background: var(--verde-prouco);
+}
+/* El segmento negro central se logra con un span intermedio */
+.linea-corporativa > i {
+  width: var(--linea-negro-pct);
+  background: var(--negro-mate);
+  display: block;
+}
+
+/* =============================================================
+   TIRA TRANSVERSAL — para puertas y paneles anchos
+   ============================================================= */
+.tira-transversal {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: var(--tira-respiro);
+}
+.tira-transversal .tira-r,
+.tira-transversal .tira-v {
+  flex: 1;
+  height: var(--tira-grosor);
+}
+.tira-transversal .tira-r { background: var(--rojo-st); }
+.tira-transversal .tira-v { background: var(--verde-prouco); }
+
+/* =============================================================
+   LOCKUP CO-BRANDED — Super Techos | Prouco
+   Divisor vertical negro fino. Alturas ópticas equilibradas:
+   el logo de ST es apilado (alto) y el de Prouco horizontal (ancho),
+   así que NO se igualan por altura de caja sino por altura de letra.
+   ============================================================= */
+.lockup {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  /* Altura por defecto: sin esto, img.st { height:100% } cae al tamaño
+     natural del PNG (694 px) y revienta el layout. Sobrescribir por pieza. */
+  height: 40px;
+  flex: 0 0 auto;
+}
+.lockup img.st     { height: 100%; width: auto; }
+.lockup img.prouco { height: 46%;  width: auto; }   /* ≈ misma altura de letra que ST */
+.lockup .divisor {
+  width: 1.5px;
+  align-self: stretch;
+  background: var(--negro-mate);
+  opacity: 0.85;
+}
+
+/* =============================================================
+   ROTULACIÓN
+   ============================================================= */
+.rotulo {
+  font-family: var(--font);
+  font-weight: var(--w-rotulo);
+  color: var(--negro-mate);
+  letter-spacing: var(--track-rotulo);
+  text-transform: uppercase;
+  line-height: 1.05;
+}
+.instruccion {
+  font-family: var(--font);
+  font-weight: var(--w-medio);
+  color: var(--negro-mate);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.eyebrow {
+  font-family: var(--font);
+  font-weight: var(--w-medio);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--gris-600);
+}
+.nota {
+  font-family: var(--font);
+  font-weight: var(--w-ligero);
+  color: var(--gris-600);
+}
+
+/* =============================================================
+   TAGLINE OFICIAL
+   ============================================================= */
+.tagline::after {
+  content: "PROTEGEMOS ESTRUCTURAS, CONSTRUIMOS SOLUCIONES.";
+  font-family: var(--font);
+  font-weight: var(--w-titulo);
+  letter-spacing: 0.01em;
+  color: var(--negro-mate);
+}
+
+/* =============================================================
+   PICTOGRAMAS
+   Lineales, stroke uniforme, esquinas vivas. Mismo peso óptico que
+   Montserrat SemiBold. Se dibujan en SVG con stroke-width 2.
+   ============================================================= */
+.picto {
+  stroke: var(--negro-mate);
+  stroke-width: 2;
+  fill: none;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+}
+
+/* =============================================================
+   BASE DE PÁGINA PARA LAS TARJETAS DE ESTE PAQUETE
+   ============================================================= */
+.ds-page {
+  font-family: var(--font);
+  color: var(--negro-mate);
+  background: var(--blanco);
+  -webkit-font-smoothing: antialiased;
+}
+.ds-head {
+  background: var(--negro-mate);
+  color: var(--blanco);
+  padding: 22px 32px;
+}
+.ds-head h1 {
+  font-size: 19px; font-weight: var(--w-titulo);
+  letter-spacing: 0.06em; text-transform: uppercase; margin: 0;
+}
+.ds-head p {
+  margin: 5px 0 0; font-size: 12px; font-weight: var(--w-ligero);
+  letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.72;
+}
+.ds-foot {
+  display: flex; align-items: stretch;
+  background: var(--negro-mate); color: var(--blanco);
+  font-size: 11px; font-weight: var(--w-medio); letter-spacing: 0.1em;
+}
+.ds-foot span { padding: 11px 32px; flex: 1; text-transform: uppercase; }
+.ds-foot .fr { flex: 0 0 90px; background: var(--rojo-st); }
+.ds-foot .fv { flex: 0 0 90px; background: var(--verde-prouco); }

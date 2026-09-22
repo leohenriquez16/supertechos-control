@@ -1,0 +1,237 @@
+<!-- @dsCard group="Señalética Interna" -->
+<link rel="stylesheet" href="senaletica.css">
+<style>
+  body { margin: 0; }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  .blk { padding: 30px 32px; border-bottom: 1px solid var(--gris-200); }
+  h2.sec { font-size: 13px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; margin: 0 0 4px; }
+  .sec-line { margin: 0 0 22px; max-width: 210px; }
+  .desc { font-size: 13px; font-weight: 300; line-height: 1.65; color: var(--gris-600); max-width: 74ch; margin: 0 0 22px; }
+  .desc b { font-weight: 600; color: var(--negro-mate); }
+
+  /* colores */
+  .cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .col .chip { height: 96px; border: 1px solid var(--gris-200); }
+  .col .nm { font-size: 12.5px; font-weight: 700; margin-top: 11px; }
+  .col .hx { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--gris-600); margin-top: 3px; }
+  .col .us { font-size: 11.5px; font-weight: 300; color: var(--gris-400); margin-top: 6px; line-height: 1.5; }
+
+  /* tipografia */
+  .type-row { display: flex; align-items: baseline; gap: 26px; padding: 14px 0; border-bottom: 1px solid var(--gris-100); }
+  .type-row .lbl { flex: 0 0 190px; font-size: 10.5px; font-weight: 600; letter-spacing: .11em;
+                   text-transform: uppercase; color: var(--gris-400); }
+  .type-row .spec { flex: 0 0 130px; font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; color: var(--gris-600); }
+
+  /* linea corporativa demo */
+  .demo { background: var(--gris-50); border: 1px solid var(--gris-200); padding: 34px; }
+  .demo-lbl { font-size: 10.5px; font-weight: 600; letter-spacing: .11em; text-transform: uppercase;
+              color: var(--gris-400); margin-bottom: 14px; }
+  .cotas { display: flex; margin-top: 9px; font-family: ui-monospace, Menlo, monospace;
+           font-size: 10.5px; color: var(--rojo-st); }
+  .cotas .c1 { width: 48.7%; text-align: center; }
+  .cotas .c2 { width: 2.6%; text-align: center; color: var(--negro-mate); }
+  .cotas .c3 { width: 48.7%; text-align: center; color: #6f9e2f; }
+
+  /* lockup */
+  .lockup-demo { background: var(--blanco); border: 1px solid var(--gris-200); padding: 40px; }
+  .lockup-demo .lockup { height: 74px; }
+  .tira-demo { margin-top: 40px; }
+
+  /* pictos */
+  .pictos { display: grid; grid-template-columns: repeat(6, 1fr); gap: 1px; background: var(--gris-200);
+            border: 1px solid var(--gris-200); }
+  .pictos figure { margin: 0; background: var(--blanco); padding: 20px 10px 14px; text-align: center; }
+  .pictos figcaption { font-size: 10px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase;
+                       color: var(--gris-600); margin-top: 10px; }
+
+  .reglas { display: grid; grid-template-columns: 1fr 1fr; gap: 0 34px; }
+  .reglas div { font-size: 12.5px; font-weight: 300; line-height: 1.8; color: var(--gris-600);
+                padding: 9px 0; border-bottom: 1px solid var(--gris-100); }
+  .reglas b { font-weight: 600; color: var(--negro-mate); }
+</style>
+
+<div class="ds-page wrap">
+
+  <div class="ds-head">
+    <h1>Fundamentos de la línea</h1>
+    <p>Lo que ya está fabricado manda · derivado del paquete de puertas</p>
+  </div>
+
+  <!-- COLOR -->
+  <div class="blk">
+    <h2 class="sec">Color</h2>
+    <div class="linea-corporativa sec-line"><i></i></div>
+    <p class="desc">
+      Tres colores, sin escalas ni tintes. El <b>negro mate domina</b>; rojo y verde entran
+      únicamente como acento, casi siempre en la línea corporativa. Cualquier gris que veas en
+      la documentación es de apoyo — <b>no se corta en vinil</b>.
+    </p>
+    <div class="cols">
+      <div class="col">
+        <div class="chip" style="background:#111111"></div>
+        <div class="nm">Negro mate</div><div class="hx">#111111</div>
+        <div class="us">Rótulos, pictogramas, lockup, divisores. El color del sistema.</div>
+      </div>
+      <div class="col">
+        <div class="chip" style="background:#D71920"></div>
+        <div class="nm">Rojo Super Techos</div><div class="hx">#D71920</div>
+        <div class="us">Acento izquierdo de la línea corporativa y de la tira transversal.</div>
+      </div>
+      <div class="col">
+        <div class="chip" style="background:#8CC63F"></div>
+        <div class="nm">Verde Prouco</div><div class="hx">#8CC63F</div>
+        <div class="us">Acento derecho. Nunca aparece sin su contraparte roja.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TIPOGRAFIA -->
+  <div class="blk">
+    <h2 class="sec">Tipografía — Montserrat</h2>
+    <div class="linea-corporativa sec-line"><i></i></div>
+    <p class="desc">
+      Un solo tipo para todo el sistema. En producción el texto va <b>convertido a curvas</b>,
+      así que la imprenta nunca necesita la fuente instalada.
+    </p>
+    <div class="type-row">
+      <div class="lbl">Rótulo principal</div>
+      <div class="spec">Bold 700</div>
+      <div class="rotulo" style="font-size:34px">SALÓN DE REUNIONES</div>
+    </div>
+    <div class="type-row">
+      <div class="lbl">Instrucción</div>
+      <div class="spec">Medium 500</div>
+      <div class="instruccion" style="font-size:21px">EMPUJE</div>
+    </div>
+    <div class="type-row">
+      <div class="lbl">Apoyo / caps</div>
+      <div class="spec">Medium 500 · 0.16em</div>
+      <div class="eyebrow" style="font-size:13px">CAPACIDAD MÁXIMA 12 PERSONAS</div>
+    </div>
+    <div class="type-row">
+      <div class="lbl">Nota / cota</div>
+      <div class="spec">Light 300</div>
+      <div class="nota" style="font-size:14px">Altura de instalación 1.50 m desde piso terminado</div>
+    </div>
+  </div>
+
+  <!-- LINEA CORPORATIVA -->
+  <div class="blk">
+    <h2 class="sec">Línea corporativa — el elemento firma</h2>
+    <div class="linea-corporativa sec-line"><i></i></div>
+    <p class="desc">
+      Va <b>siempre debajo del rótulo</b> y es lo que hace que una pieza pertenezca al sistema.
+      Cota real en puertas: <b>15 cm rojo + 0.8 cm negro + 15 cm verde</b>, grosor 3 mm. Al
+      escalarla a otras piezas se mantienen las proporciones, nunca los centímetros.
+    </p>
+    <div class="demo">
+      <div class="demo-lbl">Proporción fija — 48.7 / 2.6 / 48.7</div>
+      <div class="rotulo" style="font-size:44px; margin-bottom:16px">KITCHENETTE</div>
+      <div style="max-width:420px">
+        <div class="linea-corporativa" style="--linea-grosor:5px"><i></i></div>
+        <div class="cotas"><div class="c1">15 cm</div><div class="c2">·</div><div class="c3">15 cm</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LOCKUP + TIRA -->
+  <div class="blk">
+    <h2 class="sec">Lockup y tira transversal</h2>
+    <div class="linea-corporativa sec-line"><i></i></div>
+    <p class="desc">
+      Los dos logos se equilibran por <b>altura de letra</b>, no por altura de caja: el de Super
+      Techos es apilado y el de Prouco horizontal. El divisor vertical negro es parte del lockup.
+      La tira transversal cruza todo el ancho con <b>4 cm de respiro</b> a cada lado del lockup.
+    </p>
+    <div class="lockup-demo">
+      <div class="lockup">
+        <img class="st" src="assets/logo-super-techos.png" alt="Super Techos">
+        <div class="divisor"></div>
+        <img class="prouco" src="assets/logo-prouco.png" alt="Prouco Group Dominicana">
+      </div>
+
+      <div class="tira-demo">
+        <div class="demo-lbl">Tira transversal · grosor 6 mm</div>
+        <div class="tira-transversal">
+          <div class="tira-r"></div>
+          <div class="lockup" style="height:60px; flex:0 0 auto">
+            <img class="st" src="assets/logo-super-techos.png" alt="Super Techos">
+            <div class="divisor"></div>
+            <img class="prouco" src="assets/logo-prouco.png" alt="Prouco">
+          </div>
+          <div class="tira-v"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PICTOGRAMAS -->
+  <div class="blk">
+    <h2 class="sec">Pictogramas</h2>
+    <div class="linea-corporativa sec-line"><i></i></div>
+    <p class="desc">
+      Lineales, <b>stroke uniforme de 2</b>, esquinas vivas, sin relleno — mismo peso óptico que
+      Montserrat SemiBold. Siempre en negro mate, centrados sobre el rótulo.
+    </p>
+    <div class="pictos">
+      <figure>
+        <svg width="46" height="46" viewBox="0 0 32 32"><g class="picto">
+          <rect x="4" y="10" width="24" height="16"/><path d="M12 10V7h8v3"/><path d="M13 18h6"/>
+        </g></svg>
+        <figcaption>Oficinas</figcaption>
+      </figure>
+      <figure>
+        <svg width="46" height="46" viewBox="0 0 32 32"><g class="picto">
+          <rect x="4" y="7" width="24" height="18"/><path d="M4 12h24"/><path d="M9 18h6"/>
+        </g></svg>
+        <figcaption>Reuniones</figcaption>
+      </figure>
+      <figure>
+        <svg width="46" height="46" viewBox="0 0 32 32"><g class="picto">
+          <path d="M9 5v9a4 4 0 0 0 8 0V5"/><path d="M13 14v13"/><path d="M23 5v22"/><path d="M20 5h6v7h-6z"/>
+        </g></svg>
+        <figcaption>Kitchenette</figcaption>
+      </figure>
+      <figure>
+        <svg width="46" height="46" viewBox="0 0 32 32"><g class="picto">
+          <rect x="5" y="6" width="22" height="20"/><path d="M5 13h22"/><path d="M5 19.5h22"/><path d="M16 6v20"/>
+        </g></svg>
+        <figcaption>Almacén</figcaption>
+      </figure>
+      <figure>
+        <svg width="46" height="46" viewBox="0 0 32 32"><g class="picto">
+          <circle cx="16" cy="10" r="4"/><path d="M8 27v-5a8 8 0 0 1 16 0v5"/>
+        </g></svg>
+        <figcaption>Baño</figcaption>
+      </figure>
+      <figure>
+        <svg width="46" height="46" viewBox="0 0 32 32"><g class="picto">
+          <path d="M18 4 8 18h7l-1 10 10-14h-7z"/>
+        </g></svg>
+        <figcaption>Eléctrico</figcaption>
+      </figure>
+    </div>
+  </div>
+
+  <!-- REGLAS -->
+  <div class="blk" style="border-bottom:none">
+    <h2 class="sec">Reglas de aplicación</h2>
+    <div class="linea-corporativa sec-line"><i></i></div>
+    <div class="reglas">
+      <div><b>Altura de instalación.</b> Centro del letrero a 1.50 m desde piso terminado, en todas las familias.</div>
+      <div><b>Zona de exclusión.</b> Nunca vinil sobre tirador ni cerradura: libre 60 × 80 cm alrededor del tirador.</div>
+      <div><b>Alineación.</b> Todo centrado al eje vertical del vano o del panel.</div>
+      <div><b>Cara de aplicación.</b> Si va por la cara interna del vidrio, el archivo se espeja.</div>
+      <div><b>Texto en curvas.</b> Siempre, en todos los archivos de corte, escala 1:1.</div>
+      <div><b>Capa azul.</b> Contorno, cotas y herrajes son referencia — la imprenta no los corta.</div>
+      <div><b>Instalación.</b> Entre 18 y 30 °C. Limpieza con paño suave, nunca abrasivos.</div>
+      <div><b>Verificación.</b> Medir en sitio antes de cortar; ante discrepancia, consultar.</div>
+    </div>
+  </div>
+
+  <div class="ds-foot">
+    <span>Protegemos estructuras, construimos soluciones.</span>
+    <div class="fr"></div><div class="fv"></div>
+  </div>
+
+</div>

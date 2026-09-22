@@ -1,0 +1,265 @@
+<!-- @dsCard group="Señalética Interna" -->
+<link rel="stylesheet" href="senaletica.css">
+<style>
+  body { margin: 0; }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  .blk { padding: 30px 32px; border-bottom: 1px solid var(--gris-200); }
+  h2.sec { font-size: 13px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; margin: 0 0 4px; }
+  .sec-line { margin: 0 0 22px; max-width: 210px; }
+  .desc { font-size: 13px; font-weight: 300; line-height: 1.65; color: var(--gris-600); max-width: 74ch; margin: 0 0 24px; }
+  .desc b { font-weight: 600; color: var(--negro-mate); }
+
+  /* ================= LA PLACA — 1 px = 1 mm ================= */
+  .placa {
+    width: 250px; height: 65px; background: var(--blanco);
+    display: flex; align-items: center; gap: 14px;
+    padding: 0 12px 0 15px; box-sizing: border-box;
+    box-shadow: 0 5px 16px rgba(0,0,0,.15); border: 1px solid var(--gris-200);
+  }
+  .placa .txtcol { flex: 1; min-width: 0; }
+  .placa .nombre {
+    font-family: var(--font); font-weight: 700; font-size: 13px; line-height: 1.06;
+    letter-spacing: .005em; color: var(--negro-mate); white-space: nowrap;
+  }
+  .placa .lc { width: 62px; margin: 4.5px 0; }
+  .placa .puesto {
+    font-family: var(--font); font-weight: 500; font-size: 5.2px; line-height: 1.2;
+    letter-spacing: .15em; text-transform: uppercase; color: var(--gris-600); white-space: nowrap;
+  }
+  .placa .lockup { flex: 0 0 auto; height: 26px; gap: 9px; }
+  .placa .lockup .divisor { width: 1px; }
+
+  /* nombre largo → baja un punto */
+  .placa.largo .nombre { font-size: 11.4px; }
+
+  .fila { display: flex; flex-wrap: wrap; gap: 34px 40px; align-items: flex-start; }
+  .item .cap { font-size: 11px; font-weight: 300; color: var(--gris-400); margin-top: 12px; line-height: 1.5; }
+  .item .cap b { display: block; font-weight: 600; color: var(--negro-mate); font-size: 11.5px;
+                 letter-spacing: .06em; text-transform: uppercase; margin-bottom: 3px; }
+
+  /* ================= TROQUEL ================= */
+  .troquel { display: flex; gap: 40px; align-items: flex-start; }
+  .desarrollo {
+    width: 250px; border: 1px dashed var(--gris-400); position: relative; background: var(--gris-50);
+  }
+  /* las caras del desarrollo son la misma placa, sin sombra ni borde */
+  .desarrollo .placa { box-shadow: none; border: none; }
+  .desarrollo .placa.rev { transform: rotate(180deg); }
+  .desarrollo .dobl {
+    height: 0; border-top: 1px dashed var(--rojo-st); position: relative;
+  }
+  .desarrollo .dobl span {
+    position: absolute; right: 4px; top: -13px; font-family: ui-monospace, Menlo, monospace;
+    font-size: 8px; color: var(--rojo-st); letter-spacing: .05em;
+  }
+  .cotas-t { font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; color: var(--gris-600); line-height: 2; }
+  .cotas-t b { color: var(--negro-mate); font-family: var(--font); font-weight: 600;
+               font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
+               display: block; margin-bottom: 6px; }
+
+  .anat-row { display: flex; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--gris-100); font-size: 12.5px; }
+  .anat-row .k { flex: 0 0 44px; font-family: ui-monospace, Menlo, monospace; font-size: 10.5px;
+                 color: var(--rojo-st); font-weight: 700; padding-top: 2px; }
+  .anat-row .v { font-weight: 300; color: var(--gris-600); line-height: 1.55; }
+  .anat-row .v b { font-weight: 600; color: var(--negro-mate); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  thead th { text-align: left; font-weight: 600; font-size: 10.5px; letter-spacing: .11em;
+             text-transform: uppercase; color: var(--blanco); background: var(--negro-mate); padding: 10px 12px; }
+  tbody td { padding: 10px 12px; border-bottom: 1px solid var(--gris-200); }
+  tbody tr:nth-child(even) td { background: var(--gris-50); }
+  td.b { font-weight: 600; }
+  td.m { color: var(--gris-600); font-weight: 300; font-style: italic; }
+
+  .aviso { border-left: 4px solid var(--rojo-st); background: var(--gris-50); padding: 16px 20px; margin-top: 24px; }
+  .aviso h4 { margin: 0 0 6px; font-size: 11.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+  .aviso p { margin: 0; font-size: 12.5px; font-weight: 300; line-height: 1.62; color: var(--gris-600); }
+  .aviso p b { font-weight: 600; color: var(--negro-mate); }
+  .aviso code { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; background: var(--gris-200); padding: 1px 5px; }
+</style>
+
+<div class="ds-page wrap">
+
+  <div class="ds-head">
+    <h1>F4 · Placas de escritorio</h1>
+    <p>Tent 250 × 65 mm · un puesto por placa</p>
+  </div>
+
+  <div class="blk">
+    <h2 class="sec">El formato</h2>
+    <div class="linea-corporativa sec-line"><i></i></div>
+    <p class="desc">
+      Placa <b>tipo tent</b> — se dobla sobre sí misma y se para sola, sin herrajes ni taladros en
+      el mobiliario nuevo. Doble cara idéntica: la de frente para el visitante, la de atrás para
+      que la persona vea su propio puesto al sentarse.
+    </p>
+    <p class="desc">
+      Va en <b>blanco con tipografía negra</b>, no en acrílico negro como los letreros de área.
+      Es el mismo lenguaje de las puertas de cristal (Montserrat negra sobre fondo claro, logos a
+      color) y se sostiene sobre el escritorio de madera clara sin pesar. Los letreros de área son
+      objetos negros montados en muro; las placas son piezas de escritorio — la jerarquía es
+      deliberada.
+    </p>
+
+    <div class="fila">
+      <div class="item">
+        <div class="placa">
+          <div class="txtcol">
+            <div class="nombre">Leo Henríquez</div>
+            <div class="linea-corporativa lc"><i></i></div>
+            <div class="puesto">Gerente General</div>
+          </div>
+          <div class="lockup">
+            <img class="st" src="assets/logo-super-techos-compacto.png" alt="Super Techos">
+            <div class="divisor"></div>
+            <img class="prouco" src="assets/logo-prouco.png" alt="Prouco">
+          </div>
+        </div>
+        <div class="cap"><b>Estándar</b>Nombre 13 mm · puesto 5.2 mm</div>
+      </div>
+
+      <div class="item">
+        <div class="placa">
+          <div class="txtcol">
+            <div class="nombre">Lily Jaime</div>
+            <div class="linea-corporativa lc"><i></i></div>
+            <div class="puesto">Facturación</div>
+          </div>
+          <div class="lockup">
+            <img class="st" src="assets/logo-super-techos-compacto.png" alt="Super Techos">
+            <div class="divisor"></div>
+            <img class="prouco" src="assets/logo-prouco.png" alt="Prouco">
+          </div>
+        </div>
+        <div class="cap"><b>Nombre corto</b>El bloque queda igual, no se recentra</div>
+      </div>
+
+      <div class="item">
+        <div class="placa largo">
+          <div class="txtcol">
+            <div class="nombre">Felvison Calcaño</div>
+            <div class="linea-corporativa lc"><i></i></div>
+            <div class="puesto">Administración y Compras</div>
+          </div>
+          <div class="lockup">
+            <img class="st" src="assets/logo-super-techos-compacto.png" alt="Super Techos">
+            <div class="divisor"></div>
+            <img class="prouco" src="assets/logo-prouco.png" alt="Prouco">
+          </div>
+        </div>
+        <div class="cap"><b>Nombre largo</b>Baja a 11.4 mm · nunca se condensa la letra</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="blk">
+    <h2 class="sec">Anatomía</h2>
+    <div class="linea-corporativa sec-line"><i></i></div>
+    <div style="display:flex; gap:44px; align-items:center">
+      <div class="placa" style="flex:0 0 auto">
+        <div class="txtcol">
+          <div class="nombre">Edwin Parra</div>
+          <div class="linea-corporativa lc"><i></i></div>
+          <div class="puesto">Operaciones</div>
+        </div>
+        <div class="lockup">
+          <img class="st" src="assets/logo-super-techos-compacto.png" alt="Super Techos">
+          <div class="divisor"></div>
+          <img class="prouco" src="assets/logo-prouco.png" alt="Prouco">
+        </div>
+      </div>
+      <div style="flex:1">
+        <div class="anat-row"><div class="k">01</div><div class="v"><b>Nombre</b> — Montserrat Bold 13 mm. Nombre de pila + un apellido; nunca el nombre completo de cédula.</div></div>
+        <div class="anat-row"><div class="k">02</div><div class="v"><b>Línea corporativa</b> — 62 mm de ancho, grosor 3 mm. Misma proporción 48.7 / 2.6 / 48.7 que en toda la línea.</div></div>
+        <div class="anat-row"><div class="k">03</div><div class="v"><b>Puesto</b> — Medium 5.2 mm, caps espaciadas 0.15em, gris. Una sola línea, sin abreviar con puntos.</div></div>
+        <div class="anat-row"><div class="k">04</div><div class="v"><b>Lockup</b> — 26 mm de alto, versión reducida de Super Techos (sin el descriptor), alineado al eje óptico del bloque de texto. Ambas marcas en todas las placas.</div></div>
+        <div class="anat-row"><div class="k">05</div><div class="v"><b>Márgenes</b> — 15 mm izquierda, 12 mm derecha. El texto nunca invade el tercio del lockup.</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="blk">
+    <h2 class="sec">Troquel y armado</h2>
+    <div class="linea-corporativa sec-line"><i></i></div>
+    <div class="troquel">
+      <div class="desarrollo">
+        <div class="placa rev">
+          <div class="txtcol">
+            <div class="nombre">Edwin Parra</div>
+            <div class="linea-corporativa lc"><i></i></div>
+            <div class="puesto">Operaciones</div>
+          </div>
+          <div class="lockup">
+            <img class="st" src="assets/logo-super-techos-compacto.png" alt="">
+            <div class="divisor"></div>
+            <img class="prouco" src="assets/logo-prouco.png" alt="">
+          </div>
+        </div>
+        <div class="dobl"><span>línea de doblez</span></div>
+        <div class="placa">
+          <div class="txtcol">
+            <div class="nombre">Edwin Parra</div>
+            <div class="linea-corporativa lc"><i></i></div>
+            <div class="puesto">Operaciones</div>
+          </div>
+          <div class="lockup">
+            <img class="st" src="assets/logo-super-techos-compacto.png" alt="">
+            <div class="divisor"></div>
+            <img class="prouco" src="assets/logo-prouco.png" alt="">
+          </div>
+        </div>
+      </div>
+      <div class="cotas-t">
+        <b>Especificación de corte</b>
+        Desarrollo plano ······· 250 × 130 mm<br>
+        Con sangrado 3 mm ······ 256 × 136 mm<br>
+        Línea de doblez ········ a 65 mm del borde superior<br>
+        Cara superior ·········· rotada 180°<br>
+        Material ··············· acrílico 3 mm blanco<br>
+        Impresión ·············· UV directa, tinta blanca de base<br>
+        Texto ·················· convertido a curvas<br>
+        Marcas de corte ········ sí, fuera del sangrado
+      </div>
+    </div>
+    <p class="desc" style="margin:24px 0 0">
+      La cara superior va <b>rotada 180°</b> para que al doblar sobre el borde ambas lecturas
+      queden derechas. Si el rotulista prefiere PVC 3 mm con vinil impreso y laminado mate, el
+      arte no cambia — solo el sustrato.
+    </p>
+  </div>
+
+  <div class="blk" style="border-bottom:none">
+    <h2 class="sec">Listado de producción</h2>
+    <div class="linea-corporativa sec-line"><i></i></div>
+    <table>
+      <thead><tr><th>Nombre en la placa</th><th>Puesto</th></tr></thead>
+      <tbody>
+        <tr><td class="b">Leo Henríquez</td><td class="m">por confirmar</td></tr>
+        <tr><td class="b">Ricardo Henríquez</td><td class="m">por confirmar</td></tr>
+        <tr><td class="b">Edwin Parra</td><td class="m">por confirmar</td></tr>
+        <tr><td class="b">Felvison Calcaño</td><td class="m">por confirmar</td></tr>
+        <tr><td class="b">Lily Jaime</td><td class="m">por confirmar</td></tr>
+        <tr><td class="b">Yamel Harris</td><td class="m">por confirmar</td></tr>
+        <tr><td class="b">Miguel Martínez</td><td class="m">por confirmar</td></tr>
+      </tbody>
+    </table>
+
+    <div class="aviso">
+      <h4>Falta la lista real</h4>
+      <p>
+        En el ERP las columnas <code>puesto</code> y <code>departamento</code> de la tabla
+        <code>personal</code> están <b>vacías para las 36 personas</b>, así que los cargos no se
+        pueden sacar de ahí. Estos 7 son los que tienen rol administrativo
+        (<code>admin</code> / <code>facturas</code> / <code>owner</code>) — pero el plano muestra
+        más cubículos que eso. <b>Llena <code>placas.csv</code></b> con nombre y puesto de cada
+        persona y de ahí salen todas las placas de una vez.
+      </p>
+    </div>
+  </div>
+
+  <div class="ds-foot">
+    <span>F4 · Placas de escritorio</span>
+    <div class="fr"></div><div class="fv"></div>
+  </div>
+
+</div>

@@ -10,9 +10,10 @@ import dynamic from 'next/dynamic';
 
 const MapaPrograma = dynamic(() => import('../../../components/programas/MapaPrograma'), { ssr: false, loading: () => <div className="pp-cargando">Cargando mapa…</div> });
 
+// Misma paleta del ERP; "Entregado" va oscuro porque el portal es claro.
 const COLOR = {
-  sin_luz_verde: '#8A8F98', por_levantar: '#D99A0B', levantado: '#1D8FCC', cotizado: '#7A5BD6',
-  por_programar: '#E07020', en_ejecucion: '#1E9E54', terminado: '#14703C', entregado: '#1A1A1A',
+  sin_luz_verde: '#888780', por_levantar: '#BA7517', levantado: '#378ADD', cotizado: '#7F77DD',
+  por_programar: '#D85A30', en_ejecucion: '#639922', terminado: '#1D9E75', entregado: '#2C2C2A',
 };
 const fmtRD = (n) => n == null ? '—' : 'RD$' + Number(n).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtF = (f) => { if (!f) return ''; try { return new Date(f).toLocaleDateString('es-DO', { day: 'numeric', month: 'short' }); } catch { return ''; } };

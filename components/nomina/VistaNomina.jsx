@@ -6,6 +6,7 @@ import * as db from '../../lib/db';
 import { formatRD, formatFecha, formatFechaCorta, formatNum } from '../../lib/helpers/formato';
 import { getM2Reporte, calcAvanceProyecto } from '../../lib/helpers/calculos';
 import { chequearNomina } from '../../lib/helpers/chequeoNomina';
+import { generarArchivoPopular, nombreArchivo } from '../../lib/helpers/archivoBancoPopular';
 import PanelListoNomina from './PanelListoNomina';
 import Campo from '../common/Campo';
 import Input from '../common/Input';
@@ -1536,6 +1537,44 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
     catch (e) { alert('Error: ' + (e.message || e)); }
   };
 
+  // v8.57.0: archivo de pago masivo del Banco Popular, armado con lo que el corte
+  // calculó + los datos bancarios de cada ficha. Quien no tenga los datos completos
+  // queda fuera y se lista por nombre, para completarlo antes de subirlo al banco.
+  const descargarArchivoBanco = () => {
+    const porPersona = {};
+    detalle.forEach(d => {
+      if (!(d.montoTotal > 0)) return;
+      porPersona[d.personaId] = (porPersona[d.personaId] || 0) + d.montoTotal;
+    });
+    const pagos = Object.entries(porPersona).map(([pid, monto]) => {
+      const p = data.personal.find(x => x.id === pid) || {};
+      return {
+        personaId: pid, nombre: p.nombre,
+        cuenta: p.bancoNumeroCuenta, tipoCuenta: p.bancoTipoCuenta, codigoBanco: p.bancoCodigo,
+        tipoDocumento: p.bancoTitularTipoDoc || 'cedula',
+        documento: (p.bancoTitularCedula || p.cedulaNumero || '').replace(/\D/g, ''),
+        titular: p.bancoTitularNombre || p.nombre, monto,
+      };
+    });
+    const fecha = new Date().toISOString().slice(0, 10);
+    const { contenido, totales, excluidos } = generarArchivoPopular({
+      rnc: '131515541', empresa: 'PROUCO GROUP DOMINICANA', fecha,
+      correoNotificacion: 'yharris@supertechos.com.do', concepto: 'MDO', pagos,
+    });
+    if (!totales.cantidad) { alert('Ninguna persona del corte tiene los datos bancarios completos.'); return; }
+    if (excluidos.length) {
+      const lista = excluidos.slice(0, 10).map(e => `• ${e.nombre}: le falta ${e.faltan.join(', ')}`).join('\n');
+      const mas = excluidos.length > 10 ? `\n…y ${excluidos.length - 10} más` : '';
+      if (!confirm(`${excluidos.length} persona(s) quedan FUERA del archivo:\n\n${lista}${mas}\n\nA esas hay que pagarles aparte. ¿Descargar el archivo con ${totales.cantidad} pago(s) por ${formatRD(totales.monto)}?`)) return;
+    }
+    const blob = new Blob([contenido], { type: 'text/plain;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = nombreArchivo(fecha);
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
   const guardarDetalle = async () => {
     await db.guardarDetalleCorte(detalle);
     alert('Detalle guardado');
@@ -2221,6 +2260,12 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
           <button onClick={guardarDetalle} className="flex-1 bg-zinc-800 text-zinc-300 font-bold uppercase py-3 text-xs"><Save className="w-3 h-3 inline mr-1" /> Guardar</button>
           <button onClick={cerrar} className="flex-1 bg-red-600 text-white font-black uppercase py-3 text-xs">Cerrar corte</button>
         </div>
+      )}
+      {(corte.estado === 'cerrado' || corte.estado === 'pagado') && (
+        <button onClick={descargarArchivoBanco}
+          className="w-full bg-zinc-800 border border-zinc-700 hover:border-green-600 text-zinc-200 font-bold uppercase py-3 text-xs flex items-center justify-center gap-2 rounded-card">
+          <Wallet className="w-3.5 h-3.5" /> Descargar archivo de pago del banco
+        </button>
       )}
       {corte.estado === 'cerrado' && (
         <div className="flex gap-2">

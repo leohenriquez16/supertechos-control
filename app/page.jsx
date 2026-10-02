@@ -55,6 +55,7 @@ import ToggleDensidad, { useDensidad } from '../components/common/ToggleDensidad
 import { BadgeEmpresa } from '../components/common/Badge';
 // v8.10.4: ModalEditarReporte extraído
 // v8.10.4: ModalReporteAvancePDF extraído (incluye ReportePDFContenido)
+const ModalCartaBanco = cargarVista(() => import('../components/common/ModalCartaBanco'), CargandoModal); // v8.57.0
 const ModalReporteAvancePDF = cargarVista(() => import('../components/proyecto/modales/ModalReporteAvancePDF'), CargandoModal);
 const ModalReporteFinalPDF = cargarVista(() => import('../components/proyecto/modales/ModalReporteFinalPDF'), CargandoModal); // v8.27.79
 // v8.10.5: Tabs simples extraídas
@@ -11715,6 +11716,8 @@ function ModalCambiarEstado({ proyecto, usuario, personal, sistema, onCerrar, on
 // VISTA TAREAS (v8)
 // ============================================================
 function MiPerfil({ usuario, persona, onVolver, onGuardar }) {
+  // v8.57.0: carta de trabajo para que el colaborador abra su cuenta de banco.
+  const [cartaBanco, setCartaBanco] = useState(false);
   const esMio = usuario.id === persona.id;
   const esAdminViendo = tieneRol(usuario, 'admin') && !esMio;
   const puedoVerCedula = esMio || tieneRol(usuario, 'admin');
@@ -11917,8 +11920,17 @@ function MiPerfil({ usuario, persona, onVolver, onGuardar }) {
             <Campo label="Titular de la cuenta"><Input value={form.bancoTitularNombre} onChange={v => actualizar('bancoTitularNombre', v)} placeholder="Si no es la persona" /></Campo>
             <Campo label="Cédula del titular"><Input value={form.bancoTitularCedula} onChange={v => actualizar('bancoTitularCedula', v)} placeholder="000-0000000-0" /></Campo>
           </div>
+          {form.bancoTitularNombre && form.bancoTitularNombre !== persona.nombre && (
+            <div className="text-[10px] text-amber-400">⚠ Cobra en la cuenta de otra persona. Genera la carta para que abra la suya.</div>
+          )}
+          {/* v8.57.0: la carta que pide el banco para abrir la cuenta, lista para firmar */}
+          <button onClick={() => setCartaBanco(true)}
+            className="w-full bg-zinc-800 border border-zinc-700 hover:border-red-600 text-zinc-200 font-bold uppercase py-2.5 text-[11px] rounded-card">
+            📄 Carta para abrir cuenta de banco
+          </button>
         </div>
       )}
+      {cartaBanco && <ModalCartaBanco persona={persona} firmante={usuario} onCerrar={() => setCartaBanco(false)} />}
 
       {/* Modo de pago - solo visible a admin */}
       {tieneRol(usuario, 'admin') && (tieneRol(persona, 'maestro') || tieneRol(persona, 'ayudante') || tieneRol(persona, 'supervisor')) && (

@@ -5,6 +5,9 @@ import { ArrowLeft, ChevronDown, FileText, Loader2, Plus, Save, Trash2, X, Walle
 import * as db from '../../lib/db';
 import { formatRD, formatFecha, formatFechaCorta, formatNum } from '../../lib/helpers/formato';
 import { getM2Reporte, calcAvanceProyecto } from '../../lib/helpers/calculos';
+import { chequearNomina } from '../../lib/helpers/chequeoNomina';
+import { generarArchivoPopular, nombreArchivo } from '../../lib/helpers/archivoBancoPopular';
+import PanelListoNomina from './PanelListoNomina';
 import Campo from '../common/Campo';
 import Input from '../common/Input';
 
@@ -1354,6 +1357,9 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
   const [detalle, setDetalle] = useState([]);
   const [loading, setLoading] = useState(true);
   const [jornadasCorte, setJornadasCorte] = useState([]);
+  // v8.57.0: costos/día por obra+persona — los usa el semáforo "Listo para nómina"
+  // para avisar de quien trabajó en una obra que paga por día sin tarifa configurada.
+  const [costosDiaCorte, setCostosDiaCorte] = useState({});
   const [ajustes, setAjustes] = useState([]);
   const [ajusteModal, setAjusteModal] = useState(null);
   const [vistaDetalle, setVistaDetalle] = useState('persona'); // persona | proyecto | supervisor | recibos
@@ -1444,6 +1450,20 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
         .map(j => ({ ...j, proyecto: proyectosPorId.get(j.proyectoId) }))
         .filter(j => j.proyecto); // solo proyectos visibles (no archivados)
       setJornadasCorte(todasJornadas);
+      // v8.57.0: costos/día de las obras tocadas en el periodo (reportes o jornadas)
+      const obrasPeriodo = [...new Set([
+        ...todasJornadas.map(j => j.proyectoId),
+        ...(data.reportes || []).filter(r => r.fecha >= corte.fechaInicio && r.fecha <= corte.fechaFin).map(r => r.proyectoId),
+      ])].filter(Boolean);
+      const costos = {};
+      await Promise.all(obrasPeriodo.map(async pid => {
+        try {
+          const lista = await db.listarCostosDia(pid);
+          costos[pid] = {};
+          lista.forEach(c => { costos[pid][c.personaId] = { costoDia: c.costoDia, precioM2: c.precioM2, modoPago: c.modoPago }; });
+        } catch {}
+      }));
+      setCostosDiaCorte(costos);
       // Si no hay detalle guardado, calcular preview
       if (det.length === 0 && corte.estado === 'abierto') {
         setDetalle(await calcularDetalle(todasJornadas, data, corte, ajPeriodo));
@@ -1465,6 +1485,12 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
   // que el dashboard también pueda computar el live total del corte abierto.
 
   const totalCorte = detalle.reduce((s, d) => s + (d.montoTotal || 0), 0);
+
+  // v8.57.0: semáforo "Listo para nómina" — solo tiene sentido mientras el corte está abierto.
+  const chequeo = React.useMemo(() => {
+    if (corte.estado !== 'abierto' || loading) return null;
+    return chequearNomina({ corte, data, jornadas: jornadasCorte, detalle, costosDia: costosDiaCorte });
+  }, [corte, data, jornadasCorte, detalle, costosDiaCorte, loading]);
 
   // v8.27.77 (ticket Miguel "m² duplicados entre quincenas"): detectar reportes del corte
   // que parecen REPETIR trabajo ya reportado antes del corte (misma obra + área + tarea y
@@ -1511,11 +1537,55 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
     catch (e) { alert('Error: ' + (e.message || e)); }
   };
 
+  // v8.57.0: archivo de pago masivo del Banco Popular, armado con lo que el corte
+  // calculó + los datos bancarios de cada ficha. Quien no tenga los datos completos
+  // queda fuera y se lista por nombre, para completarlo antes de subirlo al banco.
+  const descargarArchivoBanco = () => {
+    const porPersona = {};
+    detalle.forEach(d => {
+      if (!(d.montoTotal > 0)) return;
+      porPersona[d.personaId] = (porPersona[d.personaId] || 0) + d.montoTotal;
+    });
+    const pagos = Object.entries(porPersona).map(([pid, monto]) => {
+      const p = data.personal.find(x => x.id === pid) || {};
+      return {
+        personaId: pid, nombre: p.nombre,
+        cuenta: p.bancoNumeroCuenta, tipoCuenta: p.bancoTipoCuenta, codigoBanco: p.bancoCodigo,
+        tipoDocumento: p.bancoTitularTipoDoc || 'cedula',
+        documento: (p.bancoTitularCedula || p.cedulaNumero || '').replace(/\D/g, ''),
+        titular: p.bancoTitularNombre || p.nombre, monto,
+      };
+    });
+    const fecha = new Date().toISOString().slice(0, 10);
+    const { contenido, totales, excluidos } = generarArchivoPopular({
+      rnc: '131515541', empresa: 'PROUCO GROUP DOMINICANA', fecha,
+      correoNotificacion: 'yharris@supertechos.com.do', concepto: 'MDO', pagos,
+    });
+    if (!totales.cantidad) { alert('Ninguna persona del corte tiene los datos bancarios completos.'); return; }
+    if (excluidos.length) {
+      const lista = excluidos.slice(0, 10).map(e => `• ${e.nombre}: le falta ${e.faltan.join(', ')}`).join('\n');
+      const mas = excluidos.length > 10 ? `\n…y ${excluidos.length - 10} más` : '';
+      if (!confirm(`${excluidos.length} persona(s) quedan FUERA del archivo:\n\n${lista}${mas}\n\nA esas hay que pagarles aparte. ¿Descargar el archivo con ${totales.cantidad} pago(s) por ${formatRD(totales.monto)}?`)) return;
+    }
+    const blob = new Blob([contenido], { type: 'text/plain;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = nombreArchivo(fecha);
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
   const guardarDetalle = async () => {
     await db.guardarDetalleCorte(detalle);
     alert('Detalle guardado');
   };
   const cerrar = async () => {
+    // v8.57.0: no se cierra a ciegas si el semáforo marca bloqueantes.
+    if (chequeo?.bloqueantes > 0) {
+      const lista = chequeo.alertas.filter(a => a.severidad === 'bloqueante').slice(0, 6).map(a => '• ' + a.titulo).join('\n');
+      const mas = chequeo.bloqueantes > 6 ? `\n…y ${chequeo.bloqueantes - 6} más` : '';
+      if (!confirm(`⚠ Hay ${chequeo.bloqueantes} cosa(s) sin resolver:\n\n${lista}${mas}\n\nSi cierras así, alguien cobra de menos o de más.\n\n¿Cerrar de todos modos?`)) return;
+    }
     if (!confirm('¿Cerrar el corte? Los ajustes del periodo quedarán asociados.')) return;
     await db.guardarDetalleCorte(detalle);
     await db.cerrarCorte(corte.id, usuario.id, totalCorte);
@@ -2113,6 +2183,9 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
         ))}</div>}
       </div>
 
+      {/* v8.57.0: semáforo "Listo para nómina" */}
+      {corte.estado === 'abierto' && <PanelListoNomina resultado={chequeo} cargando={loading} />}
+
       {/* v8.27.77: posibles m² duplicados de la quincena anterior (ticket Miguel)
           v8.50.3: + exclusión MANUAL de cualquier reporte del corte (caso Despertar:
           trabajo pagado por adelantado con un ajuste — el detector no lo ve) */}
@@ -2187,6 +2260,12 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
           <button onClick={guardarDetalle} className="flex-1 bg-zinc-800 text-zinc-300 font-bold uppercase py-3 text-xs"><Save className="w-3 h-3 inline mr-1" /> Guardar</button>
           <button onClick={cerrar} className="flex-1 bg-red-600 text-white font-black uppercase py-3 text-xs">Cerrar corte</button>
         </div>
+      )}
+      {(corte.estado === 'cerrado' || corte.estado === 'pagado') && (
+        <button onClick={descargarArchivoBanco}
+          className="w-full bg-zinc-800 border border-zinc-700 hover:border-green-600 text-zinc-200 font-bold uppercase py-3 text-xs flex items-center justify-center gap-2 rounded-card">
+          <Wallet className="w-3.5 h-3.5" /> Descargar archivo de pago del banco
+        </button>
       )}
       {corte.estado === 'cerrado' && (
         <div className="flex gap-2">

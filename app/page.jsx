@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic'; // v8.55.0: carga perezosa de vistas
 import { createPortal } from 'react-dom';
-import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed, Building2, Star, MessageCircle, Send, Search, Filter, CloudRain, Calculator, Receipt, Car, Award, Gauge } from 'lucide-react';
+import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed, Building2, Star, MessageCircle, Send, Search, Filter, CloudRain, Calculator, Receipt, Car, Award, Gauge, Route } from 'lucide-react';
 import * as db from '../lib/db';
 import { completitudPersona } from '../lib/helpers/personas';
 import { leerArchivo, parseMateriales, parseSistemas, descargarPlantilla, comprimirImagen } from '../lib/imports';
@@ -55,6 +55,7 @@ import ToggleDensidad, { useDensidad } from '../components/common/ToggleDensidad
 import { BadgeEmpresa } from '../components/common/Badge';
 // v8.10.4: ModalEditarReporte extraído
 // v8.10.4: ModalReporteAvancePDF extraído (incluye ReportePDFContenido)
+const VistaPrograma = cargarVista(() => import('../components/programas/VistaPrograma'), CargandoVista); // v8.58.0
 const ModalCartaBanco = cargarVista(() => import('../components/common/ModalCartaBanco'), CargandoModal); // v8.57.0
 const ModalReporteAvancePDF = cargarVista(() => import('../components/proyecto/modales/ModalReporteAvancePDF'), CargandoModal);
 const ModalReporteFinalPDF = cargarVista(() => import('../components/proyecto/modales/ModalReporteFinalPDF'), CargandoModal); // v8.27.79
@@ -688,6 +689,7 @@ export default function App() {
     { seccion: 'COMERCIAL', items: [
       { id: 'surveys', label: 'Levantamientos', icon: MapPin, vista: 'surveys' },
       { id: 'torreControl', label: 'Torre de Control', icon: Gauge, vista: 'torreControl' }, // v8.52.0
+      { id: 'programas', label: 'Programas', icon: Route, vista: 'programas' }, // v8.58.0: campañas multi-sitio (Sites 2026)
       { id: 'solicitudes', label: 'Solicitudes', icon: FileText, vista: 'solicitudes', badge: solicitudesNuevas },
       { id: 'citas', label: 'Citas', icon: Calendar, vista: 'citas' },
       // v8.49.0: Clientes y Ubicaciones son CRM (datos maestros comerciales)
@@ -918,6 +920,7 @@ export default function App() {
         {/* v8.26.0: Contabilidad — reportes DGII (606/607/608) + resumen ITBIS/IT-1 */}
         {vista === 'contabilidad' && tieneRol(usuario, 'owner') && <VistaContabilidad usuario={usuario} onVolver={() => setVista('dashboard')} />}
         {vista === 'miPerfil' && <MiPerfil usuario={usuario} persona={usuario} soloLectura={false} onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }} onGuardar={(campos) => withSync(() => db.guardarPerfil(usuario.id, campos))} />}
+        {vista === 'programas' && <PantallaProgramas usuario={usuario} onVolver={() => setVista('dashboard')} onAbrirProyecto={async (pid) => { const proy = data.proyectos.find(x => x.id === pid); if (proy) { setProyectoActivo(proy); setVista('proyecto'); setTab('avance'); } }} />}
         {esAdmin && vista === 'personal' && <GestionPersonal usuario={usuario} personal={data.personal} data={data} onVolver={() => setVista('dashboard')} onActualizar={(p) => withSync(() => db.reemplazarPersonal(p))} onRecargar={recargar} onAbrirPerfil={(p) => { setPerfilViendo(p); setVista('perfilPersona'); }} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'perfilPersona' && perfilViendo && <MiPerfil usuario={usuario} persona={perfilViendo} soloLectura={false} onVolver={() => setVista('personal')} onGuardar={(campos) => withSync(async () => { await db.guardarPerfil(perfilViendo.id, campos); const d = await db.loadAllData(); const actualizada = d.personal.find(p => p.id === perfilViendo.id); if (actualizada) setPerfilViendo(actualizada); })} />}
         {esAdmin && vista === 'sistemas' && <GestionSistemas sistemas={data.sistemas} config={data.config} dataGlobal={data} onVolver={() => setVista('dashboard')} onActualizarSistemas={(s) => withSync(() => db.guardarSistemas(s))} onActualizarConfig={(c) => withSync(() => db.guardarConfig(c))} />}
@@ -11715,6 +11718,51 @@ function ModalCambiarEstado({ proyecto, usuario, personal, sistema, onCerrar, on
 // ============================================================
 // VISTA TAREAS (v8)
 // ============================================================
+// v8.58.0: contenedor de Programas — carga la campaña y sus locaciones con la etapa
+// ya derivada del levantamiento y la obra.
+function PantallaProgramas({ usuario, onVolver, onAbrirProyecto }) {
+  const [programas, setProgramas] = useState([]);
+  const [sel, setSel] = useState(null);
+  const [locaciones, setLocaciones] = useState([]);
+  const [cargando, setCargando] = useState(true);
+
+  const cargar = React.useCallback(async (programa) => {
+    setCargando(true);
+    try {
+      const lista = programas.length ? programas : await db.listarProgramas();
+      if (!programas.length) setProgramas(lista);
+      const p = programa || sel || lista[0];
+      if (p) { setSel(p); setLocaciones(await db.listarLocacionesPrograma(p.id)); }
+    } catch (e) { console.error('programas:', e); }
+    setCargando(false);
+  }, [programas, sel]);
+
+  useEffect(() => { cargar(); /* eslint-disable-next-line */ }, []);
+
+  if (cargando && !sel) return <div className="py-12 text-center text-zinc-500 text-sm"><Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />Cargando programa…</div>;
+  if (!sel) return (
+    <div className="py-12 text-center text-zinc-500 text-sm">
+      <Route className="w-6 h-6 mx-auto mb-2 text-zinc-700" />
+      Todavía no hay programas. Un programa agrupa muchas locaciones de un mismo cliente.
+      <div className="mt-3"><button onClick={onVolver} className="underline">Volver</button></div>
+    </div>
+  );
+  return (
+    <div className="space-y-3">
+      {programas.length > 1 && (
+        <div className="flex gap-2 flex-wrap">
+          {programas.map(p => (
+            <button key={p.id} onClick={() => cargar(p)}
+              className={`px-3 py-1.5 text-[11px] font-bold uppercase rounded-card ${sel.id === p.id ? 'bg-red-600 text-white' : 'bg-zinc-900 border border-zinc-800 text-zinc-400'}`}>{p.nombre}</button>
+          ))}
+        </div>
+      )}
+      <VistaPrograma programa={sel} locaciones={locaciones} usuario={usuario} onVolver={onVolver}
+        onRecargar={() => cargar(sel)} onAbrirProyecto={onAbrirProyecto} />
+    </div>
+  );
+}
+
 function MiPerfil({ usuario, persona, onVolver, onGuardar }) {
   // v8.57.0: carta de trabajo para que el colaborador abra su cuenta de banco.
   const [cartaBanco, setCartaBanco] = useState(false);

@@ -6,43 +6,11 @@
 // Sin login: se entra con la clave del programa. Lee con service_role y solo devuelve lo
 // que lib/server/portalPrograma.js decide mostrar (sin costos, notas internas ni nómina).
 
-import { createClient } from '@supabase/supabase-js';
-import { claveValida, armarPortal, aplicarAccionCliente } from '../../../../lib/server/portalPrograma';
+import { armarPortal, aplicarAccionCliente } from '../../../../lib/server/portalPrograma';
+import { autenticarPortal as autenticar } from '../../../../lib/server/portalAuth';
 import { amarrarLocaciones } from '../../../../lib/helpers/programaSites';
 
 export const dynamic = 'force-dynamic';
-
-const sb = () => createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
-
-// Frena el adivinar claves: 8 intentos fallidos por IP cada 15 minutos.
-const intentos = new Map();
-function bloqueado(ip) {
-  const ahora = Date.now();
-  const r = intentos.get(ip);
-  if (!r || ahora - r.desde > 15 * 60 * 1000) return false;
-  return r.n >= 8;
-}
-function fallo(ip) {
-  const ahora = Date.now();
-  const r = intentos.get(ip);
-  if (!r || ahora - r.desde > 15 * 60 * 1000) intentos.set(ip, { n: 1, desde: ahora });
-  else r.n++;
-}
-
-async function autenticar(request, codigo) {
-  const ip = (request.headers.get('x-forwarded-for') || '').split(',')[0].trim() || 'sin-ip';
-  if (bloqueado(ip)) return { error: Response.json({ ok: false, error: 'Demasiados intentos. Espera 15 minutos.' }, { status: 429 }) };
-  const db = sb();
-  const { data: programa } = await db.from('programas')
-    .select('id, nombre, cliente_nombre, fecha_meta, clave_portal, archivado')
-    .eq('codigo_publico', codigo).maybeSingle();
-  const clave = request.headers.get('x-clave') || '';
-  if (!programa || programa.archivado || !claveValida(clave, programa.clave_portal)) {
-    fallo(ip);
-    return { error: Response.json({ ok: false, error: 'Código o clave incorrectos.' }, { status: 401 }) };
-  }
-  return { db, programa };
-}
 
 // El portal también amarra: si Edwin levantó o Odoo aprobó, el cliente lo ve sin esperar
 // a que alguien abra el programa en el ERP.

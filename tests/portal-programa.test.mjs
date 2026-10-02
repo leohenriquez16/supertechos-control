@@ -2,7 +2,7 @@
 // Ejecutar desde la raíz:  node tests/portal-programa.test.mjs
 
 import assert from 'node:assert/strict';
-import { hashClave, claveValida, generarClave, locacionParaCliente, armarPortal, aplicarAccionCliente } from '../lib/server/portalPrograma.js';
+import { hashClave, claveValida, generarClave, locacionParaCliente, armarPortal, aplicarAccionCliente, levantamientoParaCliente } from '../lib/server/portalPrograma.js';
 
 let ok = 0; const fallos = [];
 const caso = (n, fn) => { try { fn(); ok++; } catch (e) { fallos.push(`${n}: ${e.message}`); } };
@@ -91,6 +91,28 @@ caso('una acción desconocida se rechaza', () => {
 caso('los textos se limpian y se recortan', () => {
   const r = aplicarAccionCliente('comentario', { texto: 'x'.repeat(5000) + '\u0007' }, {});
   assert.ok(r.cambios.notas.length < 1200);
+});
+
+// --- ficha del sitio
+const visita = { checkin_at: '2026-09-07T14:07:52Z', is_completed: true, recommended_system: 'Silicona sobre lona', estimated_days: 3,
+  cross_sell_notes: 'Ofrecerle pintura de fachada', execution_risks: 'Techo débil', general_notes: 'Interno' };
+caso('la ficha trae áreas, total y fotos del levantamiento', () => {
+  const l = levantamientoParaCliente(visita,
+    [{ name: 'Techo principal', net_area_m2: 120.5 }, { name: 'Caseta', gross_area_m2: 18 }, { name: 'No tratar', net_area_m2: 50, to_be_treated: false }],
+    [{ url: 'https://x/f1.jpg', photo_type: 'general' }, { url: 'https://x/f2.jpg', caption: 'Fisura en junta', is_critical: true }]);
+  assert.equal(l.areas.length, 2);
+  assert.equal(l.totalM2, 138.5);
+  assert.equal(l.fotos[0].titulo, 'Vista general');
+  assert.equal(l.fotos[1].critica, true);
+  assert.equal(l.sistemaRecomendado, 'Silicona sobre lona');
+});
+caso('las notas internas del levantamiento NO salen', () => {
+  const l = levantamientoParaCliente(visita, [], []);
+  const txt = JSON.stringify(l);
+  ['Ofrecerle pintura', 'Techo débil', 'Interno'].forEach(x => assert.equal(txt.includes(x), false, x));
+});
+caso('sin visita no hay ficha de levantamiento', () => {
+  assert.equal(levantamientoParaCliente(null), null);
 });
 
 console.log(`\n${ok} pasadas, ${fallos.length} fallidas`);

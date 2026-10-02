@@ -2,7 +2,7 @@
 // Ejecutar desde la raíz:  node tests/programa-sites.test.mjs
 
 import assert from 'node:assert/strict';
-import { etapaDeLocacion, resumenPrograma, pendientesDelCliente, agruparPorZona, distanciaKm, ETAPAS, amarrarLocaciones, normalizarRefOdoo } from '../lib/helpers/programaSites.js';
+import { etapaDeLocacion, resumenPrograma, pendientesDelCliente, agruparPorZona, distanciaKm, ETAPAS, amarrarLocaciones, normalizarRefOdoo, textoCoordinacion, fechasPorEtapa, enEtapaDesde } from '../lib/helpers/programaSites.js';
 
 let ok = 0; const fallos = [];
 const caso = (n, fn) => { try { fn(); ok++; } catch (e) { fallos.push(`${n}: ${e.message}`); } };
@@ -162,6 +162,51 @@ caso('ST5758 y ST-C5758 son la misma cotización', () => {
 caso('después del amarre, la locación cotizada queda en "cotizado"', () => {
   const [c] = amarrarLocaciones([isabelita], levs, []);
   assert.equal(etapaDeLocacion({ ...isabelita, ...c.campos }, {}), 'cotizado');
+});
+
+// --- coordinación de la visita
+caso('el amarre trae la fecha coordinada del levantamiento', () => {
+  const [c] = amarrarLocaciones([isabelita], [{ ...levs[0], fechaVisita: '2026-10-09', horaVisita: '09:00' }], []);
+  assert.equal(c.campos.fechaVisita, '2026-10-09');
+  assert.equal(c.campos.horaVisita, '09:00');
+});
+caso('no pisa una fecha ya coordinada', () => {
+  const [c] = amarrarLocaciones([{ ...isabelita, fechaVisita: '2026-10-08' }], [{ ...levs[0], fechaVisita: '2026-10-09' }], []);
+  assert.equal('fechaVisita' in c.campos, false);
+});
+caso('la fecha coordinada se lee en español con hora de 12', () => {
+  const t = textoCoordinacion('2026-10-09', '14:30');
+  assert.match(t, /9/); assert.match(t, /2:30 p\. m\./);
+  assert.equal(textoCoordinacion(null), '');
+});
+caso('los nombres nuevos de las etapas', () => {
+  assert.equal(ETAPAS[0].label, 'Pendiente coordinar levantamiento');
+  assert.equal(ETAPAS[1].label, 'Coordinado para levantar');
+});
+
+// --- desde cuándo en cada etapa
+caso('cada etapa toma su fecha del dato real', () => {
+  const f = fechasPorEtapa(
+    { createdAt: '2026-10-02', luzVerdeAt: '2026-10-03', levantadoAt: '2026-10-09', cotizadoAt: '2026-10-10', cotizacionAprobadaAt: '2026-10-15' },
+    [{ estadoNuevo: 'en_ejecucion', fecha: '2026-10-20' }, { estadoNuevo: 'aprobado', fecha: '2026-10-14' }, { estadoNuevo: 'finalizado_recibido_conforme', fecha: '2026-10-25' }]);
+  assert.equal(f.por_levantar, '2026-10-03');
+  assert.equal(f.cotizado, '2026-10-10');
+  assert.equal(f.por_programar, '2026-10-15');   // la aprobación del cliente gana a la de Odoo
+  assert.equal(f.en_ejecucion, '2026-10-20');
+  assert.equal(f.entregado, '2026-10-25');
+});
+caso('si la obra entra dos veces a ejecución, cuenta la primera', () => {
+  const f = fechasPorEtapa({}, [{ estadoNuevo: 'en_ejecucion', fecha: '2026-10-22' }, { estadoNuevo: 'parado', fecha: '2026-10-21' }, { estadoNuevo: 'en_ejecucion', fecha: '2026-10-20' }]);
+  assert.equal(f.en_ejecucion, '2026-10-20');
+});
+caso('días en la etapa actual', () => {
+  const r = enEtapaDesde('cotizado', { cotizado: '2026-10-10T12:00:00Z' }, new Date('2026-10-17T12:00:00Z'));
+  assert.equal(r.dias, 7);
+  assert.equal(enEtapaDesde('levantado', {}).desde, null);
+});
+caso('el amarre guarda la fecha de la cotización', () => {
+  const [c] = amarrarLocaciones([isabelita], levs, []);
+  assert.equal(c.campos.cotizadoAt, '2026-09-07');
 });
 
 console.log(`\n${ok} pasadas, ${fallos.length} fallidas`);

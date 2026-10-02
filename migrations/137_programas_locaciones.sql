@@ -57,3 +57,39 @@ notify pgrst, 'reload schema';
 
 -- (137) cliente_nombre: con qué nombre aparece el cliente en levantamientos, para el amarre automático
 alter table programas add column if not exists cliente_nombre text;
+
+-- El proyecto tiene un event trigger que ACTIVA RLS en toda tabla nueva del esquema public.
+-- El ERP trabaja con RLS apagado (reglas de arquitectura), así que sin esto el ERP no lee
+-- nada y la pantalla dice "Todavía no hay programas" (pasó al desplegar v8.58.0).
+alter table programas disable row level security;
+alter table programa_locaciones disable row level security;
+grant select, insert, update, delete on programas, programa_locaciones to anon, authenticated;
+notify pgrst, 'reload schema';
+
+-- (137) Fecha y hora coordinadas con el propietario para la visita de levantamiento
+alter table programa_locaciones add column if not exists fecha_visita date;
+alter table programa_locaciones add column if not exists hora_visita text;
+
+-- (137) Fecha en que se envió la cotización (para "desde cuándo está en cada etapa")
+alter table programa_locaciones add column if not exists cotizado_at timestamptz;
+
+-- (137) Documentos por locación: OC del cliente, cotización, informe, garantía, etc.
+-- Archivos en el bucket privado proyecto-archivos, carpeta programas/<locacion>/.
+create table if not exists programa_documentos (
+  id text primary key,
+  programa_id text not null references programas(id) on delete cascade,
+  locacion_id text not null references programa_locaciones(id) on delete cascade,
+  tipo text not null default 'otro',          -- oc | cotizacion | informe | garantia | autorizacion | otro
+  nombre text not null,
+  path text not null,
+  mime text,
+  tamano_bytes bigint,
+  origen text not null default 'erp',          -- erp | cliente
+  subido_por text,
+  visible_cliente boolean not null default true,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_prog_docs_loc on programa_documentos(locacion_id);
+alter table programa_documentos disable row level security;
+grant select, insert, update, delete on programa_documentos to anon, authenticated;
+notify pgrst, 'reload schema';

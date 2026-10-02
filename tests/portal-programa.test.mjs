@@ -2,7 +2,7 @@
 // Ejecutar desde la raíz:  node tests/portal-programa.test.mjs
 
 import assert from 'node:assert/strict';
-import { hashClave, claveValida, generarClave, locacionParaCliente, armarPortal, aplicarAccionCliente, levantamientoParaCliente } from '../lib/server/portalPrograma.js';
+import { hashClave, claveValida, generarClave, locacionParaCliente, armarPortal, aplicarAccionCliente, levantamientoParaCliente, validarDocumento, rutaDocumento } from '../lib/server/portalPrograma.js';
 
 let ok = 0; const fallos = [];
 const caso = (n, fn) => { try { fn(); ok++; } catch (e) { fallos.push(`${n}: ${e.message}`); } };
@@ -55,14 +55,26 @@ caso('el portal arma resumen y pendientes del cliente', () => {
 });
 
 // --- acciones del cliente
-caso('dar luz verde deja rastro de quién y cuándo', () => {
-  const r = aplicarAccionCliente('luz_verde', {}, { luz_verde: false }, 'Leanny Peña');
+caso('coordinar la visita deja fecha, hora y quién', () => {
+  const r = aplicarAccionCliente('coordinar', { fecha: '2026-10-09', hora: '09:00' }, { luz_verde: false }, 'Leanny Peña');
   assert.equal(r.ok, true);
   assert.equal(r.cambios.luz_verde, true);
+  assert.equal(r.cambios.fecha_visita, '2026-10-09');
+  assert.equal(r.cambios.hora_visita, '09:00');
   assert.match(r.cambios.luz_verde_por, /Leanny Peña/);
 });
-caso('no se da luz verde dos veces', () => {
-  assert.equal(aplicarAccionCliente('luz_verde', {}, { luz_verde: true }).ok, false);
+caso('coordinar exige el día y valida la hora', () => {
+  assert.equal(aplicarAccionCliente('coordinar', {}, {}).ok, false);
+  assert.equal(aplicarAccionCliente('coordinar', { fecha: '9/10' }, {}).ok, false);
+  assert.equal(aplicarAccionCliente('coordinar', { fecha: '2026-10-09', hora: '25:00' }, {}).ok, false);
+});
+caso('se puede cambiar la fecha coordinada, y el aviso lo dice', () => {
+  const r = aplicarAccionCliente('coordinar', { fecha: '2026-10-12' }, { luz_verde: true, fecha_visita: '2026-10-09' }, 'Leanny');
+  assert.equal(r.ok, true);
+  assert.match(r.resumen, /cambió la visita/);
+});
+caso('no se coordina una locación ya levantada', () => {
+  assert.equal(aplicarAccionCliente('coordinar', { fecha: '2026-10-12' }, { levantado_at: '2026-09-07' }).ok, false);
 });
 caso('el supervisor pide nombre y un contacto', () => {
   assert.equal(aplicarAccionCliente('supervisor', { nombre: '' }, {}).ok, false);
@@ -113,6 +125,30 @@ caso('las notas internas del levantamiento NO salen', () => {
 });
 caso('sin visita no hay ficha de levantamiento', () => {
   assert.equal(levantamientoParaCliente(null), null);
+});
+
+// --- desde cuándo y documentos
+caso('la locación dice desde cuándo está en su etapa', () => {
+  const l = locacionParaCliente({ id: 'x', nombre: 'X', luz_verde: true, levantado_at: '2026-09-07', cotizacion_ref: 'ST-C1', cotizado_at: '2026-09-08T10:00:00Z' }, null);
+  assert.equal(l.etapa, 'cotizado');
+  assert.equal(l.etapaDesde, '2026-09-08T10:00:00Z');
+  assert.ok(l.diasEnEtapa >= 0);
+});
+caso('la fecha de ejecución sale del historial de la obra', () => {
+  const l = locacionParaCliente({ id: 'x', nombre: 'X' }, { estado: 'en_ejecucion' }, [{ estado_nuevo: 'en_ejecucion', created_at: '2026-10-06T13:00:00Z' }]);
+  assert.equal(l.etapaDesde, '2026-10-06T13:00:00Z');
+});
+caso('el portal solo acepta documentos razonables', () => {
+  assert.equal(validarDocumento({ tipo: 'oc', nombre: 'OC.pdf', mime: 'application/pdf', tamano: 200000 }), null);
+  assert.ok(validarDocumento({ tipo: 'oc', nombre: 'x.exe', mime: 'application/x-msdownload', tamano: 10 }));
+  assert.ok(validarDocumento({ tipo: 'oc', nombre: 'grande.pdf', mime: 'application/pdf', tamano: 20 * 1024 * 1024 }));
+  assert.ok(validarDocumento({ tipo: 'virus', nombre: 'a.pdf', mime: 'application/pdf', tamano: 10 }));
+});
+caso('la ruta del archivo no deja colar carpetas ni acentos raros', () => {
+  const r = rutaDocumento('pl_15', 'oc', 'pd_1', '../../OC Señal Ñ#4.pdf');
+  assert.match(r, /^programas\/pl_15\/oc\/pd_1_/);
+  assert.equal(r.includes('..'), false);
+  assert.equal(r.includes('/', 'programas/pl_15/oc/'.length), false);
 });
 
 console.log(`\n${ok} pasadas, ${fallos.length} fallidas`);

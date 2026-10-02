@@ -19,7 +19,7 @@ async function sincronizar(db, programa, filas) {
     const cliente = programa.cliente_nombre;
     if (!cliente) return false;
     const { data: proysSurvey } = await db.schema('surveys').from('projects')
-      .select('id, realizado_at, cotizado_at').ilike('client_name', `%${cliente}%`);
+      .select('id, realizado_at, cotizado_at, fecha_visita_programada, hora_visita').ilike('client_name', `%${cliente}%`);
     const ids = (proysSurvey || []).map(p => p.id);
     let levantamientos = [];
     if (ids.length) {
@@ -29,6 +29,7 @@ async function sincronizar(db, programa, filas) {
       levantamientos = (sites || []).map(s => ({
         id: s.project_id, siteNombre: s.name, lat: s.latitude, lng: s.longitude, referenciaOdoo: s.referencia_odoo,
         realizadoAt: porId.get(s.project_id)?.realizado_at, cotizadoAt: porId.get(s.project_id)?.cotizado_at,
+      fechaVisita: porId.get(s.project_id)?.fecha_visita_programada, horaVisita: porId.get(s.project_id)?.hora_visita,
       }));
     }
     const { data: obrasRaw } = await db.from('proyectos')
@@ -39,12 +40,14 @@ async function sincronizar(db, programa, filas) {
       id: l.id, codigoUt: l.codigo_ut, nombre: l.nombre, lat: l.lat, lng: l.lng,
       levantamientoId: l.levantamiento_id, levantadoAt: l.levantado_at, proyectoId: l.proyecto_id,
       cotizacionRef: l.cotizacion_ref, cotizacionMonto: l.cotizacion_monto, cotizacionAprobada: l.cotizacion_aprobada, luzVerde: l.luz_verde,
+      fechaVisita: l.fecha_visita, cotizadoAt: l.cotizado_at,
     }));
     const cambios = amarrarLocaciones(locs, levantamientos, obras);
     const mapa = {
       levantamientoId: 'levantamiento_id', levantadoAt: 'levantado_at', cotizacionRef: 'cotizacion_ref',
       cotizacionMonto: 'cotizacion_monto', cotizacionAprobada: 'cotizacion_aprobada', proyectoId: 'proyecto_id',
-      luzVerde: 'luz_verde', luzVerdePor: 'luz_verde_por',
+      luzVerde: 'luz_verde', luzVerdePor: 'luz_verde_por', fechaVisita: 'fecha_visita', horaVisita: 'hora_visita',
+      cotizadoAt: 'cotizado_at',
     };
     for (const { id, campos } of cambios) {
       const u = { updated_at: new Date().toISOString() };
@@ -62,11 +65,16 @@ async function cargar(db, programa) {
   if (await sincronizar(db, programa, filas || [])) ({ data: filas } = await leer());
   const idsObra = [...new Set((filas || []).map(f => f.proyecto_id).filter(Boolean))];
   let obras = new Map();
+  const historial = new Map();
   if (idsObra.length) {
-    const { data } = await db.from('proyectos').select('id, estado, fecha_inicio').in('id', idsObra);
+    const [{ data }, { data: hist }] = await Promise.all([
+      db.from('proyectos').select('id, estado, fecha_inicio').in('id', idsObra),
+      db.from('historial_estados').select('proyecto_id, estado_nuevo, created_at').in('proyecto_id', idsObra),
+    ]);
     obras = new Map((data || []).map(o => [o.id, o]));
+    (hist || []).forEach(h => { (historial.get(h.proyecto_id) || historial.set(h.proyecto_id, []).get(h.proyecto_id)).push(h); });
   }
-  return armarPortal(programa, filas || [], obras);
+  return armarPortal(programa, filas || [], obras, historial);
 }
 
 export async function GET(request, { params }) {

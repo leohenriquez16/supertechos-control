@@ -18,11 +18,30 @@ export async function GET(request, { params }) {
   if (!fila) return Response.json({ ok: false, error: 'Locación no encontrada.' }, { status: 404 });
 
   let obra = null;
+  let historialObra = [];
   if (fila.proyecto_id) {
-    const { data } = await db.from('proyectos').select('id, estado, fecha_inicio').eq('id', fila.proyecto_id).maybeSingle();
+    const [{ data }, { data: hist }] = await Promise.all([
+      db.from('proyectos').select('id, estado, fecha_inicio').eq('id', fila.proyecto_id).maybeSingle(),
+      db.from('historial_estados').select('estado_nuevo, created_at').eq('proyecto_id', fila.proyecto_id),
+    ]);
     obra = data || null;
+    historialObra = hist || [];
   }
-  const locacion = locacionParaCliente(fila, obra);
+  const locacion = locacionParaCliente(fila, obra, historialObra);
+
+  // Documentos visibles para el cliente (OC, cotización, informe…), con enlace de 1 hora
+  const { data: docs } = await db.from('programa_documentos')
+    .select('id, tipo, nombre, path, mime, tamano_bytes, origen, subido_por, created_at')
+    .eq('locacion_id', fila.id).eq('visible_cliente', true).order('created_at', { ascending: false });
+  let documentos = [];
+  if (docs?.length) {
+    const { data: firm } = await db.storage.from('proyecto-archivos').createSignedUrls(docs.map(d => d.path), VENCE_SEG);
+    const url = new Map((firm || []).filter(x => x.signedUrl).map(x => [x.path, x.signedUrl]));
+    documentos = docs.map(d => ({
+      id: d.id, tipo: d.tipo, nombre: d.nombre, mime: d.mime, tamanoBytes: d.tamano_bytes,
+      origen: d.origen, subidoPor: d.subido_por || '', fecha: d.created_at, url: url.get(d.path) || null,
+    }));
+  }
 
   let levantamiento = null;
   if (fila.levantamiento_id) {
@@ -50,5 +69,5 @@ export async function GET(request, { params }) {
       }
     }
   }
-  return Response.json({ ok: true, locacion, levantamiento });
+  return Response.json({ ok: true, locacion, levantamiento, documentos });
 }

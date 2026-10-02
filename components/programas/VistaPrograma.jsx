@@ -11,10 +11,13 @@
 
 import React, { useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { ArrowLeft, Check, Clock, MapPin, Loader2, Route, LayoutGrid, Search } from 'lucide-react';
+import { ArrowLeft, Check, Clock, MapPin, Loader2, Route, LayoutGrid, Search, Lock, Ruler, FileText, CalendarDays, Wrench, ClipboardCheck, CheckCircle2 } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatRD } from '../../lib/helpers/formato';
-import { ETAPAS, ETAPA, COLOR_ETAPA, resumenPrograma, pendientesDelCliente, agruparPorZona } from '../../lib/helpers/programaSites';
+import { ETAPAS, ETAPA, FASES, COLOR_ETAPA, turnoDe, resumenPrograma, pendientesDelCliente, agruparPorZona } from '../../lib/helpers/programaSites';
+
+// v8.59.0: un icono por etapa, para distinguirlas sin leer el texto.
+const ICONO = { lock: Lock, 'map-pin': MapPin, ruler: Ruler, file: FileText, calendar: CalendarDays, tool: Wrench, clipboard: ClipboardCheck, check: CheckCircle2 };
 
 const MapaPrograma = dynamic(() => import('./MapaPrograma'), { ssr: false, loading: () => <div className="h-[420px] grid place-items-center text-zinc-500 text-xs">Cargando mapa…</div> });
 
@@ -40,8 +43,19 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, onVo
   const zonas = useMemo(() => agruparPorZona(filtradas.filter(l => ['por_levantar', 'por_programar'].includes(l.etapa)), 8), [filtradas]);
 
   const marcarLuzVerde = async (loc, valor) => {
+    // v8.59.0: confirmar en los dos sentidos — un clic suelto movía la locación de etapa.
+    const msg = valor
+      ? `¿El propietario de ${loc.nombre} ya autorizó el acceso?\n\nPasa a "Por levantar".`
+      : `¿Quitar la luz verde de ${loc.nombre}?\n\nVuelve a "Sin luz verde".`;
+    if (!confirm(msg)) return;
     setGuardando(loc.id);
-    try { await db.actualizarLocacionPrograma(loc.id, { luzVerde: valor, luzVerdeAt: valor ? new Date().toISOString() : null }); await onRecargar?.(); }
+    try {
+      await db.actualizarLocacionPrograma(loc.id, {
+        luzVerde: valor, luzVerdeAt: valor ? new Date().toISOString() : null,
+        luzVerdePor: valor ? `${usuario?.nombre || 'ERP'} (ERP)` : null,
+      });
+      await onRecargar?.();
+    }
     catch (e) { alert('Error: ' + (e.message || e)); }
     setGuardando(null);
   };
@@ -99,6 +113,22 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, onVo
         </div>
       </div>
 
+      {/* v8.59.0: enlace del portal del cliente */}
+      {programa?.codigoPublico && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 flex items-center gap-2 flex-wrap text-[11px]">
+          <span className="text-zinc-400 font-bold uppercase tracking-widest">Portal del cliente</span>
+          <code className="text-zinc-200 bg-zinc-950 border border-zinc-800 rounded px-2 py-1 select-all break-all">
+            {typeof window !== 'undefined' ? window.location.origin : ''}/programa/{programa.codigoPublico}
+          </code>
+          <button onClick={async () => {
+            const url = `${window.location.origin}/programa/${programa.codigoPublico}`;
+            try { await navigator.clipboard.writeText(url); alert('Enlace copiado. La clave se la das aparte.'); } catch { prompt('Copia el enlace:', url); }
+          }} className="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold uppercase rounded-card">Copiar enlace</button>
+          <a href={`/programa/${programa.codigoPublico}`} target="_blank" rel="noreferrer" className="underline text-zinc-400 hover:text-white">Ver como el cliente</a>
+          <span className="text-zinc-600">La clave no se muestra aquí por seguridad.</span>
+        </div>
+      )}
+
       {/* Lo que el cliente tiene trancado */}
       {(pendCliente.sinLuzVerde.length > 0 || pendCliente.cotizacionesPorAprobar.length > 0) && (
         <div className="bg-amber-950/20 border border-amber-800 rounded-card p-3 text-[11px] text-amber-200">
@@ -123,54 +153,69 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, onVo
       </div>
 
       {tab === 'tablero' && (
-        <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-4">
-          {ETAPAS.map(e => {
-            const lista = porEtapa[e.id] || [];
-            return (
-              <div key={e.id} className="bg-zinc-900 border border-zinc-800 rounded-card p-2.5 space-y-2">
-                <div className="flex items-center justify-between">
-                  <Chip color={COLOR_ETAPA[e.id]}>{e.label}</Chip>
-                  <span className="text-[11px] text-zinc-500 font-bold">{lista.length}</span>
-                </div>
-                <div className="text-[10px] text-zinc-600">{e.detalle}</div>
-                <div className="space-y-1.5 max-h-[420px] overflow-y-auto">
-                  {lista.map(l => (
-                    <div key={l.id} className="bg-zinc-950 border border-zinc-800 rounded-card p-2">
-                      <div className="text-[11px] font-bold text-zinc-100 truncate">{l.nombre}</div>
-                      <div className="text-[10px] text-zinc-500 truncate">{l.codigoUt}{l.sector ? ` · ${l.sector}` : ''}</div>
-                      {l.cotizacionRef && (
-                        <div className="text-[10px] text-zinc-400 mt-0.5">
-                          {l.cotizacionRef}{l.cotizacionMonto ? ` · ${formatRD(l.cotizacionMonto)}` : ''}
-                        </div>
-                      )}
-                      <div className="flex items-center gap-2 mt-1.5">
-                        {e.id === 'sin_luz_verde' && (
-                          <button onClick={() => marcarLuzVerde(l, true)} disabled={guardando === l.id}
-                            className="text-[10px] font-bold uppercase px-2 py-1 bg-amber-700 hover:bg-amber-600 text-white rounded-card flex items-center gap-1">
-                            {guardando === l.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />} Luz verde
-                          </button>
-                        )}
-                        {e.id === 'por_levantar' && !l.levantamientoId && (
-                          <button onClick={() => agendarLevantamiento(l)} disabled={guardando === l.id}
-                            className="text-[10px] font-bold uppercase px-2 py-1 bg-sky-700 hover:bg-sky-600 text-white rounded-card flex items-center gap-1">
-                            {guardando === l.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <MapPin className="w-3 h-3" />} Agendar levantamiento
-                          </button>
-                        )}
-                        {e.id === 'por_levantar' && l.levantamientoId && (
-                          <span className="text-[10px] text-sky-400">Levantamiento creado · falta la visita</span>
-                        )}
-                        {l.proyectoId && onAbrirProyecto && (
-                          <button onClick={() => onAbrirProyecto(l.proyectoId)} className="text-[10px] underline text-zinc-400 hover:text-white">ver obra</button>
-                        )}
-                        {l.supervisorClienteNombre && <span className="text-[10px] text-zinc-600 truncate">👤 {l.supervisorClienteNombre}</span>}
+        <div className="grid gap-3 lg:grid-cols-3 xl:grid-cols-5">
+          {FASES.map((fase, nf) => (
+            <div key={fase.id} className="space-y-2">
+              <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold px-1">{nf + 1} · {fase.label}</div>
+              {ETAPAS.filter(e => e.fase === fase.id).map(e => {
+                const lista = porEtapa[e.id] || [];
+                const Icono = ICONO[e.icono] || Clock;
+                const color = COLOR_ETAPA[e.id];
+                return (
+                  <div key={e.id} className="bg-zinc-900 rounded-card p-2.5 space-y-2" style={{ border: `1px solid ${color}55`, borderTop: `3px solid ${color}` }}>
+                    <div className="flex items-start gap-2">
+                      <Icono className="w-4 h-4 shrink-0 mt-0.5" style={{ color }} />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[12px] font-black leading-tight" style={{ color }}>{e.label}</div>
+                        <div className="text-[10px] text-zinc-500 leading-snug">{e.detalle}</div>
                       </div>
+                      <span className="text-sm font-black text-zinc-200">{lista.length}</span>
                     </div>
-                  ))}
-                  {lista.length === 0 && <div className="text-[10px] text-zinc-700 py-2 text-center">—</div>}
-                </div>
-              </div>
-            );
-          })}
+                    <div className={`text-[9px] font-bold uppercase tracking-wide ${e.deQuien === 'cliente' ? 'text-amber-400' : e.deQuien === 'nosotros' ? 'text-sky-400' : 'text-zinc-500'}`}>{turnoDe(e.id)}</div>
+                    <div className="space-y-1.5 max-h-[360px] overflow-y-auto">
+                      {lista.map(l => (
+                        <div key={l.id} className="bg-zinc-950 border border-zinc-800 rounded-card p-2">
+                          <div className="text-[11px] font-bold text-zinc-100 truncate">{l.nombre}</div>
+                          <div className="text-[10px] text-zinc-500 truncate">{l.codigoUt}{l.sector ? ` · ${l.sector}` : ''}</div>
+                          {l.cotizacionRef && (
+                            <div className="text-[10px] text-zinc-400 mt-0.5">
+                              {l.cotizacionRef}{l.cotizacionMonto ? ` · ${formatRD(l.cotizacionMonto)}` : ''}
+                            </div>
+                          )}
+                          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                            {e.id === 'sin_luz_verde' && (
+                              <button onClick={() => marcarLuzVerde(l, true)} disabled={guardando === l.id}
+                                className="text-[10px] font-bold uppercase px-2 py-1 bg-amber-700 hover:bg-amber-600 text-white rounded-card flex items-center gap-1">
+                                {guardando === l.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />} Luz verde
+                              </button>
+                            )}
+                            {e.id === 'por_levantar' && !l.levantamientoId && (
+                              <button onClick={() => agendarLevantamiento(l)} disabled={guardando === l.id}
+                                className="text-[10px] font-bold uppercase px-2 py-1 bg-sky-700 hover:bg-sky-600 text-white rounded-card flex items-center gap-1">
+                                {guardando === l.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <MapPin className="w-3 h-3" />} Agendar levantamiento
+                              </button>
+                            )}
+                            {e.id === 'por_levantar' && !l.levantamientoId && (
+                              <button onClick={() => marcarLuzVerde(l, false)} disabled={guardando === l.id}
+                                className="text-[10px] underline text-zinc-500 hover:text-white">deshacer luz verde</button>
+                            )}
+                            {e.id === 'por_levantar' && l.levantamientoId && (
+                              <span className="text-[10px] text-sky-400">Levantamiento creado · falta la visita</span>
+                            )}
+                            {l.proyectoId && onAbrirProyecto && (
+                              <button onClick={() => onAbrirProyecto(l.proyectoId)} className="text-[10px] underline text-zinc-400 hover:text-white">ver obra</button>
+                            )}
+                            {l.supervisorClienteNombre && <span className="text-[10px] text-zinc-600 truncate">👤 {l.supervisorClienteNombre}</span>}
+                          </div>
+                        </div>
+                      ))}
+                      {lista.length === 0 && <div className="text-[10px] text-zinc-700 py-1 text-center">—</div>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
         </div>
       )}
 

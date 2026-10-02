@@ -5,6 +5,8 @@ import { ArrowLeft, ChevronDown, FileText, Loader2, Plus, Save, Trash2, X, Walle
 import * as db from '../../lib/db';
 import { formatRD, formatFecha, formatFechaCorta, formatNum } from '../../lib/helpers/formato';
 import { getM2Reporte, calcAvanceProyecto } from '../../lib/helpers/calculos';
+import { chequearNomina } from '../../lib/helpers/chequeoNomina';
+import PanelListoNomina from './PanelListoNomina';
 import Campo from '../common/Campo';
 import Input from '../common/Input';
 
@@ -1354,6 +1356,9 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
   const [detalle, setDetalle] = useState([]);
   const [loading, setLoading] = useState(true);
   const [jornadasCorte, setJornadasCorte] = useState([]);
+  // v8.57.0: costos/día por obra+persona — los usa el semáforo "Listo para nómina"
+  // para avisar de quien trabajó en una obra que paga por día sin tarifa configurada.
+  const [costosDiaCorte, setCostosDiaCorte] = useState({});
   const [ajustes, setAjustes] = useState([]);
   const [ajusteModal, setAjusteModal] = useState(null);
   const [vistaDetalle, setVistaDetalle] = useState('persona'); // persona | proyecto | supervisor | recibos
@@ -1444,6 +1449,20 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
         .map(j => ({ ...j, proyecto: proyectosPorId.get(j.proyectoId) }))
         .filter(j => j.proyecto); // solo proyectos visibles (no archivados)
       setJornadasCorte(todasJornadas);
+      // v8.57.0: costos/día de las obras tocadas en el periodo (reportes o jornadas)
+      const obrasPeriodo = [...new Set([
+        ...todasJornadas.map(j => j.proyectoId),
+        ...(data.reportes || []).filter(r => r.fecha >= corte.fechaInicio && r.fecha <= corte.fechaFin).map(r => r.proyectoId),
+      ])].filter(Boolean);
+      const costos = {};
+      await Promise.all(obrasPeriodo.map(async pid => {
+        try {
+          const lista = await db.listarCostosDia(pid);
+          costos[pid] = {};
+          lista.forEach(c => { costos[pid][c.personaId] = { costoDia: c.costoDia, precioM2: c.precioM2, modoPago: c.modoPago }; });
+        } catch {}
+      }));
+      setCostosDiaCorte(costos);
       // Si no hay detalle guardado, calcular preview
       if (det.length === 0 && corte.estado === 'abierto') {
         setDetalle(await calcularDetalle(todasJornadas, data, corte, ajPeriodo));
@@ -1465,6 +1484,12 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
   // que el dashboard también pueda computar el live total del corte abierto.
 
   const totalCorte = detalle.reduce((s, d) => s + (d.montoTotal || 0), 0);
+
+  // v8.57.0: semáforo "Listo para nómina" — solo tiene sentido mientras el corte está abierto.
+  const chequeo = React.useMemo(() => {
+    if (corte.estado !== 'abierto' || loading) return null;
+    return chequearNomina({ corte, data, jornadas: jornadasCorte, detalle, costosDia: costosDiaCorte });
+  }, [corte, data, jornadasCorte, detalle, costosDiaCorte, loading]);
 
   // v8.27.77 (ticket Miguel "m² duplicados entre quincenas"): detectar reportes del corte
   // que parecen REPETIR trabajo ya reportado antes del corte (misma obra + área + tarea y
@@ -1516,6 +1541,12 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
     alert('Detalle guardado');
   };
   const cerrar = async () => {
+    // v8.57.0: no se cierra a ciegas si el semáforo marca bloqueantes.
+    if (chequeo?.bloqueantes > 0) {
+      const lista = chequeo.alertas.filter(a => a.severidad === 'bloqueante').slice(0, 6).map(a => '• ' + a.titulo).join('\n');
+      const mas = chequeo.bloqueantes > 6 ? `\n…y ${chequeo.bloqueantes - 6} más` : '';
+      if (!confirm(`⚠ Hay ${chequeo.bloqueantes} cosa(s) sin resolver:\n\n${lista}${mas}\n\nSi cierras así, alguien cobra de menos o de más.\n\n¿Cerrar de todos modos?`)) return;
+    }
     if (!confirm('¿Cerrar el corte? Los ajustes del periodo quedarán asociados.')) return;
     await db.guardarDetalleCorte(detalle);
     await db.cerrarCorte(corte.id, usuario.id, totalCorte);
@@ -2112,6 +2143,9 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
           </div>
         ))}</div>}
       </div>
+
+      {/* v8.57.0: semáforo "Listo para nómina" */}
+      {corte.estado === 'abierto' && <PanelListoNomina resultado={chequeo} cargando={loading} />}
 
       {/* v8.27.77: posibles m² duplicados de la quincena anterior (ticket Miguel)
           v8.50.3: + exclusión MANUAL de cualquier reporte del corte (caso Despertar:

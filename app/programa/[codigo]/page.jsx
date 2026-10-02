@@ -70,7 +70,28 @@ const CSS = `
 .pp-modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:grid;place-items:center;padding:16px;z-index:50}
 .pp-modal .pp-card{width:100%;max-width:440px}
 .pp-pie{margin-top:36px;color:var(--muted);font-size:.78rem;text-align:center}
-@media (max-width:560px){.pp-tl-l{display:none}.pp-fila{flex-wrap:wrap}}
+.pp-ficha{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:40;overflow-y:auto;padding:16px}
+.pp-ficha-in{max-width:860px;margin:0 auto;background:var(--paper);border-radius:16px;overflow:hidden}
+.pp-ficha-cab{background:#fff;padding:18px 20px;border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:flex-start}
+.pp-ficha-cuerpo{padding:18px 20px;display:grid;gap:14px}
+.pp-pasos{display:grid;gap:0}
+.pp-paso{display:grid;grid-template-columns:22px 1fr auto;gap:10px;align-items:center;padding:6px 0;font-size:.88rem}
+.pp-paso .pp-pt{width:14px;height:14px;border-radius:50%;border:2px solid #CFCAC3;background:#fff;margin:0 auto}
+.pp-paso.hecho .pp-pt{border-color:var(--c);background:var(--c)}
+.pp-paso.actual .pp-pt{border-color:var(--c);box-shadow:0 0 0 4px color-mix(in srgb, var(--c) 22%, transparent)}
+.pp-paso.actual{font-weight:800}
+.pp-paso.pend{color:var(--muted)}
+.pp-galeria{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px}
+.pp-galeria button{border:none;padding:0;background:#E9E6E1;border-radius:10px;overflow:hidden;cursor:zoom-in;aspect-ratio:4/3;position:relative}
+.pp-galeria img{width:100%;height:100%;object-fit:cover;display:block}
+.pp-galeria .pp-crit{position:absolute;top:6px;left:6px;background:var(--red);color:#fff;font-size:.65rem;font-weight:800;padding:2px 6px;border-radius:6px}
+.pp-lb{position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:60;display:grid;place-items:center;padding:16px}
+.pp-lb img{max-width:100%;max-height:78vh;border-radius:8px}
+.pp-lb-bar{color:#fff;display:flex;gap:10px;align-items:center;justify-content:center;margin-top:10px;font-size:.9rem;flex-wrap:wrap}
+.pp-tabla{width:100%;border-collapse:collapse;font-size:.88rem}
+.pp-tabla td{padding:7px 0;border-bottom:1px solid var(--line)}
+.pp-tabla td:last-child{text-align:right;font-variant-numeric:tabular-nums;font-weight:700}
+@media (max-width:560px){.pp-tl-l{display:none}.pp-fila{flex-wrap:wrap}.pp-ficha{padding:0}.pp-ficha-in{border-radius:0}}
 @media (prefers-reduced-motion:no-preference){.pp-btn,.pp-tab{transition:background .15s,opacity .15s}}
 `;
 
@@ -90,6 +111,11 @@ export default function PortalPrograma() {
   const [modal, setModal] = useState(null); // { tipo, loc }
   const [form, setForm] = useState({});
   const [enviando, setEnviando] = useState(false);
+  // v8.59.1: ficha completa de un sitio (datos, línea de tiempo, áreas y fotos)
+  const [ficha, setFicha] = useState(null);       // locación abierta
+  const [fichaData, setFichaData] = useState(null);
+  const [fichaCargando, setFichaCargando] = useState(false);
+  const [fotoGrande, setFotoGrande] = useState(null); // índice en la galería
 
   const llave = `portal-${codigo}`;
   useEffect(() => {
@@ -128,6 +154,16 @@ export default function PortalPrograma() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const abrirFicha = async (loc) => {
+    setFicha(loc); setFichaData(null); setFichaCargando(true); setFotoGrande(null);
+    try {
+      const r = await fetch(`/api/programa/${codigo}/locacion/${loc.id}`, { headers: { 'x-clave': clave } });
+      const j = await r.json();
+      if (j.ok) setFichaData(j); else setError(j.error || 'No se pudo abrir la ficha.');
+    } catch { setError('Sin conexión. Intenta de nuevo.'); }
+    setFichaCargando(false);
+  };
+
   const accion = async (tipo, loc, datos = {}) => {
     setEnviando(true); setError(''); setAviso('');
     try {
@@ -138,7 +174,10 @@ export default function PortalPrograma() {
       });
       const j = await r.json();
       if (!j.ok) setError(j.error || 'No se pudo guardar.');
-      else { setData(j); setAviso(`Listo: ${loc.nombre} — ${j.mensaje}. Super Techos ya recibió el aviso.`); setModal(null); setForm({}); }
+      else {
+        setData(j); setAviso(`Listo: ${loc.nombre} — ${j.mensaje}. Super Techos ya recibió el aviso.`); setModal(null); setForm({});
+        if (ficha && ficha.id === loc.id) { const nueva = (j.locaciones || []).find(x => x.id === loc.id); if (nueva) abrirFicha(nueva); }
+      }
     } catch { setError('Sin conexión. Intenta de nuevo.'); }
     setEnviando(false);
   };
@@ -277,7 +316,7 @@ export default function PortalPrograma() {
 
         {tab === 'mapa' && (
           <div className="pp-card" style={{ padding: 8 }}>
-            <MapaPrograma locaciones={data.locaciones} alto={460} onSeleccionar={(l) => { setTab('lista'); setFiltro('todas'); setBuscar(l.nombre); setAbierta(l.id); }} />
+            <MapaPrograma locaciones={data.locaciones} alto={460} onSeleccionar={(l) => abrirFicha(l)} />
           </div>
         )}
 
@@ -295,8 +334,8 @@ export default function PortalPrograma() {
               const ab = abierta === l.id;
               return (
                 <div className="pp-loc" key={l.id}>
-                  <div className="pp-loc-cab" onClick={() => setAbierta(ab ? null : l.id)} role="button" tabIndex={0}
-                    onKeyDown={e => { if (e.key === 'Enter') setAbierta(ab ? null : l.id); }}>
+                  <div className="pp-loc-cab" onClick={() => abrirFicha(l)} role="button" tabIndex={0}
+                    onKeyDown={e => { if (e.key === 'Enter') abrirFicha(l); }}>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontWeight: 800 }}>{l.nombre}</div>
                       <div style={{ color: 'var(--muted)', fontSize: '.8rem' }}>{l.codigoUt}{l.tipoTrabajo !== 'techo' ? ` · ${l.tipoTrabajo === 'pintura' ? 'Pintura' : 'Techo y pintura'}` : ''}</div>
@@ -309,26 +348,7 @@ export default function PortalPrograma() {
                     {etapas.map((e, i) => <div key={e.id} style={{ background: i <= idx ? COLOR[l.etapa] : undefined }} />)}
                   </div>
                   <div className="pp-tl-l" aria-hidden="true">{etapas.map(e => <span key={e.id}>{e.label}</span>)}</div>
-                  {ab && (
-                    <>
-                      <dl className="pp-det">
-                        <div><dt>Dirección</dt><dd>{l.direccion || '—'}</dd></div>
-                        <div><dt>Autorización del propietario</dt><dd>{l.luzVerde ? `Sí${l.luzVerdeAt ? ` · ${fmtF(l.luzVerdeAt)}` : ''}${l.luzVerdePor ? ` · ${l.luzVerdePor}` : ''}` : 'Pendiente'}</dd></div>
-                        <div><dt>Levantamiento</dt><dd>{l.levantadoAt ? `Realizado · ${fmtF(l.levantadoAt)}` : 'Pendiente'}</dd></div>
-                        <div><dt>Cotización</dt><dd>{l.cotizacionRef ? `${l.cotizacionRef} · ${fmtRD(l.cotizacionMonto)}${l.cotizacionAprobada ? ' · Aprobada' : ''}` : 'Pendiente'}</dd></div>
-                        <div><dt>Inicio de obra</dt><dd>{l.inicioObra ? fmtF(l.inicioObra + 'T12:00:00') : '—'}</dd></div>
-                        <div><dt>Supervisor de ustedes</dt><dd>{l.supervisorClienteNombre ? `${l.supervisorClienteNombre}${l.supervisorClienteTelefono ? ` · ${l.supervisorClienteTelefono}` : ''}` : 'Sin asignar'}</dd></div>
-                      </dl>
-                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
-                        {!l.luzVerde && <button className="pp-btn prim" onClick={() => setModal({ tipo: 'luz_verde', loc: l })}>Autorizado por el propietario</button>}
-                        {l.etapa === 'cotizado' && <button className="pp-btn ok" onClick={() => setModal({ tipo: 'aprobar_cotizacion', loc: l })}>Aprobar cotización</button>}
-                        <button className="pp-btn sec" onClick={() => { setModal({ tipo: 'supervisor', loc: l }); setForm({ nombre: l.supervisorClienteNombre, telefono: l.supervisorClienteTelefono, email: l.supervisorClienteEmail }); }}>
-                          {l.supervisorClienteNombre ? 'Cambiar supervisor' : 'Asignar supervisor'}
-                        </button>
-                        <button className="pp-btn sec" onClick={() => { setModal({ tipo: 'comentario', loc: l }); setForm({}); }}>Escribir un comentario</button>
-                      </div>
-                    </>
-                  )}
+                  <div style={{ marginTop: 6 }}><button className="pp-btn sec" style={{ padding: '6px 12px', fontSize: '.8rem' }} onClick={() => abrirFicha(l)}>Ver ficha completa</button></div>
                 </div>
               );
             })}
@@ -338,6 +358,126 @@ export default function PortalPrograma() {
 
         <p className="pp-pie">Super Techos · 809-535-9293 · Este portal se actualiza con el avance real de cada obra.</p>
       </div>
+
+      {ficha && (() => {
+        const l = (data.locaciones || []).find(x => x.id === ficha.id) || ficha;
+        const idx = ordenEtapa[l.etapa] ?? 0;
+        const lev = fichaData?.levantamiento;
+        const fechaDe = (e) => ({
+          sin_luz_verde: null, por_levantar: l.luzVerdeAt, levantado: l.levantadoAt,
+          cotizado: l.levantadoAt && l.cotizacionRef ? null : null, por_programar: l.cotizacionAprobadaAt,
+          en_ejecucion: l.inicioObra ? l.inicioObra + 'T12:00:00' : null,
+        })[e];
+        return (
+          <div className="pp-ficha" onClick={() => setFicha(null)}>
+            <div className="pp-ficha-in" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Ficha de ${l.nombre}`}>
+              <div className="pp-ficha-cab">
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 800, fontSize: '1.2rem', lineHeight: 1.2 }}>{l.nombre}</div>
+                  <div style={{ color: 'var(--muted)', fontSize: '.85rem' }}>{l.codigoUt}{l.tipoTrabajo !== 'techo' ? ` · ${l.tipoTrabajo === 'pintura' ? 'Pintura' : 'Techo y pintura'}` : ' · Impermeabilización'}</div>
+                  <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <span className="pp-chip" style={{ background: `${COLOR[l.etapa]}1F`, color: COLOR[l.etapa] }}>
+                      <i style={{ width: 7, height: 7, borderRadius: '50%', background: COLOR[l.etapa], display: 'inline-block' }} />{etapaLabel[l.etapa]}
+                    </span>
+                    <span style={{ fontSize: '.8rem', color: 'var(--muted)' }}>{(data.etapas.find(e => e.id === l.etapa) || {}).detalle}</span>
+                  </div>
+                </div>
+                <button className="pp-btn sec" onClick={() => setFicha(null)} aria-label="Cerrar ficha">Cerrar</button>
+              </div>
+
+              <div className="pp-ficha-cuerpo">
+                <div className="pp-grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))' }}>
+                  <div className="pp-card">
+                    <div style={{ fontWeight: 800, marginBottom: 6 }}>Estado del sitio</div>
+                    <div className="pp-pasos">
+                      {data.etapas.map((e, i) => {
+                        const cls = i < idx ? 'hecho' : i === idx ? 'actual' : 'pend';
+                        const f = i <= idx ? fechaDe(e.id) : null;
+                        return (
+                          <div key={e.id} className={`pp-paso ${cls}`} style={{ '--c': COLOR[l.etapa] }}>
+                            <div className="pp-pt" />
+                            <div>{e.label}</div>
+                            <div style={{ color: 'var(--muted)', fontSize: '.78rem' }}>{f ? fmtF(f) : ''}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div className="pp-card">
+                    <div style={{ fontWeight: 800, marginBottom: 6 }}>Datos</div>
+                    <dl className="pp-det" style={{ gridTemplateColumns: '1fr', marginTop: 0 }}>
+                      <div><dt>Dirección</dt><dd>{l.direccion || '—'}</dd></div>
+                      <div><dt>Autorización del propietario</dt><dd>{l.luzVerde ? `Sí${l.luzVerdeAt ? ` · ${fmtF(l.luzVerdeAt)}` : ''}${l.luzVerdePor ? ` · ${l.luzVerdePor}` : ''}` : 'Pendiente'}</dd></div>
+                      <div><dt>Cotización</dt><dd>{l.cotizacionRef ? `${l.cotizacionRef} · ${fmtRD(l.cotizacionMonto)}${l.cotizacionAprobada ? ' · Aprobada' : ' · Por aprobar'}` : 'Pendiente'}</dd></div>
+                      <div><dt>Inicio de obra</dt><dd>{l.inicioObra ? fmtF(l.inicioObra + 'T12:00:00') : '—'}</dd></div>
+                      <div><dt>Supervisor de ustedes</dt><dd>{l.supervisorClienteNombre ? `${l.supervisorClienteNombre}${l.supervisorClienteTelefono ? ` · ${l.supervisorClienteTelefono}` : ''}${l.supervisorClienteEmail ? ` · ${l.supervisorClienteEmail}` : ''}` : 'Sin asignar'}</dd></div>
+                      {l.lat && l.lng && <div><dt>Ubicación</dt><dd><a href={`https://www.google.com/maps?q=${l.lat},${l.lng}`} target="_blank" rel="noreferrer" style={{ color: 'var(--red)' }}>Abrir en Google Maps</a></dd></div>}
+                    </dl>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {!l.luzVerde && <button className="pp-btn prim" onClick={() => setModal({ tipo: 'luz_verde', loc: l })}>Autorizado por el propietario</button>}
+                  {l.etapa === 'cotizado' && <button className="pp-btn ok" onClick={() => setModal({ tipo: 'aprobar_cotizacion', loc: l })}>Aprobar cotización</button>}
+                  {l.etapa === 'cotizado' && <button className="pp-btn sec" onClick={() => { setModal({ tipo: 'rechazar_cotizacion', loc: l }); setForm({}); }}>Pedir cambios</button>}
+                  <button className="pp-btn sec" onClick={() => { setModal({ tipo: 'supervisor', loc: l }); setForm({ nombre: l.supervisorClienteNombre, telefono: l.supervisorClienteTelefono, email: l.supervisorClienteEmail }); }}>
+                    {l.supervisorClienteNombre ? 'Cambiar supervisor' : 'Asignar supervisor'}
+                  </button>
+                  <button className="pp-btn sec" onClick={() => { setModal({ tipo: 'comentario', loc: l }); setForm({}); }}>Escribir un comentario</button>
+                </div>
+
+                <div className="pp-card">
+                  <div style={{ fontWeight: 800, marginBottom: 4 }}>Levantamiento</div>
+                  {fichaCargando && <div className="pp-cargando" style={{ padding: 20 }}>Cargando el levantamiento…</div>}
+                  {!fichaCargando && !lev && <div style={{ color: 'var(--muted)', fontSize: '.9rem' }}>{l.luzVerde ? 'Todavía no se ha hecho la visita. Aquí aparecerán las áreas medidas y las fotos.' : 'Se hará cuando el propietario autorice el acceso.'}</div>}
+                  {!fichaCargando && lev && (
+                    <div className="pp-grid">
+                      <div style={{ color: 'var(--muted)', fontSize: '.85rem' }}>
+                        {lev.fecha ? `Visita del ${fmtF(lev.fecha)}` : 'Visita realizada'}
+                        {lev.sistemaRecomendado ? ` · Sistema recomendado: ${lev.sistemaRecomendado}` : ''}
+                        {lev.diasEstimados ? ` · ${lev.diasEstimados} día(s) estimados de trabajo` : ''}
+                      </div>
+                      {lev.areas.length > 0 && (
+                        <table className="pp-tabla"><tbody>
+                          {lev.areas.map((a, i) => <tr key={i}><td>{a.nombre}</td><td>{a.m2 ? `${a.m2.toLocaleString('es-DO')} m²` : '—'}</td></tr>)}
+                          <tr><td style={{ fontWeight: 800 }}>Total</td><td>{lev.totalM2.toLocaleString('es-DO')} m²</td></tr>
+                        </tbody></table>
+                      )}
+                      {lev.fotos.length > 0 ? (
+                        <>
+                          <div style={{ fontWeight: 700, fontSize: '.9rem' }}>Fotos ({lev.fotos.length})</div>
+                          <div className="pp-galeria">
+                            {lev.fotos.map((f, i) => (
+                              <button key={i} onClick={() => setFotoGrande(i)} aria-label={`Ver foto: ${f.titulo}`}>
+                                <img src={f.url} alt={f.titulo} loading="lazy" />
+                                {f.critica && <span className="pp-crit">Atención</span>}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      ) : <div style={{ color: 'var(--muted)', fontSize: '.88rem' }}>Este levantamiento no tiene fotos cargadas.</div>}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {fotoGrande != null && lev?.fotos?.[fotoGrande] && (
+              <div className="pp-lb" onClick={(e) => { e.stopPropagation(); setFotoGrande(null); }}>
+                <div onClick={e => e.stopPropagation()} style={{ textAlign: 'center' }}>
+                  <img src={lev.fotos[fotoGrande].url} alt={lev.fotos[fotoGrande].titulo} />
+                  <div className="pp-lb-bar">
+                    <button className="pp-btn sec" disabled={fotoGrande === 0} onClick={() => setFotoGrande(fotoGrande - 1)}>Anterior</button>
+                    <span>{lev.fotos[fotoGrande].titulo} · {fotoGrande + 1} de {lev.fotos.length}</span>
+                    <button className="pp-btn sec" disabled={fotoGrande === lev.fotos.length - 1} onClick={() => setFotoGrande(fotoGrande + 1)}>Siguiente</button>
+                    <button className="pp-btn sec" onClick={() => setFotoGrande(null)}>Cerrar</button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {modal && (
         <div className="pp-modal" onClick={() => !enviando && setModal(null)}>

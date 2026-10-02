@@ -1,4 +1,7 @@
 // app/api/cron/reporte-diario-obras/route.js
+// v8.56.0: además del reporte de obras, el correo lleva el SEMÁFORO DE NÓMINA del corte
+// abierto (lo mismo que ve Miguel antes de cerrar), para arreglar los huecos durante la
+// quincena y no el día del pago.
 // v8.30.3: Cron diario 10:30 AM RD — reporta a la gerencia cuáles obras EN
 // EJECUCIÓN no tienen reporte de avance del día anterior (fecha tope: 10:30 am
 // del día siguiente). Si ayer fue domingo, se evalúa el sábado.
@@ -9,6 +12,7 @@
 // Protegido por `Authorization: Bearer <CRON_SECRET>` (Vercel lo envía solo).
 
 import { createClient } from '@supabase/supabase-js';
+import { chequearNomina } from '../../../../lib/helpers/chequeoNomina';
 
 export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
@@ -115,12 +119,66 @@ export async function GET(request) {
     </table>
     <p style="font-size:12px;color:#666">Regla: aprobado en Odoo = completo en el ERP el mismo día. Cuenta para el KPI "Proyectos creados completos".</p>`;
 
+  // v8.56.0: SEMÁFORO DE NÓMINA — lo mismo que ve Miguel en el corte abierto, pero por
+  // correo cada mañana, para que los huecos se arreglen durante la quincena y no el día
+  // del pago. Sin montos (el cálculo del corte vive en la app): se omiten las revisiones
+  // que dependen del monto por persona.
+  let seccionNomina = '';
+  try {
+    const { data: corteAbierto } = await supabase.from('cortes_nomina')
+      .select('id, fecha_inicio, fecha_fin').eq('estado', 'abierto')
+      .order('fecha_fin', { ascending: false }).limit(1).maybeSingle();
+    if (corteAbierto) {
+      const corteCamel = { fechaInicio: corteAbierto.fecha_inicio, fechaFin: corteAbierto.fecha_fin };
+      const [{ data: repsCorte }, { data: jorsCorte }, { data: obrasTodas }, { data: costos }] = await Promise.all([
+        supabase.from('reportes').select('id, proyecto_id, area_id, tarea_id, fecha, m2, excluir_nomina')
+          .gte('fecha', corteCamel.fechaInicio).lte('fecha', corteCamel.fechaFin),
+        supabase.from('jornadas').select('proyecto_id, fecha, personas_presentes_ids')
+          .gte('fecha', corteCamel.fechaInicio).lte('fecha', corteCamel.fechaFin),
+        supabase.from('proyectos').select('id, cliente, nombre, referencia_odoo, maestro_id, areas, modo_pago_mano_obra, precio_m2_fijo_maestro, precios_tareas_m2, precios_mano_obra_tareas, maestros_tareas, paquetes_pago').eq('archivado', false),
+        supabase.from('costos_dia_proyecto').select('proyecto_id, persona_id, costo_dia, precio_m2, modo_pago'),
+      ]);
+      const costosDia = {};
+      (costos || []).forEach(c => { (costosDia[c.proyecto_id] = costosDia[c.proyecto_id] || {})[c.persona_id] = { costoDia: c.costo_dia, precioM2: c.precio_m2, modoPago: c.modo_pago }; });
+      const chequeo = chequearNomina({
+        corte: corteCamel,
+        conMontos: false,
+        data: {
+          personal: (personal || []).map(p => ({ id: p.id, nombre: p.nombre, banco: p.banco, bancoNumeroCuenta: p.banco_numero_cuenta })),
+          proyectos: (obrasTodas || []).map(p => ({
+            id: p.id, cliente: p.cliente, nombre: p.nombre, referenciaOdoo: p.referencia_odoo,
+            maestroId: p.maestro_id, areas: p.areas || [], modoPagoManoObra: p.modo_pago_mano_obra,
+            precioM2FijoMaestro: p.precio_m2_fijo_maestro, preciosTareasM2: p.precios_tareas_m2,
+            preciosManoObraTareas: p.precios_mano_obra_tareas, maestrosTareas: p.maestros_tareas,
+            paquetesPago: p.paquetes_pago,
+          })),
+          reportes: (repsCorte || []).map(r => ({ id: r.id, proyectoId: r.proyecto_id, areaId: r.area_id, tareaId: r.tarea_id, fecha: r.fecha, m2: r.m2, excluirNomina: r.excluir_nomina })),
+        },
+        jornadas: (jorsCorte || []).map(j => ({ proyectoId: j.proyecto_id, fecha: j.fecha, personasPresentesIds: j.personas_presentes_ids || [] })),
+        costosDia,
+      });
+      const periodo = `${fmt(corteCamel.fechaInicio)} al ${fmt(corteCamel.fechaFin)}`;
+      seccionNomina = chequeo.alertas.length === 0
+        ? `<h3 style="color:#15803d;margin-top:20px">💸 Nómina lista — corte del ${periodo}</h3>
+           <p style="font-size:13px;color:#666">Nada pendiente para calcular el pago.</p>`
+        : `<h3 style="color:${chequeo.bloqueantes ? '#D71920' : '#b45309'};margin-top:20px">💸 Nómina del corte ${periodo}: ${chequeo.bloqueantes} por arreglar${chequeo.avisos ? ` · ${chequeo.avisos} aviso${chequeo.avisos === 1 ? '' : 's'}` : ''}</h3>
+           <p style="font-size:13px">Si el corte se cierra así, alguien cobra de menos o de más:</p>
+           <table style="border-collapse:collapse;width:100%;font-size:13px">
+             <tr style="background:#f3f3f3"><th style="border:1px solid #ddd;padding:6px;text-align:left">Qué pasa</th><th style="border:1px solid #ddd;padding:6px;text-align:left">Qué hay que hacer</th></tr>
+             ${chequeo.alertas.slice(0, 25).map(a => `<tr><td style="border:1px solid #ddd;padding:6px">${a.severidad === 'bloqueante' ? '🔴' : '🟡'} ${a.titulo}</td><td style="border:1px solid #ddd;padding:6px;color:#666">${a.accion}</td></tr>`).join('')}
+           </table>
+           ${chequeo.alertas.length > 25 ? `<p style="font-size:12px;color:#666">…y ${chequeo.alertas.length - 25} más en el ERP.</p>` : ''}`;
+    }
+  } catch (e) {
+    seccionNomina = '';
+  }
+
   const todoBien = faltantes.length === 0;
   const asunto = todoBien
     ? `✅ Reportes de obra al día — ${fmt(diaEval)}`
     : `⚠️ ${faltantes.length} obra${faltantes.length !== 1 ? 's' : ''} sin reporte del ${fmt(diaEval)}`;
   const html = todoBien
-    ? `<div style="font-family:Arial,sans-serif"><h2 style="color:#15803d">✅ Todas las obras en ejecución reportaron el ${fmt(diaEval)}</h2><p style="font-size:13px;color:#666">${(obras || []).length} obras en ejecución, todas con reporte. — ERP Super Techos</p>${seccionProyectos}</div>`
+    ? `<div style="font-family:Arial,sans-serif"><h2 style="color:#15803d">✅ Todas las obras en ejecución reportaron el ${fmt(diaEval)}</h2><p style="font-size:13px;color:#666">${(obras || []).length} obras en ejecución, todas con reporte. — ERP Super Techos</p>${seccionProyectos}${seccionNomina}</div>`
     : `<div style="font-family:Arial,sans-serif;max-width:680px">
         <h2 style="color:#D71920">⚠️ Obras sin reporte del ${fmt(diaEval)}</h2>
         <p style="font-size:13px">Fecha tope: 10:30 am del día siguiente. Estas obras en ejecución no tienen reporte de avance:</p>
@@ -135,6 +193,7 @@ export async function GET(request) {
         </table>
         <p style="font-size:12px;color:#666;margin-top:12px">✅ jornada sin reporte = trabajaron y no reportaron (llamar al supervisor) · ❌ sin jornada = ¿no se trabajó o no se registró? Si la obra no puede avanzar, márquenla "parado" con su razón.<br>— ERP Super Techos · ${(obras || []).length - faltantes.length}/${(obras || []).length} obras sí reportaron</p>
         ${seccionProyectos}
+        ${seccionNomina}
       </div>`;
 
   const resp = await fetch('https://api.resend.com/emails', {

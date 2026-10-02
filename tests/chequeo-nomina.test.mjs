@@ -124,5 +124,20 @@ caso('bloqueantes primero en el orden', () => {
   assert.equal(r.alertas[0].severidad, 'bloqueante');
 });
 
+
+// --- v8.56.0: modo sin montos (correo diario de las 10:30 am) ---
+const sinMontos = (extra = {}) => chequearNomina({ corte, data: base(), jornadas: [], detalle: [], conMontos: false, ...extra });
+caso('sin montos: no inventa "trabajó y le dan RD$0"', () => {
+  assert.equal(sinMontos().alertas.some(a => a.tipo === 'persona_en_cero'), false);
+});
+caso('sin montos: sigue viendo obras sin jornadas', () => {
+  assert.ok(sinMontos().alertas.find(a => a.tipo === 'obra_sin_jornadas'));
+});
+caso('sin montos: avisa del banco de quien tuvo movimiento', () => {
+  const data = base(); data.personal[0].banco = null;
+  const r = chequearNomina({ corte, data, jornadas: [], detalle: [], conMontos: false });
+  assert.ok(r.alertas.find(a => a.tipo === 'sin_datos_banco' && a.personaId === 'pablo'));
+});
+
 console.log(`\n${ok} pasadas, ${fallos.length} fallidas`);
 if (fallos.length) { fallos.forEach(f => console.log('  ✗ ' + f)); process.exit(1); }

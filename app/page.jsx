@@ -11757,7 +11757,7 @@ function PantallaProgramas({ usuario, onVolver, onAbrirProyecto }) {
           ))}
         </div>
       )}
-      <VistaPrograma programa={sel} locaciones={locaciones} onVolver={onVolver}
+      <VistaPrograma programa={sel} locaciones={locaciones} usuario={usuario} onVolver={onVolver}
         onRecargar={() => cargar(sel)} onAbrirProyecto={onAbrirProyecto} />
     </div>
   );

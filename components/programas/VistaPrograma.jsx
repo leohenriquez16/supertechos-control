@@ -24,7 +24,7 @@ const Chip = ({ color, children }) => (
   </span>
 );
 
-export default function VistaPrograma({ programa, locaciones = [], onVolver, onRecargar, onAbrirProyecto }) {
+export default function VistaPrograma({ programa, locaciones = [], usuario, onVolver, onRecargar, onAbrirProyecto }) {
   const [tab, setTab] = useState('tablero');
   const [buscar, setBuscar] = useState('');
   const [guardando, setGuardando] = useState(null);
@@ -43,6 +43,18 @@ export default function VistaPrograma({ programa, locaciones = [], onVolver, onR
     setGuardando(loc.id);
     try { await db.actualizarLocacionPrograma(loc.id, { luzVerde: valor, luzVerdeAt: valor ? new Date().toISOString() : null }); await onRecargar?.(); }
     catch (e) { alert('Error: ' + (e.message || e)); }
+    setGuardando(null);
+  };
+
+  // Crea el levantamiento ya amarrado a la locación (nace en el módulo de Levantamientos).
+  const agendarLevantamiento = async (loc) => {
+    if (!loc.luzVerde && !confirm(`${loc.nombre} todavía no tiene luz verde del propietario.\n\n¿Crear el levantamiento igual?`)) return;
+    setGuardando(loc.id);
+    try {
+      const codigo = await db.agendarLevantamientoLocacion(loc, programa, usuario);
+      await onRecargar?.();
+      alert(`Levantamiento ${codigo || ''} creado para ${loc.nombre}.\nAsígnalo y ponle fecha en Levantamientos.`);
+    } catch (e) { alert('Error: ' + (e.message || e)); }
     setGuardando(null);
   };
 
@@ -137,6 +149,15 @@ export default function VistaPrograma({ programa, locaciones = [], onVolver, onR
                             className="text-[10px] font-bold uppercase px-2 py-1 bg-amber-700 hover:bg-amber-600 text-white rounded-card flex items-center gap-1">
                             {guardando === l.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />} Luz verde
                           </button>
+                        )}
+                        {e.id === 'por_levantar' && !l.levantamientoId && (
+                          <button onClick={() => agendarLevantamiento(l)} disabled={guardando === l.id}
+                            className="text-[10px] font-bold uppercase px-2 py-1 bg-sky-700 hover:bg-sky-600 text-white rounded-card flex items-center gap-1">
+                            {guardando === l.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <MapPin className="w-3 h-3" />} Agendar levantamiento
+                          </button>
+                        )}
+                        {e.id === 'por_levantar' && l.levantamientoId && (
+                          <span className="text-[10px] text-sky-400">Levantamiento creado · falta la visita</span>
                         )}
                         {l.proyectoId && onAbrirProyecto && (
                           <button onClick={() => onAbrirProyecto(l.proyectoId)} className="text-[10px] underline text-zinc-400 hover:text-white">ver obra</button>

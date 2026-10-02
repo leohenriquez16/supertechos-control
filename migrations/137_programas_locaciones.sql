@@ -54,3 +54,6 @@ create index if not exists idx_prog_loc_proyecto on programa_locaciones(proyecto
 create index if not exists idx_prog_loc_ubicacion on programa_locaciones(ubicacion_id);
 
 notify pgrst, 'reload schema';
+
+-- (137) cliente_nombre: con qué nombre aparece el cliente en levantamientos, para el amarre automático
+alter table programas add column if not exists cliente_nombre text;

@@ -2,7 +2,7 @@
 // Ejecutar desde la raíz:  node tests/programa-sites.test.mjs
 
 import assert from 'node:assert/strict';
-import { etapaDeLocacion, resumenPrograma, pendientesDelCliente, agruparPorZona, distanciaKm, ETAPAS } from '../lib/helpers/programaSites.js';
+import { etapaDeLocacion, resumenPrograma, pendientesDelCliente, agruparPorZona, distanciaKm, ETAPAS, amarrarLocaciones, normalizarRefOdoo } from '../lib/helpers/programaSites.js';
 
 let ok = 0; const fallos = [];
 const caso = (n, fn) => { try { fn(); ok++; } catch (e) { fallos.push(`${n}: ${e.message}`); } };
@@ -31,11 +31,15 @@ caso('obra aprobada o planificada = por programar', () => {
   assert.equal(etapaDeLocacion({}, { obra: { estado: 'aprobado' } }), 'por_programar');
   assert.equal(etapaDeLocacion({}, { obra: { estado: 'planificado' } }), 'por_programar');
 });
-caso('facturada cuenta como terminada, no como entregada', () => {
-  assert.equal(etapaDeLocacion({}, { obra: { estado: 'facturado' } }), 'terminado');
+caso('terminada sin entregar = terminado', () => {
+  assert.equal(etapaDeLocacion({}, { obra: { estado: 'finalizado_no_entregado' } }), 'terminado');
 });
-caso('recibido conforme = entregado', () => {
-  assert.equal(etapaDeLocacion({}, { obra: { estado: 'recibido_conforme' } }), 'entregado');
+caso('recibido conforme y facturado = entregado (estados reales del ERP)', () => {
+  assert.equal(etapaDeLocacion({}, { obra: { estado: 'finalizado_recibido_conforme' } }), 'entregado');
+  assert.equal(etapaDeLocacion({}, { obra: { estado: 'facturado' } }), 'entregado');
+});
+caso('obra parada vuelve a por programar', () => {
+  assert.equal(etapaDeLocacion({}, { obra: { estado: 'parado' } }), 'por_programar');
 });
 
 // --- resumen
@@ -97,6 +101,67 @@ caso('las que no tienen coordenadas quedan en su propio grupo', () => {
 caso('las 8 etapas tienen dueño o están cerradas', () => {
   assert.equal(ETAPAS.length, 8);
   assert.equal(ETAPAS.filter(e => e.deQuien === 'cliente').length, 2);
+});
+
+
+// --- amarre automático (datos reales del 3-oct-2026)
+const isabelita = { id: 'pl_15', codigoUt: 'DO-01-SD-00119-08', nombre: 'ISABELITA', lat: 18.473781902351, lng: -69.843355190462 };
+const mirSur = { id: 'pl_46', codigoUt: 'DO-01-DN-00151-10', nombre: 'MIRADOR DEL SUR', lat: 18.44514, lng: -69.95983 };
+const sanJuan = { id: 'pl_12', codigoUt: 'DO-04-SN-01344-15', nombre: 'MANOGUAYABO, SAN JUAN', lat: 18.79665, lng: -71.22899 };
+const levs = [
+  { id: 'lev-isa', siteNombre: 'Antena Isabelita DO-01-SD-00119-08', lat: 18.473828, lng: -69.843299, referenciaOdoo: 'ST-C5818', realizadoAt: '2026-09-07', cotizadoAt: '2026-09-07' },
+  { id: 'lev-msur', siteNombre: 'Antena MIRADOR DEL SUR', lat: 18.445140, lng: -69.959830, referenciaOdoo: 'ST-C5875', realizadoAt: null, cotizadoAt: '2026-09-28' },
+  { id: 'lev-mano', siteNombre: 'Antena Manoguayabo', lat: 18.484248, lng: -69.978111, referenciaOdoo: 'ST-C5790', realizadoAt: '2026-08-25', cotizadoAt: '2026-08-26' },
+];
+caso('amarra por código UT y trae la cotización', () => {
+  const c = amarrarLocaciones([isabelita], levs, []);
+  assert.equal(c[0].campos.levantamientoId, 'lev-isa');
+  assert.equal(c[0].campos.cotizacionRef, 'ST-C5818');
+  assert.equal(c[0].campos.luzVerde, true);
+});
+caso('amarra por cercanía cuando el nombre no trae el código', () => {
+  const c = amarrarLocaciones([{ ...mirSur, codigoUt: 'XX' }], levs, []);
+  assert.equal(c[0].campos.levantamientoId, 'lev-msur');
+});
+caso('Manoguayabo de Santo Domingo NO se confunde con el de San Juan', () => {
+  const c = amarrarLocaciones([sanJuan], levs, []);
+  assert.equal(c.length, 0);
+});
+caso('la obra se amarra por la referencia de Odoo del levantamiento', () => {
+  const obras = [{ id: 'p_obra', nombre: 'Antena Isabelita', referenciaOdoo: 'ST-C5818', valorCotizacion: 250000 }];
+  const c = amarrarLocaciones([isabelita], levs, obras);
+  assert.equal(c[0].campos.proyectoId, 'p_obra');
+  assert.equal(c[0].campos.cotizacionAprobada, true);
+  assert.equal(c[0].campos.cotizacionMonto, 250000);
+});
+caso('no pisa un amarre que ya existe', () => {
+  const c = amarrarLocaciones([{ ...isabelita, levantamientoId: 'otro', proyectoId: 'otra' }], levs, []);
+  assert.equal(c.length, 0);
+});
+caso('un levantamiento no se usa para dos locaciones', () => {
+  const c = amarrarLocaciones([isabelita, { ...isabelita, id: 'pl_dup' }], levs, []);
+  assert.equal(c.filter(x => x.campos.levantamientoId === 'lev-isa').length, 1);
+});
+caso('San Carlos y San Gerónimo con las mismas coordenadas: gana el nombre', () => {
+  const coords = { lat: 18.460106, lng: -69.916224 };
+  const levsMal = [
+    { id: 'lev-sc', siteNombre: 'Antena San Carlos', ...coords, referenciaOdoo: 'ST5775' },
+    { id: 'lev-sg', siteNombre: 'Antena San Geronimo', ...coords, referenciaOdoo: 'ST5759' },
+  ];
+  const sanGeronimo = { id: 'pl_07', codigoUt: 'DO-01-DN-00198-12', nombre: 'SAN GERÓNIMO UASD', lat: 18.460146, lng: -69.913594 };
+  const sanCarlos = { id: 'pl_60', codigoUt: 'DO-01-DN-00097-08', nombre: 'SAN CARLOS', lat: 18.47761944, lng: -69.89825556 };
+  const c = amarrarLocaciones([sanGeronimo, sanCarlos], levsMal, []);
+  assert.equal(c.find(x => x.id === 'pl_07').campos.levantamientoId, 'lev-sg');
+  assert.equal(c.find(x => x.id === 'pl_60').campos.levantamientoId, 'lev-sc');
+});
+caso('ST5758 y ST-C5758 son la misma cotización', () => {
+  assert.equal(normalizarRefOdoo('ST5758'), 'ST-C5758');
+  assert.equal(normalizarRefOdoo('ST-C5758'), 'ST-C5758');
+  assert.equal(normalizarRefOdoo('PG-C1287'), 'PG-C1287');
+});
+caso('después del amarre, la locación cotizada queda en "cotizado"', () => {
+  const [c] = amarrarLocaciones([isabelita], levs, []);
+  assert.equal(etapaDeLocacion({ ...isabelita, ...c.campos }, {}), 'cotizado');
 });
 
 console.log(`\n${ok} pasadas, ${fallos.length} fallidas`);

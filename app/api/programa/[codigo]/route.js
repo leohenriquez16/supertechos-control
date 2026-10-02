@@ -1,0 +1,149 @@
+// app/api/programa/[codigo]/route.js
+// v8.59.0 — API PÚBLICA del portal del cliente de un programa multi-sitio.
+//   GET   (header x-clave) → programa, resumen, pendientes del cliente y locaciones.
+//   POST  (header x-clave) → { accion, locacionId, quien, datos } — luz verde, supervisor,
+//         aprobar o pedir cambios a una cotización, comentario. Avisa por correo a operaciones.
+// Sin login: se entra con la clave del programa. Lee con service_role y solo devuelve lo
+// que lib/server/portalPrograma.js decide mostrar (sin costos, notas internas ni nómina).
+
+import { createClient } from '@supabase/supabase-js';
+import { claveValida, armarPortal, aplicarAccionCliente } from '../../../../lib/server/portalPrograma';
+import { amarrarLocaciones } from '../../../../lib/helpers/programaSites';
+
+export const dynamic = 'force-dynamic';
+
+const sb = () => createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+
+// Frena el adivinar claves: 8 intentos fallidos por IP cada 15 minutos.
+const intentos = new Map();
+function bloqueado(ip) {
+  const ahora = Date.now();
+  const r = intentos.get(ip);
+  if (!r || ahora - r.desde > 15 * 60 * 1000) return false;
+  return r.n >= 8;
+}
+function fallo(ip) {
+  const ahora = Date.now();
+  const r = intentos.get(ip);
+  if (!r || ahora - r.desde > 15 * 60 * 1000) intentos.set(ip, { n: 1, desde: ahora });
+  else r.n++;
+}
+
+async function autenticar(request, codigo) {
+  const ip = (request.headers.get('x-forwarded-for') || '').split(',')[0].trim() || 'sin-ip';
+  if (bloqueado(ip)) return { error: Response.json({ ok: false, error: 'Demasiados intentos. Espera 15 minutos.' }, { status: 429 }) };
+  const db = sb();
+  const { data: programa } = await db.from('programas')
+    .select('id, nombre, cliente_nombre, fecha_meta, clave_portal, archivado')
+    .eq('codigo_publico', codigo).maybeSingle();
+  const clave = request.headers.get('x-clave') || '';
+  if (!programa || programa.archivado || !claveValida(clave, programa.clave_portal)) {
+    fallo(ip);
+    return { error: Response.json({ ok: false, error: 'Código o clave incorrectos.' }, { status: 401 }) };
+  }
+  return { db, programa };
+}
+
+// El portal también amarra: si Edwin levantó o Odoo aprobó, el cliente lo ve sin esperar
+// a que alguien abra el programa en el ERP.
+async function sincronizar(db, programa, filas) {
+  try {
+    const cliente = programa.cliente_nombre;
+    if (!cliente) return false;
+    const { data: proysSurvey } = await db.schema('surveys').from('projects')
+      .select('id, realizado_at, cotizado_at').ilike('client_name', `%${cliente}%`);
+    const ids = (proysSurvey || []).map(p => p.id);
+    let levantamientos = [];
+    if (ids.length) {
+      const { data: sites } = await db.schema('surveys').from('sites')
+        .select('project_id, name, latitude, longitude, referencia_odoo').in('project_id', ids);
+      const porId = new Map((proysSurvey || []).map(p => [p.id, p]));
+      levantamientos = (sites || []).map(s => ({
+        id: s.project_id, siteNombre: s.name, lat: s.latitude, lng: s.longitude, referenciaOdoo: s.referencia_odoo,
+        realizadoAt: porId.get(s.project_id)?.realizado_at, cotizadoAt: porId.get(s.project_id)?.cotizado_at,
+      }));
+    }
+    const { data: obrasRaw } = await db.from('proyectos')
+      .select('id, nombre, referencia_odoo, valor_cotizacion').eq('archivado', false)
+      .or(`cliente.ilike.%${cliente.split(' ')[0]}%,nombre.ilike.%antena%`);
+    const obras = (obrasRaw || []).map(o => ({ id: o.id, nombre: o.nombre, referenciaOdoo: o.referencia_odoo, valorCotizacion: o.valor_cotizacion }));
+    const locs = filas.map(l => ({
+      id: l.id, codigoUt: l.codigo_ut, nombre: l.nombre, lat: l.lat, lng: l.lng,
+      levantamientoId: l.levantamiento_id, levantadoAt: l.levantado_at, proyectoId: l.proyecto_id,
+      cotizacionRef: l.cotizacion_ref, cotizacionMonto: l.cotizacion_monto, cotizacionAprobada: l.cotizacion_aprobada, luzVerde: l.luz_verde,
+    }));
+    const cambios = amarrarLocaciones(locs, levantamientos, obras);
+    const mapa = {
+      levantamientoId: 'levantamiento_id', levantadoAt: 'levantado_at', cotizacionRef: 'cotizacion_ref',
+      cotizacionMonto: 'cotizacion_monto', cotizacionAprobada: 'cotizacion_aprobada', proyectoId: 'proyecto_id',
+      luzVerde: 'luz_verde', luzVerdePor: 'luz_verde_por',
+    };
+    for (const { id, campos } of cambios) {
+      const u = { updated_at: new Date().toISOString() };
+      Object.entries(campos).forEach(([k, v]) => { if (mapa[k] && v !== undefined) u[mapa[k]] = v; });
+      if (campos.luzVerde) u.luz_verde_at = new Date().toISOString();
+      await db.from('programa_locaciones').update(u).eq('id', id);
+    }
+    return cambios.length > 0;
+  } catch (e) { console.warn('portal sincronizar:', e?.message); return false; }
+}
+
+async function cargar(db, programa) {
+  const leer = () => db.from('programa_locaciones').select('*').eq('programa_id', programa.id);
+  let { data: filas } = await leer();
+  if (await sincronizar(db, programa, filas || [])) ({ data: filas } = await leer());
+  const idsObra = [...new Set((filas || []).map(f => f.proyecto_id).filter(Boolean))];
+  let obras = new Map();
+  if (idsObra.length) {
+    const { data } = await db.from('proyectos').select('id, estado, fecha_inicio').in('id', idsObra);
+    obras = new Map((data || []).map(o => [o.id, o]));
+  }
+  return armarPortal(programa, filas || [], obras);
+}
+
+export async function GET(request, { params }) {
+  const { db, programa, error } = await autenticar(request, params?.codigo);
+  if (error) return error;
+  return Response.json({ ok: true, ...(await cargar(db, programa)) });
+}
+
+export async function POST(request, { params }) {
+  const { db, programa, error } = await autenticar(request, params?.codigo);
+  if (error) return error;
+  let body = {};
+  try { body = await request.json(); } catch { /* noop */ }
+  const { accion, locacionId, quien, datos } = body || {};
+
+  const { data: loc } = await db.from('programa_locaciones').select('*')
+    .eq('id', locacionId).eq('programa_id', programa.id).maybeSingle();
+  if (!loc) return Response.json({ ok: false, error: 'Locación no encontrada.' }, { status: 404 });
+
+  const r = aplicarAccionCliente(accion, datos || {}, loc, quien);
+  if (!r.ok) return Response.json({ ok: false, error: r.error }, { status: 400 });
+
+  const { error: errUpd } = await db.from('programa_locaciones').update(r.cambios).eq('id', loc.id);
+  if (errUpd) return Response.json({ ok: false, error: 'No se pudo guardar. Intenta de nuevo.' }, { status: 500 });
+
+  // Aviso a operaciones: lo que el cliente hace en el portal tiene que llegarle a Miguel.
+  try {
+    const KEY = process.env.RESEND_API_KEY, FROM = process.env.RESEND_FROM_EMAIL;
+    if (KEY && FROM) {
+      const autor = (quien || 'Cliente').toString().slice(0, 80);
+      await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from: FROM,
+          to: ['mmartinez@supertechos.com.do', 'eperez@supertechos.com.do'],
+          cc: ['lhenriquez@supertechos.com.do'],
+          subject: `${programa.nombre} · ${loc.nombre}: ${autor} ${r.resumen.split(':')[0]}`,
+          html: `<div style="font-family:Arial,sans-serif;font-size:14px">
+            <p><b>${autor}</b> ${r.resumen} en <b>${loc.nombre}</b>${loc.codigo_ut ? ` (${loc.codigo_ut})` : ''}.</p>
+            <p style="color:#666">Desde el portal del cliente · ${programa.nombre}.<br>Míralo en el ERP: Comercial → Programas.</p></div>`,
+        }),
+      });
+    }
+  } catch (e) { console.warn('portal aviso:', e?.message); }
+
+  return Response.json({ ok: true, mensaje: r.resumen, ...(await cargar(db, programa)) });
+}

@@ -99,6 +99,22 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, onVo
         </div>
       </div>
 
+      {/* v8.59.0: enlace del portal del cliente */}
+      {programa?.codigoPublico && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 flex items-center gap-2 flex-wrap text-[11px]">
+          <span className="text-zinc-400 font-bold uppercase tracking-widest">Portal del cliente</span>
+          <code className="text-zinc-200 bg-zinc-950 border border-zinc-800 rounded px-2 py-1 select-all break-all">
+            {typeof window !== 'undefined' ? window.location.origin : ''}/programa/{programa.codigoPublico}
+          </code>
+          <button onClick={async () => {
+            const url = `${window.location.origin}/programa/${programa.codigoPublico}`;
+            try { await navigator.clipboard.writeText(url); alert('Enlace copiado. La clave se la das aparte.'); } catch { prompt('Copia el enlace:', url); }
+          }} className="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold uppercase rounded-card">Copiar enlace</button>
+          <a href={`/programa/${programa.codigoPublico}`} target="_blank" rel="noreferrer" className="underline text-zinc-400 hover:text-white">Ver como el cliente</a>
+          <span className="text-zinc-600">La clave no se muestra aquí por seguridad.</span>
+        </div>
+      )}
+
       {/* Lo que el cliente tiene trancado */}
       {(pendCliente.sinLuzVerde.length > 0 || pendCliente.cotizacionesPorAprobar.length > 0) && (
         <div className="bg-amber-950/20 border border-amber-800 rounded-card p-3 text-[11px] text-amber-200">

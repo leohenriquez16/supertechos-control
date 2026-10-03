@@ -14,7 +14,8 @@ import dynamic from 'next/dynamic';
 import { ArrowLeft, Check, Clock, MapPin, Loader2, Route, LayoutGrid, Search, Lock, Ruler, FileText, CalendarDays, Wrench, ClipboardCheck, CheckCircle2 } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatRD } from '../../lib/helpers/formato';
-import { ETAPAS, ETAPA, FASES, COLOR_ETAPA, turnoDe, resumenPrograma, pendientesDelCliente, agruparPorZona } from '../../lib/helpers/programaSites';
+import { ETAPAS, ETAPA, FASES, COLOR_ETAPA, turnoDe, resumenPrograma, pendientesDelCliente, agruparPorZona, textoCoordinacion } from '../../lib/helpers/programaSites';
+import FichaLocacion from './FichaLocacion';
 
 // v8.59.0: un icono por etapa, para distinguirlas sin leer el texto.
 const ICONO = { lock: Lock, 'map-pin': MapPin, ruler: Ruler, file: FileText, calendar: CalendarDays, tool: Wrench, clipboard: ClipboardCheck, check: CheckCircle2 };
@@ -31,6 +32,7 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, onVo
   const [tab, setTab] = useState('tablero');
   const [buscar, setBuscar] = useState('');
   const [guardando, setGuardando] = useState(null);
+  const [ficha, setFicha] = useState(null); // v8.59.2: ficha de la sucursal
 
   const filtradas = useMemo(() => {
     const q = buscar.trim().toLowerCase();
@@ -174,9 +176,14 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, onVo
                     <div className={`text-[9px] font-bold uppercase tracking-wide ${e.deQuien === 'cliente' ? 'text-amber-400' : e.deQuien === 'nosotros' ? 'text-sky-400' : 'text-zinc-500'}`}>{turnoDe(e.id)}</div>
                     <div className="space-y-1.5 max-h-[360px] overflow-y-auto">
                       {lista.map(l => (
-                        <div key={l.id} className="bg-zinc-950 border border-zinc-800 rounded-card p-2">
-                          <div className="text-[11px] font-bold text-zinc-100 truncate">{l.nombre}</div>
-                          <div className="text-[10px] text-zinc-500 truncate">{l.codigoUt}{l.sector ? ` · ${l.sector}` : ''}</div>
+                        <div key={l.id} className="bg-zinc-950 border border-zinc-800 hover:border-zinc-600 rounded-card p-2">
+                          <button onClick={() => setFicha(l)} className="text-left w-full">
+                            <div className="text-[11px] font-bold text-zinc-100 truncate hover:underline">{l.nombre}</div>
+                            <div className="text-[10px] text-zinc-500 truncate">{l.codigoUt}{l.sector ? ` · ${l.sector}` : ''}</div>
+                            {l.etapaDesde && <div className="text-[10px] text-zinc-400">desde {new Date(l.etapaDesde).toLocaleDateString('es-DO', { day: 'numeric', month: 'short' })}{l.diasEnEtapa != null ? ` · ${l.diasEnEtapa} d` : ''}</div>}
+                            {['por_programar', 'en_ejecucion'].includes(e.id) && !l.personalAprobadoAt && <div className="text-[10px] text-red-400 font-bold">Falta aprobación del personal</div>}
+                            {e.id === 'por_levantar' && l.fechaVisita && <div className="text-[10px] text-amber-400">Visita: {textoCoordinacion(l.fechaVisita, l.horaVisita)}</div>}
+                          </button>
                           {l.cotizacionRef && (
                             <div className="text-[10px] text-zinc-400 mt-0.5">
                               {l.cotizacionRef}{l.cotizacionMonto ? ` · ${formatRD(l.cotizacionMonto)}` : ''}
@@ -184,9 +191,9 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, onVo
                           )}
                           <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                             {e.id === 'sin_luz_verde' && (
-                              <button onClick={() => marcarLuzVerde(l, true)} disabled={guardando === l.id}
+                              <button onClick={() => setFicha(l)}
                                 className="text-[10px] font-bold uppercase px-2 py-1 bg-amber-700 hover:bg-amber-600 text-white rounded-card flex items-center gap-1">
-                                {guardando === l.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />} Luz verde
+                                <Check className="w-3 h-3" /> Coordinar
                               </button>
                             )}
                             {e.id === 'por_levantar' && !l.levantamientoId && (
@@ -221,11 +228,21 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, onVo
 
       {tab === 'mapa' && (
         <div className="space-y-2">
-          <MapaPrograma locaciones={filtradas} onSeleccionar={(l) => l.proyectoId && onAbrirProyecto?.(l.proyectoId)} />
+          <MapaPrograma locaciones={filtradas} onSeleccionar={(l) => setFicha(l)} />
           <div className="flex gap-3 flex-wrap">
             {ETAPAS.map(e => <Chip key={e.id} color={COLOR_ETAPA[e.id]}>{e.label} ({(porEtapa[e.id] || []).length})</Chip>)}
           </div>
         </div>
+      )}
+
+      {ficha && (
+        <FichaLocacion
+          locacion={locaciones.find(x => x.id === ficha.id) || ficha}
+          usuario={usuario}
+          onCerrar={() => setFicha(null)}
+          onCambio={onRecargar}
+          onAbrirProyecto={onAbrirProyecto}
+        />
       )}
 
       {tab === 'zonas' && (

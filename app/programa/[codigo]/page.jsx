@@ -16,6 +16,14 @@ const COLOR = {
   por_programar: '#D85A30', en_ejecucion: '#639922', terminado: '#1D9E75', entregado: '#2C2C2A',
 };
 const fmtRD = (n) => n == null ? '—' : 'RD$' + Number(n).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtHoraVisita = (fecha, hora) => {
+  if (!fecha) return '';
+  let t = '';
+  try { t = new Date(String(fecha).slice(0, 10) + 'T12:00:00').toLocaleDateString('es-DO', { weekday: 'short', day: 'numeric', month: 'short' }); } catch { t = fecha; }
+  if (hora) { const [h, m] = String(hora).split(':').map(Number); if (!Number.isNaN(h)) t += ` · ${((h + 11) % 12) + 1}:${String(m || 0).padStart(2, '0')} ${h < 12 ? 'a. m.' : 'p. m.'}`; }
+  return t;
+};
+const TIPOS_DOC = [['aprobacion_personal', 'Aprobación del personal'], ['oc', 'Orden de compra'], ['autorizacion', 'Autorización del propietario'], ['cotizacion', 'Cotización'], ['informe', 'Informe'], ['garantia', 'Carta de garantía'], ['otro', 'Otro']];
 const fmtF = (f) => { if (!f) return ''; try { return new Date(f).toLocaleDateString('es-DO', { day: 'numeric', month: 'short' }); } catch { return ''; } };
 
 const CSS = `
@@ -116,6 +124,8 @@ export default function PortalPrograma() {
   const [fichaData, setFichaData] = useState(null);
   const [fichaCargando, setFichaCargando] = useState(false);
   const [fotoGrande, setFotoGrande] = useState(null); // índice en la galería
+  const [docTipo, setDocTipo] = useState('oc');
+  const [subiendoDoc, setSubiendoDoc] = useState(false);
 
   const llave = `portal-${codigo}`;
   useEffect(() => {
@@ -162,6 +172,20 @@ export default function PortalPrograma() {
       if (j.ok) setFichaData(j); else setError(j.error || 'No se pudo abrir la ficha.');
     } catch { setError('Sin conexión. Intenta de nuevo.'); }
     setFichaCargando(false);
+  };
+
+  const subirDocumento = async (loc, archivo) => {
+    if (!archivo) return;
+    setSubiendoDoc(true); setError(''); setAviso('');
+    try {
+      const fd = new FormData();
+      fd.append('archivo', archivo); fd.append('tipo', docTipo); fd.append('quien', quien);
+      const r = await fetch(`/api/programa/${codigo}/locacion/${loc.id}/documentos`, { method: 'POST', headers: { 'x-clave': clave }, body: fd });
+      const j = await r.json();
+      if (!j.ok) setError(j.error || 'No se pudo subir el documento.');
+      else { setAviso(`Listo: ${archivo.name} quedó en ${loc.nombre}. Super Techos ya recibió el aviso.`); abrirFicha(loc); }
+    } catch { setError('Sin conexión. Intenta de nuevo.'); }
+    setSubiendoDoc(false);
   };
 
   const accion = async (tipo, loc, datos = {}) => {
@@ -225,6 +249,7 @@ export default function PortalPrograma() {
   const sinLuz = pendientes.sinLuzVerde.map(id => porId.get(id)).filter(Boolean);
   const porAprobar = pendientes.cotizacionesPorAprobar.map(id => porId.get(id)).filter(Boolean);
   const sinSup = pendientes.sinSupervisor.map(id => porId.get(id)).filter(Boolean);
+  const sinPers = (pendientes.sinAprobacionPersonal || []).map(id => porId.get(id)).filter(Boolean);
 
   return (
     <div className="pp"><style>{CSS}</style>
@@ -261,7 +286,7 @@ export default function PortalPrograma() {
         {error && <div className="pp-err" role="alert">{error}</div>}
 
         {/* Lo que depende del cliente */}
-        {(sinLuz.length > 0 || porAprobar.length > 0 || sinSup.length > 0) && <>
+        {(sinLuz.length > 0 || porAprobar.length > 0 || sinSup.length > 0 || sinPers.length > 0) && <>
           <h2 className="pp-h2">Lo que necesitamos de ustedes</h2>
           <div className="pp-grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(300px,1fr))' }}>
             {porAprobar.length > 0 && (
@@ -281,15 +306,28 @@ export default function PortalPrograma() {
             )}
             {sinLuz.length > 0 && (
               <div className="pp-card pp-pend">
-                <div style={{ fontWeight: 800 }}>Falta la autorización del propietario ({sinLuz.length})</div>
-                <div className="pp-d" style={{ color: 'var(--muted)', fontSize: '.8rem', marginBottom: 6 }}>Márquenla cuando el propietario autorice el acceso para levantar.</div>
+                <div style={{ fontWeight: 800 }}>Pendiente coordinar el levantamiento ({sinLuz.length})</div>
+                <div className="pp-d" style={{ color: 'var(--muted)', fontSize: '.8rem', marginBottom: 6 }}>Cuando el propietario autorice, márquenla con el día acordado para la visita.</div>
                 {sinLuz.slice(0, 8).map(l => (
                   <div className="pp-fila" key={l.id}>
                     <div style={{ minWidth: 0 }}><div className="pp-n">{l.nombre}</div><div className="pp-d">{l.codigoUt}</div></div>
-                    <button className="pp-btn prim" disabled={enviando} onClick={() => setModal({ tipo: 'luz_verde', loc: l })}>Autorizado</button>
+                    <button className="pp-btn prim" disabled={enviando} onClick={() => { setModal({ tipo: 'coordinar', loc: l }); setForm({}); }}>Coordinar</button>
                   </div>
                 ))}
-                {sinLuz.length > 8 && <div className="pp-d" style={{ paddingTop: 8, color: 'var(--muted)', fontSize: '.8rem' }}>…y {sinLuz.length - 8} más en la lista de abajo (filtro “Sin luz verde”).</div>}
+                {sinLuz.length > 8 && <div className="pp-d" style={{ paddingTop: 8, color: 'var(--muted)', fontSize: '.8rem' }}>…y {sinLuz.length - 8} más en la lista de abajo.</div>}
+              </div>
+            )}
+            {sinPers.length > 0 && (
+              <div className="pp-card pp-pend">
+                <div style={{ fontWeight: 800 }}>Aprobación del personal ({sinPers.length})</div>
+                <div className="pp-d" style={{ color: 'var(--muted)', fontSize: '.8rem', marginBottom: 6 }}>Suban la aprobación del personal en la ficha de cada sitio para poder entrar a trabajar.</div>
+                {sinPers.slice(0, 6).map(l => (
+                  <div className="pp-fila" key={l.id}>
+                    <div style={{ minWidth: 0 }}><div className="pp-n">{l.nombre}</div><div className="pp-d">{etapaLabel[l.etapa]}</div></div>
+                    <button className="pp-btn" onClick={() => abrirFicha(l)}>Subir</button>
+                  </div>
+                ))}
+                {sinPers.length > 6 && <div className="pp-d" style={{ paddingTop: 8, color: 'var(--muted)', fontSize: '.8rem' }}>…y {sinPers.length - 6} más.</div>}
               </div>
             )}
             {sinSup.length > 0 && (
@@ -338,7 +376,9 @@ export default function PortalPrograma() {
                     onKeyDown={e => { if (e.key === 'Enter') abrirFicha(l); }}>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontWeight: 800 }}>{l.nombre}</div>
-                      <div style={{ color: 'var(--muted)', fontSize: '.8rem' }}>{l.codigoUt}{l.tipoTrabajo !== 'techo' ? ` · ${l.tipoTrabajo === 'pintura' ? 'Pintura' : 'Techo y pintura'}` : ''}</div>
+                      <div style={{ color: 'var(--muted)', fontSize: '.8rem' }}>{l.codigoUt}{l.tipoTrabajo !== 'techo' ? ` · ${l.tipoTrabajo === 'pintura' ? 'Pintura' : 'Techo y pintura'}` : ''}
+                        {l.etapaDesde ? ` · en esta etapa desde el ${fmtF(l.etapaDesde)}${l.diasEnEtapa != null ? ` (${l.diasEnEtapa} d)` : ''}` : ''}</div>
+                      {l.etapa === 'por_levantar' && l.fechaVisita && <div style={{ fontSize: '.8rem', color: 'var(--warn)', fontWeight: 700 }}>Visita: {fmtHoraVisita(l.fechaVisita, l.horaVisita)}</div>}
                     </div>
                     <span className="pp-chip" style={{ background: `${COLOR[l.etapa]}1F`, color: COLOR[l.etapa] }}>
                       <i style={{ width: 7, height: 7, borderRadius: '50%', background: COLOR[l.etapa], display: 'inline-block' }} />{etapaLabel[l.etapa]}
@@ -363,11 +403,7 @@ export default function PortalPrograma() {
         const l = (data.locaciones || []).find(x => x.id === ficha.id) || ficha;
         const idx = ordenEtapa[l.etapa] ?? 0;
         const lev = fichaData?.levantamiento;
-        const fechaDe = (e) => ({
-          sin_luz_verde: null, por_levantar: l.luzVerdeAt, levantado: l.levantadoAt,
-          cotizado: l.levantadoAt && l.cotizacionRef ? null : null, por_programar: l.cotizacionAprobadaAt,
-          en_ejecucion: l.inicioObra ? l.inicioObra + 'T12:00:00' : null,
-        })[e];
+        const fechaDe = (e) => (l.fechasEtapas || {})[e] || null;
         return (
           <div className="pp-ficha" onClick={() => setFicha(null)}>
             <div className="pp-ficha-in" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Ficha de ${l.nombre}`}>
@@ -379,7 +415,9 @@ export default function PortalPrograma() {
                     <span className="pp-chip" style={{ background: `${COLOR[l.etapa]}1F`, color: COLOR[l.etapa] }}>
                       <i style={{ width: 7, height: 7, borderRadius: '50%', background: COLOR[l.etapa], display: 'inline-block' }} />{etapaLabel[l.etapa]}
                     </span>
-                    <span style={{ fontSize: '.8rem', color: 'var(--muted)' }}>{(data.etapas.find(e => e.id === l.etapa) || {}).detalle}</span>
+                    <span style={{ fontSize: '.8rem', color: 'var(--muted)' }}>
+                      {l.etapaDesde ? `Desde el ${fmtF(l.etapaDesde)}${l.diasEnEtapa != null ? ` · ${l.diasEnEtapa} día${l.diasEnEtapa === 1 ? '' : 's'}` : ''}` : (data.etapas.find(e => e.id === l.etapa) || {}).detalle}
+                    </span>
                   </div>
                 </div>
                 <button className="pp-btn sec" onClick={() => setFicha(null)} aria-label="Cerrar ficha">Cerrar</button>
@@ -407,7 +445,7 @@ export default function PortalPrograma() {
                     <div style={{ fontWeight: 800, marginBottom: 6 }}>Datos</div>
                     <dl className="pp-det" style={{ gridTemplateColumns: '1fr', marginTop: 0 }}>
                       <div><dt>Dirección</dt><dd>{l.direccion || '—'}</dd></div>
-                      <div><dt>Autorización del propietario</dt><dd>{l.luzVerde ? `Sí${l.luzVerdeAt ? ` · ${fmtF(l.luzVerdeAt)}` : ''}${l.luzVerdePor ? ` · ${l.luzVerdePor}` : ''}` : 'Pendiente'}</dd></div>
+                      <div><dt>Visita de levantamiento</dt><dd>{l.levantadoAt ? `Realizada · ${fmtF(l.levantadoAt)}` : l.fechaVisita ? `Coordinada: ${fmtHoraVisita(l.fechaVisita, l.horaVisita)}${l.luzVerdePor ? ` · ${l.luzVerdePor}` : ''}` : 'Pendiente coordinar'}</dd></div>
                       <div><dt>Cotización</dt><dd>{l.cotizacionRef ? `${l.cotizacionRef} · ${fmtRD(l.cotizacionMonto)}${l.cotizacionAprobada ? ' · Aprobada' : ' · Por aprobar'}` : 'Pendiente'}</dd></div>
                       <div><dt>Inicio de obra</dt><dd>{l.inicioObra ? fmtF(l.inicioObra + 'T12:00:00') : '—'}</dd></div>
                       <div><dt>Supervisor de ustedes</dt><dd>{l.supervisorClienteNombre ? `${l.supervisorClienteNombre}${l.supervisorClienteTelefono ? ` · ${l.supervisorClienteTelefono}` : ''}${l.supervisorClienteEmail ? ` · ${l.supervisorClienteEmail}` : ''}` : 'Sin asignar'}</dd></div>
@@ -417,13 +455,41 @@ export default function PortalPrograma() {
                 </div>
 
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {!l.luzVerde && <button className="pp-btn prim" onClick={() => setModal({ tipo: 'luz_verde', loc: l })}>Autorizado por el propietario</button>}
+                  {!l.levantadoAt && <button className="pp-btn prim" onClick={() => { setModal({ tipo: 'coordinar', loc: l }); setForm({ fecha: l.fechaVisita ? String(l.fechaVisita).slice(0, 10) : '', hora: l.horaVisita || '' }); }}>{l.fechaVisita ? 'Cambiar la fecha de visita' : 'Coordinar la visita'}</button>}
                   {l.etapa === 'cotizado' && <button className="pp-btn ok" onClick={() => setModal({ tipo: 'aprobar_cotizacion', loc: l })}>Aprobar cotización</button>}
                   {l.etapa === 'cotizado' && <button className="pp-btn sec" onClick={() => { setModal({ tipo: 'rechazar_cotizacion', loc: l }); setForm({}); }}>Pedir cambios</button>}
                   <button className="pp-btn sec" onClick={() => { setModal({ tipo: 'supervisor', loc: l }); setForm({ nombre: l.supervisorClienteNombre, telefono: l.supervisorClienteTelefono, email: l.supervisorClienteEmail }); }}>
                     {l.supervisorClienteNombre ? 'Cambiar supervisor' : 'Asignar supervisor'}
                   </button>
                   <button className="pp-btn sec" onClick={() => { setModal({ tipo: 'comentario', loc: l }); setForm({}); }}>Escribir un comentario</button>
+                </div>
+
+                <div className="pp-card">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
+                    <div style={{ fontWeight: 800 }}>Documentos</div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <select id="pp-doc-tipo" className="pp-in" style={{ width: 'auto', padding: '7px 10px', fontSize: '.85rem' }} value={docTipo} onChange={e => setDocTipo(e.target.value)}>
+                        {TIPOS_DOC.map(([id, lab]) => <option key={id} value={id}>{lab}</option>)}
+                      </select>
+                      <label className="pp-btn prim" style={{ display: 'inline-block', opacity: subiendoDoc ? .5 : 1 }}>
+                        {subiendoDoc ? 'Subiendo…' : 'Subir documento'}
+                        <input type="file" hidden disabled={subiendoDoc} accept=".pdf,.jpg,.jpeg,.png,.webp,.xlsx,.xls,.docx,.doc"
+                          onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; subirDocumento(l, f); }} />
+                      </label>
+                    </div>
+                  </div>
+                  {fichaCargando && <div style={{ color: 'var(--muted)', fontSize: '.88rem' }}>Cargando…</div>}
+                  {!fichaCargando && !(fichaData?.documentos?.length) && <div style={{ color: 'var(--muted)', fontSize: '.88rem' }}>Todavía no hay documentos. Suban aquí la orden de compra de esta sucursal cuando la emitan.</div>}
+                  {!fichaCargando && fichaData?.documentos?.map(d => (
+                    <div key={d.id} className="pp-fila">
+                      <div style={{ minWidth: 0 }}>
+                        <div className="pp-n">{d.url ? <a href={d.url} target="_blank" rel="noreferrer" style={{ color: 'var(--ink)' }}>{d.nombre}</a> : d.nombre}</div>
+                        <div className="pp-d">{(TIPOS_DOC.find(t => t[0] === d.tipo) || [0, 'Documento'])[1]} · {fmtF(d.fecha)}{d.subidoPor ? ` · ${d.subidoPor.replace(/ \((portal|ERP)\)$/, '')}` : ''}</div>
+                      </div>
+                      {d.url && <a className="pp-btn sec" href={d.url} target="_blank" rel="noreferrer">Abrir</a>}
+                    </div>
+                  ))}
+                  <div style={{ color: 'var(--muted)', fontSize: '.75rem', marginTop: 6 }}>PDF, imágenes, Excel o Word, hasta 15 MB.</div>
                 </div>
 
                 <div className="pp-card">
@@ -485,7 +551,17 @@ export default function PortalPrograma() {
             <div style={{ fontWeight: 800, fontSize: '1.05rem' }}>{modal.loc.nombre}</div>
             <div style={{ color: 'var(--muted)', fontSize: '.8rem', marginBottom: 14 }}>{modal.loc.codigoUt}</div>
 
-            {modal.tipo === 'luz_verde' && <p style={{ margin: '0 0 14px' }}>¿El propietario ya autorizó el acceso para levantar esta locación? Queda registrado a nombre de <b>{quien}</b>.</p>}
+            {modal.tipo === 'coordinar' && (
+              <div className="pp-grid" style={{ marginBottom: 14 }}>
+                <p style={{ margin: 0 }}>¿Qué día quedó coordinada la visita con el propietario? Queda registrado a nombre de <b>{quien}</b>.</p>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <label style={{ flex: 1 }}><div style={{ fontSize: '.8rem', fontWeight: 700, marginBottom: 4 }}>Día</div>
+                    <input id="pp-coord-fecha" type="date" className="pp-in" value={form.fecha || ''} onChange={e => setForm({ ...form, fecha: e.target.value })} /></label>
+                  <label style={{ width: 130 }}><div style={{ fontSize: '.8rem', fontWeight: 700, marginBottom: 4 }}>Hora (opcional)</div>
+                    <input id="pp-coord-hora" type="time" className="pp-in" value={form.hora || ''} onChange={e => setForm({ ...form, hora: e.target.value })} /></label>
+                </div>
+              </div>
+            )}
             {modal.tipo === 'aprobar_cotizacion' && <p style={{ margin: '0 0 14px' }}>¿Aprobar la cotización <b>{modal.loc.cotizacionRef}</b> por <b>{fmtRD(modal.loc.cotizacionMonto)}</b>? Queda registrada a nombre de <b>{quien}</b> y pasamos a programar la ejecución.</p>}
             {modal.tipo === 'rechazar_cotizacion' && (
               <label style={{ display: 'block', marginBottom: 14 }}>
@@ -511,7 +587,7 @@ export default function PortalPrograma() {
               <button className="pp-btn sec" disabled={enviando} onClick={() => setModal(null)}>Cancelar</button>
               <button className={`pp-btn ${modal.tipo === 'aprobar_cotizacion' ? 'ok' : 'prim'}`} disabled={enviando}
                 onClick={() => accion(modal.tipo, modal.loc, form)}>
-                {enviando ? 'Guardando…' : ({ luz_verde: 'Sí, está autorizado', aprobar_cotizacion: 'Aprobar', rechazar_cotizacion: 'Enviar', supervisor: 'Guardar', comentario: 'Enviar' })[modal.tipo]}
+                {enviando ? 'Guardando…' : ({ coordinar: 'Guardar la fecha', aprobar_cotizacion: 'Aprobar', rechazar_cotizacion: 'Enviar', supervisor: 'Guardar', comentario: 'Enviar' })[modal.tipo]}
               </button>
             </div>
           </div>

@@ -23,7 +23,7 @@ const fmtHoraVisita = (fecha, hora) => {
   if (hora) { const [h, m] = String(hora).split(':').map(Number); if (!Number.isNaN(h)) t += ` · ${((h + 11) % 12) + 1}:${String(m || 0).padStart(2, '0')} ${h < 12 ? 'a. m.' : 'p. m.'}`; }
   return t;
 };
-const TIPOS_DOC = [['oc', 'Orden de compra'], ['autorizacion', 'Autorización del propietario'], ['cotizacion', 'Cotización'], ['informe', 'Informe'], ['garantia', 'Carta de garantía'], ['otro', 'Otro']];
+const TIPOS_DOC = [['aprobacion_personal', 'Aprobación del personal'], ['oc', 'Orden de compra'], ['autorizacion', 'Autorización del propietario'], ['cotizacion', 'Cotización'], ['informe', 'Informe'], ['garantia', 'Carta de garantía'], ['otro', 'Otro']];
 const fmtF = (f) => { if (!f) return ''; try { return new Date(f).toLocaleDateString('es-DO', { day: 'numeric', month: 'short' }); } catch { return ''; } };
 
 const CSS = `
@@ -249,6 +249,7 @@ export default function PortalPrograma() {
   const sinLuz = pendientes.sinLuzVerde.map(id => porId.get(id)).filter(Boolean);
   const porAprobar = pendientes.cotizacionesPorAprobar.map(id => porId.get(id)).filter(Boolean);
   const sinSup = pendientes.sinSupervisor.map(id => porId.get(id)).filter(Boolean);
+  const sinPers = (pendientes.sinAprobacionPersonal || []).map(id => porId.get(id)).filter(Boolean);
 
   return (
     <div className="pp"><style>{CSS}</style>
@@ -285,7 +286,7 @@ export default function PortalPrograma() {
         {error && <div className="pp-err" role="alert">{error}</div>}
 
         {/* Lo que depende del cliente */}
-        {(sinLuz.length > 0 || porAprobar.length > 0 || sinSup.length > 0) && <>
+        {(sinLuz.length > 0 || porAprobar.length > 0 || sinSup.length > 0 || sinPers.length > 0) && <>
           <h2 className="pp-h2">Lo que necesitamos de ustedes</h2>
           <div className="pp-grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(300px,1fr))' }}>
             {porAprobar.length > 0 && (
@@ -314,6 +315,19 @@ export default function PortalPrograma() {
                   </div>
                 ))}
                 {sinLuz.length > 8 && <div className="pp-d" style={{ paddingTop: 8, color: 'var(--muted)', fontSize: '.8rem' }}>…y {sinLuz.length - 8} más en la lista de abajo.</div>}
+              </div>
+            )}
+            {sinPers.length > 0 && (
+              <div className="pp-card pp-pend">
+                <div style={{ fontWeight: 800 }}>Aprobación del personal ({sinPers.length})</div>
+                <div className="pp-d" style={{ color: 'var(--muted)', fontSize: '.8rem', marginBottom: 6 }}>Suban la aprobación del personal en la ficha de cada sitio para poder entrar a trabajar.</div>
+                {sinPers.slice(0, 6).map(l => (
+                  <div className="pp-fila" key={l.id}>
+                    <div style={{ minWidth: 0 }}><div className="pp-n">{l.nombre}</div><div className="pp-d">{etapaLabel[l.etapa]}</div></div>
+                    <button className="pp-btn" onClick={() => abrirFicha(l)}>Subir</button>
+                  </div>
+                ))}
+                {sinPers.length > 6 && <div className="pp-d" style={{ paddingTop: 8, color: 'var(--muted)', fontSize: '.8rem' }}>…y {sinPers.length - 6} más.</div>}
               </div>
             )}
             {sinSup.length > 0 && (

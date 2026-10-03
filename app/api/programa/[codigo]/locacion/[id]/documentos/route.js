@@ -39,11 +39,14 @@ export async function POST(request, { params }) {
     try { await db.storage.from('proyecto-archivos').remove([path]); } catch { /* noop */ }
     return Response.json({ ok: false, error: 'No se pudo registrar el documento.' }, { status: 500 });
   }
+  if (tipo === 'aprobacion_personal') {
+    await db.from('programa_locaciones').update({ personal_aprobado_at: new Date().toISOString(), personal_aprobado_por: `${quien} (portal)` }).eq('id', loc.id);
+  }
 
   try {
     const KEY = process.env.RESEND_API_KEY, FROM = process.env.RESEND_FROM_EMAIL;
     if (KEY && FROM) {
-      const etiqueta = { oc: 'una orden de compra', cotizacion: 'una cotización', autorizacion: 'una autorización del propietario', informe: 'un informe', garantia: 'una carta de garantía' }[tipo] || 'un documento';
+      const etiqueta = { oc: 'una orden de compra', aprobacion_personal: 'la aprobación del personal', lista_personal: 'una lista de personal', cotizacion: 'una cotización', autorizacion: 'una autorización del propietario', informe: 'un informe', garantia: 'una carta de garantía' }[tipo] || 'un documento';
       await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: { Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },

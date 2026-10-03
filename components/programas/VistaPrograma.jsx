@@ -181,6 +181,7 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, onVo
                             <div className="text-[11px] font-bold text-zinc-100 truncate hover:underline">{l.nombre}</div>
                             <div className="text-[10px] text-zinc-500 truncate">{l.codigoUt}{l.sector ? ` · ${l.sector}` : ''}</div>
                             {l.etapaDesde && <div className="text-[10px] text-zinc-400">desde {new Date(l.etapaDesde).toLocaleDateString('es-DO', { day: 'numeric', month: 'short' })}{l.diasEnEtapa != null ? ` · ${l.diasEnEtapa} d` : ''}</div>}
+                            {['por_programar', 'en_ejecucion'].includes(e.id) && !l.personalAprobadoAt && <div className="text-[10px] text-red-400 font-bold">Falta aprobación del personal</div>}
                             {e.id === 'por_levantar' && l.fechaVisita && <div className="text-[10px] text-amber-400">Visita: {textoCoordinacion(l.fechaVisita, l.horaVisita)}</div>}
                           </button>
                           {l.cotizacionRef && (

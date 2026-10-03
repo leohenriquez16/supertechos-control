@@ -93,3 +93,14 @@ create index if not exists idx_prog_docs_loc on programa_documentos(locacion_id)
 alter table programa_documentos disable row level security;
 grant select, insert, update, delete on programa_documentos to anon, authenticated;
 notify pgrst, 'reload schema';
+
+-- (137) Aprobación del personal por el cliente (obligatoria para trabajar en el sitio)
+alter table programa_locaciones add column if not exists personal_aprobado_at timestamptz;
+alter table programa_locaciones add column if not exists personal_aprobado_por text;
+-- (137) OC firmada: número, resultado de la validación y envío al cliente
+alter table programa_documentos add column if not exists numero_oc text;
+alter table programa_documentos add column if not exists validacion jsonb;
+alter table programa_documentos add column if not exists enviado_cliente_at timestamptz;
+alter table programa_documentos add column if not exists enviado_a text;
+-- (137) A quién se le reenvía la OC firmada (compras del cliente)
+alter table programas add column if not exists correos_oc text[];

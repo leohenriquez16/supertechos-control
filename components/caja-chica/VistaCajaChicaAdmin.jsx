@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { ArrowLeft, Loader2, Plus, Wallet, AlertCircle, Eye, Check, X, Trash2, FileText, Filter, Sparkles, MessageSquare, Camera, RotateCcw, RotateCw, Info, FileX, HelpCircle, Columns3, PanelRight, ChevronLeft, ChevronRight, Edit2, Image as ImageIcon } from 'lucide-react';
 import * as db from '../../lib/db';
+import { obraCerrada } from '../../lib/helpers/obraGastos';
 import { toast } from '../../lib/toast';
 import { EMPRESAS_RECEPTORAS } from '../../lib/constants';
 import { formatRD, formatNum, formatFechaCorta } from '../../lib/helpers/formato';
@@ -1337,6 +1338,7 @@ function FilaPendiente({ m, data, dx, onAprobar, onRechazar, onEliminar, onVerFo
             <span className="text-[9px] text-zinc-500">{m.tipo === 'gasto_factura' ? '🧾' : m.tipo === 'dieta' ? '🍽️' : m.tipo}</span>
             {fotoPorWs && <span className="text-[9px] px-1 bg-yellow-900/40 text-yellow-300 border border-yellow-700 rounded-full">📱 WS</span>}
             {sinFactura && <span className="text-[9px] px-1 bg-red-900/40 text-red-300 border border-red-800 rounded-full font-bold">✍ SIN FACTURA</span>}
+            {obraCerrada(proy) && m.tipo !== 'entrega' && m.status === 'pendiente_revision' && <span className="text-[9px] px-1 bg-red-900/40 text-red-300 border border-red-800 rounded-full font-bold">🔒 OBRA CERRADA</span>}
             {/* v8.17.25: badge empresa receptora */}
             {empresa && <span className={`text-[9px] px-1 ${empresa.color} text-white border ${empresa.borderColor} rounded-full font-bold`} title={`Factura a nombre de ${empresa.label}`}>{empresa.short}</span>}
             {!sinFactura && !m.empresaReceptora && m.tipo === 'gasto_factura' && (
@@ -1473,6 +1475,7 @@ function FilaMovimiento({ m, data, dx, onAbrirDetalle, onVerFoto, onEliminar, on
           <div className={`text-[9px] font-black uppercase tracking-wider px-1 ${stmeta.cls}`}>{stmeta.label}</div>
           {fotoPorWs && <div className="text-[9px] font-black uppercase tracking-wider px-1 bg-yellow-900/40 text-yellow-300 border border-yellow-700 rounded-full">📱 WS</div>}
           {sinFactura && <div className="text-[9px] font-black uppercase tracking-wider px-1 bg-red-900/40 text-red-300 border border-red-800 rounded-full">✍ SIN FACTURA</div>}
+          {obraCerrada(proy) && m.tipo !== 'entrega' && m.status === 'pendiente_revision' && <div title="La obra ya está facturada o recibida conforme. Revisa si el gasto es de otra obra." className="text-[9px] font-black uppercase tracking-wider px-1 bg-red-900/40 text-red-300 border border-red-800 rounded-full">🔒 OBRA CERRADA</div>}
           {/* v8.17.25: empresa receptora */}
           {empresa && <div className={`text-[9px] font-black uppercase tracking-wider px-1 ${empresa.color} text-white border ${empresa.borderColor} rounded-full`} title={`Factura a ${empresa.label}`}>{empresa.short}</div>}
           {!sinFactura && !m.empresaReceptora && m.tipo === 'gasto_factura' && (
@@ -1707,6 +1710,7 @@ function TablaMovimientos({ movimientos: movsTabla, todosMovimientos, data, sort
                   </div>
                   <div className="flex gap-1 mt-0.5 flex-wrap">
                     {sinFactura && <span className="text-[8px] font-black uppercase tracking-wider px-1 bg-red-900/40 text-red-300 border border-red-800 rounded-full">SIN FACTURA</span>}
+                    {obraCerrada(proy) && m.tipo !== 'entrega' && m.status === 'pendiente_revision' && <span title="Obra facturada o recibida conforme" className="text-[8px] font-black uppercase tracking-wider px-1 bg-red-900/40 text-red-300 border border-red-800 rounded-full">OBRA CERRADA</span>}
                     {fotoPorWs && <span className="text-[8px] font-black uppercase tracking-wider px-1 bg-yellow-900/40 text-yellow-300 border border-yellow-700 rounded-full">📱 WS</span>}
                     {incompletoVisible && <span className="text-[8px] font-black uppercase tracking-wider px-1 bg-amber-900/40 text-amber-300 border border-amber-700 rounded-full" title={`Faltan: ${dInc.motivos.map(x => LABEL_MOTIVO[x] || x).join(' · ')}`}>⚠ FALTAN</span>}
                     {!showCol('rnc') && m.rnc && <span className="text-[9px] text-zinc-500 font-mono">RNC {m.rnc}</span>}

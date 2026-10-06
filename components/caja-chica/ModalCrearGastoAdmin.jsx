@@ -11,10 +11,11 @@ import * as db from '../../lib/db';
 import { formatRD, formatRNC, limpiarRNC } from '../../lib/helpers/formato';
 import { EMPRESAS_RECEPTORAS } from '../../lib/constants';
 import ProyectoSelector from '../common/ProyectoSelector';
+import { obraAdmiteGastos } from '../../lib/helpers/obraGastos';
 
 export default function ModalCrearGastoAdmin({ usuario, data, onCerrar, onCreado, movimientos = [] }) {
   const personalConCaja = (data.personal || []).filter(p => p.cajaChicaHabilitada && p.activo !== false);
-  const proyectosActivos = (data.proyectos || []).filter(p => !p.archivado);
+  const proyectosActivos = (data.proyectos || []).filter(obraAdmiteGastos);
   const categoriasActivas = (data.categoriasCajaChica || []).filter(c => c.activa);
 
   // Orden de proyectos por último uso (mismo criterio del modal de detalle)

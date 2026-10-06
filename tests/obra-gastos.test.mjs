@@ -1,0 +1,12 @@
+import { obraAdmiteGastos, obraCerrada } from '../lib/helpers/obraGastos.js';
+let ok = 0, ko = 0;
+const t = (n, c) => { if (c) ok++; else { ko++; console.error('FALLA:', n); } };
+t('facturada cerrada', obraCerrada({ estado: 'facturado' }));
+t('recibida conforme cerrada', obraCerrada({ estado: 'finalizado_recibido_conforme' }));
+t('finalizada sin entregar abierta', !obraCerrada({ estado: 'finalizado_no_entregado' }));
+t('facturada no admite', !obraAdmiteGastos({ estado: 'facturado' }));
+t('en ejecución admite', obraAdmiteGastos({ estado: 'en_ejecucion' }));
+t('parado admite', obraAdmiteGastos({ estado: 'parado' }));
+t('archivada no admite', !obraAdmiteGastos({ estado: 'en_ejecucion', archivado: true }));
+t('null no admite', !obraAdmiteGastos(null));
+console.log(`${ok} pasadas, ${ko} fallidas`); if (ko) process.exit(1);

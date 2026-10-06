@@ -6,6 +6,18 @@
 // EJECUCIÓN no tienen reporte de avance del día anterior (fecha tope: 10:30 am
 // del día siguiente). Si ayer fue domingo, se evalúa el sábado.
 //
+// v8.55.2: la obra se exige por el estado que TENÍA el día evaluado, no por el
+// que tiene a la hora del correo. Antes, una obra puesta en ejecución hoy salía
+// como "no reportó ayer" — ayer no había arrancado — y la salida racional era
+// esperar a que pasara el correo para marcarla: 63% de los cambios a ejecución
+// de los últimos 6 meses ocurren a las 10:30 o después, 37 de ellos en la hora
+// siguiente al envío. Ahora:
+//   · entró en ejecución después del día evaluado → no se exige (va aparte)
+//   · hubo jornada y no hay reporte → falta real (es lo que cuenta el asunto)
+//   · sin jornada y sin reporte → pregunta: ¿se trabajó o está parada?
+// El "desde cuándo está en ejecución" sale de historial_estados (existe desde
+// abr-2026); si una obra no tiene historial, se cae a fecha_inicio.
+//
 // Destinatarios: env ALERTA_REPORTES_EMAILS (coma-separados) o por defecto
 // Leonardo + Miguel; además incluye automáticamente el email de la ficha de
 // Erisdania (o de quien se agregue a la lista) cuando esté lleno en Personal.
@@ -45,7 +57,7 @@ export async function GET(request) {
 
   // Obras en ejecución + reportes y jornadas del día evaluado + personal (nombres/emails)
   const [{ data: obras }, { data: reps }, { data: jors }, { data: personal }] = await Promise.all([
-    supabase.from('proyectos').select('id, cliente, nombre, referencia_odoo, supervisor_id, maestro_id').eq('estado', 'en_ejecucion').eq('archivado', false),
+    supabase.from('proyectos').select('id, cliente, nombre, referencia_odoo, supervisor_id, maestro_id, fecha_inicio').eq('estado', 'en_ejecucion').eq('archivado', false),
     supabase.from('reportes').select('proyecto_id').eq('fecha', diaEval),
     supabase.from('jornadas').select('proyecto_id').eq('fecha', diaEval),
     supabase.from('personal').select('id, nombre, email'),
@@ -54,7 +66,35 @@ export async function GET(request) {
   const conReporte = new Set((reps || []).map(r => r.proyecto_id));
   const conJornada = new Set((jors || []).map(j => j.proyecto_id));
 
-  const faltantes = (obras || []).filter(o => !conReporte.has(o.id));
+  // v8.55.2: ¿desde cuándo está en ejecución cada obra? Último cambio a
+  // 'en_ejecucion' en el historial; si no hay historial, fecha_inicio.
+  const ids = (obras || []).map(o => o.id);
+  let enEjecDesde = {};   // proyecto_id → ISO del cambio a ejecución
+  if (ids.length) {
+    const { data: hist } = await supabase.from('historial_estados')
+      .select('proyecto_id, created_at')
+      .in('proyecto_id', ids).eq('estado_nuevo', 'en_ejecucion')
+      .order('created_at', { ascending: true });
+    (hist || []).forEach(h => { enEjecDesde[h.proyecto_id] = h.created_at; });  // se queda el más reciente
+  }
+  // Fin del día evaluado en hora RD (UTC-4): todo cambio posterior arrancó después.
+  const finDiaEval = new Date(`${diaEval}T23:59:59-04:00`);
+  const fechaRD = (iso) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo' }).format(new Date(iso));
+  const horaRD = (iso) => new Date(iso).toLocaleTimeString('es-DO', { timeZone: 'America/Santo_Domingo', hour: '2-digit', minute: '2-digit' });
+  const arrancoDespues = (o) => {
+    const h = enEjecDesde[o.id];
+    if (h) return new Date(h) > finDiaEval;
+    if (o.fecha_inicio) return o.fecha_inicio > diaEval;
+    return false;   // sin dato: se comporta como antes y se exige
+  };
+
+  // Tres grupos, en vez de una sola lista que mezclaba cosas distintas.
+  const recienArrancadas = (obras || []).filter(arrancoDespues);
+  const activasEseDia = (obras || []).filter(o => !arrancoDespues(o));
+  const sinReporte = activasEseDia.filter(o => !conReporte.has(o.id));
+  const trabajaronSinReporte = sinReporte.filter(o => conJornada.has(o.id));
+  const sinJornadaNiReporte = sinReporte.filter(o => !conJornada.has(o.id));
+  const faltantes = sinReporte;
 
   // Último reporte de cada obra faltante (ventana 21 días)
   let ultimoRep = {};
@@ -73,14 +113,46 @@ export async function GET(request) {
     .forEach(p => { if (!destinatarios.includes(p.email)) destinatarios.push(p.email); });
 
   const etiqueta = (o) => [o.referencia_odoo, o.cliente || o.nombre].filter(Boolean).join(' · ');
-  const filas = faltantes.map(o => `
+  const TD = 'border:1px solid #ddd;padding:6px';
+  const filaObra = (o) => `
     <tr>
-      <td style="border:1px solid #ddd;padding:6px">${etiqueta(o)}</td>
-      <td style="border:1px solid #ddd;padding:6px">${nombreDe(o.supervisor_id)}</td>
-      <td style="border:1px solid #ddd;padding:6px">${nombreDe(o.maestro_id)}</td>
-      <td style="border:1px solid #ddd;padding:6px;text-align:center">${conJornada.has(o.id) ? '✅ Sí' : '❌ No'}</td>
-      <td style="border:1px solid #ddd;padding:6px;text-align:center">${ultimoRep[o.id] || 'sin reportes (21d)'}</td>
-    </tr>`).join('');
+      <td style="${TD}">${etiqueta(o)}</td>
+      <td style="${TD}">${nombreDe(o.supervisor_id)}</td>
+      <td style="${TD}">${nombreDe(o.maestro_id)}</td>
+      <td style="${TD};text-align:center">${ultimoRep[o.id] || 'sin reportes (21d)'}</td>
+    </tr>`;
+  const tabla = (titulo, color, obrasLista, pie) => !obrasLista.length ? '' : `
+    <h3 style="color:${color};margin:20px 0 6px">${titulo} (${obrasLista.length})</h3>
+    <table style="border-collapse:collapse;width:100%;font-size:13px">
+      <tr style="background:#f3f3f3">
+        <th style="${TD};text-align:left">Obra</th>
+        <th style="${TD};text-align:left">Supervisor</th>
+        <th style="${TD};text-align:left">Maestro</th>
+        <th style="${TD}">Último reporte</th>
+      </tr>${obrasLista.map(filaObra).join('')}
+    </table>
+    <p style="font-size:12px;color:#666;margin:6px 0 0">${pie}</p>`;
+
+  // v8.55.2: las que arrancaron después del día evaluado no son falta; se listan
+  // para que se vea el movimiento del día y para que marcarlas temprano no cueste.
+  const seccionArrancadas = !recienArrancadas.length ? '' : `
+    <h3 style="color:#2563eb;margin:20px 0 6px">🚀 Arrancaron después del ${fmt(diaEval)} (${recienArrancadas.length})</h3>
+    <table style="border-collapse:collapse;width:100%;font-size:13px">
+      <tr style="background:#f3f3f3">
+        <th style="${TD};text-align:left">Obra</th>
+        <th style="${TD};text-align:left">Supervisor</th>
+        <th style="${TD}">En ejecución desde</th>
+      </tr>
+      ${recienArrancadas.map(o => {
+        const h = enEjecDesde[o.id];
+        return `<tr>
+          <td style="${TD}">${etiqueta(o)}</td>
+          <td style="${TD}">${nombreDe(o.supervisor_id)}</td>
+          <td style="${TD};text-align:center">${h ? `${fechaRD(h)} ${horaRD(h)}` : (o.fecha_inicio || '—')}</td>
+        </tr>`;
+      }).join('')}
+    </table>
+    <p style="font-size:12px;color:#666;margin:6px 0 0">No se les pide reporte del ${fmt(diaEval)}: ese día todavía no habían arrancado.</p>`;
 
   // v8.31.1: proyectos APROBADOS con información incompleta (regla: un proyecto
   // aprobado en Odoo queda completo en el ERP el mismo día — KPI de Miguel/Erisdania).
@@ -176,24 +248,27 @@ export async function GET(request) {
   const todoBien = faltantes.length === 0;
   const asunto = todoBien
     ? `✅ Reportes de obra al día — ${fmt(diaEval)}`
-    : `⚠️ ${faltantes.length} obra${faltantes.length !== 1 ? 's' : ''} sin reporte del ${fmt(diaEval)}`;
+    : trabajaronSinReporte.length
+      ? `⚠️ ${trabajaronSinReporte.length} obra${trabajaronSinReporte.length !== 1 ? 's' : ''} ${trabajaronSinReporte.length !== 1 ? 'trabajaron' : 'trabajó'} sin reportar — ${fmt(diaEval)}`
+      : `❓ ${sinJornadaNiReporte.length} obra${sinJornadaNiReporte.length !== 1 ? 's' : ''} sin jornada ni reporte — ${fmt(diaEval)}`;
+
+  const pie = `<p style="font-size:12px;color:#666;margin-top:14px">
+      Se evalúa el estado que la obra tenía el ${fmt(diaEval)}: la que arrancó después no se cuenta. Fecha tope: 10:30 am del día siguiente.<br>
+      — ERP Super Techos · ${activasEseDia.length - faltantes.length}/${activasEseDia.length} obras que ya estaban en ejecución sí reportaron</p>`;
+
   const html = todoBien
-    ? `<div style="font-family:Arial,sans-serif"><h2 style="color:#15803d">✅ Todas las obras en ejecución reportaron el ${fmt(diaEval)}</h2><p style="font-size:13px;color:#666">${(obras || []).length} obras en ejecución, todas con reporte. — ERP Super Techos</p>${seccionProyectos}${seccionNomina}</div>`
+    ? `<div style="font-family:Arial,sans-serif;max-width:680px">
+        <h2 style="color:#15803d">✅ Todas las obras en ejecución reportaron el ${fmt(diaEval)}</h2>
+        <p style="font-size:13px;color:#666">${activasEseDia.length} obra${activasEseDia.length !== 1 ? 's' : ''} en ejecución ese día, todas con reporte.</p>
+        ${seccionArrancadas}${seccionProyectos}${seccionNomina}${pie}
+      </div>`
     : `<div style="font-family:Arial,sans-serif;max-width:680px">
-        <h2 style="color:#D71920">⚠️ Obras sin reporte del ${fmt(diaEval)}</h2>
-        <p style="font-size:13px">Fecha tope: 10:30 am del día siguiente. Estas obras en ejecución no tienen reporte de avance:</p>
-        <table style="border-collapse:collapse;width:100%;font-size:13px">
-          <tr style="background:#f3f3f3">
-            <th style="border:1px solid #ddd;padding:6px;text-align:left">Obra</th>
-            <th style="border:1px solid #ddd;padding:6px;text-align:left">Supervisor</th>
-            <th style="border:1px solid #ddd;padding:6px;text-align:left">Maestro</th>
-            <th style="border:1px solid #ddd;padding:6px">¿Hubo jornada?</th>
-            <th style="border:1px solid #ddd;padding:6px">Último reporte</th>
-          </tr>${filas}
-        </table>
-        <p style="font-size:12px;color:#666;margin-top:12px">✅ jornada sin reporte = trabajaron y no reportaron (llamar al supervisor) · ❌ sin jornada = ¿no se trabajó o no se registró? Si la obra no puede avanzar, márquenla "parado" con su razón.<br>— ERP Super Techos · ${(obras || []).length - faltantes.length}/${(obras || []).length} obras sí reportaron</p>
-        ${seccionProyectos}
-        ${seccionNomina}
+        <h2 style="color:#D71920">Reporte de obra del ${fmt(diaEval)}</h2>
+        ${tabla('🚨 Trabajaron y no reportaron', '#D71920', trabajaronSinReporte,
+                'Hubo jornada registrada y no hay reporte de avance. Es la falta: llamar al supervisor.')}
+        ${tabla('❓ Sin jornada ni reporte', '#b45309', sinJornadaNiReporte,
+                '¿No se trabajó, o no se registró? Si la obra no puede avanzar, márquenla "parado" con su razón.')}
+        ${seccionArrancadas}${seccionProyectos}${seccionNomina}${pie}
       </div>`;
 
   const resp = await fetch('https://api.resend.com/emails', {
@@ -205,6 +280,8 @@ export async function GET(request) {
 
   return Response.json({
     ok: resp.ok, diaEvaluado: diaEval, obrasEnEjecucion: (obras || []).length,
+    activasEseDia: activasEseDia.length, arrancaronDespues: recienArrancadas.length,
+    trabajaronSinReporte: trabajaronSinReporte.length, sinJornadaNiReporte: sinJornadaNiReporte.length,
     sinReporte: faltantes.length, destinatarios, resendId: data?.id || null,
     ...(resp.ok ? {} : { motivo: data?.message || `Resend HTTP ${resp.status}` }),
   }, { status: resp.ok ? 200 : 502 });

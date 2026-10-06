@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { ArrowLeft, Loader2, Plus, Wallet, AlertCircle, Eye, Check, X, Trash2, FileText, Filter, Sparkles, MessageSquare, Camera, RotateCcw, RotateCw, Info, FileX, HelpCircle, Columns3, PanelRight, ChevronLeft, ChevronRight, Edit2, Image as ImageIcon } from 'lucide-react';
 import * as db from '../../lib/db';
-import { obraCerrada } from '../../lib/helpers/obraGastos';
+import { obraCerrada, obraAdmiteGastos } from '../../lib/helpers/obraGastos';
 import { toast } from '../../lib/toast';
 import { EMPRESAS_RECEPTORAS } from '../../lib/constants';
 import { formatRD, formatNum, formatFechaCorta } from '../../lib/helpers/formato';
@@ -1549,7 +1549,7 @@ function TablaMovimientos({ movimientos: movsTabla, todosMovimientos, data, sort
   const rowPad = compacto ? 'py-1 px-2' : 'py-2 px-2';
   // v8.17.33: proyectos ordenados por uso más reciente en caja chica (incluye todos los movs, no solo los filtrados)
   const proyectosOrdenados = useMemo(
-    () => proyectosOrdenadosPorUsoCaja((data.proyectos || []).filter(p => !p.archivado), todosMovimientos || movsTabla),
+    () => proyectosOrdenadosPorUsoCaja((data.proyectos || []).filter(obraAdmiteGastos), todosMovimientos || movsTabla),
     [data.proyectos, todosMovimientos, movsTabla]
   );
   // v8.17.33: ids de filas que el admin habilitó para edición. Solo pendientes.
@@ -1831,7 +1831,7 @@ function PanelVisorFactura({ movimientos, todosMovimientos, movId, setMovId, dat
   const mov = idx >= 0 ? movimientos[idx] : null;
   // v8.17.33: ordenados por uso más reciente en caja chica
   const proyectosOrdenados = useMemo(
-    () => proyectosOrdenadosPorUsoCaja((data.proyectos || []).filter(p => !p.archivado), todosMovimientos || []),
+    () => proyectosOrdenadosPorUsoCaja((data.proyectos || []).filter(obraAdmiteGastos), todosMovimientos || []),
     [data.proyectos, todosMovimientos]
   );
   // v8.17.33: modo edición del panel (uno solo activo a la vez, se resetea al cambiar de mov o status)

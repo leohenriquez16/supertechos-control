@@ -13,6 +13,7 @@ import { calcularAlertasSinFactura } from '../../lib/helpers/alertasSinFactura';
 import { validarRNC, validarNCF } from '../../lib/validacionFiscal';
 import { EMPRESAS_RECEPTORAS } from '../../lib/constants';
 import ProyectoSelector from '../common/ProyectoSelector';
+import { obraAdmiteGastos } from '../../lib/helpers/obraGastos';
 
 const tieneRol = (p, r) => p?.roles?.includes(r);
 
@@ -26,7 +27,7 @@ export default function ModalDetalleMovimiento({
   movimientos = null,
 }) {
   const persona = data.personal.find(p => p.id === movimiento.personaId);
-  const proyectosActivos = (data.proyectos || []).filter(p => !p.archivado);
+  const proyectosActivos = (data.proyectos || []).filter(p => obraAdmiteGastos(p) || p.id === movimiento.proyectoId);
   const categoriasActivas = (data.categoriasCajaChica || []).filter(c => c.activa);
 
   // v8.17.27: proyectos ordenados por último uso en caja chica (más recientes primero)

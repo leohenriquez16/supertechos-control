@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { ArrowLeft, Plus, Loader2, Camera, Wallet, Clock, CircleCheck, X, AlertTriangle, Eye, Sparkles, FileWarning, HelpCircle, UtensilsCrossed } from 'lucide-react';
 import * as db from '../../lib/db';
+import { obraAdmiteGastos } from '../../lib/helpers/obraGastos';
 import { formatRD, formatNum, formatFechaCorta } from '../../lib/helpers/formato';
 import { resumenDietaHospedaje, LABEL_SUB_TIPO, EMOJI_SUB_TIPO } from '../../lib/helpers/dietaHospedaje';
 import ModalReportarGasto from './ModalReportarGasto';
@@ -105,7 +106,7 @@ export default function VistaMiCajaChica({ usuario, data, onVolver }) {
     //   2) Activos sin uso en caja → alfabético
     //   3) Archivados → al fondo
     return (data.proyectos || [])
-      .filter(p => ids.has(p.id))
+      .filter(p => ids.has(p.id) && obraAdmiteGastos(p))
       .sort((a, b) => {
         // Archivados siempre al final
         if (!!a.archivado !== !!b.archivado) return a.archivado ? 1 : -1;

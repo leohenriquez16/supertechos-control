@@ -8,6 +8,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Upload, X, Loader2, Check, AlertCircle, Sparkles, Trash2, FileWarning, Send } from 'lucide-react';
 import * as db from '../../lib/db';
+import { obraAdmiteGastos } from '../../lib/helpers/obraGastos';
 import { toast } from '../../lib/toast';
 import { comprimirImagen } from '../../lib/imports';
 import {
@@ -33,7 +34,7 @@ export default function ModalCargaMasiva({ usuario, data, onCerrar, onListo }) {
     [data.personal]
   );
   const proyectosActivos = useMemo(
-    () => (data.proyectos || []).filter(p => !p.archivado),
+    () => (data.proyectos || []).filter(obraAdmiteGastos),
     [data.proyectos]
   );
   const categoriasActivas = useMemo(

@@ -1,0 +1,13 @@
+import { personasSinFormaDePago } from '../lib/helpers/formaPago.js';
+let ok = 0, ko = 0;
+const t = (n, c) => { if (c) ok++; else { ko++; console.error('FALLA:', n); } };
+const dia = { id: 'o1', modoPagoManoObra: 'dia', maestroId: 'm' };
+const m2 = { id: 'o2', modoPagoManoObra: 'm2', maestroId: 'm' };
+t('obra por día sin costo → falta', personasSinFormaDePago(dia, ['m', 'a'], []).length === 2);
+t('con costo no falta', personasSinFormaDePago(dia, ['a'], [{ personaId: 'a', costoDia: 1000 }]).length === 0);
+t('lo paga el maestro no falta', personasSinFormaDePago(dia, ['a'], [{ personaId: 'a', modoPago: 'maestro' }]).length === 0);
+t('obra m² ayudante no se pregunta', personasSinFormaDePago(m2, ['m', 'a'], []).length === 0);
+t('obra m² pero persona por día sin monto → falta', personasSinFormaDePago(m2, ['s'], [{ personaId: 's', modoPago: 'dia' }]).length === 1);
+t('marca al maestro', personasSinFormaDePago(dia, ['m'], [])[0].esMaestro === true);
+t('sin repetidos', personasSinFormaDePago(dia, ['a', 'a'], []).length === 1);
+console.log(`${ok} pasadas, ${ko} fallidas`); if (ko) process.exit(1);

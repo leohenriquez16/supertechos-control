@@ -112,6 +112,7 @@ const MODO_BADGE = {
   dia_m2:  { label: 'Día+m²',   cls: 'bg-teal-900/40 border-teal-700 text-teal-300' }, // v8.27.69
   tarea:   { label: 'Tarea',    cls: 'bg-orange-900/40 border-orange-700 text-orange-300' },
   ajuste:  { label: 'Ajuste',   cls: 'bg-zinc-800 border-zinc-700 text-zinc-400' },
+  maestro: { label: 'Su maestro', cls: 'bg-zinc-800 border-zinc-700 text-zinc-400' }, // v8.59.7: lo paga su maestro (RD$0 empresa)
 };
 function ModoBadge({ modo }) {
   const m = MODO_BADGE[modo] || MODO_BADGE.ajuste;

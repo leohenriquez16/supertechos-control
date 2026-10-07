@@ -391,6 +391,7 @@ export default function VistaMiCajaChica({ usuario, data, onVolver }) {
         <ModalReportarGastosMasivo
           usuario={usuario}
           proyectos={proyectosDelUsuario}
+          otrasObras={(data.proyectos || []).filter(obraAdmiteGastos)}
           categorias={data.categoriasCajaChica || []}
           onCerrar={() => setModalMasivo(false)}
           onGuardado={() => { setModalMasivo(false); cargar(); }}

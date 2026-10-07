@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { ArrowLeft, Loader2, Plus, Wallet, AlertCircle, Eye, Check, X, Trash2, FileText, Filter, Sparkles, MessageSquare, Camera, RotateCcw, RotateCw, Info, FileX, HelpCircle, Columns3, PanelRight, ChevronLeft, ChevronRight, Edit2, Image as ImageIcon } from 'lucide-react';
 import * as db from '../../lib/db';
-import { obraCerrada } from '../../lib/helpers/obraGastos';
+import { obraCerrada, obraAdmiteGastos } from '../../lib/helpers/obraGastos';
 import { toast } from '../../lib/toast';
 import { EMPRESAS_RECEPTORAS } from '../../lib/constants';
 import { formatRD, formatNum, formatFechaCorta } from '../../lib/helpers/formato';
@@ -1549,7 +1549,7 @@ function TablaMovimientos({ movimientos: movsTabla, todosMovimientos, data, sort
   const rowPad = compacto ? 'py-1 px-2' : 'py-2 px-2';
   // v8.17.33: proyectos ordenados por uso más reciente en caja chica (incluye todos los movs, no solo los filtrados)
   const proyectosOrdenados = useMemo(
-    () => proyectosOrdenadosPorUsoCaja((data.proyectos || []).filter(p => !p.archivado), todosMovimientos || movsTabla),
+    () => proyectosOrdenadosPorUsoCaja((data.proyectos || []).filter(obraAdmiteGastos), todosMovimientos || movsTabla),
     [data.proyectos, todosMovimientos, movsTabla]
   );
   // v8.17.33: ids de filas que el admin habilitó para edición. Solo pendientes.
@@ -1689,11 +1689,12 @@ function TablaMovimientos({ movimientos: movsTabla, todosMovimientos, data, sort
                       value={m.proyectoId || ''}
                       onChange={e => saveAndExit(m, { proyectoId: e.target.value || null })}
                       autoFocus
-                      className="bg-zinc-950 border-2 border-red-600 outline-none px-1.5 py-1 text-xs text-white max-w-[160px]"
+                      className="bg-zinc-950 border-2 border-red-600 outline-none px-1.5 py-1 text-xs text-white max-w-[260px]"
                       title={proy?.cliente || 'Sin proyecto'}
                     >
                       <option value="">— Sin —</option>
-                      {proyectosOrdenados.map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo || p.cliente}</option>)}
+                      {/* v8.59.6: código + nombre de la obra; con solo el código, 1296 y 1269 se confunden */}
+                      {proyectosOrdenados.map(p => <option key={p.id} value={p.id}>{[p.referenciaOdoo, p.nombre || p.cliente].filter(Boolean).join(' · ')}</option>)}
                     </select>
                   ) : (
                     <span className="text-zinc-300 text-xs">{proy?.referenciaOdoo || proy?.cliente || <span className="text-zinc-600">—</span>}</span>
@@ -1831,7 +1832,7 @@ function PanelVisorFactura({ movimientos, todosMovimientos, movId, setMovId, dat
   const mov = idx >= 0 ? movimientos[idx] : null;
   // v8.17.33: ordenados por uso más reciente en caja chica
   const proyectosOrdenados = useMemo(
-    () => proyectosOrdenadosPorUsoCaja((data.proyectos || []).filter(p => !p.archivado), todosMovimientos || []),
+    () => proyectosOrdenadosPorUsoCaja((data.proyectos || []).filter(obraAdmiteGastos), todosMovimientos || []),
     [data.proyectos, todosMovimientos]
   );
   // v8.17.33: modo edición del panel (uno solo activo a la vez, se resetea al cambiar de mov o status)

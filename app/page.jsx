@@ -1,5 +1,8 @@
 'use client';
 
+import { buscarPersonasParecidas } from '../lib/helpers/personasParecidas';
+import AvisoFormaPago from '../components/proyecto/AvisoFormaPago';
+import PreciosAjustadosObra from '../components/proyecto/PreciosAjustadosObra';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic'; // v8.55.0: carga perezosa de vistas
 import { createPortal } from 'react-dom';
@@ -3377,7 +3380,7 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
           <button onClick={() => { setEditando('new'); setForm({ id: 'p_' + Date.now(), nombre: '', pin: '', roles: ['ayudante'], maestroId: '' }); }} className="bg-red-600 hover:bg-red-700 text-white font-black uppercase px-4 py-2 text-xs flex items-center gap-1"><Plus className="w-3 h-3" /> Nueva</button>
         </div>
       </div>
-      {modalInvitar && <ModalInvitarMaestro usuario={usuario} onCerrar={() => setModalInvitar(false)} onInvitado={() => { onRecargar?.(); }} />}
+      {modalInvitar && <ModalInvitarMaestro usuario={usuario} personal={personal} onCerrar={() => setModalInvitar(false)} onInvitado={() => { onRecargar?.(); }} />}
       {activando && <ModalInvitarMaestro usuario={usuario} personaExistente={activando} onCerrar={() => setActivando(null)} onInvitado={() => { onRecargar?.(); }} />}
 
       {/* v8.17.2: Buscador por nombre / PIN / teléfono */}
@@ -3409,6 +3412,22 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
         <div className="bg-zinc-900 border-2 border-red-600 p-4 space-y-3">
           <div className="flex justify-between items-center"><div className="text-xs tracking-widest uppercase font-bold text-red-500">{editando === 'new' ? 'Nueva' : 'Editar'}</div><button onClick={() => { setEditando(null); setForm(null); }} className="text-zinc-500"><X className="w-4 h-4" /></button></div>
           <Campo label="Nombre"><Input value={form.nombre} onChange={v => setForm({ ...form, nombre: v })} /></Campo>
+          {/* v8.59.7: antes de crear, avisar si ya existe una ficha parecida (evita duplicados). */}
+          {editando === 'new' && (() => {
+            const par = buscarPersonasParecidas(personal, { nombre: form.nombre, telefono: form.telefono });
+            if (!par.length) return null;
+            return (
+              <div className="bg-amber-950/40 border border-amber-700 rounded-card px-3 py-2 space-y-1">
+                <div className="text-xs font-bold text-amber-200">Ya existe alguien parecido. Si es la misma persona, edita esa ficha en vez de crear otra:</div>
+                {par.map(({ persona: p, motivos }) => (
+                  <button key={p.id} type="button" onClick={() => { setEditando(p.id); setForm({ ...p, roles: p.roles || [] }); }}
+                    className="w-full text-left text-xs text-white hover:bg-amber-900/40 px-1 py-0.5 rounded">
+                    <b>{p.nombre}</b> <span className="text-amber-300/80 text-[10px]">· {motivos.join(' · ')}{p.activo === false ? ' · inactivo' : ''} → abrir</span>
+                  </button>
+                ))}
+              </div>
+            );
+          })()}
           <Campo label="Roles">
             <div className="flex flex-wrap gap-2">
               <RolToggle active={form.roles.includes('admin')} onClick={() => toggleRol('admin')}>Admin</RolToggle>
@@ -10912,8 +10931,15 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
 
   const puedeOperarHoy = tieneRol(usuario, 'admin') || proyecto.supervisorId === usuario.id || proyecto.maestroId === usuario.id;
 
+  // v8.59.7: quienes trabajaron en los últimos 15 días, para avisar si alguien cobra por día sin monto.
+  const presentesRecientes = useMemo(() => {
+    const desde = (() => { const d = new Date(hoy + 'T12:00:00'); d.setDate(d.getDate() - 15); return d.toISOString().split('T')[0]; })();
+    return [...new Set([jornadaHoy, ...(historial || [])].filter(j => j && (j.fecha || '') >= desde).flatMap(j => j.personasPresentesIds || []))];
+  }, [jornadaHoy, historial, hoy]);
   return (
     <div className="space-y-5">
+      <AvisoFormaPago proyecto={proyecto} personal={personal} personasIds={presentesRecientes} puedeConfigurar={tieneRol(usuario, 'admin')} />
+      <PreciosAjustadosObra proyecto={proyecto} personal={personal} usuario={usuario} candidatosIds={presentesRecientes} puedeEditar={tieneRol(usuario, 'admin')} />
       {/* Tarjeta del día */}
       <div className="bg-gradient-to-br from-zinc-900 to-zinc-950 border-2 border-zinc-800 p-4 space-y-4">
         <div className="flex items-center justify-between">

@@ -4,9 +4,10 @@
 // temporal y produce un texto listo para enviar por WhatsApp con las
 // instrucciones de primer acceso.
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Loader2, X, Copy, Check, Send, RefreshCw } from 'lucide-react';
 import * as db from '../../lib/db';
+import { buscarPersonasParecidas } from '../../lib/helpers/personasParecidas';
 
 const formatearTelefono = (s) => {
   const d = String(s || '').replace(/\D/g, '').slice(0, 10);
@@ -17,7 +18,9 @@ const formatearTelefono = (s) => {
 
 const generarPin = () => Math.floor(Math.random() * 900000 + 100000).toString();
 
-export default function ModalInvitarMaestro({ usuario, personaExistente = null, onCerrar, onInvitado }) {
+export default function ModalInvitarMaestro({ usuario, personaExistente: personaInicial = null, personal = [], onCerrar, onInvitado }) {
+  // v8.59.7: si al escribir aparece una ficha parecida, se puede usar esa en vez de crear otra.
+  const [personaExistente, setPersonaExistente] = useState(personaInicial);
   const esActivacion = !!personaExistente;
   const [paso, setPaso] = useState('form'); // 'form' | 'listo'
   const [nombre, setNombre] = useState(personaExistente?.nombre || '');
@@ -28,8 +31,17 @@ export default function ModalInvitarMaestro({ usuario, personaExistente = null, 
   const [resultado, setResultado] = useState(null);
   const [copiado, setCopiado] = useState(false);
 
+  const parecidas = useMemo(
+    () => (esActivacion ? [] : buscarPersonasParecidas(personal, { nombre, telefono })),
+    [personal, nombre, telefono, esActivacion]
+  );
+  const [confirmoNueva, setConfirmoNueva] = useState(false);
+  useEffect(() => { setConfirmoNueva(false); }, [nombre, telefono]);
+  const usarFicha = (p) => { setPersonaExistente(p); setNombre(p.nombre); if (p.telefono) setTelefono(p.telefono); setError(''); };
+
   const invitar = async () => {
     if (guardando) return;
+    if (parecidas.length && !confirmoNueva) { setError('Revisa si es una de las personas que ya están en el sistema.'); return; }
     if (!nombre.trim()) { setError('El nombre es obligatorio.'); return; }
     if (telefono.replace(/\D/g, '').length !== 10) { setError('El teléfono debe ser de 10 dígitos.'); return; }
     if (pin.length < 4 || pin.length > 6) { setError('El PIN debe tener 4-6 dígitos.'); return; }
@@ -150,6 +162,25 @@ Cualquier duda me avisas.`
                   </button>
                 </div>
               </Field>
+
+              {parecidas.length > 0 && (
+                <div className="bg-amber-950/40 border border-amber-700 px-3 py-2 space-y-2">
+                  <div className="text-xs font-bold text-amber-200">¿Es alguien que ya está en el sistema?</div>
+                  {parecidas.map(({ persona: p, motivos }) => (
+                    <div key={p.id} className="flex items-center gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs text-white font-bold truncate">{p.nombre}</div>
+                        <div className="text-[10px] text-amber-300/80">{[p.telefono && formatearTelefono(p.telefono), motivos.join(' · '), p.activo === false && 'inactivo'].filter(Boolean).join(' · ')}</div>
+                      </div>
+                      <button type="button" onClick={() => usarFicha(p)} className="shrink-0 bg-amber-600 hover:bg-amber-500 text-black text-[11px] font-black uppercase px-2.5 py-1.5">Es esta</button>
+                    </div>
+                  ))}
+                  <label className="flex items-center gap-2 text-[11px] text-zinc-300 pt-1">
+                    <input type="checkbox" checked={confirmoNueva} onChange={e => { setConfirmoNueva(e.target.checked); setError(''); }} />
+                    No es ninguna, es una persona nueva
+                  </label>
+                </div>
+              )}
 
               {error && (
                 <div className="bg-red-950/50 border border-red-800 px-3 py-2 text-xs text-red-300">

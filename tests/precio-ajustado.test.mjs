@@ -1,0 +1,18 @@
+import { pctAl, pctAntesDe, pagoAjustadoCorte, validarNuevoAvance } from '../lib/helpers/precioAjustado.js';
+let ok = 0, ko = 0;
+const t = (n, c) => { if (c) ok++; else { ko++; console.error('FALLA:', n, ''); } };
+const av = [{ fecha: '2026-10-05', pct: 40 }, { fecha: '2026-10-20', pct: 70 }];
+t('pctAl', pctAl(av, '2026-10-14') === 40 && pctAl(av, '2026-10-20') === 70);
+t('pctAntesDe', pctAntesDe(av, '2026-10-01') === 0 && pctAntesDe(av, '2026-10-15') === 40);
+const c1 = pagoAjustadoCorte({ monto: 180000, avances: av, inicio: '2026-10-01', fin: '2026-10-14' });
+t('corte 1 paga 40% = 72,000', c1.monto === 72000);
+const c2 = pagoAjustadoCorte({ monto: 180000, avances: av, inicio: '2026-10-15', fin: '2026-10-28' });
+t('corte 2 paga 30% = 54,000', c2.monto === 54000);
+t('corte sin cambios paga 0', pagoAjustadoCorte({ monto: 180000, avances: av, inicio: '2026-10-29', fin: '2026-11-11' }).monto === 0);
+t('sin monto paga 0', pagoAjustadoCorte({ monto: 0, avances: av, inicio: '2026-10-01', fin: '2026-10-14' }).monto === 0);
+t('tope 100', pctAl([{ fecha: '2026-10-01', pct: 120 }], '2026-10-02') === 100);
+t('no baja', validarNuevoAvance(av, 50) !== null);
+t('sube ok', validarNuevoAvance(av, 85) === null);
+t('rango', validarNuevoAvance([], 101) !== null && validarNuevoAvance([], 10) === null);
+t('vacío', validarNuevoAvance([], '') !== null);
+console.log(`${ok} pasadas, ${ko} fallidas`); if (ko) process.exit(1);

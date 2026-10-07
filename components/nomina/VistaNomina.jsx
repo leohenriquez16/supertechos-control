@@ -6,6 +6,7 @@ import * as db from '../../lib/db';
 import { formatRD, formatFecha, formatFechaCorta, formatNum } from '../../lib/helpers/formato';
 import { getM2Reporte, calcAvanceProyecto } from '../../lib/helpers/calculos';
 import { chequearNomina } from '../../lib/helpers/chequeoNomina';
+import { pagoAjustadoCorte } from '../../lib/helpers/precioAjustado';
 import { generarArchivoPopular, nombreArchivo } from '../../lib/helpers/archivoBancoPopular';
 import PanelListoNomina from './PanelListoNomina';
 import Campo from '../common/Campo';
@@ -112,6 +113,8 @@ const MODO_BADGE = {
   dia_m2:  { label: 'Día+m²',   cls: 'bg-teal-900/40 border-teal-700 text-teal-300' }, // v8.27.69
   tarea:   { label: 'Tarea',    cls: 'bg-orange-900/40 border-orange-700 text-orange-300' },
   ajuste:  { label: 'Ajuste',   cls: 'bg-zinc-800 border-zinc-700 text-zinc-400' },
+  ajustado: { label: 'Ajustado', cls: 'bg-amber-900/40 border-amber-700 text-amber-300' }, // v8.59.8
+  maestro: { label: 'Su maestro', cls: 'bg-zinc-800 border-zinc-700 text-zinc-400' }, // v8.59.7: lo paga su maestro (RD$0 empresa)
 };
 function ModoBadge({ modo }) {
   const m = MODO_BADGE[modo] || MODO_BADGE.ajuste;
@@ -1153,6 +1156,21 @@ export async function calcularDetalle(jornadas, data, corte, ajustesLista) {
     b.tareaReportes[r.tareaId] = (b.tareaReportes[r.tareaId] || 0) + m2;
   });
 
+  // v8.59.8: precio ajustado — el maestro cobra por el avance (%) que pone la oficina, aunque
+  // en el corte no tenga jornadas ni reportes. Se le crea su fila si el avance subió.
+  let avancesAjustados = [];
+  try {
+    const ajustados = await db.listarPagosAjustados();
+    if (ajustados.length) {
+      avancesAjustados = await db.listarAvancesAjustados([...new Set(ajustados.map(a => a.proyectoId))]);
+      ajustados.forEach(a => {
+        const avs = avancesAjustados.filter(x => x.proyectoId === a.proyectoId && x.personaId === a.personaId);
+        const { monto } = pagoAjustadoCorte({ monto: a.montoAjustado, avances: avs, inicio: corte.fechaInicio, fin: corte.fechaFin });
+        if (monto > 0) getBucket(a.personaId, a.proyectoId);
+      });
+    }
+  } catch (e) { console.warn('precio ajustado:', e?.message); }
+
   // Costos de día para los proyectos involucrados — v8.26.5: en PARALELO
   // (antes era 1 query por proyecto en serie, parte de la lentitud al abrir).
   const proyectosInvolucrados = [...new Set(Object.values(buckets).map(b => b.proyectoId))];
@@ -1162,7 +1180,7 @@ export async function calcularDetalle(jornadas, data, corte, ajustesLista) {
       const lista = await db.listarCostosDia(pid);
       costosDiaMap[pid] = {};
       // v8.26.7: guarda el override completo por persona (costoDia + precioM2 + modoPago)
-      lista.forEach(c => { costosDiaMap[pid][c.personaId] = { costoDia: c.costoDia, precioM2: c.precioM2, modoPago: c.modoPago }; });
+      lista.forEach(c => { costosDiaMap[pid][c.personaId] = { costoDia: c.costoDia, precioM2: c.precioM2, modoPago: c.modoPago, montoAjustado: c.montoAjustado }; });
     } catch {}
   }));
 
@@ -1244,7 +1262,12 @@ export async function calcularDetalle(jornadas, data, corte, ajustesLista) {
       return monto;
     };
     let montoBase = 0;
-    if (modoPersona === 'dia') {
+    let ajusteInfo = null; // v8.59.8
+    if (modoPersona === 'ajustado') {
+      const avs = avancesAjustados.filter(x => x.proyectoId === proy.id && x.personaId === b.personaId);
+      ajusteInfo = pagoAjustadoCorte({ monto: ov.montoAjustado, avances: avs, inicio: corte.fechaInicio, fin: corte.fechaFin });
+      montoBase = ajusteInfo.monto;
+    } else if (modoPersona === 'dia') {
       const costoDia = ov.costoDia || 0;
       montoBase = diasEfectivos * costoDia;
     } else if (modoPersona === 'm2_fijo') {
@@ -1294,6 +1317,7 @@ export async function calcularDetalle(jornadas, data, corte, ajustesLista) {
       montoBase, montoDieta: 0, montoAdelantos: 0, montoOtros: 0,
       montoApoyo: 0, notaApoyo: '',
       montoTotal: montoBase,
+      ...(ajusteInfo ? { pctAvanceDesde: ajusteInfo.pctDesde, pctAvanceHasta: ajusteInfo.pctHasta, montoAjustado: ov.montoAjustado } : {}),
     });
   });
 
@@ -1460,7 +1484,7 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
         try {
           const lista = await db.listarCostosDia(pid);
           costos[pid] = {};
-          lista.forEach(c => { costos[pid][c.personaId] = { costoDia: c.costoDia, precioM2: c.precioM2, modoPago: c.modoPago }; });
+          lista.forEach(c => { costos[pid][c.personaId] = { costoDia: c.costoDia, precioM2: c.precioM2, modoPago: c.modoPago, montoAjustado: c.montoAjustado }; });
         } catch {}
       }));
       setCostosDiaCorte(costos);
@@ -1716,7 +1740,7 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
                     <MiniBar value={rp.total} max={maxPers} color="bg-green-500/50" />
                     <div className="mt-2 space-y-1">{rp.proyectos.map(r => (
                       <div key={r.id} className="bg-zinc-950 border border-zinc-800 rounded-card p-2 text-[10px] flex justify-between items-center gap-2">
-                        <div className="flex-1 min-w-0"><div className="font-bold truncate">{r.proyectoNombre}</div><div className="text-zinc-500 uppercase flex items-center gap-1 mt-0.5"><ModoBadge modo={r.modoPago} /> {r.modoPago === 'dia' ? `${r.diasTrabajados}d${r.diasDobles ? ` (${r.diasDobles}×2)` : ''}` : r.modoPago === 'dia_m2' ? `${r.diasTrabajados}d + ${formatNum(typeof r.m2Efectivo === 'number' ? r.m2Efectivo : r.m2Producidos)} m²` : r.modoPago === 'm2_fijo' ? `${formatNum(typeof r.m2Efectivo === 'number' ? r.m2Efectivo : r.m2Producidos)} m²` : r.modoPago === 'm2' || r.modoPago === 'tarea' ? `${formatNum(r.m2Producidos)} m²` : 'Ajuste'}</div></div>
+                        <div className="flex-1 min-w-0"><div className="font-bold truncate">{r.proyectoNombre}</div><div className="text-zinc-500 uppercase flex items-center gap-1 mt-0.5"><ModoBadge modo={r.modoPago} /> {r.modoPago === 'dia' ? `${r.diasTrabajados}d${r.diasDobles ? ` (${r.diasDobles}×2)` : ''}` : r.modoPago === 'dia_m2' ? `${r.diasTrabajados}d + ${formatNum(typeof r.m2Efectivo === 'number' ? r.m2Efectivo : r.m2Producidos)} m²` : r.modoPago === 'm2_fijo' ? `${formatNum(typeof r.m2Efectivo === 'number' ? r.m2Efectivo : r.m2Producidos)} m²` : r.modoPago === 'm2' || r.modoPago === 'tarea' ? `${formatNum(r.m2Producidos)} m²` : r.modoPago === 'ajustado' ? `Ajustado ${r.pctAvanceDesde ?? 0}% → ${r.pctAvanceHasta ?? 0}%` : 'Ajuste'}</div></div>
                         <div className="text-green-400 font-bold">{formatRD(r.montoTotal)}</div>
                       </div>
                     ))}</div>
@@ -1908,7 +1932,7 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
                     <MiniBar value={rp.total} max={maxProy} color="bg-green-500/50" />
                     <div className="mt-2 space-y-1">{rp.personas.map(r => (
                       <div key={r.id} className="bg-zinc-950 border border-zinc-800 rounded-card p-2 text-[10px] flex justify-between items-center">
-                        <div className="flex-1 min-w-0"><div className="font-bold truncate">{r.personaNombre}</div><div className="text-zinc-500 uppercase">{r.modoPago === 'dia' ? `${r.diasTrabajados} días` : r.modoPago === 'dia_m2' ? `${r.diasTrabajados}d + ${formatNum(typeof r.m2Efectivo === 'number' ? r.m2Efectivo : r.m2Producidos)} m²` : r.modoPago === 'm2' || r.modoPago === 'm2_fijo' || r.modoPago === 'tarea' ? `${formatNum(r.m2Producidos)} m²` : 'Ajuste'}</div></div>
+                        <div className="flex-1 min-w-0"><div className="font-bold truncate">{r.personaNombre}</div><div className="text-zinc-500 uppercase">{r.modoPago === 'dia' ? `${r.diasTrabajados} días` : r.modoPago === 'dia_m2' ? `${r.diasTrabajados}d + ${formatNum(typeof r.m2Efectivo === 'number' ? r.m2Efectivo : r.m2Producidos)} m²` : r.modoPago === 'm2' || r.modoPago === 'm2_fijo' || r.modoPago === 'tarea' ? `${formatNum(r.m2Producidos)} m²` : r.modoPago === 'ajustado' ? `Ajustado ${r.pctAvanceDesde ?? 0}% → ${r.pctAvanceHasta ?? 0}%` : 'Ajuste'}</div></div>
                         <div className="text-green-400 font-bold">{formatRD(r.montoTotal)}</div>
                       </div>
                     ))}</div>
@@ -2075,7 +2099,7 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
                         <div key={r.id} className="flex justify-between items-center text-[10px] border-t border-zinc-900 pt-1">
                           <div className="flex-1 min-w-0">
                             <div className="font-bold truncate">{r.personaNombre}</div>
-                            <div className="text-zinc-500 uppercase">{r.modoPago === 'dia' ? `${r.diasTrabajados} días${r.diasDobles ? ` (${r.diasDobles} dobles)` : ''}` : r.modoPago === 'dia_m2' ? `${r.diasTrabajados}d + ${formatNum(typeof r.m2Efectivo === 'number' ? r.m2Efectivo : r.m2Producidos)} m²` : r.modoPago === 'm2' ? `${formatNum(r.m2Producidos)} m²` : 'Ajuste'}</div>
+                            <div className="text-zinc-500 uppercase">{r.modoPago === 'dia' ? `${r.diasTrabajados} días${r.diasDobles ? ` (${r.diasDobles} dobles)` : ''}` : r.modoPago === 'dia_m2' ? `${r.diasTrabajados}d + ${formatNum(typeof r.m2Efectivo === 'number' ? r.m2Efectivo : r.m2Producidos)} m²` : r.modoPago === 'm2' ? `${formatNum(r.m2Producidos)} m²` : r.modoPago === 'ajustado' ? `Ajustado ${r.pctAvanceDesde ?? 0}% → ${r.pctAvanceHasta ?? 0}%` : 'Ajuste'}</div>
                           </div>
                           <div className="text-green-400 font-bold">{formatRD(r.montoTotal)}</div>
                         </div>
@@ -2095,7 +2119,7 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
               <div>
                 <div className="font-bold text-sm">{d.personaNombre}</div>
                 <div className="text-[10px] text-red-400 uppercase">{d.proyectoNombre}</div>
-                <div className="text-[10px] text-zinc-500 uppercase">{d.modoPago === 'dia' ? `${d.diasTrabajados} días${d.diasDobles ? ` (${d.diasDobles} doble)` : ''}` : d.modoPago === 'dia_m2' ? `${d.diasTrabajados}d + ${formatNum(typeof d.m2Efectivo === 'number' ? d.m2Efectivo : d.m2Producidos)} m²` : d.modoPago === 'm2' ? `${formatNum(d.m2Producidos)} m²` : 'Ajuste'}</div>
+                <div className="text-[10px] text-zinc-500 uppercase">{d.modoPago === 'dia' ? `${d.diasTrabajados} días${d.diasDobles ? ` (${d.diasDobles} doble)` : ''}` : d.modoPago === 'dia_m2' ? `${d.diasTrabajados}d + ${formatNum(typeof d.m2Efectivo === 'number' ? d.m2Efectivo : d.m2Producidos)} m²` : d.modoPago === 'm2' ? `${formatNum(d.m2Producidos)} m²` : d.modoPago === 'ajustado' ? `Ajustado ${d.pctAvanceDesde ?? 0}% → ${d.pctAvanceHasta ?? 0}%` : 'Ajuste'}</div>
               </div>
               <div className="flex items-start gap-2">
                 <div className="text-right"><div className="text-lg font-black text-green-400">{formatRD(d.montoTotal)}</div></div>

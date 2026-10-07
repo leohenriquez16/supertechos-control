@@ -24,4 +24,8 @@ f = filasProduccion({ reportes: [rep('r1', 'p1', 't1', 50, '2026-10-01')], proye
 t('archivada sí cuenta', f.length === 1);
 const r = resumenProduccionObra(filasProduccion({ reportes: [rep('r1', 'p1', 't1', 10, '2026-10-06'), rep('r2', 'p1', 't2', 10, '2026-09-30')], proyectos: [pSin], sistemas }), 'p1', '2026-10-06');
 t('resumen hoy/mes/total', near(r.hoy, 4000 * 1.18) && near(r.mes, 4000 * 1.18) && near(r.total, 10000 * 1.18), JSON.stringify(r));
+f = filasProduccion({ reportes: [rep('r1', 'p1', 't1', 10, '2026-10-01', { arranque: true }), rep('r2', 'p1', 't1', 10, '2026-10-01', { atrasoEstado: 'pendiente' }), rep('r3', 'p1', 't1', 10, '2026-10-01', { atrasoEstado: 'rechazado' })], proyectos: [pSin], sistemas });
+t('arranque, pendiente y rechazado no producen', f.length === 0);
+f = filasProduccion({ reportes: [rep('r1', 'p1', 't1', 10, '2026-08-20', { atrasoEstado: 'aprobado', fechaProduccion: '2026-10-07' })], proyectos: [pSin], sistemas });
+t('aprobado con mes cerrado cuenta en la fecha de producción', f[0]?.fecha === '2026-10-07');
 console.log(`${ok} pasadas, ${ko} fallidas`); if (ko) process.exit(1);

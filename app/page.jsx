@@ -2,6 +2,7 @@
 
 import { buscarPersonasParecidas } from '../lib/helpers/personasParecidas';
 import AvisoFormaPago from '../components/proyecto/AvisoFormaPago';
+import AvanceArranque from '../components/proyecto/AvanceArranque';
 import { filasProduccion, resumenProduccionObra } from '../lib/helpers/produccion';
 import PreciosAjustadosObra from '../components/proyecto/PreciosAjustadosObra';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
@@ -5227,6 +5228,11 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
           <div className="px-3 py-2 text-[11px] font-bold text-amber-300 flex items-center gap-1.5 border-b border-amber-800/40"><AlertTriangle className="w-3.5 h-3.5" /> OBRA PARADA — razones y siguiente paso</div>
           <div className="p-2"><ChatterPanel entityType="proyecto" entityId={proyecto?.id} usuario={usuario} titulo="Bitácora de la obra" /></div>
         </div>
+      )}
+
+      {/* v8.61.0: avance de arranque (obras que entraron empezadas) — solo oficina */}
+      {tab === 'avance' && (tieneRol(usuario, 'admin') || tieneRol(usuario, 'nomina')) && (
+        <AvanceArranque proyecto={proyecto} data={data} usuario={usuario} onRecargar={onRecargar} />
       )}
 
       {/* v8.36.0: con ~16 tabs y contenido largo, la barra queda pegada arriba en desktop */}

@@ -208,10 +208,10 @@ export async function GET(request) {
         supabase.from('jornadas').select('proyecto_id, fecha, personas_presentes_ids')
           .gte('fecha', corteCamel.fechaInicio).lte('fecha', corteCamel.fechaFin),
         supabase.from('proyectos').select('id, cliente, nombre, referencia_odoo, maestro_id, areas, modo_pago_mano_obra, precio_m2_fijo_maestro, precios_tareas_m2, precios_mano_obra_tareas, maestros_tareas, paquetes_pago').eq('archivado', false),
-        supabase.from('costos_dia_proyecto').select('proyecto_id, persona_id, costo_dia, precio_m2, modo_pago'),
+        supabase.from('costos_dia_proyecto').select('proyecto_id, persona_id, costo_dia, precio_m2, modo_pago, monto_ajustado'),
       ]);
       const costosDia = {};
-      (costos || []).forEach(c => { (costosDia[c.proyecto_id] = costosDia[c.proyecto_id] || {})[c.persona_id] = { costoDia: c.costo_dia, precioM2: c.precio_m2, modoPago: c.modo_pago }; });
+      (costos || []).forEach(c => { (costosDia[c.proyecto_id] = costosDia[c.proyecto_id] || {})[c.persona_id] = { costoDia: c.costo_dia, precioM2: c.precio_m2, modoPago: c.modo_pago, montoAjustado: c.monto_ajustado }; });
       const chequeo = chequearNomina({
         corte: corteCamel,
         conMontos: false,

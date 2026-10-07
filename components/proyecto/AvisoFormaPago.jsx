@@ -35,12 +35,13 @@ export default function AvisoFormaPago({ proyecto, personal = [], personasIds = 
 
   const guardar = async () => {
     const filas = Object.entries(form);
-    const sinMonto = filas.find(([, v]) => v.modo === 'dia' && !(Number(v.monto) > 0));
-    if (sinMonto) { setError(`Pon el monto por día de ${nombre(sinMonto[0])}.`); return; }
+    const sinMonto = filas.find(([, v]) => (v.modo === 'dia' || v.modo === 'ajustado') && !(Number(v.monto) > 0));
+    if (sinMonto) { setError(`Pon el monto de ${nombre(sinMonto[0])}.`); return; }
     setGuardando(true); setError('');
     try {
       for (const [pid, v] of filas) {
         if (v.modo === 'dia') await db.guardarPagoPersonaProyecto(proyecto.id, pid, { costoDia: Number(v.monto) });
+        else if (v.modo === 'ajustado') await db.guardarPagoPersonaProyecto(proyecto.id, pid, { modoPago: 'ajustado', montoAjustado: Number(v.monto) });
         else await db.guardarPagoPersonaProyecto(proyecto.id, pid, { modoPago: 'maestro', costoDia: null });
       }
       await cargar();
@@ -79,15 +80,16 @@ export default function AvisoFormaPago({ proyecto, personal = [], personasIds = 
                   <div className="text-xs font-bold">{nombre(f.personaId)} {f.esMaestro && <span className="text-[9px] text-sky-400 ml-1">MAESTRO</span>}</div>
                   <div className="flex gap-1">
                     <button onClick={() => set({ modo: 'dia' })} className={`flex-1 text-[11px] font-bold py-1.5 rounded-card border ${v.modo === 'dia' ? 'bg-red-600 border-red-600 text-white' : 'border-zinc-700 text-zinc-400'}`}>Por día</button>
+                    <button onClick={() => set({ modo: 'ajustado' })} className={`flex-1 text-[11px] font-bold py-1.5 rounded-card border ${v.modo === 'ajustado' ? 'bg-red-600 border-red-600 text-white' : 'border-zinc-700 text-zinc-400'}`}>Precio ajustado</button>
                     {!f.esMaestro && (
                       <button onClick={() => set({ modo: 'maestro' })} className={`flex-1 text-[11px] font-bold py-1.5 rounded-card border ${v.modo === 'maestro' ? 'bg-red-600 border-red-600 text-white' : 'border-zinc-700 text-zinc-400'}`}>Lo paga su maestro</button>
                     )}
                   </div>
-                  {v.modo === 'dia' && (
+                  {(v.modo === 'dia' || v.modo === 'ajustado') && (
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-zinc-400">RD$</span>
                       <input type="number" inputMode="decimal" min="0" value={v.monto} onChange={e => set({ monto: e.target.value })}
-                        placeholder="Monto por día" className="flex-1 bg-zinc-950 border border-zinc-700 rounded-card px-2 py-1.5 text-sm text-white" />
+                        placeholder={v.modo === 'ajustado' ? 'Monto total acordado' : 'Monto por día'} className="flex-1 bg-zinc-950 border border-zinc-700 rounded-card px-2 py-1.5 text-sm text-white" />
                     </div>
                   )}
                 </div>

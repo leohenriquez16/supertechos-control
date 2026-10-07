@@ -2,6 +2,7 @@
 
 import { buscarPersonasParecidas } from '../lib/helpers/personasParecidas';
 import AvisoFormaPago from '../components/proyecto/AvisoFormaPago';
+import PreciosAjustadosObra from '../components/proyecto/PreciosAjustadosObra';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic'; // v8.55.0: carga perezosa de vistas
 import { createPortal } from 'react-dom';
@@ -10938,6 +10939,7 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
   return (
     <div className="space-y-5">
       <AvisoFormaPago proyecto={proyecto} personal={personal} personasIds={presentesRecientes} puedeConfigurar={tieneRol(usuario, 'admin')} />
+      <PreciosAjustadosObra proyecto={proyecto} personal={personal} usuario={usuario} candidatosIds={presentesRecientes} puedeEditar={tieneRol(usuario, 'admin')} />
       {/* Tarjeta del día */}
       <div className="bg-gradient-to-br from-zinc-900 to-zinc-950 border-2 border-zinc-800 p-4 space-y-4">
         <div className="flex items-center justify-between">

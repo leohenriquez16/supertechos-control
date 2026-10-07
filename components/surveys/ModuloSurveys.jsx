@@ -9,7 +9,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Loader2, Plus, MapPin, Building, ChevronRight, ArrowLeft, List, Map as MapIcon, LayoutGrid, Search, User as UserIcon, Calendar, Mail, MessageCircle, Clock, ArrowLeftRight, Tag as TagIcon } from 'lucide-react';
-import { listarProyectosSurveys, listarSitesProyectoSurvey, listarTodosLosSitesSurvey, crearSiteSurvey, COMPANIES, PROJECT_STATUS, SITE_STATUS, SERVICE_LINES, ESCALERA, setEtapaSurvey, actualizarSiteSurvey } from '../../lib/surveys';
+import { listarProyectosSurveys, listarSitesProyectoSurvey, listarTodosLosSitesSurvey, crearSiteSurvey, COMPANIES, PROJECT_STATUS, SITE_STATUS, SERVICE_LINES, ESCALERA, setEtapaSurvey, actualizarSiteSurvey, citaTextoHora } from '../../lib/surveys';
 import ModalUbicacionSite from './ModalUbicacionSite'; // v8.45.0
 import * as db from '../../lib/db';
 import MapaLeaflet from '../common/MapaLeaflet';
@@ -221,6 +221,41 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto, onRec
     const d = Math.floor(h / 24);
     if (d < 30) return `${d} d`;
     return `${Math.floor(d / 30)} mes`;
+  };
+  // Hoy en hora de RD (el servidor y el navegador pueden estar en otra zona).
+  const hoyRD = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo' }).format(new Date());
+  // v8.59.7: la fecha de la cita se ve en la tarjeta del tablero, sin abrirla.
+  // Nace de un pedido de Leonardo: en "Agendado" solo se veía el tiempo en la etapa,
+  // y lo que hace falta saber de un vistazo es PARA CUÁNDO quedó la visita.
+  const chipCita = (p) => {
+    const f = p.fecha_visita_programada ? String(p.fecha_visita_programada).slice(0, 10) : null;
+    const hoyISO = hoyRD();
+    // Agendado sin fecha: eso también hay que verlo de afuera, es lo que falta por coordinar.
+    if (!f && !p.tipo_cita) {
+      return (p.odoo_stage === 'Agendado')
+        ? { etiqueta: 'sin fecha', hora: '', tono: 'bg-amber-900/30 text-amber-400/90 border-amber-800/60 border-dashed', confirmada: false, vencida: false, falta: true }
+        : null;
+    }
+    if (!f && p.tipo_cita !== 'cualquier_dia') return null;
+    // La visita sigue pendiente solo antes de "Realizado": en las etapas de después
+    // la cita ya cumplió y una fecha vieja no es un atraso, es historia.
+    const pendiente = ['New', 'Contactado', 'Asignado', 'Agendado'].includes(p.odoo_stage || 'New');
+    const vencida = !!f && f < hoyISO && pendiente;
+    let etiqueta, tono;
+    if (!f) {
+      etiqueta = 'Cualquier día';
+      tono = pendiente ? 'bg-teal-900/40 text-teal-300 border-teal-800/70' : 'bg-zinc-800/60 text-zinc-400 border-zinc-700';
+    } else {
+      // Mediodía para que la fecha no se corra de día al convertir a local.
+      const texto = new Date(`${f}T12:00:00`).toLocaleDateString('es-DO', { weekday: 'short', day: 'numeric', month: 'short' });
+      if (!pendiente) { etiqueta = texto; tono = 'bg-zinc-800/60 text-zinc-400 border-zinc-700'; }
+      else if (f === hoyISO) { etiqueta = `HOY · ${texto}`; tono = 'bg-amber-500/20 text-amber-300 border-amber-600/70'; }
+      else if (vencida) { etiqueta = texto; tono = 'bg-red-900/40 text-red-300 border-red-800/70'; }
+      else { etiqueta = texto; tono = 'bg-blue-900/40 text-blue-300 border-blue-800/70'; }
+    }
+    // La etiqueta ya dice el día: no repitas la modalidad cuando es "cualquier día".
+    const hora = (f && p.tipo_cita !== 'cualquier_dia') ? citaTextoHora(p) : '';
+    return { etiqueta, hora: hora && hora !== etiqueta ? hora : '', tono, confirmada: !!p.cita_confirmada, vencida };
   };
   // Filtro de búsqueda + filtros (cliente, levantamiento, servicio, empresa, estado, levantador).
   const proyFiltrados = React.useMemo(() => {
@@ -458,6 +493,17 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto, onRec
                                   setUbicandoSite({ site: st, cliente: cli });
                                 }} className="text-[9px] font-bold px-1.5 py-0.5 rounded-card bg-amber-600/20 text-amber-300 border border-amber-800/60 hover:bg-amber-600 hover:text-black" title="Este levantamiento no tiene ubicación — asígnala">📍 sin ubicación</button>
                               )}
+                              {(() => {
+                                const c = chipCita(p);
+                                if (!c) return null;
+                                return (
+                                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-card border flex items-center gap-1 ${c.tono}`}
+                                    title={c.falta ? 'Está en Agendado y no tiene fecha de visita' : c.vencida ? 'La fecha de la visita ya pasó' : 'Fecha agendada de la visita'}>
+                                    <Calendar className="w-2.5 h-2.5" />
+                                    {c.etiqueta}{c.hora ? ` · ${c.hora}` : ''}{c.confirmada ? ' ✓' : ''}
+                                  </span>
+                                );
+                              })()}
                               <span className="text-[9px] text-zinc-500 flex items-center gap-0.5 ml-auto" title="Tiempo en esta etapa"><Clock className="w-2.5 h-2.5" /> {tiempoEnEtapa(p)}</span>
                             </div>
                           </div>

@@ -3441,6 +3441,8 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
               <RolToggle active={form.roles.includes('almacen')} onClick={() => toggleRol('almacen')}>Almacén</RolToggle>
               {/* v8.46.1: rentabilidad — solo quienes tengan este rol (o el owner) ven presupuestos/márgenes */}
               <RolToggle active={form.roles.includes('rentabilidad')} onClick={() => toggleRol('rentabilidad')}>Rentabilidad</RolToggle>
+              {/* v8.59.9: nómina — configura forma de pago, montos por día y precio ajustado (avance %) en las obras */}
+              <RolToggle active={form.roles.includes('nomina')} onClick={() => toggleRol('nomina')}>Nómina</RolToggle>
             </div>
           </Campo>
           {/* v8.17.89: el PIN guardado es hash bcrypt server-side y nunca se
@@ -10938,8 +10940,8 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
   }, [jornadaHoy, historial, hoy]);
   return (
     <div className="space-y-5">
-      <AvisoFormaPago proyecto={proyecto} personal={personal} personasIds={presentesRecientes} puedeConfigurar={tieneRol(usuario, 'admin')} />
-      <PreciosAjustadosObra proyecto={proyecto} personal={personal} usuario={usuario} candidatosIds={presentesRecientes} puedeEditar={tieneRol(usuario, 'admin')} />
+      <AvisoFormaPago proyecto={proyecto} personal={personal} personasIds={presentesRecientes} puedeConfigurar={tieneRol(usuario, 'admin') || tieneRol(usuario, 'nomina')} />
+      <PreciosAjustadosObra proyecto={proyecto} personal={personal} usuario={usuario} candidatosIds={presentesRecientes} puedeEditar={tieneRol(usuario, 'admin') || tieneRol(usuario, 'nomina')} />
       {/* Tarjeta del día */}
       <div className="bg-gradient-to-br from-zinc-900 to-zinc-950 border-2 border-zinc-800 p-4 space-y-4">
         <div className="flex items-center justify-between">

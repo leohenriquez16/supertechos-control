@@ -9,6 +9,7 @@ import { chequearNomina } from '../../lib/helpers/chequeoNomina';
 import { pagoAjustadoCorte } from '../../lib/helpers/precioAjustado';
 import { generarArchivoPopular, nombreArchivo } from '../../lib/helpers/archivoBancoPopular';
 import PanelListoNomina from './PanelListoNomina';
+import ReportesAtrasados from './ReportesAtrasados';
 import Campo from '../common/Campo';
 import Input from '../common/Input';
 
@@ -2208,6 +2209,7 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
       </div>
 
       {/* v8.57.0: semáforo "Listo para nómina" */}
+      {corte.estado === 'abierto' && <ReportesAtrasados usuario={usuario} data={data} onCambio={() => onRecargarGlobal?.()} />}
       {corte.estado === 'abierto' && <PanelListoNomina resultado={chequeo} cargando={loading} />}
 
       {/* v8.27.77: posibles m² duplicados de la quincena anterior (ticket Miguel)

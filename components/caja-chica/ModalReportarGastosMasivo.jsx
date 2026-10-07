@@ -11,6 +11,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Upload, X, Loader2, Check, AlertCircle, Sparkles, Trash2, FileWarning, Send, Camera } from 'lucide-react';
 import * as db from '../../lib/db';
+import ProyectoSelector from '../common/ProyectoSelector';
 import { toast } from '../../lib/toast';
 import { comprimirImagen } from '../../lib/imports';
 import {
@@ -27,7 +28,7 @@ const fmtRD = (n) => 'RD$' + new Intl.NumberFormat('es-DO', { minimumFractionDig
 const PROYECTO_GENERICO = '__generico__';
 const PROYECTO_OTRO = '__otro__';
 
-export default function ModalReportarGastosMasivo({ usuario, proyectos, categorias, onCerrar, onGuardado }) {
+export default function ModalReportarGastosMasivo({ usuario, proyectos, otrasObras = [], categorias, onCerrar, onGuardado }) {
   const [borradores, setBorradores] = useState([]);
   const [enviando, setEnviando] = useState(false);
   const [resumen, setResumen] = useState(null);
@@ -158,7 +159,9 @@ export default function ModalReportarGastosMasivo({ usuario, proyectos, categori
     if (!b.datos.fecha) errs.push('Fecha');
     if (!b.datos.categoria) errs.push('Categoría');
     if (!b.datos.proyectoSeleccion) errs.push('Proyecto');
-    if (b.datos.proyectoSeleccion === PROYECTO_OTRO && !b.datos.cotizacionManual?.trim()) errs.push('Nº cotización');
+    // v8.59.6: "Otro proyecto" se escoge de la lista de obras abiertas; el Nº escrito a mano
+    // queda solo para obras que no están en el ERP.
+    if (b.datos.proyectoSeleccion === PROYECTO_OTRO && !b.datos.otraObraId && !b.datos.cotizacionManual?.trim()) errs.push('Obra');
     return errs;
   };
 
@@ -180,8 +183,9 @@ export default function ModalReportarGastosMasivo({ usuario, proyectos, categori
     setEnviando(true);
     const tareas = listos.map(b => async () => {
       const proySel = b.datos.proyectoSeleccion;
-      const proyectoId = (proySel && proySel !== PROYECTO_GENERICO && proySel !== PROYECTO_OTRO) ? proySel : null;
-      const cotizacionManual = proySel === PROYECTO_OTRO ? b.datos.cotizacionManual.trim() : null;
+      const otraObraId = proySel === PROYECTO_OTRO ? (b.datos.otraObraId || null) : null;
+      const proyectoId = otraObraId || ((proySel && proySel !== PROYECTO_GENERICO && proySel !== PROYECTO_OTRO) ? proySel : null);
+      const cotizacionManual = proySel === PROYECTO_OTRO && !otraObraId ? (b.datos.cotizacionManual || '').trim() || null : null;
       const esGenerico = proySel === PROYECTO_GENERICO;
 
       // v8.17.29: heredar aplica_a de la categoría
@@ -206,6 +210,7 @@ export default function ModalReportarGastosMasivo({ usuario, proyectos, categori
           cargado_en_lote: true,
           ...(cotizacionManual ? { cotizacion_manual: cotizacionManual } : {}),
           ...(esGenerico ? { gasto_generico: true } : {}),
+          ...(otraObraId ? { obra_fuera_de_asignacion: true } : {}),
         },
         creadoPorId: usuario.id,
       });
@@ -314,6 +319,7 @@ export default function ModalReportarGastosMasivo({ usuario, proyectos, categori
         )}
         {borradores.map(b => (
           <FilaFacturaMobile
+            otrasObras={otrasObras}
             key={b.id}
             borrador={b}
             duplicadosEnLote={dupEnLoteMap[b.id] || []}
@@ -348,7 +354,7 @@ export default function ModalReportarGastosMasivo({ usuario, proyectos, categori
   );
 }
 
-function FilaFacturaMobile({ borrador: b, duplicadosEnLote, proyectos, categorias, onCambiar, onEliminar, errs }) {
+function FilaFacturaMobile({ borrador: b, duplicadosEnLote, proyectos, otrasObras = [], categorias, onCambiar, onEliminar, errs }) {
   const [expandido, setExpandido] = useState(true);
   const dupEnLote = duplicadosEnLote.length > 0;
   const dupEnDB = !!b.duplicadoEnDB;
@@ -461,11 +467,32 @@ function FilaFacturaMobile({ borrador: b, duplicadosEnLote, proyectos, categoria
                   ))}
                 </optgroup>
               )}
-              <option value={PROYECTO_OTRO}>✏️ Otro proyecto (escribir Nº cotización)</option>
+              <option value={PROYECTO_OTRO}>🔎 Otra obra (buscar)</option>
             </select>
           </Field>
 
           {esOtro && (
+            <Field label="¿Cuál obra? *">
+              <ProyectoSelector
+                value={b.datos.otraObraId || ''}
+                onChange={(id) => onCambiar({ otraObraId: id || '' })}
+                proyectos={otrasObras}
+                permitirVacio={false}
+                placeholder="Busca por código, cliente o nombre…"
+              />
+              {b.datos.otraObraId && (() => {
+                const o = otrasObras.find(x => x.id === b.datos.otraObraId);
+                return o ? <div className="text-[10px] text-amber-300 mt-1">{o.referenciaOdoo} · {o.nombre || o.cliente} — confirma que es la obra donde se usó.</div> : null;
+              })()}
+              {!b.datos.otraObraId && (
+                <button type="button" onClick={() => onCambiar({ noEncuentro: !b.datos.noEncuentro })} className="text-[10px] underline text-zinc-500 mt-1">
+                  {b.datos.noEncuentro ? 'Buscar en la lista' : 'No aparece en la lista'}
+                </button>
+              )}
+            </Field>
+          )}
+
+          {esOtro && b.datos.noEncuentro && !b.datos.otraObraId && (
             <Field label="Nº Cotización">
               <input
                 type="text"

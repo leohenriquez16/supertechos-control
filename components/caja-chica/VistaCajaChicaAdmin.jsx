@@ -1689,11 +1689,12 @@ function TablaMovimientos({ movimientos: movsTabla, todosMovimientos, data, sort
                       value={m.proyectoId || ''}
                       onChange={e => saveAndExit(m, { proyectoId: e.target.value || null })}
                       autoFocus
-                      className="bg-zinc-950 border-2 border-red-600 outline-none px-1.5 py-1 text-xs text-white max-w-[160px]"
+                      className="bg-zinc-950 border-2 border-red-600 outline-none px-1.5 py-1 text-xs text-white max-w-[260px]"
                       title={proy?.cliente || 'Sin proyecto'}
                     >
                       <option value="">— Sin —</option>
-                      {proyectosOrdenados.map(p => <option key={p.id} value={p.id}>{p.referenciaOdoo || p.cliente}</option>)}
+                      {/* v8.59.6: código + nombre de la obra; con solo el código, 1296 y 1269 se confunden */}
+                      {proyectosOrdenados.map(p => <option key={p.id} value={p.id}>{[p.referenciaOdoo, p.nombre || p.cliente].filter(Boolean).join(' · ')}</option>)}
                     </select>
                   ) : (
                     <span className="text-zinc-300 text-xs">{proy?.referenciaOdoo || proy?.cliente || <span className="text-zinc-600">—</span>}</span>

@@ -2,6 +2,7 @@
 
 import { buscarPersonasParecidas } from '../lib/helpers/personasParecidas';
 import AvisoFormaPago from '../components/proyecto/AvisoFormaPago';
+import { filasProduccion, resumenProduccionObra } from '../lib/helpers/produccion';
 import PreciosAjustadosObra from '../components/proyecto/PreciosAjustadosObra';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic'; // v8.55.0: carga perezosa de vistas
@@ -5099,6 +5100,12 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
   const sistema = data.sistemas[proyecto.sistema];
   if (!sistema) return <div className="text-zinc-500">Sistema no encontrado.</div>;
   const { porcentaje, produccionRD, valorContrato } = calcAvanceProyecto(proyecto, data.reportes, sistema, data.sistemas);
+  // v8.60.0: producción de la obra con la fórmula única (con ITBIS; sin ITBIS de referencia).
+  const prodObra = useMemo(() => {
+    const hoyStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo' }).format(new Date());
+    const filas = filasProduccion({ reportes: (data.reportes || []).filter(r => r.proyectoId === proyecto.id), proyectos: [proyecto], sistemas: data.sistemas, hasta: hoyStr });
+    return resumenProduccionObra(filas, proyecto.id, hoyStr);
+  }, [data.reportes, data.sistemas, proyecto]);
   const supervisor = getPersona(data.personal, proyecto.supervisorId);
   const maestro = getPersona(data.personal, proyecto.maestroId);
   const materiales = calcMateriales(proyecto, data.reportes, data.envios, sistema);
@@ -5199,8 +5206,9 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
             <AutoFitText maxSize={28} minSize={14} className="font-black">{porcentaje.toFixed(1)}%</AutoFitText>
           </div>
           <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 min-w-0">
-            <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Producido</div>
-            <AutoFitText maxSize={28} minSize={11} className="font-black text-green-400">{formatRD(produccionRD)}</AutoFitText>
+            <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Producido <span className="normal-case">(con ITBIS)</span></div>
+            <AutoFitText maxSize={28} minSize={11} className="font-black text-green-400">{formatRD(prodObra.total)}</AutoFitText>
+            <div className="text-[10px] text-zinc-500 tabular-nums">Hoy {formatRD(prodObra.hoy)} · Mes {formatRD(prodObra.mes)}</div>
           </div>
           <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 min-w-0">
             <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Contrato</div>

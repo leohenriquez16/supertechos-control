@@ -10,6 +10,7 @@
 // El peso se busca en TODOS los sistemas del proyecto; si la tarea ya no existe
 // (ids viejos), se reparte 1/nº de tareas del sistema del área (no infla).
 
+import { filasProduccion } from '../../lib/helpers/produccion';
 import React, { useMemo, useState, useEffect } from 'react';
 import { ArrowLeft, TrendingUp, Filter } from 'lucide-react';
 import { formatRD, formatNum, formatFechaCorta } from '../../lib/helpers/formato';
@@ -79,46 +80,16 @@ export default function VistaProduccion({ usuario, data, onVolver }) {
   }, [usoIA]);
 
   // Enriquecer cada reporte con RD$/m² ponderado una sola vez.
+  // v8.60.0: fórmula única (lib/helpers/produccion.js) — tope de m² por área, valor cotizado e
+  // ITBIS real de la cotización. rd = CON ITBIS (pedido de Leo); rdSin = sin ITBIS.
   const filas = useMemo(() => {
-    const hoy = hoyRD();
-    const out = [];
-    const pesoMapPorProyecto = {}; // proyectoId -> { tareaId: peso/100 }
-    const nTareasPorSistema = {};  // sistemaId -> n
-    (data.reportes || []).forEach(r => {
-      if (r.reparacion) return; // v8.50.0: retoques fuera del histórico de producción
-      if (!r.fecha || r.fecha > hoy || !(r.m2 > 0)) return;
-      const proy = (data.proyectos || []).find(p => p.id === r.proyectoId);
-      if (!proy || proy.archivado) return;
-      const area = (proy.areas || []).find(a => a.id === r.areaId);
-      const sid = area?.sistemaId || proy.sistema;
-      const sis = data.sistemas?.[sid];
-      // peso: mapa de TODOS los sistemas del proyecto
-      if (!pesoMapPorProyecto[proy.id]) {
-        const m = {};
-        const sids = [...new Set([proy.sistema, ...(proy.areas || []).map(a => a.sistemaId).filter(Boolean)])];
-        sids.forEach(s2 => {
-          (data.sistemas?.[s2]?.tareas || []).forEach(t => { if (m[t.id] === undefined) m[t.id] = (Number(t.peso) || 0) / 100; });
-          if (nTareasPorSistema[s2] === undefined) nTareasPorSistema[s2] = (data.sistemas?.[s2]?.tareas || []).length;
-        });
-        pesoMapPorProyecto[proy.id] = m;
-      }
-      let peso = pesoMapPorProyecto[proy.id][r.tareaId];
-      if (peso === undefined) {
-        const n = nTareasPorSistema[sid] || 0;
-        peso = n > 0 ? 1 / n : 1; // tarea vieja/desconocida → se reparte, no infla
-      }
-      const precio = Number(area?.precioVentaM2) > 0 ? Number(area.precioVentaM2) : (Number(sis?.precio_m2) || 0);
-      const maestroId = area?.maestroAreaId || proy.maestroId || null;
-      // v8.27.75: etiqueta completa — referencia + cliente + locación (para saber cuál es)
-      const etiqueta = [proy.referenciaOdoo, proy.cliente, proy.referenciaProyecto].filter(Boolean).join(' · ');
-      out.push({
-        fecha: r.fecha, retro: !!r.retroactivo,
-        rd: r.m2 * precio * peso, m2p: r.m2 * peso,
-        proyectoId: proy.id, proyectoRef: etiqueta || proy.cliente || proy.id,
-        maestroId,
+    const porId = new Map((data.proyectos || []).map(p => [p.id, p]));
+    return filasProduccion({ reportes: data.reportes, proyectos: data.proyectos, sistemas: data.sistemas, hasta: hoyRD() })
+      .map(f => {
+        const proy = porId.get(f.proyectoId);
+        const etiqueta = [proy?.referenciaOdoo, proy?.cliente, proy?.referenciaProyecto].filter(Boolean).join(' · ');
+        return { ...f, rd: f.rdConItbis, rdSin: f.rdSinItbis, proyectoRef: etiqueta || proy?.cliente || f.proyectoId };
       });
-    });
-    return out;
   }, [data.reportes, data.proyectos, data.sistemas]);
 
   const visibles = useMemo(() => filas.filter(f => incluirRetro || !f.retro), [filas, incluirRetro]);
@@ -143,10 +114,10 @@ export default function VistaProduccion({ usuario, data, onVolver }) {
     const kSem = claveBucket(hoy, 'semana'), kQ = claveBucket(hoy, 'quincena'), kMes = claveBucket(hoy, 'mes');
     const acc = { dia: 0, semana: 0, quincena: 0, mes: 0 };
     visibles.forEach(f => {
-      if (f.fecha === hoy) acc.dia += f.rd;
-      if (claveBucket(f.fecha, 'semana') === kSem) acc.semana += f.rd;
-      if (claveBucket(f.fecha, 'quincena') === kQ) acc.quincena += f.rd;
-      if (f.fecha.slice(0, 7) === kMes) acc.mes += f.rd;
+      if (f.fecha === hoy) { acc.dia += f.rd; acc.diaSin = (acc.diaSin || 0) + f.rdSin; }
+      if (claveBucket(f.fecha, 'semana') === kSem) { acc.semana += f.rd; acc.semanaSin = (acc.semanaSin || 0) + f.rdSin; }
+      if (claveBucket(f.fecha, 'quincena') === kQ) { acc.quincena += f.rd; acc.quincenaSin = (acc.quincenaSin || 0) + f.rdSin; }
+      if (f.fecha.slice(0, 7) === kMes) { acc.mes += f.rd; acc.mesSin = (acc.mesSin || 0) + f.rdSin; }
     });
     return acc;
   }, [visibles]);
@@ -198,7 +169,7 @@ export default function VistaProduccion({ usuario, data, onVolver }) {
           {onVolver && <button onClick={onVolver} className="text-zinc-500 hover:text-white"><ArrowLeft className="w-4 h-4" /></button>}
           <div>
             <h1 className="text-2xl font-black flex items-center gap-2"><TrendingUp className="w-6 h-6 text-red-500" /> Producción</h1>
-            <div className="text-[11px] text-zinc-500">RD$ producidos (ponderado por avance real de cada tarea)</div>
+            <div className="text-[11px] text-zinc-500">RD$ producidos <b className="text-zinc-300">con ITBIS</b>, al valor cotizado y por avance real de cada tarea</div>
           </div>
         </div>
         <label className={`flex items-center gap-1.5 text-[11px] px-2 py-1.5 border cursor-pointer ${incluirRetro ? 'bg-amber-900/30 border-amber-700 text-amber-300' : 'bg-zinc-900 border-zinc-800 text-zinc-400'}`}>
@@ -209,10 +180,11 @@ export default function VistaProduccion({ usuario, data, onVolver }) {
 
       {/* Resumen actual */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-        {[['Hoy', resumen.dia], ['Esta semana', resumen.semana], ['Esta quincena', resumen.quincena], ['Este mes', resumen.mes]].map(([l, v]) => (
+        {[['Hoy', resumen.dia, resumen.diaSin], ['Esta semana', resumen.semana, resumen.semanaSin], ['Esta quincena', resumen.quincena, resumen.quincenaSin], ['Este mes', resumen.mes, resumen.mesSin]].map(([l, v, vs]) => (
           <div key={l} className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
             <div className="text-[10px] text-zinc-500 uppercase">{l}</div>
             <div className="text-lg font-black text-green-400">{formatRD(v)}</div>
+            <div className="text-[10px] text-zinc-500">sin ITBIS {formatRD(vs || 0)}</div>
           </div>
         ))}
       </div>

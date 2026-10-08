@@ -114,10 +114,15 @@ export default function NuevoProyecto({ personal, sistemas, clientes = [], conta
               sistemaId = sistemasNuevosPorNombre.get(key).tempId;
             }
           }
+          // v8.61.3: el precio por m² que la IA leyó en la cotización se guarda SIEMPRE en el área
+          // (antes solo servía para crear un sistema nuevo; con un sistema existente se botaba y la
+          // obra usaba el precio del catálogo, a veces RD$0).
+          const precioCot = Number(a.sistemaPrecioM2) || 0;
           areasDelForm.push({
             nombre: a.nombre || ('Área ' + (i + 1)),
             m2: String(a.m2 || ''),
             sistemaId: sistemaId,
+            precioVentaM2: precioCot > 0 ? precioCot : null,
           });
         });
       } else {

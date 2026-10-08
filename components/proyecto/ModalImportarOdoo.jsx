@@ -168,6 +168,16 @@ export default function ModalImportarOdoo({ usuario, sistemas, proyectos = [], o
         a.m2 > 0
       );
 
+      // v8.61.3: precio de venta por m² de cada área = lo que la cotización cobra en esa sección
+      // (Σ subtotales sin ITBIS ÷ m²), en RD$. Antes no se guardaba y la obra usaba el precio del
+      // catálogo — RD$0 en sistemas auxiliares (Limpieza y Bote, Lavado…) → producción en cero.
+      const tasa = esUSD ? (Number(cot.tasaUsd) || 0) : 1;
+      const precioM2De = (secciones, m2) => {
+        const sub = secciones.flatMap(s => s.productos || []).reduce((t, p) => t + (Number(p.subtotal) || 0), 0);
+        const v = m2 > 0 ? Math.round((sub * tasa / m2) * 100) / 100 : 0;
+        return v > 0 ? v : null;
+      };
+
       const payload = {
         nombre: cot.cliente,
         cliente: cot.cliente,
@@ -184,6 +194,7 @@ export default function ModalImportarOdoo({ usuario, sistemas, proyectos = [], o
           nombre: a.nombre,
           m2: parseFloat(a.m2) || 0,
           sistemaId: sistemaId,
+          precioVentaM2: precioM2De([a], parseFloat(a.m2) || 0),
         })),
         // Si no hay secciones, crear un área "General" con el m² total
         ...(areasValidas.length === 0 && cot.areas.length > 0 ? {
@@ -192,6 +203,8 @@ export default function ModalImportarOdoo({ usuario, sistemas, proyectos = [], o
             nombre: cot.areas[0]?.nombre || 'General',
             m2: cot.areas.reduce((sum, a) => sum + (a.m2 || 0), 0) || cot.areas[0]?.productos?.[0]?.cantidad || 0,
             sistemaId: sistemaId,
+            precioVentaM2: precioM2De(cot.areas.filter(a => !areasExcluidas.some(exc => a.nombre.toLowerCase().includes(exc))),
+              cot.areas.reduce((sum, a) => sum + (a.m2 || 0), 0) || cot.areas[0]?.productos?.[0]?.cantidad || 0),
           }]
         } : {}),
         dieta: { habilitada: false },
@@ -231,6 +244,7 @@ export default function ModalImportarOdoo({ usuario, sistemas, proyectos = [], o
           nombre: 'General',
           m2: totalM2,
           sistemaId: sistemaId,
+          precioVentaM2: precioM2De(cot.areas.filter(a => !areasExcluidas.some(exc => a.nombre.toLowerCase().includes(exc))), totalM2),
         }];
       }
 

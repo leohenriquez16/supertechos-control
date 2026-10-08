@@ -2,6 +2,7 @@
 
 import { buscarPersonasParecidas } from '../lib/helpers/personasParecidas';
 import AvisoFormaPago from '../components/proyecto/AvisoFormaPago';
+import { impactoCambioSistema } from '../lib/helpers/cambiosSistema';
 import AvanceArranque from '../components/proyecto/AvanceArranque';
 import { filasProduccion, resumenProduccionObra } from '../lib/helpers/produccion';
 import PreciosAjustadosObra from '../components/proyecto/PreciosAjustadosObra';
@@ -2903,11 +2904,30 @@ function GestionSistemas({ sistemas, config, onVolver, onActualizarSistemas, onA
       })),
       keywords_cotizacion: typeof sistemaEditando.keywords_cotizacion === 'string' ? sistemaEditando.keywords_cotizacion.split(',').map(k => k.trim()).filter(Boolean) : sistemaEditando.keywords_cotizacion || [],
     };
+    // v8.61.4: antes de guardar, ver a qué obras abiertas les mueve el avance.
+    const antes = sistemas[sl.id];
+    if (antes) {
+      const imp = impactoCambioSistema({ antes, despues: sl, proyectos: dataGlobal?.proyectos || [], reportes: dataGlobal?.reportes || [], sistemas });
+      if (imp.huerfanos.length) {
+        const obras = new Set(imp.huerfanos.map(r => r.proyectoId)).size;
+        alert(`No se puede quitar esa tarea: tiene ${imp.huerfanos.length} reporte(s) de avance en ${obras} obra(s). Esos avances se perderían.\n\nSi quieres cambiarle el nombre, edítalo en la misma tarea en vez de borrarla y crear otra.`);
+        return;
+      }
+      if (imp.obras.length) {
+        const lista = imp.obras.slice(0, 10).map(o => `• ${o.ref}: ${o.antes}% → ${o.despues}%`).join('\n');
+        const mas = imp.obras.length > 10 ? `\n…y ${imp.obras.length - 10} más.` : '';
+        if (!confirm(`Este cambio mueve el avance de ${imp.obras.length} obra(s) abierta(s):\n\n${lista}${mas}\n\n¿Guardar igual?`)) return;
+      }
+    }
     onActualizarSistemas({ ...sistemas, [sl.id]: sl });
     setSistemaEditando(null);
   };
 
   const eliminarSistema = (id) => {
+    // v8.61.4: no borrar un sistema que usan obras abiertas (sus avances quedarían sin tareas)
+    const usan = (dataGlobal?.proyectos || []).filter(p => !p.archivado && !['facturado', 'finalizado_recibido_conforme'].includes(p.estado)
+      && (p.sistema === id || (p.areas || []).some(a => a.sistemaId === id)));
+    if (usan.length) { alert(`No se puede eliminar: lo usan ${usan.length} obra(s) abierta(s): ${usan.slice(0, 8).map(p => p.referenciaOdoo || p.cliente).join(', ')}${usan.length > 8 ? '…' : ''}.`); return; }
     if (!confirm('¿Eliminar este sistema?')) return;
     const n = { ...sistemas }; delete n[id];
     onActualizarSistemas(n);

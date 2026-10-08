@@ -23,6 +23,7 @@
 // Erisdania (o de quien se agregue a la lista) cuando esté lleno en Personal.
 // Protegido por `Authorization: Bearer <CRON_SECRET>` (Vercel lo envía solo).
 
+import { faltantesDeValor } from '../../../../lib/helpers/requisitosEjecucion';
 import { createClient } from '@supabase/supabase-js';
 import { chequearNomina } from '../../../../lib/helpers/chequeoNomina';
 
@@ -156,28 +157,25 @@ export async function GET(request) {
 
   // v8.31.1: proyectos APROBADOS con información incompleta (regla: un proyecto
   // aprobado en Odoo queda completo en el ERP el mismo día — KPI de Miguel/Erisdania).
-  const { data: aprob } = await supabase.from('proyectos')
-    .select('id, cliente, nombre, referencia_odoo, ubicacion_lat, ubicacion_lng, contacto_principal_id, contacto_cliente_nombre, contacto_cliente_telefono, contacto_cliente_email, areas, sistema_id, valor_cotizacion, supervisor_id, maestro_id')
-    .eq('estado', 'aprobado').eq('archivado', false);
-  const sidsAll = [...new Set((aprob || []).flatMap(p => [p.sistema_id, ...((p.areas || []).map(a => a.sistemaId))]).filter(Boolean))];
+  const { data: obrasAbiertas } = await supabase.from('proyectos')
+    .select('id, estado, cliente, nombre, referencia_odoo, ubicacion_lat, ubicacion_lng, contacto_principal_id, contacto_cliente_nombre, contacto_cliente_telefono, contacto_cliente_email, areas, sistema_id, valor_cotizacion, supervisor_id, maestro_id')
+    .in('estado', ['aprobado', 'planificado', 'en_ejecucion', 'parado']).eq('archivado', false);
+  const aprob = (obrasAbiertas || []).filter(p => p.estado === 'aprobado');
+  const sidsAll = [...new Set((obrasAbiertas || []).flatMap(p => [p.sistema_id, ...((p.areas || []).map(a => a.sistemaId))]).filter(Boolean))];
   let sistemasMap = {};
   if (sidsAll.length) {
     const { data: ss } = await supabase.from('sistemas').select('id, data').in('id', sidsAll);
     (ss || []).forEach(s => { sistemasMap[s.id] = s; });
   }
+  const sistemasData = Object.fromEntries(Object.entries(sistemasMap).map(([id, s]) => [id, s.data || {}]));
+  const valorDe = (p) => faltantesDeValor({ sistemaId: p.sistema_id, areas: p.areas || [], valorCotizacion: p.valor_cotizacion }, sistemasData);
   const faltasDe = (p) => {
     const f = [];
     if (!((p.cliente || p.nombre || '').trim())) f.push('cliente');
     const legacy = `${p.contacto_cliente_nombre || ''}${p.contacto_cliente_telefono || ''}${p.contacto_cliente_email || ''}`.trim();
     if (!p.contacto_principal_id && !legacy) f.push('contacto');
     if (p.ubicacion_lat == null || p.ubicacion_lng == null) f.push('ubicación');
-    const areas = p.areas || [];
-    if (areas.length === 0) f.push('áreas');
-    else if (areas.some(a => !(Number(a.m2) > 0))) f.push('m² por área');
-    const sids = [...new Set([p.sistema_id, ...areas.map(a => a.sistemaId)].filter(Boolean))];
-    if (!sids.length) f.push('sistema');
-    else if (sids.some(sid => !(sistemasMap[sid]?.data?.tareas?.length > 0))) f.push('tareas del sistema');
-    if (!(Number(p.valor_cotizacion) > 0)) f.push('valor cotización');
+    f.push(...valorDe(p)); // v8.61.2: misma regla de valor que el candado de arranque
     if (!p.supervisor_id) f.push('supervisor');
     if (!p.maestro_id) f.push('maestro');
     return f;
@@ -190,6 +188,26 @@ export async function GET(request) {
       ${incompletos.map(({ p, faltas }) => `<tr><td style="border:1px solid #ddd;padding:6px">${[p.referencia_odoo, p.cliente || p.nombre].filter(Boolean).join(' · ')}</td><td style="border:1px solid #ddd;padding:6px">${faltas.join(', ')}</td></tr>`).join('')}
     </table>
     <p style="font-size:12px;color:#666">Regla: aprobado en Odoo = completo en el ERP el mismo día. Cuenta para el KPI "Proyectos creados completos".</p>`;
+
+  // v8.61.2: obras ya trabajándose que VALEN RD$0 en producción (sin valor, sin precio en las
+  // áreas, sin m²…): se trabaja y se reporta, pero no suma. Caso sep-2026: Las Parras y DGII.
+  // Solo obras con actividad en los últimos 30 días: son las que pierden producción hoy.
+  const hace30 = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+  const [{ data: jor30 }, { data: rep30 }] = await Promise.all([
+    supabase.from('jornadas').select('proyecto_id').gte('fecha', hace30),
+    supabase.from('reportes').select('proyecto_id').gte('fecha', hace30),
+  ]);
+  const activas30 = new Set([...(jor30 || []), ...(rep30 || [])].map(x => x.proyecto_id));
+  const sinValor = (obrasAbiertas || []).filter(p => p.estado !== 'aprobado' && activas30.has(p.id))
+    .map(p => ({ p, faltas: valorDe(p) })).filter(x => x.faltas.length);
+  const ESTADO_TXT = { planificado: 'Planificada', en_ejecucion: 'En ejecución', parado: 'Parada' };
+  const seccionSinValor = sinValor.length === 0 ? '' : `
+    <h3 style="color:#D71920;margin-top:20px">💸 Obras que valen RD$0 en producción (${sinValor.length})</h3>
+    <p style="font-size:13px;margin:4px 0">Con trabajo en los últimos 30 días, pero sin esto su producción no suma (o se reparte mal entre áreas):</p>
+    <table style="border-collapse:collapse;width:100%;font-size:13px">
+      <tr style="background:#f3f3f3"><th style="border:1px solid #ddd;padding:6px;text-align:left">Obra</th><th style="border:1px solid #ddd;padding:6px;text-align:left">Estado</th><th style="border:1px solid #ddd;padding:6px;text-align:left">Le falta</th></tr>
+      ${sinValor.map(({ p, faltas }) => `<tr><td style="border:1px solid #ddd;padding:6px">${[p.referencia_odoo, p.cliente || p.nombre].filter(Boolean).join(' · ')}</td><td style="border:1px solid #ddd;padding:6px">${ESTADO_TXT[p.estado] || p.estado}</td><td style="border:1px solid #ddd;padding:6px">${faltas.join(', ')}</td></tr>`).join('')}
+    </table>`;
 
   // v8.56.0: SEMÁFORO DE NÓMINA — lo mismo que ve Miguel en el corte abierto, pero por
   // correo cada mañana, para que los huecos se arreglen durante la quincena y no el día
@@ -260,7 +278,7 @@ export async function GET(request) {
     ? `<div style="font-family:Arial,sans-serif;max-width:680px">
         <h2 style="color:#15803d">✅ Todas las obras en ejecución reportaron el ${fmt(diaEval)}</h2>
         <p style="font-size:13px;color:#666">${activasEseDia.length} obra${activasEseDia.length !== 1 ? 's' : ''} en ejecución ese día, todas con reporte.</p>
-        ${seccionArrancadas}${seccionProyectos}${seccionNomina}${pie}
+        ${seccionArrancadas}${seccionSinValor}${seccionProyectos}${seccionNomina}${pie}
       </div>`
     : `<div style="font-family:Arial,sans-serif;max-width:680px">
         <h2 style="color:#D71920">Reporte de obra del ${fmt(diaEval)}</h2>
@@ -268,7 +286,7 @@ export async function GET(request) {
                 'Hubo jornada registrada y no hay reporte de avance. Es la falta: llamar al supervisor.')}
         ${tabla('❓ Sin jornada ni reporte', '#b45309', sinJornadaNiReporte,
                 '¿No se trabajó, o no se registró? Si la obra no puede avanzar, márquenla "parado" con su razón.')}
-        ${seccionArrancadas}${seccionProyectos}${seccionNomina}${pie}
+        ${seccionArrancadas}${seccionSinValor}${seccionProyectos}${seccionNomina}${pie}
       </div>`;
 
   const resp = await fetch('https://api.resend.com/emails', {

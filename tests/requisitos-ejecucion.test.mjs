@@ -65,3 +65,16 @@ caso('obra vacía: lista larga', () => {
 
 console.log(`\n${ok} pasadas, ${fallos.length} fallidas`);
 if (fallos.length) { fallos.forEach(f => console.log('  ✗ ' + f)); process.exit(1); }
+
+// v8.61.2 — regla de valor compartida
+import { faltantesDeValor } from '../lib/helpers/requisitosEjecucion.js';
+{
+  let ok2 = 0, ko2 = 0; const tt = (n, c) => { if (c) ok2++; else { ko2++; console.error('FALLA:', n); } };
+  const sis = { s1: { tareas: [{ id: 't' }], precio_m2: 500 }, s2: { tareas: [{ id: 't' }] } };
+  tt('completa', faltantesDeValor({ sistemaId: 's1', areas: [{ m2: 10 }], valorCotizacion: 1 }, sis).length === 0);
+  tt('área sin precio (sistema sin precio)', faltantesDeValor({ sistemaId: 's2', areas: [{ m2: 10 }], valorCotizacion: 1 }, sis).includes('precio de venta en las áreas'));
+  tt('precio del área salva', faltantesDeValor({ sistemaId: 's2', areas: [{ m2: 10, precioVentaM2: 300 }], valorCotizacion: 1 }, sis).length === 0);
+  tt('sin valor', faltantesDeValor({ sistemaId: 's1', areas: [{ m2: 10 }] }, sis).includes('valor de la cotización'));
+  tt('sin sistemas no revisa precios', faltantesDeValor({ sistemaId: 's2', areas: [{ m2: 10 }], valorCotizacion: 1 }).length === 0);
+  console.log(`valor: ${ok2} pasadas, ${ko2} fallidas`); if (ko2) process.exit(1);
+}

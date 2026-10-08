@@ -10943,15 +10943,15 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
   const lejosInicio = jornadaHoy?.inicioDistanciaObraM != null && jornadaHoy.inicioDistanciaObraM > radio;
   const lejosFin = jornadaHoy?.finDistanciaObraM != null && jornadaHoy.finDistanciaObraM > radio;
 
-  if (loading) return <div className="text-center py-8"><Loader2 className="w-6 h-6 text-red-500 animate-spin mx-auto" /></div>;
-
-  const puedeOperarHoy = tieneRol(usuario, 'admin') || proyecto.supervisorId === usuario.id || proyecto.maestroId === usuario.id;
-
-  // v8.59.7: quienes trabajaron en los últimos 15 días, para avisar si alguien cobra por día sin monto.
+  // v8.59.7 (v8.61.1: antes del return de "cargando" — un hook después de un return condicional rompe React #310): quienes trabajaron en los últimos 15 días, para avisar si alguien cobra por día sin monto.
   const presentesRecientes = useMemo(() => {
     const desde = (() => { const d = new Date(hoy + 'T12:00:00'); d.setDate(d.getDate() - 15); return d.toISOString().split('T')[0]; })();
     return [...new Set([jornadaHoy, ...(historial || [])].filter(j => j && (j.fecha || '') >= desde).flatMap(j => j.personasPresentesIds || []))];
   }, [jornadaHoy, historial, hoy]);
+  if (loading) return <div className="text-center py-8"><Loader2 className="w-6 h-6 text-red-500 animate-spin mx-auto" /></div>;
+
+  const puedeOperarHoy = tieneRol(usuario, 'admin') || proyecto.supervisorId === usuario.id || proyecto.maestroId === usuario.id;
+
   return (
     <div className="space-y-5">
       <AvisoFormaPago proyecto={proyecto} personal={personal} personasIds={presentesRecientes} puedeConfigurar={tieneRol(usuario, 'admin') || tieneRol(usuario, 'nomina')} />

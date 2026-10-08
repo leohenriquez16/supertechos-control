@@ -1,0 +1,18 @@
+import { diffSistema, resumenDiff, impactoCambioSistema } from '../lib/helpers/cambiosSistema.js';
+let ok = 0, ko = 0; const t = (n, c) => { if (c) ok++; else { ko++; console.error('FALLA:', n); } };
+const antes = { id: 's', nombre: 'Acrílico', precio_m2: 600, tareas: [{ id: 'a', nombre: 'Prep', peso: 50 }, { id: 'b', nombre: 'Grietas', peso: 50 }] };
+const despues = { id: 's', nombre: 'Acrílico', precio_m2: 660, tareas: [{ id: 'a', nombre: 'Prep', peso: 25 }, { id: 'b', nombre: 'Grietas', peso: 25 }, { id: 'c', nombre: '1era mano', peso: 25 }, { id: 'd', nombre: '2da mano', peso: 25 }] };
+const d = diffSistema(antes, despues);
+t('agregadas', d.agregadas.join() === '1era mano,2da mano');
+t('pesos', d.pesos.length === 2 && d.pesos[0].de === 50 && d.pesos[0].a === 25);
+t('precio', d.precio.de === 600 && d.precio.a === 660);
+t('resumen', resumenDiff(d).includes('tareas agregadas'));
+t('sin cambios', !diffSistema(antes, antes).hayCambios);
+const proy = { id: 'p', referenciaOdoo: 'ST-C4532', estado: 'parado', sistema: 's', areas: [{ id: 'ar', m2: 100, sistemaId: 's' }] };
+const reps = [{ proyectoId: 'p', areaId: 'ar', tareaId: 'a', m2: 100 }, { proyectoId: 'p', areaId: 'ar', tareaId: 'b', m2: 100 }];
+const imp = impactoCambioSistema({ antes, despues, proyectos: [proy], reportes: reps, sistemas: { s: antes } });
+t('avance 100 → 50', imp.obras.length === 1 && imp.obras[0].antes === 100 && imp.obras[0].despues === 50);
+const quita = impactoCambioSistema({ antes, despues: { ...antes, tareas: [antes.tareas[0]] }, proyectos: [proy], reportes: reps, sistemas: { s: antes } });
+t('huérfanos al quitar tarea con reportes', quita.huerfanos.length === 1);
+t('obra facturada no cuenta', impactoCambioSistema({ antes, despues, proyectos: [{ ...proy, estado: 'facturado' }], reportes: reps, sistemas: { s: antes } }).obras.length === 0);
+console.log(`${ok} pasadas, ${ko} fallidas`); if (ko) process.exit(1);

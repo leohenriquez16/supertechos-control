@@ -159,7 +159,7 @@ export async function GET(request) {
   // v8.31.1: proyectos APROBADOS con información incompleta (regla: un proyecto
   // aprobado en Odoo queda completo en el ERP el mismo día — KPI de Miguel/Erisdania).
   const { data: obrasAbiertas } = await supabase.from('proyectos')
-    .select('id, estado, cliente, nombre, referencia_odoo, ubicacion_lat, ubicacion_lng, contacto_principal_id, contacto_cliente_nombre, contacto_cliente_telefono, contacto_cliente_email, areas, sistema_id, valor_cotizacion, supervisor_id, maestro_id')
+    .select('id, estado, sync_odoo_excluido, cliente, nombre, referencia_odoo, ubicacion_lat, ubicacion_lng, contacto_principal_id, contacto_cliente_nombre, contacto_cliente_telefono, contacto_cliente_email, areas, sistema_id, valor_cotizacion, supervisor_id, maestro_id')
     .in('estado', ['aprobado', 'planificado', 'en_ejecucion', 'parado']).eq('archivado', false);
   const aprob = (obrasAbiertas || []).filter(p => p.estado === 'aprobado');
   const sidsAll = [...new Set((obrasAbiertas || []).flatMap(p => [p.sistema_id, ...((p.areas || []).map(a => a.sistemaId))]).filter(Boolean))];
@@ -216,7 +216,7 @@ export async function GET(request) {
     supabase.from('reportes').select('proyecto_id').gte('fecha', hace30),
   ]);
   const activas30 = new Set([...(jor30 || []), ...(rep30 || [])].map(x => x.proyecto_id));
-  const sinValor = (obrasAbiertas || []).filter(p => p.estado !== 'aprobado' && activas30.has(p.id))
+  const sinValor = (obrasAbiertas || []).filter(p => p.estado !== 'aprobado' && activas30.has(p.id) && !p.sync_odoo_excluido)
     .map(p => ({ p, faltas: valorDe(p) })).filter(x => x.faltas.length);
   const ESTADO_TXT = { planificado: 'Planificada', en_ejecucion: 'En ejecución', parado: 'Parada' };
   const seccionSinValor = sinValor.length === 0 ? '' : `

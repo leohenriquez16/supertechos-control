@@ -83,6 +83,11 @@ export default function NuevoProyecto({ personal, sistemas, clientes = [], conta
       const sistemasNuevosPorNombre = new Map(); // nombre_norm → { nombre, precio_m2, tareas }
       const areasDelForm = [];
 
+      // v8.62.0: un precio por m² absurdo suele ser un subtotal leído como precio unitario
+      // (así nacieron sistemas a RD$20,000–95,000/m²). Se descarta y se avisa.
+      const PRECIO_M2_MAX = 15000;
+      const precioDudoso = [];
+      const precioIA = (a) => { const n = Number(a.sistemaPrecioM2) || 0; if (n > PRECIO_M2_MAX) { precioDudoso.push(`${a.nombre || a.sistemaNombre}: RD$${n.toLocaleString('en-US')}/m²`); return 0; } return n; };
       if (result.areas && Array.isArray(result.areas) && result.areas.length > 0) {
         result.areas.forEach((a, i) => {
           const nombreSistema = (a.sistemaNombre || '').trim();
@@ -102,7 +107,7 @@ export default function NuevoProyecto({ personal, sistemas, clientes = [], conta
                 sistemasNuevosPorNombre.set(key, {
                   tempId: 's_new_' + Date.now() + '_' + sistemasNuevosPorNombre.size,
                   nombre: nombreSistema,
-                  precio_m2: Number(a.sistemaPrecioM2) || 0,
+                  precio_m2: precioIA(a),
                   tareas: tareasInt.map((nombreTarea, idx) => ({
                     id: 't_' + Date.now() + '_' + idx,
                     nombre: nombreTarea,
@@ -117,7 +122,7 @@ export default function NuevoProyecto({ personal, sistemas, clientes = [], conta
           // v8.61.3: el precio por m² que la IA leyó en la cotización se guarda SIEMPRE en el área
           // (antes solo servía para crear un sistema nuevo; con un sistema existente se botaba y la
           // obra usaba el precio del catálogo, a veces RD$0).
-          const precioCot = Number(a.sistemaPrecioM2) || 0;
+          const precioCot = precioIA(a);
           areasDelForm.push({
             nombre: a.nombre || ('Área ' + (i + 1)),
             m2: String(a.m2 || ''),
@@ -129,6 +134,8 @@ export default function NuevoProyecto({ personal, sistemas, clientes = [], conta
         // Fallback: una sola área
         areasDelForm.push({ nombre: 'Área principal', m2: String(result.m2Principal || ''), sistemaId: null });
       }
+
+      if (precioDudoso.length) alert(`La IA leyó precios por m² que no parecen reales y no se usaron:\n\n${[...new Set(precioDudoso)].join('\n')}\n\nRevisa el precio de esas áreas antes de guardar.`);
 
       // Productos adicionales detectados
       const productosAdic = (result.productosAdicionales || []).map((p, i) => ({

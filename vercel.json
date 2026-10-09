@@ -1,6 +1,10 @@
 {
   "crons": [
     {
+      "path": "/api/cron/sync-cotizaciones-odoo",
+      "schedule": "0 13 * * *"
+    },
+    {
       "path": "/api/cron/sync-facturas-odoo",
       "schedule": "0 8 * * *"
     },

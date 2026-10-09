@@ -76,5 +76,6 @@ import { faltantesDeValor } from '../lib/helpers/requisitosEjecucion.js';
   tt('precio del área salva', faltantesDeValor({ sistemaId: 's2', areas: [{ m2: 10, precioVentaM2: 300 }], valorCotizacion: 1 }, sis).length === 0);
   tt('sin valor', faltantesDeValor({ sistemaId: 's1', areas: [{ m2: 10 }] }, sis).includes('valor de la cotización'));
   tt('sin sistemas no revisa precios', faltantesDeValor({ sistemaId: 's2', areas: [{ m2: 10 }], valorCotizacion: 1 }).length === 0);
+  tt('precio 0 a propósito = incluido', faltantesDeValor({ sistemaId: 's2', areas: [{ m2: 10, precioVentaM2: 0 }], valorCotizacion: 1 }, sis).length === 0);
   console.log(`valor: ${ok2} pasadas, ${ko2} fallidas`); if (ko2) process.exit(1);
 }

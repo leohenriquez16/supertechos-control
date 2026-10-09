@@ -24,6 +24,7 @@
 // Protegido por `Authorization: Bearer <CRON_SECRET>` (Vercel lo envía solo).
 
 import { faltantesDeValor } from '../../../../lib/helpers/requisitosEjecucion';
+import { textoCambio } from '../../../../lib/helpers/syncOdoo';
 import { createClient } from '@supabase/supabase-js';
 import { chequearNomina } from '../../../../lib/helpers/chequeoNomina';
 
@@ -189,6 +190,23 @@ export async function GET(request) {
     </table>
     <p style="font-size:12px;color:#666">Regla: aprobado en Odoo = completo en el ERP el mismo día. Cuenta para el KPI "Proyectos creados completos".</p>`;
 
+  // v8.62.0: lo que la sincronización con Odoo de esta mañana dejó por revisar
+  const { data: syncPend } = await supabase.from('proyectos').select('referencia_odoo, cliente, nombre, sync_odoo')
+    .eq('archivado', false).not('sync_odoo', 'is', null);
+  const conRevisar = (syncPend || []).filter(p => (p.sync_odoo?.revisar || []).length);
+  const seccionSyncOdoo = conRevisar.length === 0 ? '' : `
+    <h3 style="color:#1e6fa8;margin-top:20px">🔄 Cotizaciones que cambiaron en Odoo (${conRevisar.length})</h3>
+    <p style="font-size:13px;margin:4px 0">Lo seguro ya se actualizó solo. Esto necesita que alguien lo mire (en la ficha de la obra):</p>
+    <table style="border-collapse:collapse;width:100%;font-size:13px">
+      <tr style="background:#f3f3f3"><th style="border:1px solid #ddd;padding:6px;text-align:left">Obra</th><th style="border:1px solid #ddd;padding:6px;text-align:left">Por revisar</th></tr>
+      ${conRevisar.map(p => {
+        const r = p.sync_odoo.revisar; const nuevas = r.filter(c => c.tipo === 'partida_nueva').length;
+        const otros = r.filter(c => c.tipo !== 'partida_nueva').map(textoCambio);
+        if (nuevas) otros.push(`${nuevas} partida${nuevas === 1 ? '' : 's'} de la cotización sin área en el ERP`);
+        return `<tr><td style="border:1px solid #ddd;padding:6px">${[p.referencia_odoo, p.cliente || p.nombre].filter(Boolean).join(' · ')}</td><td style="border:1px solid #ddd;padding:6px">${otros.join('<br>')}</td></tr>`;
+      }).join('')}
+    </table>`;
+
   // v8.61.2: obras ya trabajándose que VALEN RD$0 en producción (sin valor, sin precio en las
   // áreas, sin m²…): se trabaja y se reporta, pero no suma. Caso sep-2026: Las Parras y DGII.
   // Solo obras con actividad en los últimos 30 días: son las que pierden producción hoy.
@@ -278,7 +296,7 @@ export async function GET(request) {
     ? `<div style="font-family:Arial,sans-serif;max-width:680px">
         <h2 style="color:#15803d">✅ Todas las obras en ejecución reportaron el ${fmt(diaEval)}</h2>
         <p style="font-size:13px;color:#666">${activasEseDia.length} obra${activasEseDia.length !== 1 ? 's' : ''} en ejecución ese día, todas con reporte.</p>
-        ${seccionArrancadas}${seccionSinValor}${seccionProyectos}${seccionNomina}${pie}
+        ${seccionArrancadas}${seccionSinValor}${seccionSyncOdoo}${seccionProyectos}${seccionNomina}${pie}
       </div>`
     : `<div style="font-family:Arial,sans-serif;max-width:680px">
         <h2 style="color:#D71920">Reporte de obra del ${fmt(diaEval)}</h2>
@@ -286,7 +304,7 @@ export async function GET(request) {
                 'Hubo jornada registrada y no hay reporte de avance. Es la falta: llamar al supervisor.')}
         ${tabla('❓ Sin jornada ni reporte', '#b45309', sinJornadaNiReporte,
                 '¿No se trabajó, o no se registró? Si la obra no puede avanzar, márquenla "parado" con su razón.')}
-        ${seccionArrancadas}${seccionSinValor}${seccionProyectos}${seccionNomina}${pie}
+        ${seccionArrancadas}${seccionSinValor}${seccionSyncOdoo}${seccionProyectos}${seccionNomina}${pie}
       </div>`;
 
   const resp = await fetch('https://api.resend.com/emails', {

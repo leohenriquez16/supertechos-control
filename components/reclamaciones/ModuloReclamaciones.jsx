@@ -793,28 +793,58 @@ function ModalNuevaReclamacion({ data, usuario, ubicaciones, garantias, onCerrar
   const [severidad, setSeveridad] = useState('media');
   const [canal, setCanal] = useState('interno');
   const [guardando, setGuardando] = useState(false);
+  // v8.63.0 (Leo): el TRABAJO es el paso central — obra del ERP, cotización vieja
+  // de Odoo (obras de antes del ERP), o "no identificado" (triage en 24h).
+  const [trabajoSel, setTrabajoSel] = useState(null); // {tipo:'erp',proyectoId} | {tipo:'odoo',ref} | {tipo:'desconocido'}
+  const [odooAbierto, setOdooAbierto] = useState(false);
+  const [odooCots, setOdooCots] = useState(null); // null=no buscado · []=sin resultados
+  const [odooBuscando, setOdooBuscando] = useState(false);
 
   const clientes = (data.clientes || []).filter(c => !c.archivado);
   const cli = clientes.find(c => c.id === clienteId);
   const esEmpresa = cli && cli.tipo !== 'persona'; // v8.53.4: persona = el cliente es el contacto
   const clientePersonaLocalizable = cli && !esEmpresa && !!((cli.telefonoPrincipal || '').trim() || (cli.emailPrincipal || '').trim());
   const ubicsCli = ubicaciones.filter(u => u.clienteId === clienteId);
-  const proysCli = (data.proyectos || []).filter(p => !p.archivado && p.clienteId === clienteId);
+  // Sin filtrar archivados: una reclamación suele ser de una obra YA terminada.
+  const proysCli = (data.proyectos || []).filter(p => p.clienteId === clienteId);
   const garantiaDeProy = garantias.find(g => g.proyectoId === proyectoId);
+
+  const elegirTrabajoERP = (p) => {
+    setTrabajoSel({ tipo: 'erp', proyectoId: p.id });
+    setProyectoId(p.id);
+    if (p.ubicacionId) setUbicacionId(p.ubicacionId); // la obra trae su ubicación
+  };
+  const buscarEnOdoo = async () => {
+    if (!cli) return;
+    setOdooAbierto(true); setOdooBuscando(true);
+    try {
+      const r = await fetch(`/api/odoo/cotizaciones-cliente?q=${encodeURIComponent(cli.nombre)}`);
+      const j = await r.json();
+      setOdooCots(j.ok ? j.cotizaciones : []);
+    } catch { setOdooCots([]); }
+    setOdooBuscando(false);
+  };
 
   const guardar = async () => {
     if (!clienteId) { alert('Elige el cliente.'); return; }
+    // v8.63.0: el trabajo es obligatorio — obra ERP, cotización de Odoo, o "no identificado" explícito.
+    if (!trabajoSel) { alert('Elige de cuál trabajo es la reclamación (o marca "no identificado aún").'); return; }
     if (!descripcion.trim()) { alert('Describe la reclamación.'); return; }
     // v8.53.4: contacto obligatorio con WhatsApp o correo (empresa: de sus contactos; persona: el cliente).
     if (esEmpresa && !contactoId) { alert('Elige un contacto del cliente (con WhatsApp o correo) para dar seguimiento.'); return; }
     if (!esEmpresa && !clientePersonaLocalizable) { alert('Este cliente (persona) no tiene teléfono ni correo. Complétalo en su ficha para poder contactarlo.'); return; }
     setGuardando(true);
     try {
-      const proy = (data.proyectos || []).find(p => p.id === proyectoId);
+      const proy = trabajoSel.tipo === 'erp' ? (data.proyectos || []).find(p => p.id === trabajoSel.proyectoId) : null;
       const rec = await db.crearReclamacion({
-        clienteId: clienteId || null, ubicacionId: ubicacionId || null, proyectoId: proyectoId || null,
+        clienteId: clienteId || null, ubicacionId: ubicacionId || null,
+        proyectoId: proy?.id || null,
         contactoId: esEmpresa ? (contactoId || null) : null,
-        garantiaId: garantiaDeProy?.id || null, referenciaCotizacion: proy?.referenciaOdoo || null,
+        garantiaId: proy ? (garantias.find(g => g.proyectoId === proy.id)?.id || null) : null,
+        referenciaCotizacion: trabajoSel.tipo === 'odoo' ? trabajoSel.ref : (proy?.referenciaOdoo || null),
+        // v8.63.0: responsable automático = el supervisor de la obra (puede cambiarse luego)
+        asignadoA: proy?.supervisorId || null,
+        notas: trabajoSel.tipo === 'desconocido' ? '⚠ Trabajo no identificado al crear — clasificar.' : null,
         canal, descripcion: descripcion.trim(), severidad,
       });
       try { await chatterCreacion('reclamacion', rec.id, usuario, 'Creó la reclamación'); } catch {}
@@ -831,20 +861,74 @@ function ModalNuevaReclamacion({ data, usuario, ubicaciones, garantias, onCerrar
             <div className="text-[10px] uppercase text-zinc-500 mb-1">Cliente</div>
             {/* v8.49.11 (ticket Edwin): buscador con sugerencias — el select plano no servía con cientos de clientes */}
             <BuscadorCliente clientes={clientes} clienteId={clienteId}
-              onElegir={(id) => { setClienteId(id); setUbicacionId(''); setProyectoId(''); setContactoId(''); }} />
+              onElegir={(id) => { setClienteId(id); setUbicacionId(''); setProyectoId(''); setContactoId(''); setTrabajoSel(null); setOdooAbierto(false); setOdooCots(null); }} />
           </div>
           {clienteId && (
             <>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <div className="text-[10px] uppercase text-zinc-500 mb-1">Ubicación</div>
-                <select value={ubicacionId} onChange={e => setUbicacionId(e.target.value)} className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-2 text-white text-xs"><option value="">—</option>{ubicsCli.map(u => <option key={u.id} value={u.id}>{u.nombre}{u.ciudad ? ` · ${u.ciudad}` : ''}</option>)}</select>
-              </div>
-              <div>
-                <div className="text-[10px] uppercase text-zinc-500 mb-1">Proyecto</div>
-                <select value={proyectoId} onChange={e => setProyectoId(e.target.value)} className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-2 text-white text-xs"><option value="">—</option>{proysCli.map(p => <option key={p.id} value={p.id}>{p.referenciaProyecto || p.referenciaOdoo || p.nombre}</option>)}</select>
+            {/* v8.63.0 (Leo): ¿DE CUÁL TRABAJO ES? — el amarre a la obra/cotización es el
+                corazón de la reclamación: trae ubicación, garantía y responsable. */}
+            <div>
+              <div className="text-[10px] uppercase text-zinc-500 mb-1">¿De cuál trabajo es? *</div>
+              <div className="space-y-1 max-h-44 overflow-y-auto border border-zinc-800 rounded-card p-1.5 bg-zinc-900/40">
+                {proysCli.length === 0 && <div className="text-[11px] text-zinc-500 px-1.5 py-1">Este cliente no tiene obras en el ERP — busca su cotización en Odoo abajo.</div>}
+                {proysCli.map(p => {
+                  const sel = trabajoSel?.tipo === 'erp' && trabajoSel.proyectoId === p.id;
+                  const gar = garantias.find(g => g.proyectoId === p.id);
+                  const ubi = ubicaciones.find(u => u.id === p.ubicacionId);
+                  return (
+                    <button key={p.id} onClick={() => elegirTrabajoERP(p)}
+                      className={`w-full text-left px-2.5 py-2 rounded-card border text-xs ${sel ? 'bg-red-600/15 border-red-600 text-white' : 'bg-zinc-950 border-zinc-800 text-zinc-300 hover:border-zinc-600'}`}>
+                      <div className="font-bold truncate">{p.referenciaOdoo || p.referenciaProyecto || 'sin ref'} · {p.nombre}</div>
+                      <div className="text-[10px] text-zinc-500 flex gap-2 flex-wrap">
+                        {ubi && <span>📍 {ubi.nombre}</span>}
+                        {gar && <span className="text-emerald-400">🛡 con garantía</span>}
+                        {p.archivado && <span>archivada</span>}
+                      </div>
+                    </button>
+                  );
+                })}
+                {/* Obras de ANTES del ERP: la cotización vive solo en Odoo */}
+                {!odooAbierto ? (
+                  <button onClick={buscarEnOdoo} className="w-full text-left px-2.5 py-2 rounded-card border border-dashed border-sky-800 text-sky-300 hover:border-sky-500 text-[11px] font-bold">
+                    🔎 No está aquí — buscar cotizaciones viejas del cliente en Odoo
+                  </button>
+                ) : odooBuscando ? (
+                  <div className="text-[11px] text-zinc-500 px-2 py-1.5">Buscando en Odoo…</div>
+                ) : (
+                  <>
+                    {(odooCots || []).map(c => {
+                      const sel = trabajoSel?.tipo === 'odoo' && trabajoSel.ref === c.referencia;
+                      return (
+                        <button key={c.referencia} onClick={() => { setTrabajoSel({ tipo: 'odoo', ref: c.referencia }); setProyectoId(''); }}
+                          className={`w-full text-left px-2.5 py-2 rounded-card border text-xs ${sel ? 'bg-sky-600/15 border-sky-500 text-white' : 'bg-zinc-950 border-sky-900/60 text-zinc-300 hover:border-sky-600'}`}>
+                          <div className="font-bold">{c.referencia} <span className="text-[10px] text-sky-400">· Odoo</span></div>
+                          <div className="text-[10px] text-zinc-500">{c.fecha} · RD$ {Number(c.monto).toLocaleString()} · {c.cliente}</div>
+                        </button>
+                      );
+                    })}
+                    {odooCots && odooCots.length === 0 && <div className="text-[11px] text-amber-400 px-2 py-1">Sin cotizaciones en Odoo para este nombre de cliente.</div>}
+                  </>
+                )}
+                <button onClick={() => { setTrabajoSel({ tipo: 'desconocido' }); setProyectoId(''); }}
+                  className={`w-full text-left px-2.5 py-1.5 rounded-card border text-[11px] ${trabajoSel?.tipo === 'desconocido' ? 'bg-amber-600/15 border-amber-600 text-amber-200' : 'border-zinc-800 text-zinc-500 hover:text-amber-300'}`}>
+                  ⚠ No identificado aún — la oficina lo clasifica en 24h
+                </button>
               </div>
             </div>
+            {/* Ubicación: viene sola con la obra del ERP; editable solo si falta */}
+            {trabajoSel && (
+              <div>
+                <div className="text-[10px] uppercase text-zinc-500 mb-1">Ubicación</div>
+                {ubicacionId && trabajoSel.tipo === 'erp' ? (
+                  <div className="flex items-center gap-2 text-[11px] text-emerald-300 bg-emerald-950/30 border border-emerald-800/50 rounded-card px-2 py-1.5">
+                    📍 {ubicsCli.find(u => u.id === ubicacionId)?.nombre || 'de la obra'} <span className="text-zinc-500">(de la obra)</span>
+                    <button onClick={() => setUbicacionId('')} className="ml-auto text-zinc-500 hover:text-white text-[10px] underline">cambiar</button>
+                  </div>
+                ) : (
+                  <select value={ubicacionId} onChange={e => setUbicacionId(e.target.value)} className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-2 text-white text-xs"><option value="">— elegir —</option>{ubicsCli.map(u => <option key={u.id} value={u.id}>{u.nombre}{u.ciudad ? ` · ${u.ciudad}` : ''}</option>)}</select>
+                )}
+              </div>
+            )}
             {/* v8.53.4: contacto del cliente — obligatorio para empresas (de sus contactos, con WS/correo) */}
             <div>
               <div className="text-[10px] uppercase text-zinc-500 mb-1">Contacto del cliente *</div>

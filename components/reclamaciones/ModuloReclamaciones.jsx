@@ -112,46 +112,15 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
     return ordered.map(k => ({ key: k, label: labelOf(k), items: map.get(k) }));
   }, [filtradas, agruparPor, columnasRecl]);
 
-  // v8.65.0: el ciclo tiene puertas — tomar exige visita programada; cerrar exige evidencia.
-  const validarTransicion = (r, estado) => {
-    if (!r) return null;
-    if (estado === 'en_proceso' && r.estado === 'abierta' && !r.fechaVisitaProgramada) {
-      return 'Para tomar la reclamación programa primero la FECHA DE VISITA (campo "📅 Visita" en el detalle). Así el cliente sabe cuándo vamos y la Torre lo mide.';
-    }
-    if (estado === 'resuelta' || estado === 'cerrada') {
-      const faltan = [];
-      if (!(r.fotos || []).length) faltan.push('al menos una FOTO del trabajo');
-      if (!(r.trabajoRealizado || '').trim()) faltan.push('QUÉ SE HIZO (bloque Resolución)');
-      if (!r.causaRaiz) faltan.push('la CAUSA RAÍZ (bloque Resolución)');
-      if (faltan.length) return 'Para marcarla resuelta falta registrar: ' + faltan.join(', ') + '. El trabajo se hizo — que quede la constancia.';
-    }
-    return null;
-  };
-  // v8.65.0: al resolver, la encuesta de satisfacción se genera SOLA y queda en la bitácora.
-  const dispararCsat = async (r) => {
-    try {
-      const sol = await db.crearSolicitudCalificacion({
-        entityType: 'reclamacion', entityId: r.id, clienteNombre: clienteNombre(r),
-        contexto: 'la atención de su reclamación', creadoPor: usuario,
-      });
-      const link = `${window.location.origin}/calificar/${sol.token}`;
-      try { await registrarComunicacion('reclamacion', r.id, { canal: 'sistema', direccion: 'saliente', cuerpo: `Encuesta de satisfacción generada automáticamente al resolver: ${link}`, autor: usuario }); } catch {}
-    } catch (e) { console.warn('CSAT auto:', e?.message); }
-  };
-
   // v8.50.0 (ticket Edwin): al cambiar el estado local se sincroniza también la etapa
   // Odoo (odoo_stage) — antes la tarjeta no se movía de columna en el Kanban.
   const cambiarEstado = async (id, estado) => {
-    const rec = recs.find(r => r.id === id);
-    const estadoPrev = rec?.estado;
-    const err = validarTransicion(rec, estado); // v8.65.0
-    if (err) { alert(err); return; }
+    const estadoPrev = recs.find(r => r.id === id)?.estado;
     const odooStage = MAP_LOCAL_ODOO[estado] || 'New';
     setRecs(prev => prev.map(r => r.id === id ? { ...r, estado, odooStage } : r)); // optimista
     try {
       await db.actualizarReclamacion(id, { estado, odooStage });
       try { await chatterEstado('reclamacion', id, estadoPrev, estado, usuario, 'estado'); } catch {}
-      if (estado === 'resuelta' && estadoPrev !== 'resuelta') await dispararCsat(rec); // v8.65.0
     } catch (e) { alert('Error: ' + (e.message || e)); setReload(x => x + 1); }
   };
 
@@ -161,17 +130,13 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
   const soltarEnColumna = async (col) => {
     if (!dragId) return;
     const id = dragId;
-    const rec = recs.find(r => r.id === id);
-    const estadoPrev = rec?.estado;
+    const estadoPrev = recs.find(r => r.id === id)?.estado;
     const estado = MAP_ODOO_LOCAL[col] || estadoPrev || 'en_proceso';
     setDragId(null); setDropCol(null);
-    const err = validarTransicion(rec, estado); // v8.65.0: mismas puertas que los botones
-    if (err) { alert(err); return; }
     setRecs(prev => prev.map(r => r.id === id ? { ...r, estado, odooStage: col } : r));
     try {
       await db.actualizarReclamacion(id, { estado, odooStage: col });
       try { await chatterEstado('reclamacion', id, estadoPrev, `${estado} · ${col}`, usuario, 'estado'); } catch {}
-      if (estado === 'resuelta' && estadoPrev !== 'resuelta') await dispararCsat(rec); // v8.65.0
     } catch (e) { alert('Error: ' + (e.message || e)); setReload(x => x + 1); }
   };
 
@@ -221,21 +186,8 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
           <div className="mt-3 bg-zinc-950 border border-zinc-800 rounded-card p-3 text-sm text-zinc-300">{r.descripcion || 'Sin descripción.'}</div>
           {/* v8.53.4: contacto del cliente amarrado a sus contactos (empresa) o el cliente (persona) */}
           <ContactoReclamacion r={r} cliente={clienteDe(r.clienteId)} ubicacion={ubic(r.ubicacionId)} onGuardado={() => setReload(x => x + 1)} />
-          {/* v8.65.0: reclamación sin trabajo amarrado → clasificarla aquí (triage) */}
-          {!r.proyectoId && !r.referenciaCotizacion && (
-            <ClasificarTrabajoReclamacion r={r} data={data} garantias={garantias} usuario={usuario} onGuardado={() => setReload(x => x + 1)} />
-          )}
           {/* v8.49.11: fotos del trabajo realizado (ticket Edwin) */}
           <FotosReclamacion r={r} usuario={usuario} onCambio={() => setReload(x => x + 1)} />
-          {/* v8.65.0: la visita programada es la puerta para tomar la reclamación */}
-          <div className="mt-3 flex items-center gap-2 flex-wrap bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2">
-            <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">📅 Visita</span>
-            <input type="date" value={r.fechaVisitaProgramada || ''} onChange={async e => {
-              try { await db.actualizarReclamacion(r.id, { fechaVisitaProgramada: e.target.value || null }); setReload(x => x + 1); }
-              catch (err) { alert('Error: ' + (err.message || err)); }
-            }} className="bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1.5 text-xs text-white outline-none focus:border-red-600 [color-scheme:dark]" />
-            {!r.fechaVisitaProgramada && r.estado === 'abierta' && <span className="text-[10px] text-amber-400 font-bold">⚠ sin visita — necesaria para tomar la reclamación</span>}
-          </div>
           {/* Estado */}
           <div className="mt-3">
             <div className="text-[10px] uppercase text-zinc-500 mb-1">Estado</div>
@@ -248,7 +200,7 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
           {/* v8.53.1 (Fase 3B): hito informe de solución entregado al cliente — cierra el ciclo */}
           <InformeSolucionReclamacion r={r} onGuardado={() => setReload(x => x + 1)} />
           {/* v8.54.1 (C3): calificación del cliente (CSAT) */}
-          <SolicitarCalificacion key={r.id + '-' + r.estado} entityType="reclamacion" entityId={r.id} clienteNombre={clienteNombre(r)} contexto="la atención de su reclamación" usuario={usuario} />
+          <SolicitarCalificacion entityType="reclamacion" entityId={r.id} clienteNombre={clienteNombre(r)} contexto="la atención de su reclamación" usuario={usuario} />
           {/* v8.26.8: pago de mano de obra de la reclamación → cae a nómina como ajuste */}
           <PagoManoObraReclamacion r={r} data={data} usuario={usuario} permitido={esOwnerApp || esAdminApp} />
           <div className="mt-3 flex gap-2 flex-wrap">
@@ -507,91 +459,17 @@ function PagoManoObraReclamacion({ r, data, usuario, permitido }) {
 }
 
 // ---------- RESOLUCIÓN: qué y cuándo se hizo ----------
-// v8.65.0: TRIAGE — clasificar una reclamación creada sin trabajo amarrado.
-// Mismo menú que el form de creación: obra del ERP, cotización vieja de Odoo.
-function ClasificarTrabajoReclamacion({ r, data, garantias, usuario, onGuardado }) {
-  const [abierto, setAbierto] = useState(false);
-  const [odooCots, setOdooCots] = useState(null);
-  const [buscando, setBuscando] = useState(false);
-  const [guardando, setGuardando] = useState(false);
-  const cli = (data.clientes || []).find(c => c.id === r.clienteId);
-  const proysCli = (data.proyectos || []).filter(p => p.clienteId === r.clienteId);
-
-  const amarrar = async (campos, etiqueta) => {
-    setGuardando(true);
-    try {
-      await db.actualizarReclamacion(r.id, campos);
-      try { await chatterCreacion('reclamacion', r.id, usuario, `Clasificó el trabajo: ${etiqueta}`); } catch {}
-      onGuardado?.();
-    } catch (e) { alert('Error: ' + (e.message || e)); }
-    setGuardando(false);
-  };
-  const buscarOdoo = async () => {
-    if (!cli) { alert('La reclamación no tiene cliente del catálogo.'); return; }
-    setBuscando(true);
-    try {
-      const j = await (await fetch(`/api/odoo/cotizaciones-cliente?q=${encodeURIComponent(cli.nombre)}`)).json();
-      setOdooCots(j.ok ? j.cotizaciones : []);
-    } catch { setOdooCots([]); }
-    setBuscando(false);
-  };
-
-  return (
-    <div className="mt-3 bg-amber-950/25 border border-amber-800/60 rounded-card p-3">
-      <div className="text-[10px] uppercase tracking-widest text-amber-400 font-bold mb-1 flex items-center justify-between">
-        <span>⚠ Sin trabajo amarrado — por clasificar</span>
-        {!abierto && <button onClick={() => setAbierto(true)} className="text-amber-300 hover:underline text-[10px] normal-case tracking-normal font-bold">Clasificar ahora</button>}
-      </div>
-      {!abierto ? (
-        <div className="text-[11px] text-zinc-400">Esta reclamación no sabe de cuál obra/cotización es: sin eso no hay garantía, ni ubicación, ni responsable claro.</div>
-      ) : (
-        <div className="space-y-1 max-h-48 overflow-y-auto">
-          {proysCli.map(p => (
-            <button key={p.id} disabled={guardando}
-              onClick={() => amarrar({ proyectoId: p.id, referenciaCotizacion: p.referenciaOdoo || null, ubicacionId: p.ubicacionId || r.ubicacionId || null, garantiaId: (garantias.find(g => g.proyectoId === p.id)?.id) || null, asignadoA: p.supervisorId || null }, p.referenciaOdoo || p.nombre)}
-              className="w-full text-left px-2.5 py-2 rounded-card border text-xs bg-zinc-950 border-zinc-800 text-zinc-300 hover:border-amber-500">
-              <div className="font-bold truncate">{p.referenciaOdoo || 'sin ref'} · {p.nombre}</div>
-            </button>
-          ))}
-          {odooCots === null ? (
-            <button onClick={buscarOdoo} disabled={buscando} className="w-full text-left px-2.5 py-2 rounded-card border border-dashed border-sky-800 text-sky-300 hover:border-sky-500 text-[11px] font-bold">{buscando ? 'Buscando en Odoo…' : '🔎 Buscar cotizaciones viejas del cliente en Odoo'}</button>
-          ) : odooCots.length === 0 ? (
-            <div className="text-[11px] text-amber-400 px-2 py-1">Sin cotizaciones en Odoo para este cliente.</div>
-          ) : odooCots.map(c => (
-            <button key={c.referencia} disabled={guardando} onClick={() => amarrar({ referenciaCotizacion: c.referencia }, c.referencia + ' (Odoo)')}
-              className="w-full text-left px-2.5 py-2 rounded-card border text-xs bg-zinc-950 border-sky-900/60 text-zinc-300 hover:border-sky-500">
-              <div className="font-bold">{c.referencia} <span className="text-[10px] text-sky-400">· Odoo</span></div>
-              <div className="text-[10px] text-zinc-500">{c.fecha} · RD$ {Number(c.monto).toLocaleString()}</div>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// v8.65.0: catálogo de causa raíz — la estadística de calidad (por qué reclamó).
-const CAUSAS_RAIZ = [
-  ['aplicacion', 'Falla de aplicación (nuestra)'],
-  ['sistema_producto', 'Sistema / producto'],
-  ['sustrato_estructura', 'Sustrato o estructura (ajeno al sistema)'],
-  ['mal_uso_cliente', 'Mal uso / intervención del cliente'],
-  ['fuera_garantia', 'Fuera de garantía / otro trabajo'],
-  ['otro', 'Otro'],
-];
-
 function ResolucionReclamacion({ r, onGuardado }) {
   const [trabajo, setTrabajo] = useState(r.trabajoRealizado || '');
   const [fecha, setFecha] = useState(r.fechaResuelta || '');
-  const [causa, setCausa] = useState(r.causaRaiz || ''); // v8.65.0
   const [guardando, setGuardando] = useState(false);
   const [editando, setEditando] = useState(!r.trabajoRealizado && !r.fechaResuelta);
-  useEffect(() => { setTrabajo(r.trabajoRealizado || ''); setFecha(r.fechaResuelta || ''); setCausa(r.causaRaiz || ''); }, [r.id]);
+  useEffect(() => { setTrabajo(r.trabajoRealizado || ''); setFecha(r.fechaResuelta || ''); }, [r.id]);
 
   const guardar = async () => {
     setGuardando(true);
     try {
-      await db.actualizarReclamacion(r.id, { trabajoRealizado: trabajo, fechaResuelta: fecha || null, causaRaiz: causa || null });
+      await db.actualizarReclamacion(r.id, { trabajoRealizado: trabajo, fechaResuelta: fecha || null });
       setEditando(false);
       if (onGuardado) await onGuardado();
     } catch (e) { alert('Error: ' + (e.message || e)); }
@@ -614,21 +492,12 @@ function ResolucionReclamacion({ r, onGuardado }) {
             <div className="text-[10px] text-zinc-500 mb-1">¿Qué se hizo?</div>
             <textarea value={trabajo} onChange={e => setTrabajo(e.target.value)} rows={3} placeholder="Describe la intervención realizada (materiales, área, hallazgos)…" className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1.5 text-sm text-white outline-none focus:border-red-600" />
           </div>
-          {/* v8.65.0: causa raíz — obligatoria para marcar resuelta */}
-          <div>
-            <div className="text-[10px] text-zinc-500 mb-1">¿Por qué reclamó? (causa raíz) *</div>
-            <select value={causa} onChange={e => setCausa(e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1.5 text-xs text-white outline-none focus:border-red-600">
-              <option value="">— elegir —</option>
-              {CAUSAS_RAIZ.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
-          </div>
           <button onClick={guardar} disabled={guardando} className="bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-[10px] font-black uppercase px-3 py-1.5 rounded-card">{guardando ? 'Guardando…' : 'Guardar resolución'}</button>
         </div>
       ) : (
         <div className="text-sm text-zinc-300">
           <div className="text-[11px] text-zinc-500 mb-1">{r.fechaResuelta ? `Realizado el ${fmtFecha(r.fechaResuelta)}` : 'Sin fecha registrada'}</div>
           <div className="whitespace-pre-wrap">{r.trabajoRealizado || 'Sin descripción del trabajo realizado.'}</div>
-          {r.causaRaiz && <div className="text-[11px] text-emerald-400/90 mt-1">🔍 Causa: {(CAUSAS_RAIZ.find(c => c[0] === r.causaRaiz) || [])[1] || r.causaRaiz}</div>}
         </div>
       )}
     </div>

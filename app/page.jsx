@@ -104,6 +104,7 @@ const VistaRutas = cargarVista(() => import('../components/logistica/VistaRutas'
 import InicioChofer from '../components/logistica/InicioChofer'; // v8.29.0
 const TabCambios = cargarVista(() => import('../components/cambios/TabCambios'), CargandoVista); // v8.30.0
 const PlanObras = cargarVista(() => import('../components/planificacion/PlanObras'), CargandoVista); // v8.30.1
+const DondeEstaGente = cargarVista(() => import('../components/planificacion/DondeEstaGente'), CargandoVista); // v8.64.0
 const VistaCarga = cargarVista(() => import('../components/carga/VistaCarga'), CargandoVista); // v8.30.2
 const MiVehiculo = cargarVista(() => import('../components/vehiculos/MiVehiculo'), CargandoVista); // v8.33.0
 const VistaTareas = cargarVista(() => import('../components/tareas/VistaTareas'), CargandoVista); // v8.33.1: task manager estilo Asana
@@ -9730,7 +9731,7 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto, onRecargar
   const [jornadasSemana, setJornadasSemana] = useState([]);
   const [reportesSemana, setReportesSemana] = useState([]);
   const [cargando, setCargando] = useState(false);
-  const [vistaModo, setVistaModo] = useState('personal'); // 'personal' | 'proyecto'
+  const [vistaModo, setVistaModo] = useState('donde'); // v8.64.0: 'donde' | 'personal' | 'proyecto'
   // v8.9.17: Maestros ven a todo su equipo por defecto (filtro vacío)
   const [filtroRol, setFiltroRol] = useState(esAdmin ? 'maestro' : '');
   const [filtroProyecto, setFiltroProyecto] = useState('');
@@ -10126,9 +10127,9 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto, onRecargar
       <div className="flex items-start justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-3xl font-black tracking-tight">Planificación</h1>
-          <div className="text-xs text-zinc-500">Vista semanal interactiva · asigna personal haciendo click en celdas vacías</div>
+          <div className="text-xs text-zinc-500">{vistaModo === 'donde' ? 'Quién está en qué obra · visible para todos' : 'Vista semanal interactiva · asigna personal haciendo click en celdas vacías'}</div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className={`flex items-center gap-2 ${vistaModo === 'donde' ? 'hidden' : ''}`}>
           <button onClick={() => cambiarSemana(-1)} className="bg-zinc-900 border border-zinc-800 rounded-card px-3 py-2 text-xs hover:border-red-500"><ChevronLeft className="w-3 h-3 inline" /> Anterior</button>
           <button onClick={irAEstaSemana} className="bg-zinc-800 px-3 py-2 text-xs font-bold uppercase">Hoy</button>
           <button onClick={() => cambiarSemana(1)} className="bg-zinc-900 border border-zinc-800 rounded-card px-3 py-2 text-xs hover:border-red-500">Siguiente <ChevronRight className="w-3 h-3 inline" /></button>
@@ -10137,12 +10138,15 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto, onRecargar
 
       {/* Toggle vista */}
       <div className="flex gap-1 bg-zinc-900 border border-zinc-800 rounded-card p-1 w-fit">
+        <button onClick={() => setVistaModo('donde')} className={`px-4 py-1.5 text-[11px] font-bold uppercase ${vistaModo === 'donde' ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>¿Dónde está la gente?</button>
         <button onClick={() => setVistaModo('personal')} className={`px-4 py-1.5 text-[11px] font-bold uppercase ${vistaModo === 'personal' ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>Por Personal</button>
         <button onClick={() => setVistaModo('proyecto')} className={`px-4 py-1.5 text-[11px] font-bold uppercase ${vistaModo === 'proyecto' ? 'bg-red-600 text-white' : 'text-zinc-400'}`}>Por Proyecto</button>
       </div>
 
+      {vistaModo === 'donde' && <DondeEstaGente data={data} onVerProyecto={onVerProyecto} />}
+
       {/* Filtros */}
-      <div className="flex gap-2 flex-wrap items-center">
+      <div className={`flex gap-2 flex-wrap items-center ${vistaModo === 'donde' ? 'hidden' : ''}`}>
         {vistaModo === 'personal' && (
           <>
             <select value={filtroRol} onChange={e => setFiltroRol(e.target.value)} className="bg-zinc-900 border border-zinc-800 rounded-card px-3 py-1.5 text-xs text-white">
@@ -10180,7 +10184,7 @@ function VistaPlanificacion({ usuario, data, onVolver, onVerProyecto, onRecargar
         )}
       </div>
 
-      {cargando && <div className="text-center text-zinc-500 text-sm py-4">Cargando jornadas de la semana...</div>}
+      {cargando && vistaModo !== 'donde' && <div className="text-center text-zinc-500 text-sm py-4">Cargando jornadas de la semana...</div>}
 
       {/* Grid: vista por Personal */}
       {vistaModo === 'personal' && (

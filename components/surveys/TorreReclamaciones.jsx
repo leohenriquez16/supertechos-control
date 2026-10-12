@@ -59,6 +59,9 @@ export default function TorreReclamaciones({ data }) {
   const sinInforme = useMemo(() => evaluados.filter((e) => e.sla.resueltaSinInforme), [evaluados]);
   // v8.54.2 (C2): "sin responder" = la última comunicación del ticket fue ENTRANTE (el cliente escribió).
   const sinResponder = useMemo(() => activas.filter((e) => ultimasCom[e.r.id]?.direccion === 'entrante'), [activas, ultimasCom]);
+  // v8.65.0 (triage): sin trabajo amarrado (meta 24h) + tomadas sin visita programada.
+  const porClasificar = useMemo(() => activas.filter((e) => e.sla.porClasificar), [activas]);
+  const sinVisita = useMemo(() => activas.filter((e) => e.sla.sinVisita), [activas]);
   const ciclo = useMemo(() => {
     const iniMes = new Date(); iniMes.setDate(1); iniMes.setHours(0, 0, 0, 0);
     return metricasCicloReclam(evaluados, iniMes.toISOString());
@@ -103,13 +106,31 @@ export default function TorreReclamaciones({ data }) {
         <button onClick={cargar} className="text-zinc-500 hover:text-white"><RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /></button>
       </div>
 
-      <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
+      <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
         <Kpi n={resumen.total} label="Activas" color="text-white" onClick={() => setSoloAtascadas(false)} active={!soloAtascadas} />
         <Kpi n={resumen.rojo} label="Vencidas" color="text-red-400" onClick={() => setSoloAtascadas(true)} active={soloAtascadas} />
         <Kpi n={resumen.amarillo} label="En riesgo" color="text-amber-400" onClick={() => setSoloAtascadas(true)} active={soloAtascadas} />
         <Kpi n={resumen.verde} label="En SLA" color="text-green-400" />
         <Kpi n={sinInforme.length} label="Falta informe" color="text-emerald-400" />
+        <Kpi n={porClasificar.length} label="Por clasificar" color={porClasificar.some((e) => e.sla.triageVencido) ? 'text-red-400' : 'text-amber-400'} />
       </div>
+
+      {/* v8.65.0: triage — reclamaciones sin trabajo amarrado (meta: clasificar en 24h) */}
+      {porClasificar.length > 0 && (
+        <div className="bg-amber-950/40 border border-amber-700/60 rounded-card px-3 py-2.5">
+          <div className="text-amber-300 font-bold text-sm">🧷 {porClasificar.length} por clasificar — sin obra ni cotización amarrada</div>
+          <div className="text-[11px] text-amber-500/80 mt-0.5">Sin el trabajo no hay garantía, ubicación ni responsable. Se clasifican en el detalle de la reclamación (panel "Clasificar ahora") — meta 24h desde que se abre.</div>
+          <div className="text-[11px] text-amber-200 mt-1">{porClasificar.map((e) => nombre(e.r) + (e.sla.triageVencido ? ' 🔴' : '')).join(' · ')}</div>
+        </div>
+      )}
+      {/* v8.65.0: tomadas sin fecha de visita (quedaron de antes de la puerta del ciclo) */}
+      {sinVisita.length > 0 && (
+        <div className="bg-purple-950/40 border border-purple-700/60 rounded-card px-3 py-2.5">
+          <div className="text-purple-300 font-bold text-sm">📅 {sinVisita.length} en proceso sin fecha de visita</div>
+          <div className="text-[11px] text-purple-400/80 mt-0.5">Están tomadas pero el cliente no sabe cuándo vamos. Prográmala en el detalle (campo "📅 Visita").</div>
+          <div className="text-[11px] text-purple-200 mt-1">{sinVisita.map((e) => nombre(e.r)).join(' · ')}</div>
+        </div>
+      )}
 
       {/* Sub-alerta: resueltas pero sin informe entregado al cliente */}
       {sinInforme.length > 0 && (
@@ -178,7 +199,7 @@ export default function TorreReclamaciones({ data }) {
                   <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${s.punto}`} title={s.label} />
                   <div className="min-w-0">
                     <div className="font-bold text-sm truncate">{nombre(r)}</div>
-                    <div className="text-[10px] text-zinc-500 truncate">{[ubicNombre(r), r.codigo, r.referenciaCotizacion].filter(Boolean).join(' · ')}{sla.resueltaSinInforme ? ' · ⚠ falta informe' : ''}</div>
+                    <div className="text-[10px] text-zinc-500 truncate">{[ubicNombre(r), r.codigo, r.referenciaCotizacion].filter(Boolean).join(' · ')}{sla.resueltaSinInforme ? ' · ⚠ falta informe' : ''}{sla.porClasificar ? (sla.triageVencido ? ' · 🧷 POR CLASIFICAR 🔴' : ' · 🧷 por clasificar') : ''}{sla.sinVisita ? ' · 📅 sin visita' : ''}</div>
                     {(() => { const ct = contactoDe(r); return ct.localizable
                       ? <div className="text-[10px] text-zinc-400 truncate">{[ct.nombre, ct.tel && `📱 ${ct.tel}`, ct.email && `✉ ${ct.email}`].filter(Boolean).join(' · ')}{ct.requiereAsignar ? ' · ⚠ asignar contacto' : ''}</div>
                       : <div className="text-[10px] text-amber-400 font-bold truncate">⚠ Sin contacto localizable (falta WhatsApp o correo)</div>; })()}

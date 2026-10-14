@@ -454,6 +454,7 @@ function PasoSelfie({ datos, set }) {
       <CapturaFoto
         valor={datos.foto2x2}
         onCapturar={(d) => set('foto2x2', d)}
+        maxPx={400} // v8.65.1: es un avatar — se baja en cada sesión para todos
         label="Tomar selfie o subir del carrete"
       />
     </div>
@@ -674,7 +675,7 @@ function Field({ label, hint, children }) {
   );
 }
 
-function CapturaFoto({ valor, onCapturar, label }) {
+function CapturaFoto({ valor, onCapturar, label, maxPx = 1200 }) {
   const [cargando, setCargando] = useState(false);
   const inputId = 'foto_' + label.replace(/\s/g, '_');
 
@@ -683,7 +684,7 @@ function CapturaFoto({ valor, onCapturar, label }) {
     if (!file) return;
     setCargando(true);
     try {
-      const dataUrl = await comprimirImagen(file, 1200, 0.7);
+      const dataUrl = await comprimirImagen(file, maxPx, 0.7);
       onCapturar(dataUrl);
     } catch (err) {
       console.error(err);

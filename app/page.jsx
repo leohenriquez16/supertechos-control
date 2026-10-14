@@ -105,6 +105,8 @@ import InicioChofer from '../components/logistica/InicioChofer'; // v8.29.0
 const TabCambios = cargarVista(() => import('../components/cambios/TabCambios'), CargandoVista); // v8.30.0
 const PlanObras = cargarVista(() => import('../components/planificacion/PlanObras'), CargandoVista); // v8.30.1
 const DondeEstaGente = cargarVista(() => import('../components/planificacion/DondeEstaGente'), CargandoVista); // v8.64.0
+// v8.65.1: correo inmediato por cada avance apagado — se reestructura; el resumen diario sigue.
+const CORREO_POR_AVANCE = false;
 const VistaCarga = cargarVista(() => import('../components/carga/VistaCarga'), CargandoVista); // v8.30.2
 const MiVehiculo = cargarVista(() => import('../components/vehiculos/MiVehiculo'), CargandoVista); // v8.33.0
 const VistaTareas = cargarVista(() => import('../components/tareas/VistaTareas'), CargandoVista); // v8.33.1: task manager estilo Asana
@@ -1342,7 +1344,8 @@ export default function App() {
                     </div>
                     <p style="font-size:10px;color:#999;text-align:center;">Super Techos SRL · Control de Obras</p>
                   </div>`;
-                db.enviarCorreoReporte(dedup, `[${proy.referenciaOdoo || proy.cliente}] ${lineas.length} avances de ${usuario.nombre.split(' ')[0]}`, html);
+                // v8.65.1: sin correo por cada avance (llenaba el plan de Resend); queda el resumen diario.
+                if (CORREO_POR_AVANCE) db.enviarCorreoReporte(dedup, `[${proy.referenciaOdoo || proy.cliente}] ${lineas.length} avances de ${usuario.nombre.split(' ')[0]}`, html);
               }
             } catch (err) { console.warn('Email lote fallo:', err); }
             setCelebracion({ m2: lineas.reduce((s, l) => s + (Number(l.m2) || 0), 0) }); // v8.30.4
@@ -1403,7 +1406,8 @@ export default function App() {
                   </div>
                   <p style="font-size:10px;color:#999;text-align:center;">Super Techos SRL · Control de Obras</p>
                 </div>`;
-              db.enviarCorreoReporte(dedup, `[${proy.referenciaOdoo || proy.cliente}] Reporte de ${usuario.nombre.split(' ')[0]}`, html);
+              // v8.65.1: sin correo por cada avance (llenaba el plan de Resend); queda el resumen diario.
+              if (CORREO_POR_AVANCE) db.enviarCorreoReporte(dedup, `[${proy.referenciaOdoo || proy.cliente}] Reporte de ${usuario.nombre.split(' ')[0]}`, html);
             }
           } catch (err) { console.warn('Email fallo:', err); }
         })} /></div>;

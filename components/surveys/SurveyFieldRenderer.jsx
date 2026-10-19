@@ -604,11 +604,21 @@ function DuctosTableField({ field, value, onChange }) {
 // ============================================================
 function MeasurementTableField({ field, value, onChange }) {
   const filas = Array.isArray(value) ? value : [];
-  const columns = field.columns || [
+  // v8.66.0: algunas plantillas traen las columnas como texto ("Largo (m)") — se normalizan
+  // a objetos con el id que usa recalc (length_m / width_m / height_m).
+  const normCol = (c) => {
+    if (c && typeof c === 'object') return c;
+    const label = String(c ?? '');
+    if (/largo/i.test(label)) return { id: 'length_m', type: 'number', label };
+    if (/ancho/i.test(label)) return { id: 'width_m', type: 'number', label };
+    if (/alto/i.test(label)) return { id: 'height_m', type: 'number', label };
+    return { id: 'label', type: 'text', label };
+  };
+  const columns = (Array.isArray(field.columns) && field.columns.length ? field.columns : [
     { id: 'label', label: 'Sección', type: 'text' },
     { id: 'length_m', label: 'Largo (m)', type: 'number' },
     { id: 'height_m', label: 'Alto (m)', type: 'number' },
-  ];
+  ]).map(normCol);
   const autoCalcArea = field.auto_calc_area !== false;
 
   const agregarFila = () => {

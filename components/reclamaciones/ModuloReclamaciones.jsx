@@ -3,7 +3,7 @@
 // v8.19.62: Módulo de Reclamaciones (estilo módulo de Levantamientos).
 // Vistas: Kanban (por estado, drag&drop) · Lista · Mapa · Ficha de detalle.
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { ArrowLeft, Loader2, AlertTriangle, Plus, X, MapPin, Search, MessageCircle, Mail, Building2, Wrench, Trash2, FileText, Upload, CheckCircle2 } from 'lucide-react';
 import * as db from '../../lib/db';
 import MapaLeaflet from '../common/MapaLeaflet';
@@ -43,6 +43,12 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
   const [fCanal, setFCanal] = useState('');
   const [dragId, setDragId] = useState(null);
   const [dropCol, setDropCol] = useState(null);
+  // v8.66.0: selector de etapa en el detalle (iPad/teléfono, sin drag)
+  const [pendienteVisita, setPendienteVisita] = useState(null); // { col } etapa que espera fecha de visita
+  const [fechaVisitaNueva, setFechaVisitaNueva] = useState('');
+  const [avisoCierre, setAvisoCierre] = useState('');
+  const [resaltarResolucion, setResaltarResolucion] = useState(false);
+  const resolucionRef = useRef(null);
 
   useEffect(() => {
     let cancel = false;
@@ -145,7 +151,7 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
     const rec = recs.find(r => r.id === id);
     const estadoPrev = rec?.estado;
     const err = validarTransicion(rec, estado); // v8.65.0
-    if (err) { alert(err); return; }
+    if (err) { if (!manejarPuertaDetalle(rec, estado, MAP_LOCAL_ODOO[estado] || 'New', err)) alert(err); return; }
     const odooStage = MAP_LOCAL_ODOO[estado] || 'New';
     setRecs(prev => prev.map(r => r.id === id ? { ...r, estado, odooStage } : r)); // optimista
     try {
@@ -161,18 +167,53 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
   const soltarEnColumna = async (col) => {
     if (!dragId) return;
     const id = dragId;
-    const rec = recs.find(r => r.id === id);
-    const estadoPrev = rec?.estado;
-    const estado = MAP_ODOO_LOCAL[col] || estadoPrev || 'en_proceso';
     setDragId(null); setDropCol(null);
+    await moverAEtapa(id, col);
+  };
+  // v8.66.0: lógica común del drag y del selector de etapa del detalle.
+  // `extra` permite grabar campos en el mismo paso (ej. la fecha de visita).
+  const moverAEtapa = async (id, col, { enDetalle = false, extra = null } = {}) => {
+    const recBase = recs.find(r => r.id === id);
+    const rec = recBase && extra ? { ...recBase, ...extra } : recBase;
+    const estadoPrev = recBase?.estado;
+    const estado = MAP_ODOO_LOCAL[col] || estadoPrev || 'en_proceso';
     const err = validarTransicion(rec, estado); // v8.65.0: mismas puertas que los botones
-    if (err) { alert(err); return; }
-    setRecs(prev => prev.map(r => r.id === id ? { ...r, estado, odooStage: col } : r));
+    if (err) { if (!(enDetalle && manejarPuertaDetalle(rec, estado, col, err))) alert(err); return false; }
+    setRecs(prev => prev.map(r => r.id === id ? { ...r, ...(extra || {}), estado, odooStage: col } : r));
+    setPendienteVisita(null); setAvisoCierre('');
     try {
-      await db.actualizarReclamacion(id, { estado, odooStage: col });
+      await db.actualizarReclamacion(id, { ...(extra || {}), estado, odooStage: col });
       try { await chatterEstado('reclamacion', id, estadoPrev, `${estado} · ${col}`, usuario, 'estado'); } catch {}
       if (estado === 'resuelta' && estadoPrev !== 'resuelta') await dispararCsat(rec); // v8.65.0
-    } catch (e) { alert('Error: ' + (e.message || e)); setReload(x => x + 1); }
+      return true;
+    } catch (e) { alert('Error: ' + (e.message || e)); setReload(x => x + 1); return false; }
+  };
+  // v8.66.0: etapas que exigen fecha de visita antes de entrar
+  const ETAPAS_CON_VISITA = ['Agendado', 'Visita Programada'];
+  const elegirEtapa = (r, col) => {
+    if (!col || col === estadoOdoo(r)) return;
+    setAvisoCierre('');
+    const estado = MAP_ODOO_LOCAL[col] || r.estado;
+    if (!r.fechaVisitaProgramada && (ETAPAS_CON_VISITA.includes(col) || (estado === 'en_proceso' && r.estado === 'abierta'))) {
+      setPendienteVisita({ col }); setFechaVisitaNueva(''); return;
+    }
+    moverAEtapa(r.id, col, { enDetalle: true });
+  };
+  // v8.66.0: en el detalle, las puertas se resuelven en línea en vez de un alert.
+  // Devuelve true si la manejó.
+  const manejarPuertaDetalle = (rec, estado, col, err) => {
+    if (!sel || !rec) return false;
+    if (estado === 'en_proceso' && !rec.fechaVisitaProgramada) {
+      setPendienteVisita({ col }); setFechaVisitaNueva(''); return true;
+    }
+    if (estado === 'resuelta' || estado === 'cerrada') {
+      setAvisoCierre(err);
+      setResaltarResolucion(true);
+      setTimeout(() => setResaltarResolucion(false), 4000);
+      try { resolucionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch {}
+      return true;
+    }
+    return false;
   };
 
   // v8.19.91: eliminación con autorización del OWNER DEL APP (rol 'owner').
@@ -236,6 +277,24 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
             }} className="bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1.5 text-xs text-white outline-none focus:border-red-600 [color-scheme:dark]" />
             {!r.fechaVisitaProgramada && r.estado === 'abierta' && <span className="text-[10px] text-amber-400 font-bold">⚠ sin visita — necesaria para tomar la reclamación</span>}
           </div>
+          {/* v8.66.0: selector de ETAPA (mismo orden y puertas que el kanban) — funciona en iPad/teléfono */}
+          <div className="mt-3">
+            <div className="text-[10px] uppercase text-zinc-500 mb-1">Etapa</div>
+            <select value={estadoOdoo(r)} onChange={e => elegirEtapa(r, e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-card px-2 py-2 text-sm text-white outline-none focus:border-red-600">
+              {columnasRecl.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            {pendienteVisita && (
+              <div className="mt-2 bg-amber-900/10 border border-amber-700 rounded-card p-2 space-y-2">
+                <div className="text-[11px] text-amber-300 font-bold">Para pasar a «{pendienteVisita.col}» indica la fecha de visita:</div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <input type="date" value={fechaVisitaNueva} onChange={e => setFechaVisitaNueva(e.target.value)} className="bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1.5 text-xs text-white outline-none focus:border-red-600 [color-scheme:dark]" />
+                  <button disabled={!fechaVisitaNueva} onClick={() => moverAEtapa(r.id, pendienteVisita.col, { enDetalle: true, extra: { fechaVisitaProgramada: fechaVisitaNueva } })} className="bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white text-[10px] font-black uppercase px-3 py-1.5 rounded-card">Guardar</button>
+                  <button onClick={() => setPendienteVisita(null)} className="text-zinc-400 hover:text-white text-[10px] uppercase">Cancelar</button>
+                </div>
+              </div>
+            )}
+            {avisoCierre && <div className="mt-2 text-[11px] text-amber-300 bg-amber-900/10 border border-amber-700 rounded-card px-2 py-1.5">⚠ {avisoCierre}</div>}
+          </div>
           {/* Estado */}
           <div className="mt-3">
             <div className="text-[10px] uppercase text-zinc-500 mb-1">Estado</div>
@@ -244,7 +303,10 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
             </div>
           </div>
           {/* Resolución: qué y cuándo se hizo */}
-          <ResolucionReclamacion r={r} onGuardado={() => setReload(x => x + 1)} />
+          {/* v8.66.0: se resalta (ámbar) cuando falla la puerta de cierre */}
+          <div ref={resolucionRef} className={`rounded-card transition-all ${resaltarResolucion ? 'ring-2 ring-amber-500' : ''}`}>
+            <ResolucionReclamacion r={r} onGuardado={() => { setAvisoCierre(''); setReload(x => x + 1); }} />
+          </div>
           {/* v8.53.1 (Fase 3B): hito informe de solución entregado al cliente — cierra el ciclo */}
           <InformeSolucionReclamacion r={r} onGuardado={() => setReload(x => x + 1)} />
           {/* v8.54.1 (C3): calificación del cliente (CSAT) */}

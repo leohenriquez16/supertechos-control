@@ -15,7 +15,7 @@ export default function TabAsistencia({ usuario, proyecto, personal, checkins, e
   // v8.19.13: la asistencia real del equipo está en las JORNADAS
   // (personasPresentesIds), no solo en los check-ins GPS. Las cargamos aquí.
   const [jornadas, setJornadas] = useState([]);
-  const hoyStr = new Date().toISOString().split('T')[0];
+  const hoyStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo' }).format(new Date()); // v8.66.0: fecha RD, no UTC
   const checkinsProyecto = React.useMemo(() => checkinsDelProyecto(proyecto, checkins), [checkins, proyecto.id]);
   const miCheckinHoy = checkinsProyecto.find(c => c.personaId === usuario.id && c.fecha === hoyStr);
   const personasDelProyecto = React.useMemo(() => {
@@ -283,7 +283,7 @@ function CalendarioMes({ fechaRef, esFechaPausa, presenciaPorDia, doblePorDia })
   const primero = new Date(y, m, 1);
   const ultimoDia = new Date(y, m + 1, 0).getDate();
   const diaSemanaInicio = (primero.getDay() + 6) % 7; // Lun=0
-  const hoyStr = new Date().toISOString().split('T')[0];
+  const hoyStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo' }).format(new Date()); // v8.66.0: fecha RD, no UTC
   const dias = [];
   for (let i = 0; i < diaSemanaInicio; i++) dias.push(null);
   for (let d = 1; d <= ultimoDia; d++) {

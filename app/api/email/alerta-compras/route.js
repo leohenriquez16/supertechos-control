@@ -1,6 +1,6 @@
 // app/api/email/alerta-compras/route.js
 // v8.49.2 (ticket Jonathan Jacobo): cuando almacén marca un renglón "comprar",
-// avisa por correo a Compras (Lily) con copia a Leo. Antes no existía ninguna alerta.
+// avisa por correo a Compras (Yamel desde v8.66; antes Lily) con copia a Leo. Antes no existía ninguna alerta.
 // POST { proyecto, articulo, cantidad, unidad, requisicion, marcadoPor }
 
 import { NextResponse } from 'next/server';
@@ -9,7 +9,8 @@ import { emailsApagados } from '../../../../lib/emailGuard';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const PARA = 'ljaime@supertechos.com.do';        // Lily — Compras
+// v8.66.0: destinatarios configurables (coma-separado); por defecto Yamel — Compras
+const PARA = (process.env.ALERTA_COMPRAS_TO || 'yharris@supertechos.com.do').split(',').map(s => s.trim()).filter(Boolean);
 const CC = 'lhenriquez@supertechos.com.do';      // Leo
 
 export async function POST(request) {
@@ -41,7 +42,7 @@ export async function POST(request) {
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${RESEND_API_KEY}` },
     body: JSON.stringify({
       from: RESEND_FROM,
-      to: [PARA],
+      to: PARA,
       cc: [CC],
       subject: `🛒 Comprar: ${articulo}${proyecto ? ` — ${proyecto}` : ''}`,
       html,

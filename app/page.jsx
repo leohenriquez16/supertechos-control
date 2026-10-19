@@ -5247,6 +5247,10 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
 
       {esSupervisor && onIrAReportar && proyecto.estado === 'en_ejecucion' && <button onClick={onIrAReportar} className="w-full lg:w-auto lg:px-12 bg-red-600 hover:bg-red-700 text-white font-black uppercase py-3 flex items-center justify-center gap-2"><Plus className="w-4 h-4" /> Reportar Avance</button>}
       {esAdmin && onIrAReportar && proyecto.estado === 'en_ejecucion' && <button onClick={onIrAReportar} className="w-full lg:w-auto lg:px-12 bg-red-600 hover:bg-red-700 text-white font-black uppercase py-3 flex items-center justify-center gap-2"><Plus className="w-4 h-4" /> Reportar Avance</button>}
+      {/* v8.66.0: en vez de esconder el botón sin explicación, decir por qué */}
+      {(esSupervisor || esAdmin) && onIrAReportar && proyecto.estado !== 'en_ejecucion' && (
+        <div className="text-[11px] text-amber-300 bg-amber-900/10 border border-amber-800/40 rounded-card px-3 py-2 flex items-center gap-1.5"><AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" /> Obra en estado {estadoLabel(proyecto.estado)}: reactívala (En ejecución) para reportar avance.</div>
+      )}
 
       {/* v8.25.46: obra PARADA → la bitácora (chatter) sube arriba para ver razones + siguiente paso */}
       {proyecto.estado === 'parado' && (
@@ -10807,10 +10811,9 @@ function TabJornada({ usuario, proyecto, personal, onActualizarUbicacion, onElim
     setProcesando('inicio');
     const ubi = await obtenerUbicacion();
     let distancia = null;
-    // Si el proyecto no tiene ubicación aún y hay GPS, la fijamos con este check-in
-    if (ubi && (proyecto.ubicacionLat == null || proyecto.ubicacionLng == null)) {
-      try { await onActualizarUbicacion(ubi.lat, ubi.lng, ''); } catch (e) { console.warn(e); }
-    } else if (ubi && proyecto.ubicacionLat != null) {
+    // v8.66.0: ya NO se fija la ubicación de la obra con el primer GPS (fijaba ubicaciones erróneas);
+    // solo se calcula la distancia cuando la obra ya tiene coordenadas.
+    if (ubi && proyecto.ubicacionLat != null && proyecto.ubicacionLng != null) {
       distancia = distanciaMetros(ubi.lat, ubi.lng, proyecto.ubicacionLat, proyecto.ubicacionLng);
     }
     try {

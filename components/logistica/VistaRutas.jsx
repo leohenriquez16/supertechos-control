@@ -321,7 +321,7 @@ export default function VistaRutas({ usuario, data, onVolver }) {
 
           <div>
             <div className="text-[10px] font-bold text-zinc-400 mb-1">2 · ¿Dónde {paradaLibre.tipo === 'entrega' ? 'entrega' : 'recoge'}? <span className="text-zinc-600 font-normal">— escribe y elige de las sugerencias</span></div>
-            <BuscadorLugar candidatos={candidatosLugar} valor={paradaLibre.lugar || ''} conGps={paradaLibre.lat != null}
+            <BuscadorLugar key={paradaLibre.tipo} autoFocus candidatos={candidatosLugar} valor={paradaLibre.lugar || ''} conGps={paradaLibre.lat != null}
               placeholder="Ej: Ferretería Americana, Caucedo, o el nombre de la obra…"
               onCambiar={(c) => setParadaLibre(c.elegir
                 ? { ...paradaLibre, lugar: c.elegir.lugar, lat: c.elegir.lat, lng: c.elegir.lng, proyectoId: c.elegir.proyectoId, lugarMaps: '' }
@@ -686,7 +686,7 @@ export default function VistaRutas({ usuario, data, onVolver }) {
 
 // v8.41.1: BUSCADOR de lugar con sugerencias en vivo — obras con GPS, suplidores
 // (cada locación), puertos y almacenes. Escribes y eliges; texto libre también vale.
-function BuscadorLugar({ candidatos, valor, conGps, placeholder, onCambiar }) {
+function BuscadorLugar({ candidatos, valor, conGps, placeholder, onCambiar, autoFocus = false }) { // v8.66.0: autoFocus
   const [foco, setFoco] = useState(false);
   const q = (valor || '').toLowerCase().trim();
   const sugerencias = q.length >= 2
@@ -697,7 +697,7 @@ function BuscadorLugar({ candidatos, valor, conGps, placeholder, onCambiar }) {
       <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-700 rounded-card px-2 focus-within:border-cyan-600">
         <input value={valor} onChange={e => onCambiar({ texto: e.target.value })}
           onFocus={() => setFoco(true)} onBlur={() => setTimeout(() => setFoco(false), 200)}
-          placeholder={placeholder} className="flex-1 bg-transparent outline-none py-2 text-xs min-w-0" />
+          autoFocus={autoFocus} placeholder={placeholder} className="flex-1 bg-transparent outline-none py-2 text-xs min-w-0" />
         {conGps && <span className="shrink-0 text-[10px] text-green-400" title="Con ubicación GPS — sale en el mapa">📍</span>}
       </div>
       {foco && sugerencias.length > 0 && (

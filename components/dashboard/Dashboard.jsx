@@ -14,7 +14,10 @@ import MiProduccionCard from './MiProduccionCard'; // v8.19.19: widget personal 
 import CardActividad from './CardActividad'; // v8.51.6: KPI levantamientos + reclamaciones
 
 export default function Dashboard({ usuario, data, onVerProyecto, onNuevoProyecto, onImportarOdoo, tareas, onCompletarTarea, jornadasHoy, onCambiarEstadoRapido }) {
-  const hoy = new Date().toISOString().split('T')[0];
+  // v8.66.0: fecha RD (no UTC) — después de las 8pm UTC ya era "mañana"
+  const fmtRD = (d) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo' }).format(d);
+  const hoy = fmtRD(new Date());
+  const ayer = fmtRD(new Date(Date.now() - 86400000));
   const [periodo, setPeriodo] = useState('dia');
   const [fechaRef, setFechaRef] = useState(hoy);
   // v8.9.30: cargar jornadas directamente aquí (como VistaEquipoGlobal que sí funciona)
@@ -23,13 +26,14 @@ export default function Dashboard({ usuario, data, onVerProyecto, onNuevoProyect
     let cancelado = false;
     (async () => {
       try {
-        const proms = data.proyectos.map(p => db.obtenerJornadaHoy(p.id, hoy));
-        const res = (await Promise.all(proms)).filter(Boolean);
+        // v8.66.0: una sola query de jornadas abiertas (hoy o ayer, por turnos que cruzan medianoche)
+        const abiertas = await db.listarJornadasAbiertas();
+        const res = (abiertas || []).filter(j => j.fecha === hoy || j.fecha === ayer);
         if (!cancelado) setJornadasLocal(res);
       } catch (e) { console.warn('Dashboard jornadas:', e); }
     })();
     return () => { cancelado = true; };
-  }, [data.proyectos.length, hoy]);
+  }, [data.proyectos.length, hoy, ayer]);
 
   // Calcular rango [desde, hasta] según periodo y fecha de referencia
   const calcRango = (p, fref) => {

@@ -44,6 +44,7 @@ export default function ModalCartaGarantia({ garantia: g, clienteNombre, proyect
   const cartaRef = useRef(null);
   const [generando, setGenerando] = useState(false);
   const [error, setError] = useState('');
+  const [dirigidaA, setDirigidaA] = useState(clienteNombre || ''); // v8.66.0: editable antes de descargar
   const empresa = EMPRESA_DATOS[proyecto?.empresaEjecutora || 'super_techos'] || EMPRESA_DATOS.super_techos;
   const anos = g.duracionMeses ? Math.round((g.duracionMeses / 12) * 10) / 10 : null;
   const duracionTxt = g.duracionMeses
@@ -107,6 +108,11 @@ export default function ModalCartaGarantia({ garantia: g, clienteNombre, proyect
           </div>
         </div>
         {error && <div className="mx-3 mt-2 text-[11px] text-red-400">{error}</div>}
+        {/* v8.66.0: a quién va dirigida (prellenado con el cliente) */}
+        <div className="mx-3 mt-3 flex items-center gap-2">
+          <label className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold whitespace-nowrap">Dirigida a</label>
+          <input value={dirigidaA} onChange={e => setDirigidaA(e.target.value)} className="flex-1 min-w-0 bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1.5 text-xs text-white outline-none focus:border-red-600" />
+        </div>
 
         {/* ===== Vista previa / contenido de la carta (fondo blanco, se captura tal cual) ===== */}
         <div className="p-3 overflow-x-auto">
@@ -125,7 +131,7 @@ export default function ModalCartaGarantia({ garantia: g, clienteNombre, proyect
             <div style={{ padding: '28px 36px', fontSize: 13.5, lineHeight: 1.75 }}>
               <div style={{ marginBottom: 18 }}>
                 <div style={{ fontWeight: 700 }}>Señores</div>
-                <div style={{ fontWeight: 700 }}>{clienteNombre || '—'}</div>
+                <div style={{ fontWeight: 700 }}>{dirigidaA || '—'}</div>
                 {ubicacionNombre && <div style={{ color: '#3f3f46' }}>{ubicacionNombre}</div>}
                 <div>Ciudad.—</div>
               </div>

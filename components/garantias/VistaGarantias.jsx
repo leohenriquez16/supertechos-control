@@ -68,7 +68,8 @@ export default function VistaGarantias({ data, usuario, onVolver, onVerProyecto 
   const garantiaDe = (id) => garantias.find(g => g.id === id);
   const clienteNombre = (g) => {
     if (!g) return '—';
-    const c = clienteDe(g.clienteId); if (c) return c.nombre;
+    // v8.66.0: solo la razón social (antes de la primera coma) — el resto es dirección/RNC
+    const c = clienteDe(g.clienteId); if (c) return (String(c.nombre || '').split(',')[0] || '').trim() || c.nombre;
     return proyById(g.proyectoId)?.cliente || '—';
   };
   const coordsDe = (g) => {

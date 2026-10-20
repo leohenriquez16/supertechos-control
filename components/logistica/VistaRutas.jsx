@@ -11,6 +11,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Loader2, Truck, Plus, RefreshCw, Trash2, ChevronUp, ChevronDown, X, MapPin } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatFechaCorta } from '../../lib/helpers/formato';
+// v8.68.0: cancelar viajes viejos + marcar parada hecha desde oficina (ticket Erisdania)
+import { puedeCancelarViaje, planCancelacionViaje, notaCancelacion, notaHechaDesdeOficina, filtrarViajes, viajesViejosSinCerrar, requisicionesMontadas, esViajeCancelado, VIAJE_CANCELADO, PARADA_CANCELADA } from '../../lib/helpers/rutas';
 
 const hoyRD = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo' }).format(new Date());
 const hora = (iso) => iso ? new Date(iso).toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—';
@@ -32,6 +34,12 @@ export default function VistaRutas({ usuario, data, onVolver }) {
   const [nuevo, setNuevo] = useState({ choferId: '', vehiculo: '', tipoEnvio: 'camion' });
   const [paradaLibre, setParadaLibre] = useState(null); // { viajeId, tipo, lugar, descripcion, lat, lng }
   const [viajeSel, setViajeSel] = useState(null); // v8.38.0: viaje abierto en el panel (desktop)
+  // v8.68.0: filtro de la lista — 'dia' (viajes activos de la fecha) | 'viejos' (días
+  // anteriores sin cerrar) | 'cancelados'. Los dos últimos miran los últimos 120 días.
+  const [filtro, setFiltro] = useState('dia');
+  const [historial, setHistorial] = useState([]);
+  const [cancelando, setCancelando] = useState(null); // { viajeId, motivo, guardando }
+  const [marcandoId, setMarcandoId] = useState(null); // parada en confirmación "hecha desde oficina"
   // v8.40.0: diligencias (retiros de sobrante), aviso de almacén, lugares y mapa
   const [diligencias, setDiligencias] = useState([]);
   const [enAlmacen, setEnAlmacen] = useState([]);      // requisiciones pendiente/preparando (aviso)
@@ -63,6 +71,12 @@ export default function VistaRutas({ usuario, data, onVolver }) {
     return (data.personal || []).filter(p => tieneRol(p, 'chofer') || respIds.has(p.id));
   }, [data.personal, data.vehiculos]);
 
+  // v8.68.0: lo que muestra la lista según el filtro; los selects de "Montar en…"
+  // solo ofrecen viajes ACTIVOS del día (nunca un cancelado).
+  const viajesActivos = useMemo(() => filtrarViajes(viajes, 'activos'), [viajes]);
+  const viajesLista = useMemo(() => filtro === 'viejos' ? viajesViejosSinCerrar(historial, hoyRD())
+    : filtro === 'cancelados' ? filtrarViajes(historial, 'cancelados') : viajesActivos, [filtro, historial, viajesActivos]);
+
   const recargar = async () => {
     setLoading(true);
     try {
@@ -76,25 +90,31 @@ export default function VistaRutas({ usuario, data, onVolver }) {
       db.listarSuplidores().then(setSuplidores).catch(() => {});
       // v8.43.0: posiciones en vivo de la flota (no bloquea la vista si falla)
       fetch('/api/gps/posiciones').then(r => r.json()).then(d => setGpsUnidades(d.dispositivos || [])).catch(() => {});
-      const asignadas = new Set(vs.flatMap(v => v.paradas.map(p => p.requisicionId).filter(Boolean)));
+      // v8.68.0: las paradas/viajes cancelados no cuentan (su requisición volvió a 'lista')
+      const asignadas = requisicionesMontadas(vs);
       // también excluir requisiciones ya montadas en viajes de OTRAS fechas
       const otras = await db.listarViajes({ desde: hoyRD().slice(0, 8) + '01' }).catch(() => []);
-      otras.forEach(v => v.paradas.forEach(p => { if (p.requisicionId) asignadas.add(p.requisicionId); }));
+      requisicionesMontadas(otras).forEach(id => asignadas.add(id));
       setViajes(vs);
+      // v8.68.0: historial para los filtros "Viejos sin cerrar" y "Cancelados"
+      if (filtro !== 'dia') {
+        const d = new Date(hoyRD() + 'T12:00:00'); d.setDate(d.getDate() - 120);
+        setHistorial(await db.listarViajes({ desde: d.toISOString().slice(0, 10) }).catch(() => []));
+      }
       // v8.48.0: los alistos en modo RETIRO no van a camión (se firman en el almacén)
       setListas(reqs.filter(r => !asignadas.has(r.id) && r.modoEntrega !== 'retiro'));
       setDiligencias(dils); setLugares(lugs); setEnAlmacen(viniendo);
     } catch (e) { console.warn('Rutas:', e?.message); }
     setLoading(false);
   };
-  useEffect(() => { recargar(); /* eslint-disable-next-line */ }, [fecha]);
+  useEffect(() => { recargar(); /* eslint-disable-next-line */ }, [fecha, filtro]);
   // v8.38.0: auto-seleccionar el primer viaje del día (el panel es solo desktop).
   useEffect(() => {
     if (loading) return;
-    if (viajeSel && viajes.some(v => v.id === viajeSel)) return;
-    setViajeSel(viajes[0]?.id || null);
+    if (viajeSel && viajesLista.some(v => v.id === viajeSel)) return;
+    setViajeSel(viajesLista[0]?.id || null);
     // eslint-disable-next-line
-  }, [viajes, loading]);
+  }, [viajes, historial, filtro, loading]);
 
   const nombreObra = (pid) => { const p = (data.proyectos || []).find(x => x.id === pid); return p ? ([p.referenciaOdoo, p.cliente || p.nombre].filter(Boolean).join(' · ') || pid) : pid; }; // v8.49.2: código + cliente
 
@@ -238,13 +258,44 @@ export default function VistaRutas({ usuario, data, onVolver }) {
     } catch (e) { alert('Error: ' + (e?.message || e)); }
   };
 
+  // v8.68.0: CANCELAR un viaje (ticket Erisdania: viajes viejos que nunca salieron).
+  // No borra nada: el viaje queda 'cancelado' con el motivo en sus notas, las paradas
+  // pendientes pasan a 'cancelada' y sus requisiciones/diligencias vuelven a estar
+  // disponibles — igual que al quitar una parada.
+  const confirmarCancelacion = async (v) => {
+    const motivo = (cancelando?.motivo || '').trim();
+    if (!motivo) return;
+    setCancelando({ ...cancelando, guardando: true });
+    try {
+      const plan = planCancelacionViaje(v);
+      for (const id of plan.paradasACancelar) await db.actualizarParada(id, { estado: PARADA_CANCELADA });
+      for (const id of plan.requisicionesADevolver) await db.actualizarRequisicion(id, { estado: 'lista' });
+      for (const id of plan.diligenciasADevolver) await db.actualizarDiligencia(id, { estado: 'sin_planificar' });
+      await db.actualizarViaje(v.id, { estado: VIAJE_CANCELADO, notas: notaCancelacion(v.notas, { motivo, nombre: usuario?.nombre, fechaISO: new Date().toISOString() }) });
+      setCancelando(null);
+      await recargar();
+    } catch (e) { alert('Error: ' + (e?.message || e)); setCancelando(c => c ? { ...c, guardando: false } : c); }
+  };
+
+  // v8.68.0: marcar una parada HECHA DESDE LA OFICINA — queda en la nota de la parada
+  // quién la marcó y que fue desde oficina. La requisición pasa a entregada (como
+  // cuando la marca el chofer); la diligencia se cierra sola en actualizarParada.
+  const marcarHechaOficina = async (p) => {
+    try {
+      await db.actualizarParada(p.id, { estado: 'completada', notas: notaHechaDesdeOficina(p.notas, { nombre: usuario?.nombre, fechaISO: new Date().toISOString() }) });
+      if (p.requisicionId && p.tipo !== 'recogida') { try { await db.actualizarRequisicion(p.requisicionId, { estado: 'entregada' }); } catch (e) { /* no bloquear */ } }
+      setMarcandoId(null);
+      await recargar();
+    } catch (e) { alert('Error: ' + (e?.message || e)); }
+  };
+
   // v8.40.0: MAPA de diligencias del día — rojo = sin asignar, verde = ya en un viaje.
   const coordsObra = (pid) => { const p = (data.proyectos || []).find(x => x.id === pid); return (p?.ubicacionLat != null && p?.ubicacionLng != null) ? { lat: p.ubicacionLat, lng: p.ubicacionLng } : null; };
   const marcadoresMapa = useMemo(() => {
     const ms = [];
     diligencias.forEach(d => { const c = coordsObra(d.proyectoId); if (c) ms.push({ ...c, color: 'red', label: `Retiro: ${nombreObra(d.proyectoId)}`, popup: `<b>📦 Retiro sin planificar</b><br>${nombreObra(d.proyectoId)}<br><span style="font-size:11px;color:#a1a1aa">${(d.descripcion || '').split('\n').slice(0, 3).join('<br>')}</span>` }); });
     listas.forEach(r => { const c = coordsObra(r.proyectoId); if (c) ms.push({ ...c, color: 'orange', label: `Entrega: ${nombreObra(r.proyectoId)}`, popup: `<b>📦 Lista para envío (sin viaje)</b><br>${nombreObra(r.proyectoId)}` }); });
-    viajes.forEach(v => v.paradas.forEach(p => {
+    viajesActivos.forEach(v => v.paradas.filter(p => p.estado !== PARADA_CANCELADA).forEach(p => {
       const c = (p.lat != null && p.lng != null) ? { lat: p.lat, lng: p.lng } : coordsObra(p.proyectoId);
       if (c) ms.push({ ...c, color: p.estado === 'completada' ? 'green' : 'blue', label: p.lugar || nombreObra(p.proyectoId), popup: `<b>${p.tipo === 'recogida' ? '↑ Recoger' : '↓ Entregar'}${p.estado === 'completada' ? ' ✓' : ''}</b><br>${p.proyectoId ? nombreObra(p.proyectoId) : (p.lugar || '')}<br><span style="font-size:11px;color:#a1a1aa">${v.choferNombre || v.vehiculo || ''}</span>` });
     }));
@@ -258,20 +309,20 @@ export default function VistaRutas({ usuario, data, onVolver }) {
         popup: `<b>🛰 ${u.nombre}</b><br>${u.velocidad} km/h · ${u.velocidad > 2 ? 'en movimiento' : u.online === 'online' ? 'encendido detenido' : 'apagado'}<br><span style="font-size:11px;color:#a1a1aa">${u.hora || ''}</span>` });
     });
     return ms;
-  }, [diligencias, listas, viajes, data.proyectos, gpsUnidades]);
+  }, [diligencias, listas, viajesActivos, data.proyectos, gpsUnidades]);
   const MapaDiligencias = useMemo(() => {
     if (!verMapa || marcadoresMapa.length === 0) return null;
     const MapaLeaflet = React.lazy(() => import('../common/MapaLeaflet'));
     const centro = [marcadoresMapa.reduce((s, m) => s + m.lat, 0) / marcadoresMapa.length, marcadoresMapa.reduce((s, m) => s + m.lng, 0) / marcadoresMapa.length];
     // v8.41.0: la RUTA EN ORDEN del viaje seleccionado se dibuja como línea
-    const sel = viajes.find(v => v.id === viajeSel);
+    const sel = viajesActivos.find(v => v.id === viajeSel);
     const puntos = sel ? sel.paradas.map(p => (p.lat != null && p.lng != null) ? [p.lat, p.lng] : (coordsObra(p.proyectoId) ? [coordsObra(p.proyectoId).lat, coordsObra(p.proyectoId).lng] : null)).filter(Boolean) : [];
     return (
       <React.Suspense fallback={<div className="bg-zinc-950 border border-zinc-800 rounded-card flex items-center justify-center" style={{ height: 320 }}><span className="text-xs text-zinc-500">Cargando mapa…</span></div>}>
         <MapaLeaflet center={centro} zoom={10} height={320} markers={marcadoresMapa} polyline={puntos.length > 1 ? { points: puntos, color: '#22d3ee' } : null} scrollWheelZoom={false} className="border border-zinc-800" />
       </React.Suspense>
     );
-  }, [verMapa, marcadoresMapa, viajeSel, viajes]);
+  }, [verMapa, marcadoresMapa, viajeSel, viajesActivos]);
 
   const borrarViaje = async (v) => {
     if (v.paradas.some(p => p.requisicionId)) { alert('Quita primero las requisiciones montadas.'); return; }
@@ -280,11 +331,16 @@ export default function VistaRutas({ usuario, data, onVolver }) {
   };
 
   // Horas del día por chofer (para horas extras: jornada estándar de 8h)
-  const horasChofer = useMemo(() => viajes.filter(v => v.choferId && v.horaInicio).map(v => {
+  const horasChofer = useMemo(() => viajesActivos.filter(v => v.choferId && v.horaInicio).map(v => {
     const fin = v.horaFin ? new Date(v.horaFin) : null;
     const horasTot = fin ? (fin - new Date(v.horaInicio)) / 3600000 : null;
     return { v, horasTot, extras: horasTot != null ? Math.max(0, horasTot - 8) : null };
-  }), [viajes]);
+  }), [viajesActivos]);
+
+  // v8.68.0: etiqueta de estado (incluye cancelado; en filtros de historial, la fecha)
+  const etiquetaEstado = (v) => (filtro !== 'dia' ? `${formatFechaCorta(v.fecha)} · ` : '') + (
+    esViajeCancelado(v) ? 'Cancelado'
+      : v.estado === 'planificado' ? 'Planificado' : v.estado === 'en_curso' ? `En curso desde ${hora(v.horaInicio)}` : `Completado · ${hora(v.horaInicio)} → ${hora(v.horaFin)}`);
 
   // v8.38.0: la tarjeta completa del viaje (cabecera + form parada libre + paradas)
   // — inline en móvil, panel sticky en desktop. Mismos handlers, cero lógica nueva.
@@ -294,15 +350,44 @@ export default function VistaRutas({ usuario, data, onVolver }) {
         <div className="min-w-0">
           <div className="font-bold text-sm">{v.tipoEnvio === 'pagado' ? '📮 Envío pagado' : `🚛 ${v.choferNombre || 'Sin chofer'}`}{v.vehiculo ? ` · ${v.vehiculo}` : ''}</div>
           <div className="text-[10px] text-zinc-500">
-            {v.estado === 'planificado' ? 'Planificado' : v.estado === 'en_curso' ? `En curso desde ${hora(v.horaInicio)}` : `Completado · ${hora(v.horaInicio)} → ${hora(v.horaFin)}`}
+            {etiquetaEstado(v)}
             {' · '}{v.paradas.filter(p => p.estado === 'completada').length}/{v.paradas.length} paradas
           </div>
         </div>
         <div className="flex items-center gap-1.5">
-          <button onClick={() => setParadaLibre({ viajeId: v.id, tipo: 'recogida', lugar: '', descripcion: '' })} className="text-[10px] uppercase font-bold border border-zinc-700 hover:border-cyan-500 text-zinc-300 px-2 py-1.5 rounded-card">+ Parada</button>
+          {!esViajeCancelado(v) && <button onClick={() => setParadaLibre({ viajeId: v.id, tipo: 'recogida', lugar: '', descripcion: '' })} className="text-[10px] uppercase font-bold border border-zinc-700 hover:border-cyan-500 text-zinc-300 px-2 py-1.5 rounded-card">+ Parada</button>}
+          {puedeCancelarViaje(v) && v.paradas.length > 0 && cancelando?.viajeId !== v.id && (
+            <button onClick={() => setCancelando({ viajeId: v.id, motivo: '' })} className="text-[10px] uppercase font-bold border border-zinc-700 hover:border-red-500 text-zinc-400 hover:text-red-300 px-2 py-1.5 rounded-card">Cancelar viaje</button>
+          )}
           {v.estado === 'planificado' && v.paradas.length === 0 && <button onClick={() => borrarViaje(v)} className="text-zinc-600 hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>}
         </div>
       </div>
+
+      {/* v8.68.0: confirmación de cancelación en la página, con motivo obligatorio */}
+      {cancelando?.viajeId === v.id && (() => {
+        const plan = planCancelacionViaje(v);
+        return (
+          <div className="bg-red-950/30 border border-red-800/60 rounded-card p-2.5 space-y-1.5">
+            <div className="text-[10px] uppercase font-bold text-red-300">Cancelar este viaje</div>
+            <div className="text-[11px] text-zinc-400">
+              {plan.paradasACancelar.length} parada{plan.paradasACancelar.length !== 1 ? 's' : ''} pendiente{plan.paradasACancelar.length !== 1 ? 's' : ''} quedará{plan.paradasACancelar.length !== 1 ? 'n' : ''} cancelada{plan.paradasACancelar.length !== 1 ? 's' : ''}
+              {plan.requisicionesADevolver.length > 0 && ` · ${plan.requisicionesADevolver.length} requisición(es) vuelven a "Listas para envío"`}
+              {plan.diligenciasADevolver.length > 0 && ` · ${plan.diligenciasADevolver.length} retiro(s) vuelven a "sin planificar"`}
+              . No se borra nada.
+            </div>
+            <textarea value={cancelando.motivo} onChange={e => setCancelando({ ...cancelando, motivo: e.target.value })} rows={2}
+              placeholder="Motivo (obligatorio): ej. nunca salió, se reprogramó en otro viaje…" className="w-full bg-zinc-950 border border-zinc-700 rounded-card px-2 py-1.5 text-xs" />
+            <div className="flex gap-1.5 justify-end">
+              <button onClick={() => setCancelando(null)} disabled={cancelando.guardando} className="text-[10px] uppercase font-bold border border-zinc-700 text-zinc-400 px-2.5 py-1.5 rounded-card">Volver</button>
+              <button onClick={() => confirmarCancelacion(v)} disabled={!cancelando.motivo.trim() || cancelando.guardando}
+                className="text-[10px] uppercase font-black bg-red-700 hover:bg-red-600 disabled:opacity-40 text-white px-2.5 py-1.5 rounded-card flex items-center gap-1">
+                {cancelando.guardando && <Loader2 className="w-3 h-3 animate-spin" />} Confirmar cancelación
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+      {esViajeCancelado(v) && v.notas && <div className="text-[10px] text-red-300/80 whitespace-pre-line">{v.notas}</div>}
 
       {paradaLibre?.viajeId === v.id && (
         <div className="bg-zinc-950 border border-cyan-800/50 rounded-card p-2 space-y-1.5">
@@ -368,14 +453,16 @@ export default function VistaRutas({ usuario, data, onVolver }) {
 
       <div className="space-y-1">
         {v.paradas.map((p, i) => (
-          <div key={p.id} className={`bg-zinc-950 border rounded-card px-2 py-1.5 flex items-center gap-2 ${p.estado === 'completada' ? 'border-green-900/50' : 'border-zinc-800'}`}>
+          <div key={p.id} className={`bg-zinc-950 border rounded-card px-2 py-1.5 flex items-center gap-2 ${p.estado === 'completada' ? 'border-green-900/50' : p.estado === PARADA_CANCELADA ? 'border-zinc-800 opacity-50' : 'border-zinc-800'}`}>
             <span className="text-[10px] font-black text-zinc-600 w-4 text-center shrink-0">{i + 1}</span>
             <div className="min-w-0 flex-1">
               <div className={`text-xs font-bold truncate ${p.estado === 'completada' ? 'text-green-400' : ''}`}>
                 {p.tipo === 'recogida' ? '↑ Recoger' : '↓ Entregar'} · {p.proyectoId ? nombreObra(p.proyectoId) : p.lugar}
                 {p.estado === 'completada' && ` ✓ ${hora(p.completadaAt)}`}
+                {p.estado === PARADA_CANCELADA && ' · cancelada'}
               </div>
               {p.descripcion && <div className="text-[10px] text-zinc-500 truncate">{p.descripcion}</div>}
+              {p.notas && <div className="text-[10px] text-zinc-500 whitespace-pre-line">{p.notas}</div>}
               {(p.docUrl || p.entregaFotoUrl || p.entregaFirmaUrl || p.recibidoPorNombre) && (
                 <div className="flex gap-2 flex-wrap text-[10px] mt-0.5">
                   {p.docUrl && <a href={p.docUrl} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">📄 Doc</a>}
@@ -385,7 +472,18 @@ export default function VistaRutas({ usuario, data, onVolver }) {
                 </div>
               )}
             </div>
-            {v.estado !== 'completado' && p.estado !== 'completada' && (
+            {/* v8.68.0: marcar hecha desde la oficina (con confirmación en la fila) */}
+            {!esViajeCancelado(v) && p.estado !== 'completada' && p.estado !== PARADA_CANCELADA && (
+              marcandoId === p.id ? (
+                <div className="flex items-center gap-1 shrink-0">
+                  <button onClick={() => marcarHechaOficina(p)} className="text-[10px] uppercase font-black bg-green-700 hover:bg-green-600 text-white px-2 py-1 rounded-card">Sí, hecha</button>
+                  <button onClick={() => setMarcandoId(null)} className="text-zinc-500 hover:text-white"><X className="w-3.5 h-3.5" /></button>
+                </div>
+              ) : (
+                <button onClick={() => setMarcandoId(p.id)} title="Marcar hecha desde oficina" className="shrink-0 text-[10px] uppercase font-bold border border-zinc-700 hover:border-green-600 text-zinc-400 hover:text-green-300 px-1.5 py-1 rounded-card">✓ Hecha</button>
+              )
+            )}
+            {v.estado !== 'completado' && !esViajeCancelado(v) && p.estado !== 'completada' && p.estado !== PARADA_CANCELADA && (
               <div className="flex items-center gap-0.5 shrink-0">
                 <button onClick={() => mover(v, p, -1)} className="text-zinc-600 hover:text-white"><ChevronUp className="w-3.5 h-3.5" /></button>
                 <button onClick={() => mover(v, p, 1)} className="text-zinc-600 hover:text-white"><ChevronDown className="w-3.5 h-3.5" /></button>
@@ -399,7 +497,7 @@ export default function VistaRutas({ usuario, data, onVolver }) {
     </div>
   );
 
-  const vSel = viajes.find(v => v.id === viajeSel);
+  const vSel = viajesLista.find(v => v.id === viajeSel);
 
   return (
     <div className="p-4 md:p-6 max-w-4xl lg:max-w-[1400px] mx-auto space-y-4">
@@ -520,11 +618,11 @@ export default function VistaRutas({ usuario, data, onVolver }) {
                       <div className="text-[10px] text-zinc-500 truncate">{(d.descripcion || '').split('\n').join(' · ')}</div>
                       <div className="text-[10px] text-zinc-600">{formatFechaCorta((d.createdAt || '').slice(0, 10))} · {d.creadoPorNombre}</div>
                     </div>
-                    {viajes.length > 0 && (
-                      <select defaultValue="" onChange={e => { const v = viajes.find(x => x.id === e.target.value); if (v) montarDiligencia(v, d); e.target.value = ''; }}
+                    {viajesActivos.length > 0 && (
+                      <select defaultValue="" onChange={e => { const v = viajesActivos.find(x => x.id === e.target.value); if (v) montarDiligencia(v, d); e.target.value = ''; }}
                         className="bg-zinc-900 border border-zinc-700 rounded-card px-1.5 py-1.5 text-[11px] shrink-0">
                         <option value="" disabled>Recoger en…</option>
-                        {viajes.map(v => <option key={v.id} value={v.id}>{v.choferNombre || v.vehiculo || v.id}</option>)}
+                        {viajesActivos.map(v => <option key={v.id} value={v.id}>{v.choferNombre || v.vehiculo || v.id}</option>)}
                       </select>
                     )}
                   </div>
@@ -544,11 +642,11 @@ export default function VistaRutas({ usuario, data, onVolver }) {
                       <div className="text-xs font-bold truncate">{nombreObra(r.proyectoId)} {r.urgente && '🔥'}</div>
                       <div className="text-[10px] text-zinc-500 truncate">{r.items.map(i => i.descripcion).join(', ')}</div>
                     </div>
-                    {viajes.length > 0 && (
-                      <select defaultValue="" onChange={e => { const v = viajes.find(x => x.id === e.target.value); if (v) montarRequisicion(v, r); e.target.value = ''; }}
+                    {viajesActivos.length > 0 && (
+                      <select defaultValue="" onChange={e => { const v = viajesActivos.find(x => x.id === e.target.value); if (v) montarRequisicion(v, r); e.target.value = ''; }}
                         className="bg-zinc-900 border border-zinc-700 rounded-card px-1.5 py-1.5 text-[11px] shrink-0">
                         <option value="" disabled>Montar en…</option>
-                        {viajes.map(v => <option key={v.id} value={v.id}>{v.choferNombre || v.vehiculo || v.id}</option>)}
+                        {viajesActivos.map(v => <option key={v.id} value={v.id}>{v.choferNombre || v.vehiculo || v.id}</option>)}
                       </select>
                     )}
                   </div>
@@ -577,16 +675,27 @@ export default function VistaRutas({ usuario, data, onVolver }) {
             </div>
           )}
 
+          {/* v8.68.0: filtro de viajes — del día / viejos sin cerrar / cancelados */}
+          <div className="flex gap-1.5 flex-wrap">
+            {[['dia', `Del ${formatFechaCorta(fecha)}`], ['viejos', 'Viejos sin cerrar'], ['cancelados', 'Cancelados']].map(([k, l]) => (
+              <button key={k} onClick={() => setFiltro(k)} className={`text-[10px] font-black uppercase px-2.5 py-1.5 rounded-card border ${filtro === k ? 'bg-cyan-700 border-cyan-700 text-white' : 'border-zinc-700 text-zinc-400 hover:text-white'}`}>{l}</button>
+            ))}
+          </div>
+          {filtro !== 'dia' && viajesLista.length === 0 && (
+            <div className="text-xs text-zinc-500">{filtro === 'viejos' ? 'No hay viajes de días anteriores sin cerrar (últimos 120 días).' : 'No hay viajes cancelados en los últimos 120 días.'}</div>
+          )}
+
           {/* Viajes del día — móvil: tarjeta completa; desktop: fila que abre el panel */}
-          {viajes.map(v => (
+          {viajesLista.map(v => (
             <React.Fragment key={v.id}>
-              <div className="lg:hidden"><DetalleViaje v={v} /></div>
+              {/* v8.68.0: se llama como función (no tiene hooks) para que los campos de texto no pierdan el foco al escribir */}
+              <div className="lg:hidden">{DetalleViaje({ v })}</div>
               <button onClick={() => setViajeSel(v.id)}
                 className={`hidden lg:flex w-full items-center gap-2.5 px-3 py-2.5 rounded-card border bg-zinc-900 text-left ${viajeSel === v.id ? 'border-cyan-500 bg-zinc-800/70' : 'border-zinc-800 hover:border-zinc-600'}`}>
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-bold truncate">{v.tipoEnvio === 'pagado' ? '📮 Envío pagado' : `🚛 ${v.choferNombre || 'Sin chofer'}`}{v.vehiculo ? ` · ${v.vehiculo}` : ''}</div>
                   <div className="text-[10px] text-zinc-500">
-                    {v.estado === 'planificado' ? 'Planificado' : v.estado === 'en_curso' ? `En curso desde ${hora(v.horaInicio)}` : `Completado · ${hora(v.horaInicio)} → ${hora(v.horaFin)}`}
+                    {etiquetaEstado(v)}
                   </div>
                 </div>
                 <span className={`shrink-0 text-[10px] font-bold ${v.paradas.length > 0 && v.paradas.every(p => p.estado === 'completada') ? 'text-green-400' : 'text-zinc-400'}`}>📍 {v.paradas.filter(p => p.estado === 'completada').length}/{v.paradas.length}</span>
@@ -667,11 +776,9 @@ export default function VistaRutas({ usuario, data, onVolver }) {
         {/* ===== Detalle del viaje (derecha, solo desktop) ===== */}
         <aside className="hidden lg:block w-[420px] xl:w-[460px] shrink-0">
           <div className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
-            {vSel ? (
-              <DetalleViaje v={vSel} />
-            ) : (
+            {vSel ? DetalleViaje({ v: vSel }) : (
               <div className="bg-zinc-950/50 border border-dashed border-zinc-800 rounded-card p-6 text-center text-xs text-zinc-600">
-                Crea o elige un viaje del día para armar su ruta aquí.
+                {filtro === 'dia' ? 'Crea o elige un viaje del día para armar su ruta aquí.' : 'Elige un viaje de la lista.'}
               </div>
             )}
           </div>

@@ -9,6 +9,7 @@
 
 import React, { useRef, useState } from 'react';
 import { X, FileDown, Loader2, ShieldCheck } from 'lucide-react';
+import { getTipoGarantia } from '../../lib/garantiasCatalogo';
 
 const cargarScriptCDN = (src) => new Promise((resolve, reject) => {
   if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
@@ -52,6 +53,10 @@ export default function ModalCartaGarantia({ garantia: g, clienteNombre, proyect
     : '—';
   const mantsObligatorios = mantenimientos.filter(m => m.garantiaId === g.id && m.obligatorio !== false);
   const referencia = g.referenciaCotizacion || proyecto?.referenciaOdoo || g.codigo || '';
+  // v8.68.0: si la fila no trae cobertura/condición, se toma la del tipo de garantía (catálogo).
+  const tipoCat = getTipoGarantia(g.tipo);
+  const cobertura = g.cobertura || tipoCat?.cobertura || '';
+  const condicion = g.condicion || tipoCat?.condicion || '';
 
   const descargarPDF = async () => {
     setError(''); setGenerando(true);
@@ -147,14 +152,14 @@ export default function ModalCartaGarantia({ garantia: g, clienteNombre, proyect
                 con vigencia desde el <b>{fmtF(g.fechaInicio)}</b> hasta el <b>{fmtF(g.fechaVencimiento)}</b>.
               </p>
 
-              {g.cobertura && (
+              {cobertura && (
                 <p style={{ textAlign: 'justify', margin: '0 0 12px' }}>
-                  <b>Cobertura:</b> {g.cobertura}
+                  <b>Cobertura:</b> {cobertura}
                 </p>
               )}
-              {g.condicion && (
+              {condicion && (
                 <p style={{ textAlign: 'justify', margin: '0 0 12px' }}>
-                  <b>Condiciones:</b> {g.condicion}
+                  <b>Condiciones:</b> {condicion}
                 </p>
               )}
               {mantsObligatorios.length > 0 && (

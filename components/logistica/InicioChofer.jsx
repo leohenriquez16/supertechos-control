@@ -26,7 +26,8 @@ export default function InicioChofer({ usuario, data }) {
 
   const recargar = async () => {
     setLoading(true);
-    try { setViajes(await db.listarViajes({ fecha: hoyRD(), choferId: usuario.id })); }
+    // v8.68.0: un viaje cancelado desde la oficina ya no le sale al chofer
+    try { setViajes((await db.listarViajes({ fecha: hoyRD(), choferId: usuario.id })).filter(v => v.estado !== 'cancelado')); }
     catch (e) { console.warn('InicioChofer:', e?.message); }
     setLoading(false);
   };

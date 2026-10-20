@@ -15,6 +15,7 @@ import { comprimirImagenABlob } from '../../lib/imports'; // v8.49.11: fotos
 import { evaluarSlaReclamacion, SLA_SEVERIDAD_HORAS } from '../../lib/helpers/slaReclamaciones'; // v8.53.1 Fase 3B
 import { resolverContacto, contactoLocalizable } from '../../lib/helpers/contactoCliente'; // v8.53.4
 import SolicitarCalificacion from '../common/SolicitarCalificacion'; // v8.54.1 C3
+import ModalInformeVisitaPDF from './ModalInformeVisitaPDF'; // v8.68.0 (ticket Edwin)
 
 const fmtFecha = (s) => { if (!s) return '—'; try { return new Date(s + 'T12:00:00').toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return s; } };
 const COLS = [
@@ -308,7 +309,8 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
             <ResolucionReclamacion r={r} onGuardado={() => { setAvisoCierre(''); setReload(x => x + 1); }} />
           </div>
           {/* v8.53.1 (Fase 3B): hito informe de solución entregado al cliente — cierra el ciclo */}
-          <InformeSolucionReclamacion r={r} onGuardado={() => setReload(x => x + 1)} />
+          <InformeSolucionReclamacion r={r} onGuardado={() => setReload(x => x + 1)}
+            cliente={clienteDe(r.clienteId)} clienteNombre={clienteNombre(r)} ubicacion={ubic(r.ubicacionId)} ubicacionNombre={ubicNombre(r)} proyecto={p} usuario={usuario} />
           {/* v8.54.1 (C3): calificación del cliente (CSAT) */}
           <SolicitarCalificacion key={r.id + '-' + r.estado} entityType="reclamacion" entityId={r.id} clienteNombre={clienteNombre(r)} contexto="la atención de su reclamación" usuario={usuario} />
           {/* v8.26.8: pago de mano de obra de la reclamación → cae a nómina como ajuste */}
@@ -699,7 +701,20 @@ function ResolucionReclamacion({ r, onGuardado }) {
 
 // ---------- v8.53.1 (Fase 3B): Informe de solución entregado al cliente ----------
 // Cierra el ciclo de la reclamación. Sube el PDF del informe + registra la fecha de entrega.
-function InformeSolucionReclamacion({ r, onGuardado }) {
+// v8.68.0: una sola función marca el informe entregado — la usan la subida manual y el
+// informe de visita generado en el ERP (ModalInformeVisitaPDF).
+async function marcarInformeEntregado(r, { fecha, url, nombre }) {
+  const yaEntregado = !!r.informeEntregadoAt;
+  await db.actualizarReclamacion(r.id, {
+    informeEntregadoAt: new Date(fecha + 'T12:00:00').toISOString(),
+    informeUrl: url || null, informeNombre: nombre || null,
+  });
+  // v8.54.0 (C1): la entrega del informe queda en la bitácora de comunicación (solo la 1ª vez).
+  if (!yaEntregado) { try { registrarComunicacion('reclamacion', r.id, { canal: 'correo', direccion: 'saliente', cuerpo: `Informe de solución entregado al cliente${nombre ? ` (${nombre})` : ''}.`, meta: { informeUrl: url || null } }); } catch { /* noop */ } }
+}
+
+function InformeSolucionReclamacion({ r, onGuardado, cliente, clienteNombre, ubicacion, ubicacionNombre, proyecto, usuario }) {
+  const [modalVisita, setModalVisita] = useState(false); // v8.68.0
   const entregado = !!r.informeEntregadoAt;
   const hoyISO = () => new Date().toISOString().slice(0, 10);
   const [fecha, setFecha] = useState(r.informeEntregadoAt ? r.informeEntregadoAt.slice(0, 10) : hoyISO());
@@ -726,12 +741,7 @@ function InformeSolucionReclamacion({ r, onGuardado }) {
     if (!fecha) { alert('Indica la fecha de entrega del informe.'); return; }
     setGuardando(true);
     try {
-      await db.actualizarReclamacion(r.id, {
-        informeEntregadoAt: new Date(fecha + 'T12:00:00').toISOString(),
-        informeUrl: url || null, informeNombre: nombre || null,
-      });
-      // v8.54.0 (C1): la entrega del informe queda en la bitácora de comunicación (solo la 1ª vez).
-      if (!entregado) { try { registrarComunicacion('reclamacion', r.id, { canal: 'correo', direccion: 'saliente', cuerpo: `Informe de solución entregado al cliente${nombre ? ` (${nombre})` : ''}.`, meta: { informeUrl: url || null } }); } catch { /* noop */ } }
+      await marcarInformeEntregado(r, { fecha, url, nombre });
       setEditando(false);
       if (onGuardado) await onGuardado();
     } catch (e) { alert('Error: ' + (e.message || e)); }
@@ -742,8 +752,23 @@ function InformeSolucionReclamacion({ r, onGuardado }) {
     <div className={`mt-3 rounded-card p-3 border ${entregado && !editando ? 'bg-emerald-950/30 border-emerald-800/60' : 'bg-zinc-950 border-zinc-800'}`}>
       <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-2 flex items-center justify-between">
         <span className="flex items-center gap-1"><FileText className="w-3 h-3" /> Informe de solución entregado al cliente</span>
-        {entregado && !editando && <button onClick={() => setEditando(true)} className="text-red-400 hover:underline text-[10px] normal-case tracking-normal">Editar</button>}
+        <span className="flex items-center gap-2">
+          {/* v8.68.0: generar el informe de visita en PDF desde el ERP */}
+          <button onClick={() => setModalVisita(true)} className="text-emerald-400 hover:underline text-[10px] normal-case tracking-normal flex items-center gap-1"><FileText className="w-3 h-3" /> Generar informe de visita</button>
+          {entregado && !editando && <button onClick={() => setEditando(true)} className="text-red-400 hover:underline text-[10px] normal-case tracking-normal">Editar</button>}
+        </span>
       </div>
+      {modalVisita && (
+        <ModalInformeVisitaPDF r={r} cliente={cliente} clienteNombre={clienteNombre} ubicacion={ubicacion} ubicacionNombre={ubicacionNombre}
+          proyecto={proyecto} usuario={usuario} causasRaiz={CAUSAS_RAIZ} onCerrar={() => setModalVisita(false)}
+          onGuardarInforme={async (blob, nombreArchivo) => {
+            // mismo bucket/path que la subida manual + misma función que marca entregado
+            const u = await db.subirInformeReclamacion(blob, r.id, nombreArchivo);
+            await marcarInformeEntregado(r, { fecha: new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo' }).format(new Date()), url: u, nombre: nombreArchivo });
+            setUrl(u); setNombre(nombreArchivo); setEditando(false);
+            if (onGuardado) await onGuardado();
+          }} />
+      )}
       {editando ? (
         <div className="space-y-2">
           <div>

@@ -42,7 +42,10 @@ const fechaLarga = (d) => {
 };
 const fmtF = (s) => { if (!s) return '—'; try { return new Date(s + 'T12:00:00').toLocaleDateString('es-DO', { day: '2-digit', month: 'long', year: 'numeric' }); } catch { return s; } };
 
-export default function ModalCartaGarantia({ garantia: g, clienteNombre, proyecto, ubicacionNombre, mantenimientos = [], onCerrar }) {
+// v8.71.0: `borrador` saca la carta como modelo, para enseñarle al cliente qué va a
+// recibir sin tener que forzar el estado de la obra ni crear la garantía. La original
+// se emite contra el saldo, pero su vigencia arranca el día de la ENTREGA.
+export default function ModalCartaGarantia({ garantia: g, clienteNombre, proyecto, ubicacionNombre, mantenimientos = [], borrador = false, fechaEntrega = null, motivoBorrador = '', onCerrar }) {
   const cartaRef = useRef(null);
   const [generando, setGenerando] = useState(false);
   const [error, setError] = useState('');
@@ -101,7 +104,7 @@ export default function ModalCartaGarantia({ garantia: g, clienteNombre, proyect
           primera = false; y += alto;
         }
       }
-      pdf.save(`Carta de Garantía ${referencia || clienteNombre || ''}.pdf`.replace(/\s+/g, ' ').trim());
+      pdf.save(`${borrador ? 'BORRADOR - ' : ''}Carta de Garantía ${referencia || clienteNombre || ''}.pdf`.replace(/\s+/g, ' ').trim());
     } catch (e) { setError(e?.message || 'Error generando el PDF'); }
     setGenerando(false);
   };
@@ -120,6 +123,16 @@ export default function ModalCartaGarantia({ garantia: g, clienteNombre, proyect
           </div>
         </div>
         {error && <div className="mx-3 mt-2 text-[11px] text-red-400">{error}</div>}
+        {/* v8.71.0: por qué esto es un borrador y qué falta para la carta original. */}
+        {borrador && (
+          <div className="mx-3 mt-2 rounded-card border border-amber-700/50 bg-amber-950/30 px-3 py-2">
+            <div className="text-[11px] font-bold uppercase tracking-widest text-amber-400">Borrador — no es la carta definitiva</div>
+            <div className="text-[11px] text-amber-200/80 mt-0.5">
+              {motivoBorrador || 'La carta original se emite cuando la factura esté saldada.'}
+              {fechaEntrega ? <> La garantía correrá desde la entrega, el {fmtF(fechaEntrega)}.</> : null}
+            </div>
+          </div>
+        )}
         {/* v8.66.0: a quién va dirigida (prellenado con el cliente) */}
         <div className="mx-3 mt-3 flex items-center gap-2">
           <label className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold whitespace-nowrap">Dirigida a</label>
@@ -128,7 +141,15 @@ export default function ModalCartaGarantia({ garantia: g, clienteNombre, proyect
 
         {/* ===== Vista previa / contenido de la carta (fondo blanco, se captura tal cual) ===== */}
         <div className="p-3 overflow-x-auto">
-          <div ref={cartaRef} style={{ background: '#ffffff', color: '#18181b', fontFamily: 'Georgia, "Times New Roman", serif', width: '100%', maxWidth: 816, margin: '0 auto' }}>
+          <div ref={cartaRef} style={{ background: '#ffffff', color: '#18181b', fontFamily: 'Georgia, "Times New Roman", serif', width: '100%', maxWidth: 816, margin: '0 auto', position: 'relative' }}>
+            {/* v8.71.0: que un borrador no se pueda confundir nunca con la carta buena. */}
+            {borrador && (
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', zIndex: 2 }}>
+                <div style={{ transform: 'rotate(-28deg)', fontSize: 92, fontWeight: 700, letterSpacing: 10, color: 'rgba(192, 39, 45, 0.13)', fontFamily: 'Helvetica, Arial, sans-serif', whiteSpace: 'nowrap' }}>
+                  BORRADOR
+                </div>
+              </div>
+            )}
             {/* Membrete */}
             <div style={{ padding: '28px 36px 20px', borderBottom: `3px solid ${empresa.accentColor}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <img src={empresa.logo} alt={empresa.nombreCorto} crossOrigin="anonymous" style={{ maxHeight: empresa.logoMaxHeight, display: 'block' }} />
@@ -156,7 +177,9 @@ export default function ModalCartaGarantia({ garantia: g, clienteNombre, proyect
                 Distinguidos señores: por medio de la presente, <b>{empresa.razonSocial}</b> (RNC {empresa.rnc}) certifica que los
                 trabajos de <b>{g.sistemaNombre || 'impermeabilización'}</b>{proyecto?.nombre ? <> ejecutados en la obra <b>{proyecto.referenciaProyecto || proyecto.nombre}</b></> : null}
                 {m2Carta ? <> ({new Intl.NumberFormat('es-DO').format(m2Carta)} m²)</> : null} cuentan con una <b>garantía de {duracionTxt}</b>,
-                con vigencia desde el <b>{fmtF(g.fechaInicio)}</b> hasta el <b>{fmtF(g.fechaVencimiento)}</b>.
+                {borrador
+                  ? <> con vigencia de <b>{duracionTxt}</b> a partir de la fecha de entrega{fechaEntrega ? <> (<b>{fmtF(fechaEntrega)}</b>)</> : null}.</>
+                  : <> con vigencia desde el <b>{fmtF(g.fechaInicio)}</b> hasta el <b>{fmtF(g.fechaVencimiento)}</b>.</>}
               </p>
 
               {cobertura && (

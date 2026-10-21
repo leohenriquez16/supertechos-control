@@ -10,6 +10,7 @@
 import React, { useState } from 'react';
 import { X, Loader2, FileText } from 'lucide-react';
 import * as db from '../../../lib/db';
+import { superficieRealObra } from '../../../lib/helpers/calculos';
 import { formatFechaLarga, formatNum } from '../../../lib/helpers/formato';
 
 const tieneRol = (p, r) => p?.roles?.includes(r);
@@ -49,7 +50,8 @@ export default function ModalReporteFinalPDF({ proyecto, sistema, data, usuario,
   const fechaFinTrabajo = fechasRep[fechasRep.length - 1] || fechaEntrega;
   const duracionDias = fechaInicio ? Math.max(1, Math.round((new Date(fechaFinTrabajo) - new Date(fechaInicio)) / 86400000) + 1) : null;
 
-  const m2TotalProyecto = (proyecto.areas || []).reduce((s, a) => s + (Number(a.m2) || 0), 0);
+  // v8.70.0: superficie real (una superficie con dos sistemas no son dos techos).
+  const m2TotalProyecto = superficieRealObra(proyecto.areas);
   // sistemas usados (para garantía por sistema)
   const sistemaIds = [...new Set([proyecto.sistema, ...(proyecto.areas || []).map(a => a.sistemaId).filter(Boolean)])].filter(Boolean);
   const sistemasUsados = sistemaIds.map(id => ({ id, ...(data.sistemas?.[id] || {}) })).filter(s => s.nombre);

@@ -11,7 +11,7 @@
 
 import React, { useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { ArrowLeft, Check, Clock, MapPin, Loader2, Route, LayoutGrid, Search, Lock, Ruler, FileText, CalendarDays, Wrench, ClipboardCheck, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Check, Clock, MapPin, Loader2, RefreshCw, Route, LayoutGrid, Search, Lock, Ruler, FileText, CalendarDays, Wrench, ClipboardCheck, CheckCircle2 } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatRD } from '../../lib/helpers/formato';
 import { ETAPAS, ETAPA, FASES, COLOR_ETAPA, turnoDe, resumenPrograma, pendientesDelCliente, agruparPorZona, textoCoordinacion } from '../../lib/helpers/programaSites';
@@ -33,6 +33,7 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, onVo
   const [buscar, setBuscar] = useState('');
   const [guardando, setGuardando] = useState(null);
   const [ficha, setFicha] = useState(null); // v8.59.2: ficha de la sucursal
+  const [refrescando, setRefrescando] = useState(false); // v8.69.0
 
   const filtradas = useMemo(() => {
     const q = buscar.trim().toLowerCase();
@@ -91,6 +92,16 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, onVo
             {programa?.fechaMeta && <> · meta {new Date(programa.fechaMeta + 'T12:00:00').toLocaleDateString('es-DO', { day: 'numeric', month: 'long' })}</>}
           </div>
         </div>
+        {/* v8.69.0: releer todo — vuelve a amarrar cada locación con su levantamiento y
+            su obra, y recoge las visitas y cotizaciones que pasaron desde la última vez. */}
+        <button
+          onClick={async () => { if (refrescando) return; setRefrescando(true); try { await onRecargar?.(); } finally { setRefrescando(false); } }}
+          disabled={refrescando}
+          title="Releer levantamientos y obras"
+          className="shrink-0 w-9 h-9 grid place-items-center rounded-full border border-zinc-700 text-zinc-400 hover:text-white hover:border-zinc-500 disabled:opacity-50"
+        >
+          <RefreshCw className={`w-4 h-4 ${refrescando ? 'animate-spin' : ''}`} />
+        </button>
       </div>
 
       {/* Lo que marca el ritmo */}

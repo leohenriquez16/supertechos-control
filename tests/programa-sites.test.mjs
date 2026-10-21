@@ -209,5 +209,45 @@ caso('el amarre guarda la fecha de la cotización', () => {
   assert.equal(c.campos.cotizadoAt, '2026-09-07');
 });
 
+// --- v8.69.0: la visita pasa DESPUÉS del amarre -------------------------------------
+// Caso real (ESPERANZA II, oct-2026): el levantamiento se amarró el día que se creó,
+// la visita fue al día siguiente y la cotización al otro. La locación se quedó 14 días
+// mostrando "falta la visita" porque solo se copiaban los datos al amarrar.
+const yaAmarrada = {
+  id: 'pl_09', codigoUt: 'DO-03-VE-00847-09', nombre: 'ESPERANZA II',
+  levantamientoId: 'p185', levantadoAt: null, cotizacionRef: '', cotizadoAt: null,
+  luzVerde: true, proyectoId: null, lat: 19.4, lng: -70.6,
+};
+const levHecho = {
+  id: 'p185', siteNombre: 'ESPERANZA II', lat: 19.4, lng: -70.6, referenciaOdoo: 'ST-C5923',
+  realizadoAt: '2026-10-08T15:00:10Z', cotizadoAt: '2026-10-09T13:58:23Z',
+};
+
+caso('una locación ya amarrada recoge la visita y la cotización que pasaron después', () => {
+  const [c] = amarrarLocaciones([yaAmarrada], [levHecho], []);
+  assert.equal(c.campos.levantadoAt, '2026-10-08T15:00:10Z');
+  assert.equal(c.campos.cotizacionRef, 'ST-C5923');
+  assert.equal(c.campos.cotizadoAt, '2026-10-09T13:58:23Z');
+  assert.equal(c.campos.levantamientoId, undefined); // ya lo tenía: no se vuelve a escribir
+});
+caso('con esos datos la locación sale de "por levantar" y llega a "cotizado"', () => {
+  assert.equal(etapaDeLocacion(yaAmarrada, {}), 'por_levantar');
+  const [c] = amarrarLocaciones([yaAmarrada], [levHecho], []);
+  assert.equal(etapaDeLocacion({ ...yaAmarrada, ...c.campos }, {}), 'cotizado');
+});
+caso('la etapa se deriva del levantamiento aunque la sincronización no haya corrido', () => {
+  const ctx = { levantamiento: { fechaMedicion: '2026-10-08T15:00:10Z', estado: 'levantado' } };
+  assert.equal(etapaDeLocacion(yaAmarrada, ctx), 'levantado');
+});
+caso('releer el levantamiento no toca una locación que ya tiene todo cargado', () => {
+  const completa = { ...yaAmarrada, levantadoAt: '2026-10-08T15:00:10Z', cotizacionRef: 'ST-C5923', cotizadoAt: '2026-10-09T13:58:23Z' };
+  assert.equal(amarrarLocaciones([completa], [levHecho], []).length, 0);
+});
+caso('un levantamiento amarrado pero sin visita todavía no mueve la locación', () => {
+  const sinVisita = { id: 'p185', siteNombre: 'ESPERANZA II', lat: 19.4, lng: -70.6 };
+  assert.equal(amarrarLocaciones([yaAmarrada], [sinVisita], []).length, 0);
+  assert.equal(etapaDeLocacion(yaAmarrada, {}), 'por_levantar');
+});
+
 console.log(`\n${ok} pasadas, ${fallos.length} fallidas`);
 if (fallos.length) { fallos.forEach(f => console.log('  ✗ ' + f)); process.exit(1); }

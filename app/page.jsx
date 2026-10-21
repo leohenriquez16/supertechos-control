@@ -938,7 +938,7 @@ export default function App() {
         {/* v8.26.0: Contabilidad — reportes DGII (606/607/608) + resumen ITBIS/IT-1 */}
         {vista === 'contabilidad' && tieneRol(usuario, 'owner') && <VistaContabilidad usuario={usuario} onVolver={() => setVista('dashboard')} />}
         {vista === 'miPerfil' && <MiPerfil usuario={usuario} persona={usuario} soloLectura={false} onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }} onGuardar={(campos) => withSync(() => db.guardarPerfil(usuario.id, campos))} />}
-        {vista === 'programas' && <PantallaProgramas usuario={usuario} onVolver={() => setVista('dashboard')} onAbrirProyecto={async (pid) => { const proy = data.proyectos.find(x => x.id === pid); if (proy) { setProyectoActivo(proy); setVista('proyecto'); setTab('avance'); } }} />}
+        {vista === 'programas' && <PantallaProgramas usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onAbrirProyecto={async (pid) => { const proy = data.proyectos.find(x => x.id === pid); if (proy) { setProyectoActivo(proy); setVista('proyecto'); setTab('avance'); } }} />}
         {esAdmin && vista === 'personal' && <GestionPersonal usuario={usuario} personal={data.personal} data={data} onVolver={() => setVista('dashboard')} onActualizar={(p) => withSync(() => db.reemplazarPersonal(p))} onRecargar={recargar} onAbrirPerfil={(p) => { setPerfilViendo(p); setVista('perfilPersona'); }} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'perfilPersona' && perfilViendo && <MiPerfil usuario={usuario} persona={perfilViendo} soloLectura={false} onVolver={() => setVista('personal')} onGuardar={(campos) => withSync(async () => { await db.guardarPerfil(perfilViendo.id, campos); const d = await db.loadAllData(); const actualizada = d.personal.find(p => p.id === perfilViendo.id); if (actualizada) setPerfilViendo(actualizada); })} />}
         {esAdmin && vista === 'sistemas' && <GestionSistemas sistemas={data.sistemas} config={data.config} dataGlobal={data} onVolver={() => setVista('dashboard')} onActualizarSistemas={(s) => withSync(() => db.guardarSistemas(s))} onActualizarConfig={(c) => withSync(() => db.guardarConfig(c))} />}
@@ -11813,7 +11813,7 @@ function ModalCambiarEstado({ proyecto, usuario, personal, sistema, onCerrar, on
 // ============================================================
 // v8.58.0: contenedor de Programas — carga la campaña y sus locaciones con la etapa
 // ya derivada del levantamiento y la obra.
-function PantallaProgramas({ usuario, onVolver, onAbrirProyecto }) {
+function PantallaProgramas({ usuario, data, onVolver, onAbrirProyecto }) {
   const [programas, setProgramas] = useState([]);
   const [sel, setSel] = useState(null);
   const [locaciones, setLocaciones] = useState([]);
@@ -11850,7 +11850,7 @@ function PantallaProgramas({ usuario, onVolver, onAbrirProyecto }) {
           ))}
         </div>
       )}
-      <VistaPrograma programa={sel} locaciones={locaciones} usuario={usuario} onVolver={onVolver}
+      <VistaPrograma programa={sel} locaciones={locaciones} usuario={usuario} data={data} onVolver={onVolver}
         onRecargar={() => cargar(sel)} onAbrirProyecto={onAbrirProyecto} />
     </div>
   );

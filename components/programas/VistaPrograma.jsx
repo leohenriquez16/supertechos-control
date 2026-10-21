@@ -11,7 +11,7 @@
 
 import React, { useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { ArrowLeft, Check, Clock, MapPin, Loader2, RefreshCw, Route, LayoutGrid, Search, Lock, Ruler, FileText, CalendarDays, Wrench, ClipboardCheck, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Check, Clock, MapPin, Loader2, RefreshCw, Route, LayoutGrid, Search, Lock, Ruler, FileText, CalendarDays, Wrench, ClipboardCheck, CheckCircle2, ShieldCheck } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatRD } from '../../lib/helpers/formato';
 import { ETAPAS, ETAPA, FASES, COLOR_ETAPA, turnoDe, resumenPrograma, pendientesDelCliente, agruparPorZona, textoCoordinacion } from '../../lib/helpers/programaSites';
@@ -21,6 +21,8 @@ import FichaLocacion from './FichaLocacion';
 const ICONO = { lock: Lock, 'map-pin': MapPin, ruler: Ruler, file: FileText, calendar: CalendarDays, tool: Wrench, clipboard: ClipboardCheck, check: CheckCircle2 };
 
 const MapaPrograma = dynamic(() => import('./MapaPrograma'), { ssr: false, loading: () => <div className="h-[420px] grid place-items-center text-zinc-500 text-xs">Cargando mapa…</div> });
+// v8.71.0: la carta de garantía de la locación, desde el tablero.
+const ModalEntregaGarantia = dynamic(() => import('../proyecto/modales/ModalEntregaGarantia'), { ssr: false });
 
 const Chip = ({ color, children }) => (
   <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full" style={{ background: `${color}22`, color }}>
@@ -28,12 +30,13 @@ const Chip = ({ color, children }) => (
   </span>
 );
 
-export default function VistaPrograma({ programa, locaciones = [], usuario, onVolver, onRecargar, onAbrirProyecto }) {
+export default function VistaPrograma({ programa, locaciones = [], usuario, data = {}, onVolver, onRecargar, onAbrirProyecto }) {
   const [tab, setTab] = useState('tablero');
   const [buscar, setBuscar] = useState('');
   const [guardando, setGuardando] = useState(null);
   const [ficha, setFicha] = useState(null); // v8.59.2: ficha de la sucursal
   const [refrescando, setRefrescando] = useState(false); // v8.69.0
+  const [garantiaDe, setGarantiaDe] = useState(null); // v8.71.0: carta de garantía de la locación
 
   const filtradas = useMemo(() => {
     const q = buscar.trim().toLowerCase();
@@ -220,6 +223,17 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, onVo
                             {e.id === 'por_levantar' && l.levantamientoId && (
                               <span className="text-[10px] text-sky-400">Levantamiento creado · falta la visita</span>
                             )}
+                            {/* v8.71.0: la carta de garantía se saca desde la columna donde
+                                falta entregar, que es donde toca la acción. */}
+                            {e.id === 'terminado' && l.proyectoId && (
+                              <button onClick={() => setGarantiaDe(l)}
+                                className="text-[10px] font-bold uppercase px-2 py-1 bg-green-700 hover:bg-green-600 text-white rounded-card flex items-center gap-1">
+                                <ShieldCheck className="w-3 h-3" /> Carta de garantía
+                              </button>
+                            )}
+                            {e.id === 'entregado' && l.proyectoId && (
+                              <button onClick={() => setGarantiaDe(l)} className="text-[10px] underline text-zinc-400 hover:text-white">carta de garantía</button>
+                            )}
                             {l.proyectoId && onAbrirProyecto && (
                               <button onClick={() => onAbrirProyecto(l.proyectoId)} className="text-[10px] underline text-zinc-400 hover:text-white">ver obra</button>
                             )}
@@ -245,6 +259,23 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, onVo
           </div>
         </div>
       )}
+
+      {/* v8.71.0: carta de garantía de la locación — resuelve la obra por su id. */}
+
+      {garantiaDe?.proyectoId && (() => {
+
+        const obra = (data.proyectos || []).find(p => p.id === garantiaDe.proyectoId);
+
+        if (!obra) return null;
+
+        const sis = (data.sistemas || []).find(x => x.id === obra.sistema);
+
+        return <ModalEntregaGarantia proyecto={obra} sistema={sis} data={data} usuario={usuario}
+
+          onCambio={onRecargar} onCerrar={() => setGarantiaDe(null)} />;
+
+      })()}
+
 
       {ficha && (
         <FichaLocacion

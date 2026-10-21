@@ -10,7 +10,7 @@ import PreciosAjustadosObra from '../components/proyecto/PreciosAjustadosObra';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic'; // v8.55.0: carga perezosa de vistas
 import { createPortal } from 'react-dom';
-import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed, Building2, Star, MessageCircle, Send, Search, Filter, CloudRain, Calculator, Receipt, Car, Award, Gauge, Route, ShoppingCart } from 'lucide-react';
+import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed, Building2, Star, MessageCircle, Send, Search, Filter, CloudRain, Calculator, Receipt, Car, Award, Gauge, Route, ShoppingCart, ShieldCheck } from 'lucide-react';
 import * as db from '../lib/db';
 import { completitudPersona } from '../lib/helpers/personas';
 import { leerArchivo, parseMateriales, parseSistemas, descargarPlantilla, comprimirImagen } from '../lib/imports';
@@ -66,6 +66,7 @@ const VistaPrograma = cargarVista(() => import('../components/programas/VistaPro
 const ModalCartaBanco = cargarVista(() => import('../components/common/ModalCartaBanco'), CargandoModal); // v8.57.0
 const ModalReporteAvancePDF = cargarVista(() => import('../components/proyecto/modales/ModalReporteAvancePDF'), CargandoModal);
 const ModalReporteFinalPDF = cargarVista(() => import('../components/proyecto/modales/ModalReporteFinalPDF'), CargandoModal); // v8.27.79
+const ModalEntregaGarantia = cargarVista(() => import('../components/proyecto/modales/ModalEntregaGarantia'), CargandoModal); // v8.71.0
 // v8.10.5: Tabs simples extraídas
 const TabFotos = cargarVista(() => import('../components/proyecto/tabs/TabFotos'), CargandoVista);
 const TabUnidades = cargarVista(() => import('../components/proyecto/tabs/TabUnidades'), CargandoVista);
@@ -937,7 +938,7 @@ export default function App() {
         {/* v8.26.0: Contabilidad — reportes DGII (606/607/608) + resumen ITBIS/IT-1 */}
         {vista === 'contabilidad' && tieneRol(usuario, 'owner') && <VistaContabilidad usuario={usuario} onVolver={() => setVista('dashboard')} />}
         {vista === 'miPerfil' && <MiPerfil usuario={usuario} persona={usuario} soloLectura={false} onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }} onGuardar={(campos) => withSync(() => db.guardarPerfil(usuario.id, campos))} />}
-        {vista === 'programas' && <PantallaProgramas usuario={usuario} onVolver={() => setVista('dashboard')} onAbrirProyecto={async (pid) => { const proy = data.proyectos.find(x => x.id === pid); if (proy) { setProyectoActivo(proy); setVista('proyecto'); setTab('avance'); } }} />}
+        {vista === 'programas' && <PantallaProgramas usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onAbrirProyecto={async (pid) => { const proy = data.proyectos.find(x => x.id === pid); if (proy) { setProyectoActivo(proy); setVista('proyecto'); setTab('avance'); } }} />}
         {esAdmin && vista === 'personal' && <GestionPersonal usuario={usuario} personal={data.personal} data={data} onVolver={() => setVista('dashboard')} onActualizar={(p) => withSync(() => db.reemplazarPersonal(p))} onRecargar={recargar} onAbrirPerfil={(p) => { setPerfilViendo(p); setVista('perfilPersona'); }} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'perfilPersona' && perfilViendo && <MiPerfil usuario={usuario} persona={perfilViendo} soloLectura={false} onVolver={() => setVista('personal')} onGuardar={(campos) => withSync(async () => { await db.guardarPerfil(perfilViendo.id, campos); const d = await db.loadAllData(); const actualizada = d.personal.find(p => p.id === perfilViendo.id); if (actualizada) setPerfilViendo(actualizada); })} />}
         {esAdmin && vista === 'sistemas' && <GestionSistemas sistemas={data.sistemas} config={data.config} dataGlobal={data} onVolver={() => setVista('dashboard')} onActualizarSistemas={(s) => withSync(() => db.guardarSistemas(s))} onActualizarConfig={(c) => withSync(() => db.guardarConfig(c))} />}
@@ -5150,6 +5151,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
   const [modalEditar, setModalEditar] = useState(false);
   const [modalReporte, setModalReporte] = useState(false);
   const [modalReporteFinal, setModalReporteFinal] = useState(false); // v8.27.79
+  const [modalGarantia, setModalGarantia] = useState(false); // v8.71.0
   const [modalPausa, setModalPausa] = useState(false); // v8.9.13
   const [modalCubicaciones, setModalCubicaciones] = useState(false); // v8.19.98
   const pausaActiv = pausaActiva(proyecto);
@@ -5201,6 +5203,10 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
           {esAdmin && <button onClick={() => setModalReporte(true)} className="text-xs text-zinc-400 hover:text-red-500 flex items-center gap-1"><FileText className="w-3 h-3" /> Reporte PDF</button>}
           {/* v8.27.79: acta de entrega / cierre de obra */}
           {esAdmin && <button onClick={() => setModalReporteFinal(true)} className="text-xs text-zinc-400 hover:text-green-500 flex items-center gap-1"><CircleCheck className="w-3 h-3" /> Reporte final</button>}
+          {/* v8.71.0: carta de garantía desde la obra — borrador siempre, original contra el saldo. */}
+          {esAdmin && ['finalizado_no_entregado', 'finalizado_recibido_conforme', 'facturado', 'cobrado'].includes(proyecto.estado) && (
+            <button onClick={() => setModalGarantia(true)} className="text-xs text-zinc-400 hover:text-green-500 flex items-center gap-1"><ShieldCheck className="w-3 h-3" /> Carta de garantía</button>
+          )}
           {esAdmin && !pausaActiv && <button onClick={() => setModalPausa(true)} className="text-xs text-zinc-400 hover:text-yellow-500 flex items-center gap-1">⏸️ Pausar</button>}
           {esAdmin && <button onClick={() => setModalEditar(true)} className="text-xs text-zinc-400 hover:text-red-500 flex items-center gap-1"><Edit2 className="w-3 h-3" /> Editar</button>}
         </div>
@@ -5216,6 +5222,7 @@ function DetalleProyecto({ usuario, proyecto, data, tab, setTab, onVolver, onAct
       {modalEditar && <ModalEditarProyecto proyecto={proyecto} data={data} usuario={usuario} onCerrar={() => setModalEditar(false)} onGuardar={onActualizarProyecto} onArchivar={onArchivarProyecto} onEliminar={onEliminarProyecto} />}
       {modalReporte && <ModalReporteAvancePDF proyecto={proyecto} sistema={sistema} data={data} usuario={usuario} onCerrar={() => setModalReporte(false)} />}
       {modalReporteFinal && <ModalReporteFinalPDF proyecto={proyecto} sistema={sistema} data={data} usuario={usuario} onCerrar={() => setModalReporteFinal(false)} />}
+      {modalGarantia && <ModalEntregaGarantia proyecto={proyecto} sistema={sistema} data={data} usuario={usuario} onCambio={onRecargar} onCerrar={() => setModalGarantia(false)} />}
       {modalCubicaciones && <CubicacionesProyecto proyecto={proyecto} usuario={usuario} esAdmin={esAdmin} data={data} onCerrar={() => setModalCubicaciones(false)} onRecargar={onRecargar} />}
       {modalPausa && <ModalPausarProyecto proyecto={proyecto} onCerrar={() => setModalPausa(false)} onConfirmar={async (fechaInicio, motivo) => {
         const nuevasPausas = [...(proyecto.pausas || []), {
@@ -11806,7 +11813,7 @@ function ModalCambiarEstado({ proyecto, usuario, personal, sistema, onCerrar, on
 // ============================================================
 // v8.58.0: contenedor de Programas — carga la campaña y sus locaciones con la etapa
 // ya derivada del levantamiento y la obra.
-function PantallaProgramas({ usuario, onVolver, onAbrirProyecto }) {
+function PantallaProgramas({ usuario, data, onVolver, onAbrirProyecto }) {
   const [programas, setProgramas] = useState([]);
   const [sel, setSel] = useState(null);
   const [locaciones, setLocaciones] = useState([]);
@@ -11843,7 +11850,7 @@ function PantallaProgramas({ usuario, onVolver, onAbrirProyecto }) {
           ))}
         </div>
       )}
-      <VistaPrograma programa={sel} locaciones={locaciones} usuario={usuario} onVolver={onVolver}
+      <VistaPrograma programa={sel} locaciones={locaciones} usuario={usuario} data={data} onVolver={onVolver}
         onRecargar={() => cargar(sel)} onAbrirProyecto={onAbrirProyecto} />
     </div>
   );

@@ -4,7 +4,7 @@
 // Ejecutar desde la raíz:  node tests/superficie-obra.test.mjs
 
 import assert from 'node:assert/strict';
-import { superficieRealObra } from '../lib/helpers/calculos.js';
+import { superficieRealObra, esSistemaAuxiliar, m2SistemaGarantizado } from '../lib/helpers/calculos.js';
 
 let ok = 0; const fallos = [];
 const caso = (n, fn) => { try { fn(); ok++; } catch (e) { fallos.push(`${n}: ${e.message}`); } };
@@ -81,6 +81,33 @@ caso('m² en texto se interpreta como número', () => {
 });
 caso('no se rompe con áreas nulas en la lista', () => {
   assert.equal(superficieRealObra([null, { nombre: 'A', m2: 10 }, undefined]), 10);
+});
+
+// --- v8.72.2: sistemas auxiliares y m² del sistema garantizado --------------------------
+const SIS = {
+  s_1776642312281: { nombre: 'Silicona Sobre Lona Asfaltica', tareas: [{ nombre: 'Reparaciones Lona Asfáltica' }, { nombre: 'Sellado Puntos Singulares' }, { nombre: 'Aplicacion de Bleed Blocker' }, { nombre: 'Aplicar Silicona' }] },
+  s_1776801452956: { nombre: 'Lavado a Presion', tareas: [{ nombre: 'Lavado ' }] },
+};
+caso('esSistemaAuxiliar: lavado sí, silicona no', () => {
+  assert.equal(esSistemaAuxiliar(SIS.s_1776801452956), true);
+  assert.equal(esSistemaAuxiliar(SIS.s_1776642312281), false);
+  assert.equal(esSistemaAuxiliar({ nombre: 'Prep. techo', tareas: [{ nombre: 'Limpieza de superficie' }] }), true, 'una sola tarea de limpieza');
+  assert.equal(esSistemaAuxiliar({ nombre: 'Poliuretano', tareas: [{ nombre: 'Limpieza' }, { nombre: 'Aplicar PU' }] }), false, 'varias tareas: sistema real');
+  assert.equal(esSistemaAuxiliar({ data: { nombre: 'Lavado a Presion' } }), true, 'fila cruda con data');
+  assert.equal(esSistemaAuxiliar({ nombre: 'Limpieza y Sellado de juntas.' }), false, 'sellado es trabajo real');
+  assert.equal(esSistemaAuxiliar({ nombre: 'Limpieza y Bote' }), true);
+  assert.equal(esSistemaAuxiliar(null), false);
+});
+caso('superficieRealObra con sistemas: el lavado no suma aunque el área se llame distinto', () => {
+  const areas = [{ nombre: 'Techo', m2: 249.6, sistemaId: 's_1776642312281' }, { nombre: 'Techo (lavado)', m2: 249.6, sistemaId: 's_1776801452956' }];
+  assert.equal(superficieRealObra(areas), 499.2, 'sin sistemas no sabe');
+  assert.equal(superficieRealObra(areas, SIS), 249.6);
+  assert.equal(superficieRealObra([{ nombre: 'Techo', m2: 80, sistemaId: 's_1776801452956' }], SIS), 80, 'obra que solo es lavado');
+});
+caso('m2SistemaGarantizado: ST-C5759 silicona = 249.6', () => {
+  assert.equal(m2SistemaGarantizado(C5759, 's_1776642312281'), 249.6);
+  assert.equal(m2SistemaGarantizado(C5759, 's_otro', SIS), 249.6, 'sin áreas del sistema: superficie real');
+  assert.equal(m2SistemaGarantizado([{ nombre: 'A', m2: 100, sistemaId: 'x' }, { nombre: 'B', m2: 40, sistemaId: 'y' }], 'x'), 100);
 });
 
 console.log(`\nsuperficie-obra: ${ok} ok, ${fallos.length} fallas`);

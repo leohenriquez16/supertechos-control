@@ -10,7 +10,7 @@
 import React, { useState } from 'react';
 import { X, Loader2, FileText } from 'lucide-react';
 import * as db from '../../../lib/db';
-import { superficieRealObra } from '../../../lib/helpers/calculos';
+import { superficieRealObra, esSistemaAuxiliar } from '../../../lib/helpers/calculos';
 import { formatFechaLarga, formatNum } from '../../../lib/helpers/formato';
 
 const tieneRol = (p, r) => p?.roles?.includes(r);
@@ -51,7 +51,8 @@ export default function ModalReporteFinalPDF({ proyecto, sistema, data, usuario,
   const duracionDias = fechaInicio ? Math.max(1, Math.round((new Date(fechaFinTrabajo) - new Date(fechaInicio)) / 86400000) + 1) : null;
 
   // v8.70.0: superficie real (una superficie con dos sistemas no son dos techos).
-  const m2TotalProyecto = superficieRealObra(proyecto.areas);
+  // v8.72.2: además, sin las áreas de sistemas auxiliares (lavado a presión sobre el mismo techo).
+  const m2TotalProyecto = superficieRealObra(proyecto.areas, data.sistemas || {});
   // sistemas usados (para garantía por sistema)
   const sistemaIds = [...new Set([proyecto.sistema, ...(proyecto.areas || []).map(a => a.sistemaId).filter(Boolean)])].filter(Boolean);
   const sistemasUsados = sistemaIds.map(id => ({ id, ...(data.sistemas?.[id] || {}) })).filter(s => s.nombre);
@@ -134,7 +135,9 @@ export default function ModalReporteFinalPDF({ proyecto, sistema, data, usuario,
         const sis = data.sistemas?.[a.sistemaId || proyecto.sistema];
         nuevaPagSi(12);
         doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(24, 24, 27);
-        doc.text(`• ${a.nombre || 'Área'} — ${formatNum(a.m2 || 0)} m² · ${sis?.nombre || ''}`, M, y); y += 4.6;
+        // v8.72.2: el lavado se lista como preparación de la misma superficie, para que no se lea como otro techo.
+        const aux = esSistemaAuxiliar(sis);
+        doc.text(`• ${a.nombre || 'Área'} — ${aux ? 'preparación de la superficie' : `${formatNum(a.m2 || 0)} m²`} · ${sis?.nombre || ''}`, M, y); y += 4.6;
         const tareas = (sis?.tareas || []).map(t => t.nombre).filter(Boolean);
         if (tareas.length) texto(`Trabajos: ${tareas.join(' → ')}.`, { size: 8.5, indent: 4, color: [82, 82, 91], gap: 2.5 });
       });

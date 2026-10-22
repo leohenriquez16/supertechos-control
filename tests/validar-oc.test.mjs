@@ -3,7 +3,7 @@
 // Ejecutar desde la raíz:  node tests/validar-oc.test.mjs
 
 import assert from 'node:assert/strict';
-import { validarOC, parsearRespuestaIA } from '../lib/helpers/validarOC.js';
+import { validarOC, parsearRespuestaIA, cuadrarMontoOC, codigoCoincide, esObraDelSitio, nombreSitioCoincide } from '../lib/helpers/validarOC.js';
 
 let ok = 0; const fallos = [];
 const caso = (n, fn) => { try { fn(); ok++; } catch (e) { fallos.push(`${n}: ${e.message}`); } };
@@ -46,10 +46,10 @@ caso('un archivo que no es OC NO pasa', () => {
   assert.equal(validarOC({ es_orden_compra: false }, almirante).ok, false);
   assert.equal(validarOC(null, almirante).ok, false);
 });
-caso('monto distinto a la cotización es aviso, no error', () => {
+caso('OC mayor que la cotización (partidas adicionales) es aviso, no error', () => {
   const r = validarOC(ocAlmirante(), { ...almirante, cotizacionMonto: 435683.84 });
   assert.equal(r.ok, true);
-  assert.match(r.avisos.join(' '), /difiere/);
+  assert.match(r.avisos.join(' '), /no cuadra/);
 });
 caso('Prouco también es proveedor válido', () => {
   assert.equal(validarOC({ ...ocAlmirante(), proveedor_rnc: '131515541' }, almirante).ok, true);
@@ -63,6 +63,68 @@ caso('lee el JSON aunque venga envuelto en markdown', () => {
 caso('OC cruda (sin firmar) pasa cuando la firma la pone el ERP', () => {
   const r = validarOC({ ...ocAlmirante(), firmada_proveedor: false }, almirante, { sinFirma: true });
   assert.equal(r.ok, true, r.errores.join(' | '));
+});
+
+// ── v8.72.2: OC con techo + pintura y códigos cortados por el SAP (ticket Miguel) ──
+const sanGeronimo = {
+  nombre: 'SAN GERÓNIMO UASD', codigoUt: 'DO-01-DN-00198-12', cotizacionRef: 'ST-C5759', cotizacionMonto: 411992.28,
+  obra: { referenciaOdoo: 'ST-C5759', valorCotizacion: 411992.28 },
+  cotizacionesSitio: [{ ref: 'ST-C5784', monto: 45265.41 }],
+};
+const ocSanGeronimo = (extra = {}) => ({
+  es_orden_compra: true, numero_oc: '4500150000', proveedor_rnc: '130774331', moneda: 'DOP',
+  sitios: [{ nombre: 'SITIO SAN GERONIMO UASD', codigo: 'DO-01-DN-00198-12' }],
+  partidas: [{ descripcion: 'Impermeabilización techo', monto: 411992.28 }, { descripcion: 'Pintura', monto: 45265.41 }],
+  subtotal: 457257.69, impuestos: 82306.38, total: 539564.07, ...extra,
+});
+caso('OC techo + pintura que suma las dos cotizaciones → acepta', () => {
+  const r = validarOC(ocSanGeronimo(), sanGeronimo, { sinFirma: true });
+  assert.equal(r.ok, true, r.errores.join(' | '));
+  assert.match(r.avisos.join(' '), /ST-C5759 \+ ST-C5784/);
+});
+caso('OC techo + pintura sin conocer la cotización de pintura: la partida del techo cuadra → acepta', () => {
+  const r = validarOC(ocSanGeronimo(), { ...sanGeronimo, cotizacionesSitio: [] }, { sinFirma: true });
+  assert.equal(r.ok, true, r.errores.join(' | '));
+  assert.match(r.avisos.join(' '), /partida/);
+});
+caso('OC menor que lo cotizado → rechaza con lo esperado y lo leído', () => {
+  const r = validarOC(ocSanGeronimo({ subtotal: 300000, partidas: [{ descripcion: 'Techo', monto: 300000 }] }), sanGeronimo, { sinFirma: true });
+  assert.equal(r.ok, false);
+  assert.match(r.errores.join(' '), /menor que lo cotizado/);
+  assert.match(r.errores.join(' '), /300,000\.00/);
+  assert.match(r.errores.join(' '), /411,992\.28/);
+});
+caso('cuadrarMontoOC: sin cotizaciones no opina; el monto exacto de una sola pasa', () => {
+  assert.equal(cuadrarMontoOC({ subtotal: 1000 }, []).ok, null);
+  assert.equal(cuadrarMontoOC({ subtotal: 261765 }, [{ ref: 'ST-C5775', montos: [261765, 308882.7] }]).ok, true);
+});
+caso('código cortado por el SAP → acepta (con aviso)', () => {
+  const sanCarlos = { nombre: 'SAN CARLOS', codigoUt: 'DO-01-DN-00097-08', cotizacionMonto: 261765 };
+  const oc = { ...ocSanGeronimo(), sitios: [{ nombre: 'SITIO SAN CARLOS CELDA-DO-01-DN-0009', codigo: 'DO-01-DN-00097-0' }], subtotal: 261765, partidas: [] };
+  const r = validarOC(oc, sanCarlos, { sinFirma: true });
+  assert.equal(r.ok, true, r.errores.join(' | '));
+  assert.match(r.avisos.join(' '), /cortado/);
+  // código nulo pero viene dentro del nombre cortado
+  const oc2 = { ...oc, sitios: [{ nombre: 'SITIO SAN CARLOS CELDA-DO-01-DN-00097', codigo: null }] };
+  assert.equal(validarOC(oc2, sanCarlos, { sinFirma: true }).ok, true);
+  assert.equal(codigoCoincide('DO01DN00097', 'DO-01-DN-00097-08'), true);
+  assert.equal(codigoCoincide('DO-01-DN-0009', 'DO-01-DN-00097-08'), false, 'muy corto: ambiguo');
+});
+caso('código de otra antena → rechaza', () => {
+  const r = validarOC({ ...ocSanGeronimo(), sitios: [{ nombre: 'SITIO SAN CARLOS', codigo: 'DO-01-DN-00097-08' }] }, sanGeronimo, { sinFirma: true });
+  assert.equal(r.ok, false);
+  assert.match(r.errores.join(' '), /otro sitio/);
+  assert.equal(codigoCoincide('DO-01-DN-00099-08', 'DO-01-DN-00097-08'), false);
+  assert.equal(codigoCoincide('DO-01-DN-00097-09', 'DO-01-DN-00097-08'), false);
+});
+caso('nombre del sitio cortado coincide por prefijo', () => {
+  assert.equal(nombreSitioCoincide('SITIO RESIDENCIAL PRIMAVERA STO', 'RESIDENCIAL PRIMAVERA STO DGO ESTE'), true);
+  assert.equal(nombreSitioCoincide('SITIO LOS PRADITOS', 'SAN CARLOS'), false);
+});
+caso('esObraDelSitio: la obra de pintura del mismo sitio, por nombre o por código', () => {
+  assert.equal(esObraDelSitio({ nombre: 'Servicio de Pintura San Geronimo' }, sanGeronimo), true);
+  assert.equal(esObraDelSitio({ nombre: 'Antena Urbanización Fernández DO-01-DN-00135-09' }, { nombre: 'URB. FERNANDEZ (STO. DGO.)', codigoUt: 'DO-01-DN-00135-09' }), true);
+  assert.equal(esObraDelSitio({ nombre: 'Antena Los Praditos DO-01-DN-00170-11' }, sanGeronimo), false);
 });
 
 console.log(`\n${ok} pasadas, ${fallos.length} fallidas`);

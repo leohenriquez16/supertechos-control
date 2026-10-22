@@ -53,7 +53,11 @@ export default function ModalEntregaGarantia({ proyecto, sistema, data, usuario,
 
   const garantiaExistente = (data?.garantias || []).find(g => g.proyectoId === proyecto.id) || null;
   const clienteNombre = proyecto.cliente || (data?.clientes || []).find(c => c.id === proyecto.clienteId)?.nombre || '';
-  const tipo = garantiaExistente?.tipo || tipoSugeridoParaSistema(sistema?.nombre || sistema?.data?.nombre || '');
+  // v8.72.0: tipoSugeridoParaSistema lee sistema.data.nombre / sistema.nombre / su id, así que
+  // recibe el OBJETO. Pasándole el nombre suelto, ningún campo resolvía, el nombre quedaba vacío
+  // y devolvía siempre 'imper_liquida': una carta de silicona sobre lona, de piso epóxico o de un
+  // simple lavado salía garantizando estanqueidad de impermeabilización líquida.
+  const tipo = garantiaExistente?.tipo || tipoSugeridoParaSistema(sistema);
   const cat = getTipoGarantia(tipo);
 
   // Garantía "de mentira" para que el borrador se vea igual que la carta buena.

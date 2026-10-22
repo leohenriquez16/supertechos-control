@@ -127,5 +127,18 @@ caso('esObraDelSitio: la obra de pintura del mismo sitio, por nombre o por códi
   assert.equal(esObraDelSitio({ nombre: 'Antena Los Praditos DO-01-DN-00170-11' }, sanGeronimo), false);
 });
 
+// v8.72.4: La Fuente — el SAP cortó el código a 10 caracteres (DO-03-SG-0099).
+const laFuente = { nombre: 'LA FUENTE ZONA NORTE', codigoUt: 'DO-03-SG-00995-13', cotizacionMonto: 434613.78 };
+const ocFuente = (sitio) => ({ ...ocAlmirante(), numero_oc: '4500153193', subtotal: 434613.78, total: 512844.26,
+  sitios: [{ nombre: sitio, codigo: 'DO-03-SG-0099' }] });
+caso('código cortado a 10 + nombre del sitio igual → pasa', () => {
+  const r = validarOC(ocFuente('SITIO LA FUENTE ZONA NORTE'), laFuente, { sinFirma: true });
+  assert.equal(r.ok, true, r.errores.join(' | '));
+});
+caso('código cortado a 10 pero nombre de otro sitio → no pasa', () => {
+  const r = validarOC(ocFuente('SITIO LOS ALCARRIZOS'), laFuente, { sinFirma: true });
+  assert.equal(r.ok, false);
+});
+
 console.log(`\n${ok} pasadas, ${fallos.length} fallidas`);
 if (fallos.length) { fallos.forEach(f => console.log('  ✗ ' + f)); process.exit(1); }

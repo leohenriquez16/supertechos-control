@@ -59,12 +59,18 @@ export default function ModalEntregaGarantia({ proyecto, sistema, data, usuario,
   // simple lavado salía garantizando estanqueidad de impermeabilización líquida.
   const tipo = garantiaExistente?.tipo || tipoSugeridoParaSistema(sistema);
   const cat = getTipoGarantia(tipo);
+  // v8.72.3: la duración la decide quien emite. Default: la del sistema; Towers and Sites
+  // va a 10 años (todas sus obras están en un mismo contrato); si no, la del tipo.
+  const esTowers = /towers\s*(and|&)?\s*sites/i.test(`${proyecto.cliente || ''} ${proyecto.nombre || ''} ${clienteNombre}`);
+  const mesesDefault = sistema?.garantia_meses || sistema?.garantiaMeses || (esTowers ? 120 : null) || cat?.duracionMeses || null;
+  const [anos, setAnos] = useState(mesesDefault ? String(mesesDefault / 12) : '');
+  const mesesElegidos = Math.round((parseFloat(anos) || 0) * 12) || null;
 
   // Garantía "de mentira" para que el borrador se vea igual que la carta buena.
   const garantiaBorrador = {
     ...(garantiaExistente || {}),
     tipo, sistemaNombre: sistema?.nombre || sistema?.data?.nombre || garantiaExistente?.sistemaNombre || '',
-    duracionMeses: garantiaExistente?.duracionMeses || cat?.duracionMeses || null,
+    duracionMeses: garantiaExistente?.duracionMeses || mesesElegidos,
     cobertura: garantiaExistente?.cobertura || cat?.cobertura || '',
     condicion: garantiaExistente?.condicion || cat?.condicion || '',
     referenciaCotizacion: proyecto.referenciaOdoo || '',
@@ -78,7 +84,7 @@ export default function ModalEntregaGarantia({ proyecto, sistema, data, usuario,
       const creada = garantiaExistente || await db.crearGarantiaDesdeProyecto(proyecto, sistema, {
         fechaInicio: estado?.fechaEntrega || undefined, tipo,
         cobertura: cat?.cobertura || null, condicion: cat?.condicion || null,
-        duracionMeses: cat?.duracionMeses || null,
+        duracionMeses: mesesElegidos,
       });
       await onCambio?.();
       setCarta({ garantia: creada || garantiaBorrador, borrador: false });
@@ -147,6 +153,14 @@ export default function ModalEntregaGarantia({ proyecto, sistema, data, usuario,
                 <div className="text-[11px] text-zinc-400 bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2">
                   Esta obra ya tiene su garantía emitida{garantiaExistente.fechaInicio ? <> desde el {fmtF(garantiaExistente.fechaInicio)}</> : null}.
                 </div>
+              )}
+
+              {!garantiaExistente && (
+                <label className="flex items-center justify-between gap-2 text-xs text-zinc-300 bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2">
+                  <span>Años de garantía{esTowers ? <span className="text-[10px] text-zinc-500"> · contrato Towers and Sites</span> : null}</span>
+                  <input type="number" min="0" step="0.5" inputMode="decimal" value={anos} onChange={e => setAnos(e.target.value)}
+                    className="w-20 bg-zinc-900 border border-zinc-700 rounded-card px-2 py-1 text-right text-white" />
+                </label>
               )}
 
               <div className="space-y-2 pt-1">

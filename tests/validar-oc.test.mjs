@@ -140,5 +140,17 @@ caso('código cortado a 10 pero nombre de otro sitio → no pasa', () => {
   assert.equal(r.ok, false);
 });
 
+// v8.72.5: FIGECA — el código viene con el nombre pegado.
+caso('código con el nombre pegado (FIGECA-DO-01-DN-00039-01) → pasa', () => {
+  const oc = { ...ocAlmirante(), numero_oc: '4500153208', sitios: [{ nombre: 'SITIO FIGECA', codigo: 'FIGECA-DO-01-DN-00039-01' }] };
+  const r = validarOC(oc, { nombre: 'FIGECA', codigoUt: 'DO-01-DN-00039-01' }, { sinFirma: true });
+  assert.equal(r.ok, true, r.errores.join(' | '));
+});
+caso('nombre pegado pero código de otro sitio → no pasa', () => {
+  const oc = { ...ocAlmirante(), numero_oc: '4500153208', sitios: [{ nombre: 'SITIO FIGECA', codigo: 'FIGECA-DO-01-DN-00040-01' }] };
+  const r = validarOC(oc, { nombre: 'FIGECA', codigoUt: 'DO-01-DN-00039-01' }, { sinFirma: true });
+  assert.equal(r.ok, false);
+});
+
 console.log(`\n${ok} pasadas, ${fallos.length} fallidas`);
 if (fallos.length) { fallos.forEach(f => console.log('  ✗ ' + f)); process.exit(1); }

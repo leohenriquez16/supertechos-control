@@ -7,6 +7,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { ArrowLeft, Loader2, ShieldCheck, MapPin, Search, Calendar, Check, MessageCircle, Wrench, ChevronDown, Building2, Users } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatNum } from '../../lib/helpers/formato';
+import { m2SistemaGarantizado } from '../../lib/helpers/calculos'; // v8.72.2
 import { getTipoGarantia, serviciosDeTipo } from '../../lib/garantiasCatalogo';
 import MapaLeaflet from '../common/MapaLeaflet';
 import ModalCartaGarantia from './ModalCartaGarantia'; // v8.50.0: carta de garantía PDF
@@ -167,7 +168,7 @@ export default function VistaGarantias({ data, usuario, onVolver, onVerProyecto 
               <BadgeEstado estado={g.estado} />
               {tipo && <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-zinc-800 text-zinc-300 border border-zinc-700">{tipo.nombre}</span>}
             </div>
-            <div className="text-xs text-zinc-400 mt-0.5 ml-5">{g.sistemaNombre || 'Sistema —'}{u?.nombre ? ` · ${u.nombre}` : ''}{g.m2 ? ` · ${formatNum(g.m2)} m²` : ''}</div>
+            <div className="text-xs text-zinc-400 mt-0.5 ml-5">{g.sistemaNombre || 'Sistema —'}{u?.nombre ? ` · ${u.nombre}` : ''}{(() => { const pr = proyById(g.proyectoId); const m2 = pr?.areas?.length ? m2SistemaGarantizado(pr.areas, g.sistemaId || pr.sistema) : g.m2; return m2 ? ` · ${formatNum(m2)} m²` : ''; })()}</div>
             <div className="text-[10px] text-zinc-500 mt-0.5 ml-5">Inicio {fmtFecha(g.fechaInicio)} · Vence {fmtFecha(g.fechaVencimiento)}{d != null && d >= 0 && <span className={d <= 60 ? 'text-amber-400' : ''}> · faltan {d} días</span>}{d != null && d < 0 && <span className="text-red-400"> · venció hace {Math.abs(d)} días</span>}</div>
           </button>
           {g.proyectoId && onVerProyecto && <button onClick={() => { const p = proyById(g.proyectoId); if (p) onVerProyecto(p); }} className="text-[10px] text-red-400 hover:underline shrink-0">Ver proyecto →</button>}

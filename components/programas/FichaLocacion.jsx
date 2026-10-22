@@ -67,7 +67,10 @@ export default function FichaLocacion({ locacion: l, usuario, onCerrar, onCambio
       const datos = parsearRespuestaIA(await resp.text());
       if (!datos) throw new Error('No se pudo leer la OC. Intenta de nuevo.');
       const usadas = await db.numerosOCPrograma(l.programaId, l.id);
-      const validacion = validarOC(datos, l, { yaUsadas: usadas, sinFirma: true });
+      // v8.72.2: la OC puede traer techo + pintura: se cuadra contra todas las cotizaciones del sitio.
+      let cotizacionesSitio = [];
+      try { cotizacionesSitio = await db.cotizacionesDelSitio(l); } catch (e) { console.warn('cotizacionesDelSitio:', e?.message); }
+      const validacion = validarOC(datos, { ...l, cotizacionesSitio }, { yaUsadas: usadas, sinFirma: true });
       if (!validacion.ok) { setOc({ fase: 'rechazada', validacion }); return; }
       const firma = await db.obtenerFirmaPersona(usuario?.id);
       if (!firma) { setOc({ fase: 'sin_firma', validacion, original: file }); setRegistrarFirma(true); return; }

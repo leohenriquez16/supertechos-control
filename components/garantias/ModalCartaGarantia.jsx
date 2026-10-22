@@ -10,7 +10,7 @@
 import React, { useRef, useState } from 'react';
 import { X, FileDown, Loader2, ShieldCheck } from 'lucide-react';
 import { getTipoGarantia } from '../../lib/garantiasCatalogo';
-import { superficieRealObra } from '../../lib/helpers/calculos';
+import { m2SistemaGarantizado } from '../../lib/helpers/calculos';
 
 const cargarScriptCDN = (src) => new Promise((resolve, reject) => {
   if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
@@ -62,7 +62,8 @@ export default function ModalCartaGarantia({ garantia: g, clienteNombre, proyect
   // del fix tienen la suma de áreas, que duplica la superficie cuando un mismo techo
   // lleva dos sistemas (silicona + lavado). Así la carta sale bien al regenerarla, sin
   // tocar las que ya se emitieron. Si no hay obra a mano, se queda con lo guardado.
-  const m2Carta = proyecto?.areas?.length ? superficieRealObra(proyecto.areas) : g.m2;
+  // v8.72.2: solo las áreas del sistema garantizado (la silicona), no el lavado del mismo techo.
+  const m2Carta = proyecto?.areas?.length ? m2SistemaGarantizado(proyecto.areas, g.sistemaId || proyecto.sistema) : g.m2;
   // v8.68.0: si la fila no trae cobertura/condición, se toma la del tipo de garantía (catálogo).
   const tipoCat = getTipoGarantia(g.tipo);
   const cobertura = g.cobertura || tipoCat?.cobertura || '';

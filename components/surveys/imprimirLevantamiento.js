@@ -27,11 +27,15 @@ function cargarHtml2Canvas() {
   });
 }
 
-// Reemplaza cada URL http(s) de <img src="..."> por un data URI (base64) para que
-// el canvas no quede "tainted" por CORS al rasterizar. Todas las fuentes de imagen
-// (Supabase firmado, Mapbox, Yandex) permiten CORS. Si una falla, deja el src tal cual.
+// Reemplaza cada URL http(s) de <img src="..."> y de background-image:url('...') por un
+// data URI (base64) para que el canvas no quede "tainted" por CORS al rasterizar. Todas
+// las fuentes de imagen (Supabase firmado, Mapbox, Yandex) permiten CORS. Si una falla,
+// deja el src tal cual.
 async function inlineImagenes(html) {
-  const urls = [...new Set([...html.matchAll(/src="(https?:\/\/[^"]+)"/g)].map(m => m[1]))];
+  const urls = [...new Set([
+    ...[...html.matchAll(/src="(https?:\/\/[^"]+)"/g)].map(m => m[1]),
+    ...[...html.matchAll(/url\('(https?:\/\/[^']+)'\)/g)].map(m => m[1]), // v8.72.0: fotos con background-image
+  ])];
   for (const escapedUrl of urls) {
     const realUrl = escapedUrl.replace(/&amp;/g, '&');
     try {
@@ -131,11 +135,15 @@ function renderCampos(fields, data) {
   return `<div class="campos-grid">${items.map(x => `<div class="campo"><span class="campo-label">${esc(x.label)}</span><span class="campo-valor">${x.valor}</span></div>`).join('')}</div>`;
 }
 
+// v8.72.0: la miniatura va como background-image, no como <img>. html2canvas 1.4.1 no
+// implementa object-fit — dibuja la imagen entera estirada al tamaño del elemento — así que
+// una foto 4:3 en un recuadro de 249×110 salía 1.7 veces más ancha de lo que debe. De
+// background-size: cover sí sabe, y recorta en vez de deformar.
 function gridFotos(fotos) {
   if (!fotos || fotos.length === 0) return '';
   return `<div class="fotos">${fotos.map(f => `
     <figure>
-      <img src="${esc(f.url)}" />
+      <div class="foto" style="background-image:url('${esc(f.url)}')"></div>
       ${f.caption ? `<figcaption>${esc(f.caption)}</figcaption>` : ''}
     </figure>`).join('')}</div>`;
 }
@@ -242,10 +250,11 @@ export async function imprimirLevantamiento({ proyecto, site, visit, areas = [],
     .cabecera-visual { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; page-break-inside: avoid; }
     .cv-item { margin: 0; }
     .cv-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #777; margin-bottom: 3px; font-weight: 700; }
-    .cv-item img { width: 100%; height: 300px; object-fit: cover; border-radius: 8px; border: 1px solid #ddd; }
     /* v8.27.81: la foto de fachada LLENA el recuadro (cover). Se usa una altura
-       mayor (300px) para que una foto vertical se recorte lo menos posible. */
-    .cv-item img.cv-fachada { object-fit: cover; background: #f4f4f2; }
+       mayor (300px) para que una foto vertical se recorte lo menos posible.
+       v8.72.0: va como background-image porque html2canvas ignora object-fit. */
+    .cv-item .foto { width: 100%; height: 300px; background-size: cover; background-position: center;
+       background-repeat: no-repeat; background-color: #f4f4f2; border-radius: 8px; border: 1px solid #ddd; }
     .cv-ph { width: 100%; height: 300px; border: 1px dashed #ccc; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #999; font-size: 11px; background: #fafafa; text-align: center; }
     .resumen { display: flex; gap: 10px; margin-bottom: 16px; }
     .kpi { flex: 1; border: 1px solid #ddd; border-radius: 8px; padding: 8px 12px; }
@@ -265,11 +274,14 @@ export async function imprimirLevantamiento({ proyecto, site, visit, areas = [],
     .muted { color: #999; font-size: 11px; }
     .fotos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 6px; }
     .fotos figure { margin: 0; }
-    .fotos img { width: 100%; height: 110px; object-fit: cover; border-radius: 6px; border: 1px solid #ddd; }
+    .fotos .foto { width: 100%; height: 110px; background-size: cover; background-position: center;
+       background-repeat: no-repeat; background-color: #f4f4f5; border-radius: 6px; border: 1px solid #ddd; }
     .fotos figcaption { font-size: 9px; color: #777; margin-top: 2px; }
     .fotos-pano { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 6px; }
     .fotos-pano figure { margin: 0; page-break-inside: avoid; }
-    .fotos-pano img { width: 100%; height: auto; max-height: 420px; object-fit: contain; border-radius: 6px; border: 1px solid #ddd; background: #f4f4f5; }
+    /* La panorámica se queda como <img> con height:auto: sin alto fijo no hay nada que
+       deformar, y así conserva su proporción original sin recortar nada. */
+    .fotos-pano img { width: 100%; height: auto; max-height: 420px; border-radius: 6px; border: 1px solid #ddd; background: #f4f4f5; }
     .fotos-pano figcaption { font-size: 10px; color: #777; margin-top: 3px; text-align: center; }
     .footer { margin-top: 20px; padding-top: 8px; border-top: 1px solid #ccc; font-size: 9px; color: #999; text-align: center; }
     ${MEMBRETE_CSS}
@@ -294,11 +306,11 @@ export async function imprimirLevantamiento({ proyecto, site, visit, areas = [],
     <div class="cabecera-visual">
       <figure class="cv-item">
         <div class="cv-label">Fachada / frente</div>
-        ${fachadaUrl ? `<img class="cv-fachada" src="${esc(fachadaUrl)}" />` : `<div class="cv-ph">Sin foto de fachada</div>`}
+        ${fachadaUrl ? `<div class="foto cv-fachada" style="background-image:url('${esc(fachadaUrl)}')"></div>` : `<div class="cv-ph">Sin foto de fachada</div>`}
       </figure>
       <figure class="cv-item">
         <div class="cv-label">Ubicación</div>
-        ${mapaUrl ? `<img src="${esc(mapaUrl)}" />` : `<div class="cv-ph">${lat != null ? `${esc(lat)}, ${esc(lng)}` : 'Sin ubicación registrada'}</div>`}
+        ${mapaUrl ? `<div class="foto" style="background-image:url('${esc(mapaUrl)}')"></div>` : `<div class="cv-ph">${lat != null ? `${esc(lat)}, ${esc(lng)}` : 'Sin ubicación registrada'}</div>`}
       </figure>
     </div>
 

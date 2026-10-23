@@ -1,4 +1,4 @@
-import { claveBucket, empresaDe, desglosarProduccion, rangosComparables, variacionPeriodo, proyeccionMes, obrasSinProduccion } from '../lib/helpers/produccionDesglose.js';
+import { claveBucket, empresaDe, claveCliente, desglosarProduccion, rangosComparables, variacionPeriodo, proyeccionMes, obrasSinProduccion } from '../lib/helpers/produccionDesglose.js';
 let ok = 0, ko = 0;
 const t = (n, c, v) => { if (c) ok++; else { ko++; console.error('FALLA:', n, v ?? ''); } };
 const near = (a, b) => Math.abs(a - b) < 0.01;
@@ -59,3 +59,10 @@ t('alerta: solo en ejecución con 3+ días', al.map(o => o.id).join() === 'p2,p4
 t('alerta: sin reportes cuenta desde inicio', al[0].dias === 12 && al[0].ultima === null && al[0].supervisor === 'Sin supervisor');
 t('alerta: días y supervisor', al[1].dias === 4 && al[1].supervisor === 'Sup Uno');
 console.log(`${ok} pasadas, ${ko} fallidas`); if (ko) process.exit(1);
+
+// v8.73.1: por cliente
+{
+  const ok1 = claveCliente('TOWERS AND SITES DOMINICANA') === claveCliente('TOWERS AND SITES DOMINICANA SAS');
+  const ok2 = claveCliente('HERI2025 SRL, Luis Salvador') === 'HERI2025';
+  if (!ok1 || !ok2) { console.error('FALLA claveCliente', ok1, ok2); process.exitCode = 1; } else console.log('claveCliente ok');
+}

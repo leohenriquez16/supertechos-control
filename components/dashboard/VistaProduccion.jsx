@@ -271,7 +271,7 @@ export default function VistaProduccion({ usuario, data, onVolver }) {
 
       {/* v8.73.0: desglose del bucket seleccionado con pestañas */}
       {desglose && (() => {
-        const TABS = [['obra', 'Por obra', desglose.porObra], ['supervisor', 'Por supervisor', desglose.porSupervisor], ['maestro', 'Por maestro', desglose.porMaestro], ['sistema', 'Por sistema', desglose.porSistema], ['empresa', 'Por empresa', desglose.porEmpresa]];
+        const TABS = [['obra', 'Por obra', desglose.porObra], ['supervisor', 'Por supervisor', desglose.porSupervisor], ['maestro', 'Por maestro', desglose.porMaestro], ['sistema', 'Por sistema', desglose.porSistema], ['cliente', 'Por cliente', desglose.porCliente], ['empresa', 'Por empresa', desglose.porEmpresa]];
         const lista = (TABS.find(t => t[0] === tabDesglose) || TABS[0])[2];
         const maxG = Math.max(1, ...lista.map(g => g.rd));
         return (

@@ -11,8 +11,10 @@
 // (ids viejos), se reparte 1/nº de tareas del sistema del área (no infla).
 
 import { filasProduccion } from '../../lib/helpers/produccion';
+// v8.73.0: desglose por obra/supervisor/maestro/sistema/empresa, variación, proyección y alerta
+import { claveBucket, desglosarProduccion, variacionPeriodo, proyeccionMes, obrasSinProduccion } from '../../lib/helpers/produccionDesglose';
 import React, { useMemo, useState, useEffect } from 'react';
-import { ArrowLeft, TrendingUp, Filter } from 'lucide-react';
+import { ArrowLeft, TrendingUp, Filter, ChevronDown, ChevronRight, AlertTriangle, Info } from 'lucide-react';
 import { formatRD, formatNum, formatFechaCorta } from '../../lib/helpers/formato';
 import * as db from '../../lib/db'; // v8.42.3: medidor de consumo IA
 
@@ -25,20 +27,7 @@ const PERIODOS = [
 
 const hoyRD = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo' }).format(new Date());
 
-// Clave de bucket según el periodo
-function claveBucket(fecha, periodo) {
-  if (periodo === 'dia') return fecha;
-  if (periodo === 'mes') return fecha.slice(0, 7);
-  if (periodo === 'quincena') {
-    const dia = Number(fecha.slice(8, 10));
-    return `${fecha.slice(0, 7)}·Q${dia <= 15 ? 1 : 2}`;
-  }
-  // semana: lunes de esa semana
-  const d = new Date(fecha + 'T12:00:00');
-  const dow = (d.getDay() + 6) % 7; // lunes=0
-  d.setDate(d.getDate() - dow);
-  return d.toISOString().split('T')[0];
-}
+// v8.73.0: claveBucket vive en lib/helpers/produccionDesglose.js (con tests)
 function labelBucket(k, periodo) {
   if (periodo === 'dia') return formatFechaCorta(k);
   if (periodo === 'mes') return new Date(k + '-15T12:00:00').toLocaleDateString('es-DO', { month: 'short', year: '2-digit' });
@@ -53,6 +42,10 @@ export default function VistaProduccion({ usuario, data, onVolver }) {
   const [periodo, setPeriodo] = useState('dia');
   const [incluirRetro, setIncluirRetro] = useState(false);
   const [bucketSel, setBucketSel] = useState(null);
+  // v8.73.0: pestaña del desglose, obra expandida y alerta plegable
+  const [tabDesglose, setTabDesglose] = useState('obra');
+  const [obraAbierta, setObraAbierta] = useState(null);
+  const [verAlerta, setVerAlerta] = useState(false);
   // v8.42.3: consumo de IA (ultimos 14 dias)
   const [usoIA, setUsoIA] = useState([]);
   useEffect(() => {
@@ -122,20 +115,32 @@ export default function VistaProduccion({ usuario, data, onVolver }) {
     return acc;
   }, [visibles]);
 
-  // Desglose del bucket seleccionado
+  // v8.73.0: desglose completo del bucket seleccionado (cada pestaña suma el total del bucket)
   const desglose = useMemo(() => {
     if (!bucketSel) return null;
     const del = visibles.filter(f => claveBucket(f.fecha, periodo) === bucketSel);
-    const porProy = {}, porMaestro = {};
-    del.forEach(f => {
-      porProy[f.proyectoRef] = (porProy[f.proyectoRef] || 0) + f.rd;
-      const m = (data.personal || []).find(p => p.id === f.maestroId);
-      const nom = m?.nombre || 'Sin maestro';
-      porMaestro[nom] = (porMaestro[nom] || 0) + f.rd;
-    });
-    const top = (o) => Object.entries(o).sort((a, b) => b[1] - a[1]).slice(0, 10);
-    return { proyectos: top(porProy), maestros: top(porMaestro), total: del.reduce((s, f) => s + f.rd, 0) };
-  }, [bucketSel, visibles, periodo, data.personal]);
+    return desglosarProduccion(del, { proyectos: data.proyectos, personal: data.personal, sistemas: data.sistemas });
+  }, [bucketSel, visibles, periodo, data.proyectos, data.personal, data.sistemas]);
+
+  // v8.73.0: variación vs periodo anterior equivalente + promedio/proyección del mes
+  const comparativo = useMemo(() => {
+    const hoy = hoyRD();
+    const v = {};
+    ['dia', 'semana', 'quincena', 'mes'].forEach(p => { v[p] = variacionPeriodo(visibles, hoy, p); });
+    return { v, proy: proyeccionMes(visibles, hoy) };
+  }, [visibles]);
+
+  // v8.73.0: obras en ejecución sin producción hace 3+ días (cuenta cualquier reporte, atrasado o no)
+  const sinProduccion = useMemo(() => obrasSinProduccion(data.proyectos, filas, hoyRD(), { minDias: 3, personal: data.personal }), [data.proyectos, filas, data.personal]);
+
+  // v8.73.0: nombres para el detalle de reportes de una obra
+  const detalleReporte = (f) => {
+    const p = (data.proyectos || []).find(x => x.id === f.proyectoId);
+    const area = (p?.areas || []).find(a => a.id === f.areaId);
+    const tarea = (data.sistemas?.[f.sistemaId]?.tareas || []).find(t => t.id === f.tareaId);
+    const quien = f.reportadoPor || (data.personal || []).find(x => x.id === f.reportadoPorId)?.nombre || '—';
+    return { area: area?.nombre || area?.descripcion || '—', tarea: tarea?.nombre || tarea?.name || '—', quien };
+  };
 
   // Proyectos nuevos por mes + ticket
   const proyectosMes = useMemo(() => {
@@ -180,14 +185,62 @@ export default function VistaProduccion({ usuario, data, onVolver }) {
 
       {/* Resumen actual */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-        {[['Hoy', resumen.dia, resumen.diaSin], ['Esta semana', resumen.semana, resumen.semanaSin], ['Esta quincena', resumen.quincena, resumen.quincenaSin], ['Este mes', resumen.mes, resumen.mesSin]].map(([l, v, vs]) => (
-          <div key={l} className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
-            <div className="text-[10px] text-zinc-500 uppercase">{l}</div>
-            <div className="text-lg font-black text-green-400">{formatRD(v)}</div>
-            <div className="text-[10px] text-zinc-500">sin ITBIS {formatRD(vs || 0)}</div>
-          </div>
-        ))}
+        {[['Hoy', resumen.dia, resumen.diaSin, 'dia'], ['Esta semana', resumen.semana, resumen.semanaSin, 'semana'], ['Esta quincena', resumen.quincena, resumen.quincenaSin, 'quincena'], ['Este mes', resumen.mes, resumen.mesSin, 'mes']].map(([l, v, vs, p]) => {
+          const c = comparativo.v[p];
+          return (
+            <div key={l} className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
+              <div className="text-[10px] text-zinc-500 uppercase">{l}</div>
+              <div className="text-lg font-black text-green-400">{formatRD(v)}</div>
+              <div className="text-[10px] text-zinc-500">sin ITBIS {formatRD(vs || 0)}</div>
+              {/* v8.73.0: variación vs periodo anterior equivalente */}
+              <div className={`text-[10px] font-bold mt-0.5 ${c.pct == null ? 'text-zinc-600' : c.pct >= 0 ? 'text-green-500' : 'text-red-400'}`}
+                title={`${c.etiqueta}: ${formatRD(c.rdAnt)} (${formatFechaCorta(c.anterior[0])} – ${formatFechaCorta(c.anterior[1])})`}>
+                {c.pct == null ? `sin base vs ${c.etiqueta}` : `${c.pct >= 0 ? '+' : ''}${Math.round(c.pct * 100)}% vs ${c.etiqueta}`}
+              </div>
+            </div>
+          );
+        })}
       </div>
+
+      {/* v8.73.0: promedio por día hábil y proyección al cierre del mes */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3"
+          title="Día hábil = lunes a sábado transcurrido del mes (hasta hoy), haya o no producción. Un día sin reportes baja el promedio, porque es lo que pasó.">
+          <div className="text-[10px] text-zinc-500 uppercase flex items-center gap-1">Promedio por día hábil <Info className="w-3 h-3" /></div>
+          <div className="text-base font-black text-zinc-100">{formatRD(comparativo.proy.promedio)}</div>
+          <div className="text-[10px] text-zinc-500">sin ITBIS {formatRD(comparativo.proy.promedioSin)} · {comparativo.proy.habilesTranscurridos} días hábiles ({comparativo.proy.diasConProd} con producción)</div>
+        </div>
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3"
+          title="Promedio por día hábil × días hábiles (lunes a sábado) del mes completo.">
+          <div className="text-[10px] text-zinc-500 uppercase flex items-center gap-1">Proyección cierre del mes <Info className="w-3 h-3" /></div>
+          <div className="text-base font-black text-sky-400">{formatRD(comparativo.proy.proyeccion)}</div>
+          <div className="text-[10px] text-zinc-500">sin ITBIS {formatRD(comparativo.proy.proyeccionSin)} · a la fecha de hoy, {comparativo.proy.habilesMes} días hábiles</div>
+        </div>
+      </div>
+
+      {/* v8.73.0: alerta de obras en ejecución sin producción */}
+      {sinProduccion.length > 0 && (
+        <div className="bg-amber-950/30 border border-amber-800 rounded-card p-3">
+          <button onClick={() => setVerAlerta(!verAlerta)} className="w-full flex items-center gap-2 text-left text-xs font-bold text-amber-300">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span className="flex-1">{sinProduccion.length} obra{sinProduccion.length === 1 ? '' : 's'} en ejecución sin producción hace 3 días o más</span>
+            {verAlerta ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+          </button>
+          {verAlerta && (
+            <div className="mt-2 space-y-1">
+              {sinProduccion.map(o => (
+                <div key={o.id} className="flex items-center justify-between gap-2 text-xs bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1.5">
+                  <div className="min-w-0">
+                    <div className="truncate font-bold">{o.nombre}</div>
+                    <div className="text-[10px] text-zinc-500">{o.supervisor} · último reporte {o.ultima ? formatFechaCorta(o.ultima) : 'nunca'}</div>
+                  </div>
+                  <div className="text-amber-400 font-black shrink-0">{o.dias == null ? 'sin reportes' : `${o.dias} días`}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Selector de periodo + tabla */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 space-y-2">
@@ -202,7 +255,7 @@ export default function VistaProduccion({ usuario, data, onVolver }) {
         </div>
         <div className="space-y-1">
           {buckets.map(b => (
-            <button key={b.k} onClick={() => setBucketSel(bucketSel === b.k ? null : b.k)}
+            <button key={b.k} onClick={() => { setBucketSel(bucketSel === b.k ? null : b.k); setObraAbierta(null); }}
               className={`w-full text-left bg-zinc-950 border rounded-card px-2 py-1.5 ${bucketSel === b.k ? 'border-red-600' : 'border-zinc-800 hover:border-zinc-600'}`}>
               <div className="flex items-center justify-between text-xs gap-2">
                 <div className="font-bold capitalize w-24 shrink-0">{labelBucket(b.k, periodo)}</div>
@@ -216,24 +269,85 @@ export default function VistaProduccion({ usuario, data, onVolver }) {
         </div>
       </div>
 
-      {/* Desglose del bucket seleccionado */}
-      {desglose && (
-        <div className="grid md:grid-cols-2 gap-3">
-          {[['Por proyecto', desglose.proyectos], ['Por maestro', desglose.maestros]].map(([titulo, lista]) => (
-            <div key={titulo} className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
-              <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-2">{titulo} · {labelBucket(bucketSel, periodo)} · {formatRD(desglose.total)}</div>
-              <div className="space-y-1">
-                {lista.map(([nom, rd]) => (
-                  <div key={nom} className="flex justify-between text-xs">
-                    <span className="truncate">{nom}</span>
-                    <span className="font-bold text-green-400 shrink-0 ml-2">{formatRD(rd)}</span>
-                  </div>
-                ))}
+      {/* v8.73.0: desglose del bucket seleccionado con pestañas */}
+      {desglose && (() => {
+        const TABS = [['obra', 'Por obra', desglose.porObra], ['supervisor', 'Por supervisor', desglose.porSupervisor], ['maestro', 'Por maestro', desglose.porMaestro], ['sistema', 'Por sistema', desglose.porSistema], ['empresa', 'Por empresa', desglose.porEmpresa]];
+        const lista = (TABS.find(t => t[0] === tabDesglose) || TABS[0])[2];
+        const maxG = Math.max(1, ...lista.map(g => g.rd));
+        return (
+          <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 space-y-2">
+            <div className="flex items-start justify-between gap-2 flex-wrap">
+              <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold capitalize">Desglose · {labelBucket(bucketSel, periodo)}</div>
+              <div className="text-right">
+                <div className="text-sm font-black text-green-400">{formatRD(desglose.total)}</div>
+                <div className="text-[10px] text-zinc-500">sin ITBIS {formatRD(desglose.totalSin)} · {formatNum(desglose.m2)} m² · {desglose.reps} rep</div>
               </div>
             </div>
-          ))}
-        </div>
-      )}
+            <div className="flex gap-1 overflow-x-auto pb-1">
+              {TABS.map(([k, l, g]) => (
+                <button key={k} onClick={() => setTabDesglose(k)}
+                  className={`text-xs px-3 py-1.5 border whitespace-nowrap ${tabDesglose === k ? 'bg-red-600 border-red-600 text-white font-bold' : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'}`}>
+                  {l} <span className="opacity-60">({g.length})</span>
+                </button>
+              ))}
+            </div>
+            <div className="space-y-1">
+              {lista.map(g => {
+                const abierta = tabDesglose === 'obra' && obraAbierta === g.k;
+                return (
+                  <div key={g.k} className="bg-zinc-950 border border-zinc-800 rounded-card">
+                    <button disabled={tabDesglose !== 'obra'} onClick={() => setObraAbierta(abierta ? null : g.k)}
+                      className="w-full text-left px-2 py-1.5">
+                      <div className="flex items-center gap-2 text-xs">
+                        {tabDesglose === 'obra' && (abierta ? <ChevronDown className="w-3 h-3 shrink-0 text-zinc-500" /> : <ChevronRight className="w-3 h-3 shrink-0 text-zinc-500" />)}
+                        <div className="flex-1 min-w-0">
+                          <div className="truncate font-bold">{g.nombre}</div>
+                          <div className="text-[10px] text-zinc-500">
+                            {formatNum(g.m2)} m² · {g.reps} rep
+                            {tabDesglose === 'maestro' && <> · {g.nDias} día{g.nDias === 1 ? '' : 's'} · {formatRD(g.rdDia)}/día</>}
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="font-bold text-green-400">{formatRD(g.rd)}</div>
+                          <div className="text-[10px] text-zinc-500">sin ITBIS {formatRD(g.rdSin)}</div>
+                        </div>
+                        <div className="w-10 text-right text-[10px] text-zinc-400 shrink-0">{Math.round(g.pct * 100)}%</div>
+                      </div>
+                      <div className="h-1.5 bg-zinc-800 overflow-hidden mt-1"><div className="h-full bg-green-500/70" style={{ width: `${(g.rd / maxG) * 100}%` }} /></div>
+                    </button>
+                    {abierta && (
+                      <div className="border-t border-zinc-800 px-2 py-1.5 overflow-x-auto">
+                        <table className="w-full text-[11px] min-w-[560px]">
+                          <thead className="text-[10px] uppercase text-zinc-500">
+                            <tr><th className="text-left p-1">Fecha</th><th className="text-left p-1">Área</th><th className="text-left p-1">Tarea</th><th className="text-right p-1">m²</th><th className="text-right p-1">Precio m²</th><th className="text-right p-1">RD$</th><th className="text-left p-1">Reportó</th></tr>
+                          </thead>
+                          <tbody>
+                            {g.filas.map((f, i) => {
+                              const d = detalleReporte(f);
+                              return (
+                                <tr key={f.reporteId || i} className="border-t border-zinc-900">
+                                  <td className="p-1 whitespace-nowrap">{formatFechaCorta(f.fecha)}{f.retro ? ' ⏱' : ''}</td>
+                                  <td className="p-1 truncate max-w-[140px]">{d.area}</td>
+                                  <td className="p-1 truncate max-w-[140px]">{d.tarea}</td>
+                                  <td className="p-1 text-right">{formatNum(f.m2Util)}</td>
+                                  <td className="p-1 text-right text-zinc-400">{formatRD(f.precioM2)}</td>
+                                  <td className="p-1 text-right font-bold text-green-400">{formatRD(f.rd)}</td>
+                                  <td className="p-1 truncate max-w-[120px] text-zinc-400">{d.quien}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                        <div className="text-[10px] text-zinc-600 mt-1">m² útiles (con tope del área). Precio m² = precio de venta del área sin escalar; el RD$ ya va ponderado por el peso de la tarea y al valor cotizado. ⏱ = reporte atrasado.</div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Proyectos por mes + ticket */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">

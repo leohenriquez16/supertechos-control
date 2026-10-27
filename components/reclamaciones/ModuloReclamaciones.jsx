@@ -1018,7 +1018,8 @@ function ModalNuevaReclamacion({ data, usuario, ubicaciones, garantias, onCerrar
   const [odooCots, setOdooCots] = useState(null); // null=no buscado · []=sin resultados
   const [odooBuscando, setOdooBuscando] = useState(false);
 
-  const clientes = (data.clientes || []).filter(c => !c.archivado);
+  const [clientesNuevos, setClientesNuevos] = useState([]); // v8.74.1: creados aquí desde una cotización de Odoo
+  const clientes = [...(data.clientes || []).filter(c => !c.archivado), ...clientesNuevos];
   const cli = clientes.find(c => c.id === clienteId);
   const esEmpresa = cli && cli.tipo !== 'persona'; // v8.53.4: persona = el cliente es el contacto
   const clientePersonaLocalizable = cli && !esEmpresa && !!((cli.telefonoPrincipal || '').trim() || (cli.emailPrincipal || '').trim());
@@ -1078,8 +1079,15 @@ function ModalNuevaReclamacion({ data, usuario, ubicaciones, garantias, onCerrar
           <div>
             <div className="text-[10px] uppercase text-zinc-500 mb-1">Cliente</div>
             {/* v8.49.11 (ticket Edwin): buscador con sugerencias — el select plano no servía con cientos de clientes */}
-            <BuscadorCliente clientes={clientes} clienteId={clienteId}
-              onElegir={(id) => { setClienteId(id); setUbicacionId(''); setProyectoId(''); setContactoId(''); setTrabajoSel(null); setOdooAbierto(false); setOdooCots(null); }} />
+            <BuscadorCliente clientes={clientes} clienteId={clienteId} proyectos={data.proyectos || []}
+              onElegir={(id) => { setClienteId(id); setUbicacionId(''); setProyectoId(''); setContactoId(''); setTrabajoSel(null); setOdooAbierto(false); setOdooCots(null); }}
+              onClienteCreado={(c) => setClientesNuevos(cs => [...cs, c])}
+              onElegirCotizacion={(id, t) => {
+                // v8.74.1 (Leo): abrir por número de cotización — trae cliente y trabajo de una vez.
+                setClienteId(id); setUbicacionId(''); setContactoId(''); setOdooAbierto(false); setOdooCots(null);
+                if (t.tipo === 'erp') elegirTrabajoERP(t.proyecto);
+                else { setTrabajoSel({ tipo: 'odoo', ref: t.ref }); setProyectoId(''); }
+              }} />
           </div>
           {clienteId && (
             <>
@@ -1185,12 +1193,52 @@ function ModalNuevaReclamacion({ data, usuario, ubicaciones, garantias, onCerrar
 }
 
 // v8.49.11 (ticket Edwin): buscador de cliente con sugerencias en vivo.
-function BuscadorCliente({ clientes, clienteId, onElegir }) {
+// v8.74.1 (Leo): también por número de cotización — "5338" encuentra ST-C5338 (obra del ERP o, si es vieja, en Odoo).
+const normNombre = (s) => String(s || '').split(',')[0].normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase()
+  .replace(/[^A-Z0-9 ]+/g, ' ').replace(/\b(S ?R ?L|S ?A ?S|S ?A|EIRL)\b/g, ' ').replace(/\s+/g, ' ').trim();
+function BuscadorCliente({ clientes, clienteId, proyectos = [], onElegir, onElegirCotizacion, onClienteCreado }) {
   const elegido = clientes.find(c => c.id === clienteId);
   const [texto, setTexto] = useState('');
   const [foco, setFoco] = useState(false);
+  const [odoo, setOdoo] = useState(null); // cotizaciones de Odoo por número
   const q = texto.toLowerCase().trim();
+  const num = (q.match(/\d{3,}/) || [''])[0]; // "stc5338", "st-c5338" o "5338" → 5338
+  const esNumero = !!num;
   const sugerencias = q.length >= 2 ? clientes.filter(c => (c.nombre || '').toLowerCase().includes(q)).slice(0, 10) : [];
+  const cliPorId = new Map(clientes.map(c => [c.id, c]));
+  const obras = esNumero ? proyectos.filter(p => cliPorId.has(p.clienteId) && String(p.referenciaOdoo || '').includes(num)).slice(0, 8) : [];
+  const refsErp = new Set(obras.map(p => String(p.referenciaOdoo || '').toUpperCase()));
+  const cliDeOdoo = (c) => clientes.find(x => c.partnerId && x.odooPartnerId === c.partnerId)
+    || (normNombre(c.cliente) && clientes.find(x => normNombre(x.nombre) === normNombre(c.cliente))) || null;
+  const [creando, setCreando] = useState(false);
+  // Cotización vieja de un cliente que no está en el ERP: se crea con el nombre y el id de Odoo.
+  const elegirOdoo = async (c) => {
+    let cl = cliDeOdoo(c);
+    if (!cl) {
+      setCreando(true);
+      try {
+        cl = { id: 'cli_' + Date.now() + Math.random().toString(36).slice(2, 7), nombre: c.cliente, tipo: 'empresa', odooPartnerId: c.partnerId || null };
+        await db.crearCliente(cl);
+        onClienteCreado?.(cl);
+      } catch (e) { alert('No se pudo crear el cliente: ' + (e.message || e)); setCreando(false); return; }
+      setCreando(false);
+    }
+    onElegirCotizacion?.(cl.id, { tipo: 'odoo', ref: c.referencia });
+  };
+  const odooFuera = (odoo || []).filter(c => !refsErp.has(String(c.referencia).toUpperCase()));
+
+  useEffect(() => {
+    if (!esNumero || elegido) { setOdoo(null); return; }
+    let vivo = true;
+    const t = setTimeout(() => {
+      fetch(`/api/odoo/cotizaciones-cliente?q=${encodeURIComponent(num)}`).then(r => r.json())
+        .then(j => { if (vivo) setOdoo(j.ok ? j.cotizaciones.filter(c => String(c.referencia).includes(num)) : []); })
+        .catch(() => vivo && setOdoo([]));
+    }, 350);
+    return () => { vivo = false; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [num, !!elegido]);
+
   if (elegido) {
     return (
       <div className="flex items-center gap-2 bg-zinc-900 border-2 border-zinc-800 rounded-card px-3 py-2">
@@ -1199,19 +1247,37 @@ function BuscadorCliente({ clientes, clienteId, onElegir }) {
       </div>
     );
   }
+  const vacio = sugerencias.length === 0 && obras.length === 0 && (!esNumero || (odoo && odooFuera.length === 0));
   return (
     <div className="relative">
       <input value={texto} onChange={e => setTexto(e.target.value)} onFocus={() => setFoco(true)} onBlur={() => setTimeout(() => setFoco(false), 200)}
-        placeholder="Escribe el nombre del cliente…" autoFocus
+        placeholder="Nombre del cliente o número de cotización…" autoFocus
         className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm" />
       {foco && q.length >= 2 && (
-        <div className="absolute z-30 left-0 right-0 mt-1 bg-zinc-900 border border-zinc-700 rounded-card overflow-hidden shadow-pop max-h-56 overflow-y-auto">
-          {sugerencias.length === 0
-            ? <div className="px-3 py-2 text-xs text-zinc-500">Sin resultados para "{texto}".</div>
-            : sugerencias.map(c => (
-              <button key={c.id} onMouseDown={(e) => { e.preventDefault(); onElegir(c.id); }}
-                className="w-full text-left px-3 py-2 text-xs text-zinc-200 hover:bg-zinc-800 border-t border-zinc-800 first:border-t-0 truncate">{c.nombre}</button>
-            ))}
+        <div className="absolute z-30 left-0 right-0 mt-1 bg-zinc-900 border border-zinc-700 rounded-card overflow-hidden shadow-pop max-h-72 overflow-y-auto">
+          {obras.map(p => (
+            <button key={p.id} onMouseDown={(e) => { e.preventDefault(); onElegirCotizacion?.(p.clienteId, { tipo: 'erp', proyecto: p }); }}
+              className="w-full text-left px-3 py-2 text-xs text-zinc-200 hover:bg-zinc-800 border-t border-zinc-800 first:border-t-0">
+              <div className="font-bold truncate">{p.referenciaOdoo} · {cliPorId.get(p.clienteId)?.nombre}</div>
+              <div className="text-[10px] text-zinc-500 truncate">{p.nombre}</div>
+            </button>
+          ))}
+          {esNumero && odoo === null && <div className="px-3 py-2 text-[11px] text-zinc-500 border-t border-zinc-800 first:border-t-0">Buscando la cotización en Odoo…</div>}
+          {odooFuera.map(c => {
+            const cl = cliDeOdoo(c);
+            return (
+              <button key={c.referencia} disabled={creando} onMouseDown={(e) => { e.preventDefault(); elegirOdoo(c); }}
+                className="w-full text-left px-3 py-2 text-xs text-zinc-200 hover:bg-zinc-800 border-t border-zinc-800 first:border-t-0">
+                <div className="font-bold truncate">{c.referencia} · {c.cliente} <span className="text-[10px] text-sky-400">· Odoo</span></div>
+                <div className="text-[10px] text-zinc-500">{c.fecha} · RD$ {Number(c.monto).toLocaleString()}{!cl && <span className="text-amber-400"> · {creando ? 'creando el cliente…' : 'cliente nuevo en el ERP: se crea al elegir'}</span>}</div>
+              </button>
+            );
+          })}
+          {sugerencias.map(c => (
+            <button key={c.id} onMouseDown={(e) => { e.preventDefault(); onElegir(c.id); }}
+              className="w-full text-left px-3 py-2 text-xs text-zinc-200 hover:bg-zinc-800 border-t border-zinc-800 first:border-t-0 truncate">{c.nombre}</button>
+          ))}
+          {vacio && <div className="px-3 py-2 text-xs text-zinc-500">Sin resultados para "{texto}".</div>}
         </div>
       )}
     </div>

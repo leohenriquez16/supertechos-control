@@ -14,9 +14,11 @@ import { filasProduccion } from '../../lib/helpers/produccion';
 // v8.73.0: desglose por obra/supervisor/maestro/sistema/empresa, variación, proyección y alerta
 import { claveBucket, desglosarProduccion, variacionPeriodo, proyeccionMes, obrasSinProduccion } from '../../lib/helpers/produccionDesglose';
 import React, { useMemo, useState, useEffect } from 'react';
-import { ArrowLeft, TrendingUp, Filter, ChevronDown, ChevronRight, AlertTriangle, Info } from 'lucide-react';
+import { ArrowLeft, TrendingUp, Filter, ChevronDown, ChevronRight, AlertTriangle, Info, CalendarRange } from 'lucide-react';
 import { formatRD, formatNum, formatFechaCorta } from '../../lib/helpers/formato';
 import * as db from '../../lib/db'; // v8.42.3: medidor de consumo IA
+// v8.74.0: resumen mensual Aprobado vs Facturado vs Ejecutado (sin ITBIS)
+import { ejecutadoPorMes, armarResumenMensual } from '../../lib/helpers/resumenMensual';
 
 const PERIODOS = [
   { v: 'dia', label: 'Día', n: 15 },
@@ -46,6 +48,17 @@ export default function VistaProduccion({ usuario, data, onVolver }) {
   const [tabDesglose, setTabDesglose] = useState('obra');
   const [obraAbierta, setObraAbierta] = useState(null);
   const [verAlerta, setVerAlerta] = useState(false);
+  // v8.74.0: resumen mensual (Odoo se pide solo al abrir la sección)
+  const [verResumen, setVerResumen] = useState(false);
+  const [odooMes, setOdooMes] = useState({ estado: 'idle', meses: [], error: null });
+  const anioActual = Number(hoyRD().slice(0, 4));
+  useEffect(() => {
+    if (!verResumen || odooMes.estado !== 'idle') return;
+    setOdooMes(o => ({ ...o, estado: 'cargando' }));
+    fetch(`/api/odoo/resumen-mensual?anio=${anioActual}`).then(r => r.json())
+      .then(j => setOdooMes(j.ok ? { estado: 'ok', meses: j.meses, error: null, tasaUsd: j.tasaUsd } : { estado: 'error', meses: [], error: j.error }))
+      .catch(e => setOdooMes({ estado: 'error', meses: [], error: e.message }));
+  }, [verResumen, odooMes.estado, anioActual]);
   // v8.42.3: consumo de IA (ultimos 14 dias)
   const [usoIA, setUsoIA] = useState([]);
   useEffect(() => {
@@ -167,6 +180,13 @@ export default function VistaProduccion({ usuario, data, onVolver }) {
 
   const nRetro = filas.filter(f => f.retro).length;
 
+  // v8.74.0: une Odoo (aprobado/facturado) con lo ejecutado del ERP; respeta el toggle de atrasados
+  const resumenMensual = useMemo(() => {
+    if (odooMes.estado !== 'ok') return null;
+    const ej = ejecutadoPorMes(filas, data.proyectos || [], anioActual, { incluirRetro });
+    return armarResumenMensual(odooMes.meses, ej, { anio: anioActual, hastaMes: hoyRD().slice(0, 7) });
+  }, [odooMes, filas, data.proyectos, anioActual, incluirRetro]);
+
   return (
     <div className="p-4 md:p-6 max-w-5xl lg:max-w-7xl mx-auto space-y-5">
       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -216,6 +236,78 @@ export default function VistaProduccion({ usuario, data, onVolver }) {
           <div className="text-base font-black text-sky-400">{formatRD(comparativo.proy.proyeccion)}</div>
           <div className="text-[10px] text-zinc-500">sin ITBIS {formatRD(comparativo.proy.proyeccionSin)} · a la fecha de hoy, {comparativo.proy.habilesMes} días hábiles</div>
         </div>
+      </div>
+
+      {/* v8.74.0: resumen mensual Aprobado vs Facturado vs Ejecutado (sin ITBIS) */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
+        <button onClick={() => setVerResumen(!verResumen)} className="w-full flex items-center gap-2 text-left">
+          {verResumen ? <ChevronDown className="w-4 h-4 text-zinc-500" /> : <ChevronRight className="w-4 h-4 text-zinc-500" />}
+          <CalendarRange className="w-4 h-4 text-red-500" />
+          <span className="flex-1 text-[10px] tracking-widest uppercase text-zinc-400 font-bold">Resumen mensual {anioActual} · aprobado vs facturado vs ejecutado</span>
+          <span className="text-[10px] text-zinc-500">sin ITBIS</span>
+        </button>
+        {verResumen && (
+          <div className="mt-2">
+            {odooMes.estado === 'cargando' && <div className="text-xs text-zinc-500 italic py-4 text-center">Leyendo Odoo…</div>}
+            {odooMes.estado === 'error' && (
+              <div className="text-xs text-red-400 py-2">No se pudo leer Odoo: {odooMes.error}{' '}
+                <button onClick={() => setOdooMes({ estado: 'idle', meses: [], error: null })} className="underline text-zinc-300">Reintentar</button>
+              </div>
+            )}
+            {resumenMensual && (() => {
+              const M = (v) => (Math.abs(v) >= 1e3 ? `${(v / 1e6).toFixed(2)}M` : formatNum(v));
+              const th = 'p-1 text-right font-bold';
+              const fila = (k, etiqueta, x, total) => (
+                <tr key={k} className={`border-t ${total ? 'border-zinc-600 font-black' : 'border-zinc-800'}`}>
+                  <td className="p-1 capitalize sticky left-0 bg-zinc-900 whitespace-nowrap">{etiqueta}</td>
+                  <td className="p-1 text-right text-zinc-400">{M(x.aprobado.st)}</td>
+                  <td className="p-1 text-right text-zinc-400">{M(x.aprobado.pg)}</td>
+                  <td className="p-1 text-right font-bold text-zinc-100">{M(x.aprobado.total)}</td>
+                  <td className="p-1 text-right text-zinc-500">{x.aprobado.n}</td>
+                  <td className="p-1 text-right text-zinc-400 border-l border-zinc-800">{M(x.facturado.st)}</td>
+                  <td className="p-1 text-right text-zinc-400">{M(x.facturado.pg)}</td>
+                  <td className="p-1 text-right font-bold text-sky-400">{M(x.facturado.total)}</td>
+                  <td className="p-1 text-right text-zinc-400 border-l border-zinc-800">{M(x.ejecutado.st)}</td>
+                  <td className="p-1 text-right text-zinc-400">{M(x.ejecutado.pg)}</td>
+                  <td className="p-1 text-right font-bold text-green-400">{M(x.ejecutado.total)}</td>
+                  <td className={`p-1 text-right font-bold border-l border-zinc-800 ${x.diferencia > 0 ? 'text-amber-400' : 'text-zinc-500'}`}>{M(x.diferencia)}</td>
+                </tr>
+              );
+              return (
+                <>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-[11px] min-w-[760px]">
+                      <thead className="text-[10px] uppercase text-zinc-500">
+                        <tr>
+                          <th className="p-1 sticky left-0 bg-zinc-900" />
+                          <th colSpan={4} className="p-1 text-center text-zinc-300">Aprobado</th>
+                          <th colSpan={3} className="p-1 text-center text-sky-400 border-l border-zinc-800">Facturado</th>
+                          <th colSpan={3} className="p-1 text-center text-green-400 border-l border-zinc-800">Ejecutado</th>
+                          <th className="p-1 text-center text-amber-400 border-l border-zinc-800">Ejec. − Fact.</th>
+                        </tr>
+                        <tr>
+                          <th className="p-1 text-left sticky left-0 bg-zinc-900">Mes</th>
+                          <th className={th}>ST</th><th className={th}>PG</th><th className={th}>Total</th><th className={th}>#</th>
+                          <th className={`${th} border-l border-zinc-800`}>ST</th><th className={th}>PG</th><th className={th}>Total</th>
+                          <th className={`${th} border-l border-zinc-800`}>ST</th><th className={th}>PG</th><th className={th}>Total</th>
+                          <th className={`${th} border-l border-zinc-800`}>Sin facturar</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {resumenMensual.filas.map(x => fila(x.mes, new Date(x.mes + '-15T12:00:00').toLocaleDateString('es-DO', { month: 'short' }), x, false))}
+                        {fila('total', 'Total', resumenMensual.totales, true)}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="text-[10px] text-zinc-600 mt-2 space-y-0.5">
+                    <div>RD$ sin ITBIS, en millones. ST = Super Techos · PG = Prouco. # = cotizaciones aprobadas.</div>
+                    <div><b>Aprobado</b>: cotizaciones confirmadas en Odoo, por fecha de confirmación (las de USD a la tasa de hoy{odooMes.tasaUsd ? ` ${odooMes.tasaUsd}` : ''}). <b>Facturado</b>: facturas de venta publicadas en Odoo por fecha de factura, menos notas de crédito. <b>Ejecutado</b>: producción reportada en el ERP{incluirRetro ? ' (incluye atrasados)' : ' (sin reportes atrasados)'}; solo existe desde que se reporta en el ERP (abril 2026). <b>Sin facturar</b> = ejecutado − facturado; positivo = trabajo hecho que no se ha facturado.</div>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        )}
       </div>
 
       {/* v8.73.0: alerta de obras en ejecución sin producción */}
@@ -271,7 +363,7 @@ export default function VistaProduccion({ usuario, data, onVolver }) {
 
       {/* v8.73.0: desglose del bucket seleccionado con pestañas */}
       {desglose && (() => {
-        const TABS = [['obra', 'Por obra', desglose.porObra], ['supervisor', 'Por supervisor', desglose.porSupervisor], ['maestro', 'Por maestro', desglose.porMaestro], ['sistema', 'Por sistema', desglose.porSistema], ['empresa', 'Por empresa', desglose.porEmpresa]];
+        const TABS = [['obra', 'Por obra', desglose.porObra], ['supervisor', 'Por supervisor', desglose.porSupervisor], ['maestro', 'Por maestro', desglose.porMaestro], ['sistema', 'Por sistema', desglose.porSistema], ['cliente', 'Por cliente', desglose.porCliente], ['empresa', 'Por empresa', desglose.porEmpresa]];
         const lista = (TABS.find(t => t[0] === tabDesglose) || TABS[0])[2];
         const maxG = Math.max(1, ...lista.map(g => g.rd));
         return (

@@ -579,8 +579,16 @@ function ClasificarTrabajoReclamacion({ r, data, garantias, usuario, onGuardado 
   const [odooCots, setOdooCots] = useState(null);
   const [buscando, setBuscando] = useState(false);
   const [guardando, setGuardando] = useState(false);
-  const cli = (data.clientes || []).find(c => c.id === r.clienteId);
+  // v8.74.5 (Leo): buscar por número de cotización (de cualquier cliente) y, si la cotización
+  // salió a otro nombre, elegir si la reclamación pasa a ese cliente o se queda con el suyo.
+  const [num, setNum] = useState('');
+  const [elegida, setElegida] = useState(null); // { campos, etiqueta, clienteCot: {id?, nombre, partnerId?} }
+  const [nombreNuevo, setNombreNuevo] = useState('');
+  const clientes = data.clientes || [];
+  const cli = clientes.find(c => c.id === r.clienteId);
   const proysCli = (data.proyectos || []).filter(p => p.clienteId === r.clienteId);
+  const n = (num.match(/\d{3,}/) || [''])[0];
+  const proysNum = n ? (data.proyectos || []).filter(p => String(p.referenciaOdoo || '').includes(n) && p.clienteId !== r.clienteId).slice(0, 6) : [];
 
   const amarrar = async (campos, etiqueta) => {
     setGuardando(true);
@@ -591,15 +599,38 @@ function ClasificarTrabajoReclamacion({ r, data, garantias, usuario, onGuardado 
     } catch (e) { alert('Error: ' + (e.message || e)); }
     setGuardando(false);
   };
-  const buscarOdoo = async () => {
-    if (!cli) { alert('La reclamación no tiene cliente del catálogo.'); return; }
+  // Si el cliente de la cotización es otro, primero se pregunta; si es el mismo, se amarra directo.
+  const elegir = (campos, etiqueta, clienteCot) => {
+    const mismo = clienteCot && (clienteCot.id === r.clienteId || (cli && normNombre(cli.nombre) === normNombre(clienteCot.nombre)));
+    if (!clienteCot || mismo) { amarrar(campos, etiqueta); return; }
+    setElegida({ campos, etiqueta, clienteCot }); setNombreNuevo(clienteCot.nombre);
+  };
+  const confirmar = async (pasar) => {
+    if (!pasar) { await amarrar(elegida.campos, elegida.etiqueta); setElegida(null); return; }
+    let id = elegida.clienteCot.id;
+    if (!id) {
+      const existe = clientes.find(c => (elegida.clienteCot.partnerId && c.odooPartnerId === elegida.clienteCot.partnerId) || normNombre(c.nombre) === normNombre(nombreNuevo));
+      if (existe) id = existe.id;
+      else {
+        if (!nombreNuevo.trim()) { alert('Pon el nombre del cliente.'); return; }
+        id = 'cli_' + Date.now() + Math.random().toString(36).slice(2, 7);
+        try { await db.crearCliente({ id, nombre: nombreNuevo.trim(), tipo: 'empresa', odooPartnerId: elegida.clienteCot.partnerId || null }); }
+        catch (e) { alert('No se pudo crear el cliente: ' + (e.message || e)); return; }
+      }
+    }
+    await amarrar({ ...elegida.campos, clienteId: id, contactoId: null }, `${elegida.etiqueta} · pasó al cliente ${nombreNuevo || elegida.clienteCot.nombre}`);
+    setElegida(null);
+  };
+  const buscarOdoo = async (q) => {
+    if (!q) { alert('La reclamación no tiene cliente del catálogo.'); return; }
     setBuscando(true);
     try {
-      const j = await (await fetch(`/api/odoo/cotizaciones-cliente?q=${encodeURIComponent(cli.nombre)}`)).json();
+      const j = await (await fetch(`/api/odoo/cotizaciones-cliente?q=${encodeURIComponent(q)}`)).json();
       setOdooCots(j.ok ? j.cotizaciones : []);
     } catch { setOdooCots([]); }
     setBuscando(false);
   };
+  const camposProy = (p) => ({ proyectoId: p.id, referenciaCotizacion: p.referenciaOdoo || null, ubicacionId: p.ubicacionId || r.ubicacionId || null, garantiaId: (garantias.find(g => g.proyectoId === p.id)?.id) || null, asignadoA: p.supervisorId || null });
 
   return (
     <div className="mt-3 bg-amber-950/25 border border-amber-800/60 rounded-card p-3">
@@ -609,26 +640,54 @@ function ClasificarTrabajoReclamacion({ r, data, garantias, usuario, onGuardado 
       </div>
       {!abierto ? (
         <div className="text-[11px] text-zinc-400">Esta reclamación no sabe de cuál obra/cotización es: sin eso no hay garantía, ni ubicación, ni responsable claro.</div>
+      ) : elegida ? (
+        <div className="space-y-2 text-[11px]">
+          <div className="text-zinc-300">La cotización <b>{elegida.etiqueta}</b> está a nombre de <b>{elegida.clienteCot.nombre}</b>, y la reclamación de <b>{cli?.nombre || 'sin cliente'}</b>.</div>
+          {!elegida.clienteCot.id && (
+            <label className="block text-[10px] text-zinc-500">Nombre del cliente en el ERP (puedes corregirlo)
+              <input value={nombreNuevo} onChange={e => setNombreNuevo(e.target.value)} className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-1.5 text-white text-xs" />
+            </label>
+          )}
+          <div className="flex flex-wrap gap-1.5">
+            <button disabled={guardando} onClick={() => confirmar(true)} className="flex-1 py-1.5 bg-red-600 disabled:bg-zinc-800 text-white text-[10px] font-black uppercase rounded-card">Pasar a {nombreNuevo || elegida.clienteCot.nombre}</button>
+            <button disabled={guardando} onClick={() => confirmar(false)} className="flex-1 py-1.5 bg-zinc-800 text-zinc-200 text-[10px] font-bold uppercase rounded-card">Dejar {cli?.nombre || 'el actual'}</button>
+            <button onClick={() => setElegida(null)} className="px-3 py-1.5 text-zinc-500 text-[10px] uppercase">Volver</button>
+          </div>
+          <div className="text-[10px] text-zinc-500">Si la pasas, hay que volver a elegir el contacto (es del otro cliente).</div>
+        </div>
       ) : (
-        <div className="space-y-1 max-h-48 overflow-y-auto">
+        <div className="space-y-1 max-h-64 overflow-y-auto">
+          <div className="flex gap-1.5">
+            <input value={num} onChange={e => setNum(e.target.value)} placeholder="Número de cotización (ej. 5338)" className="flex-1 bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-amber-500 outline-none px-2 py-1.5 text-white text-xs" />
+            <button disabled={!n || buscando} onClick={() => buscarOdoo(n)} className="px-3 bg-sky-800 disabled:bg-zinc-800 text-white text-[10px] font-bold uppercase rounded-card">Buscar</button>
+          </div>
+          {proysNum.map(p => (
+            <button key={p.id} disabled={guardando} onClick={() => elegir(camposProy(p), p.referenciaOdoo || p.nombre, { id: p.clienteId, nombre: clientes.find(c => c.id === p.clienteId)?.nombre || p.cliente || '' })}
+              className="w-full text-left px-2.5 py-2 rounded-card border text-xs bg-zinc-950 border-zinc-800 text-zinc-300 hover:border-amber-500">
+              <div className="font-bold truncate">{p.referenciaOdoo} · {p.nombre}</div>
+              <div className="text-[10px] text-zinc-500 truncate">{clientes.find(c => c.id === p.clienteId)?.nombre}</div>
+            </button>
+          ))}
           {proysCli.map(p => (
-            <button key={p.id} disabled={guardando}
-              onClick={() => amarrar({ proyectoId: p.id, referenciaCotizacion: p.referenciaOdoo || null, ubicacionId: p.ubicacionId || r.ubicacionId || null, garantiaId: (garantias.find(g => g.proyectoId === p.id)?.id) || null, asignadoA: p.supervisorId || null }, p.referenciaOdoo || p.nombre)}
+            <button key={p.id} disabled={guardando} onClick={() => amarrar(camposProy(p), p.referenciaOdoo || p.nombre)}
               className="w-full text-left px-2.5 py-2 rounded-card border text-xs bg-zinc-950 border-zinc-800 text-zinc-300 hover:border-amber-500">
               <div className="font-bold truncate">{p.referenciaOdoo || 'sin ref'} · {p.nombre}</div>
             </button>
           ))}
           {odooCots === null ? (
-            <button onClick={buscarOdoo} disabled={buscando} className="w-full text-left px-2.5 py-2 rounded-card border border-dashed border-sky-800 text-sky-300 hover:border-sky-500 text-[11px] font-bold">{buscando ? 'Buscando en Odoo…' : '🔎 Buscar cotizaciones viejas del cliente en Odoo'}</button>
+            <button onClick={() => buscarOdoo(cli?.nombre)} disabled={buscando} className="w-full text-left px-2.5 py-2 rounded-card border border-dashed border-sky-800 text-sky-300 hover:border-sky-500 text-[11px] font-bold">{buscando ? 'Buscando en Odoo…' : '🔎 Buscar cotizaciones viejas del cliente en Odoo'}</button>
           ) : odooCots.length === 0 ? (
-            <div className="text-[11px] text-amber-400 px-2 py-1">Sin cotizaciones en Odoo para este cliente.</div>
-          ) : odooCots.map(c => (
-            <button key={c.referencia} disabled={guardando} onClick={() => amarrar({ referenciaCotizacion: c.referencia }, c.referencia + ' (Odoo)')}
-              className="w-full text-left px-2.5 py-2 rounded-card border text-xs bg-zinc-950 border-sky-900/60 text-zinc-300 hover:border-sky-500">
-              <div className="font-bold">{c.referencia} <span className="text-[10px] text-sky-400">· Odoo</span></div>
-              <div className="text-[10px] text-zinc-500">{c.fecha} · RD$ {Number(c.monto).toLocaleString()}</div>
-            </button>
-          ))}
+            <div className="text-[11px] text-amber-400 px-2 py-1">Sin cotizaciones en Odoo para esa búsqueda.</div>
+          ) : odooCots.map(c => {
+            const clCot = clientes.find(x => (c.partnerId && x.odooPartnerId === c.partnerId) || normNombre(x.nombre) === normNombre(c.cliente));
+            return (
+              <button key={c.referencia} disabled={guardando} onClick={() => elegir({ referenciaCotizacion: c.referencia }, c.referencia + ' (Odoo)', clCot ? { id: clCot.id, nombre: clCot.nombre } : { nombre: c.cliente, partnerId: c.partnerId })}
+                className="w-full text-left px-2.5 py-2 rounded-card border text-xs bg-zinc-950 border-sky-900/60 text-zinc-300 hover:border-sky-500">
+                <div className="font-bold">{c.referencia} <span className="text-[10px] text-sky-400">· Odoo</span></div>
+                <div className="text-[10px] text-zinc-500">{c.fecha} · RD$ {Number(c.monto).toLocaleString()} · {c.cliente}</div>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
@@ -1338,21 +1397,25 @@ function BuscadorCliente({ clientes, clienteId, proyectos = [], onElegir, onEleg
     || (normNombre(c.cliente) && clientes.find(x => normNombre(x.nombre) === normNombre(c.cliente))) || null;
   const [creando, setCreando] = useState(false);
   // Cotización vieja de un cliente que no está en el ERP: se crea con el nombre y el id de Odoo.
-  const elegirOdoo = async (c) => {
-    let cl = cliDeOdoo(c);
-    if (!cl) {
-      setCreando(true);
-      try {
-        cl = { id: 'cli_' + Date.now() + Math.random().toString(36).slice(2, 7), nombre: c.cliente, tipo: 'empresa', odooPartnerId: c.partnerId || null };
-        await db.crearCliente(cl);
-        onClienteCreado?.(cl);
-      } catch (e) { alert('No se pudo crear el cliente: ' + (e.message || e)); setCreando(false); return; }
-      setCreando(false);
-    }
-    onElegirCotizacion?.(cl.id, { tipo: 'odoo', ref: c.referencia });
+  const [porCrear, setPorCrear] = useState(null); // v8.74.5: { c, nombre } — revisar el nombre antes de crear el cliente
+  const elegirOdoo = (c) => {
+    const cl = cliDeOdoo(c);
+    if (cl) { onElegirCotizacion?.(cl.id, { tipo: 'odoo', ref: c.referencia }); return; }
+    setPorCrear({ c, nombre: c.cliente });
   };
-  const odooFuera = (odoo || []).filter(c => !refsErp.has(String(c.referencia).toUpperCase()));
-
+  const crearYElegir = async () => {
+    const nombre = porCrear.nombre.trim();
+    if (!nombre) { alert('Pon el nombre del cliente.'); return; }
+    setCreando(true);
+    try {
+      const cl = { id: 'cli_' + Date.now() + Math.random().toString(36).slice(2, 7), nombre, tipo: 'empresa', odooPartnerId: porCrear.c.partnerId || null };
+      await db.crearCliente(cl);
+      onClienteCreado?.(cl);
+      onElegirCotizacion?.(cl.id, { tipo: 'odoo', ref: porCrear.c.referencia });
+      setPorCrear(null);
+    } catch (e) { alert('No se pudo crear el cliente: ' + (e.message || e)); }
+    setCreando(false);
+  };
   useEffect(() => {
     if (!esNumero || elegido) { setOdoo(null); return; }
     let vivo = true;
@@ -1370,6 +1433,19 @@ function BuscadorCliente({ clientes, clienteId, proyectos = [], onElegir, onEleg
       <div className="flex items-center gap-2 bg-zinc-900 border-2 border-zinc-800 rounded-card px-3 py-2">
         <span className="text-sm font-bold flex-1 truncate">{elegido.nombre}</span>
         <button onClick={() => { onElegir(''); setTexto(''); }} className="text-[10px] uppercase font-bold text-zinc-500 hover:text-white">cambiar</button>
+      </div>
+    );
+  }
+  if (porCrear) {
+    return (
+      <div className="space-y-1.5 border border-sky-800 rounded-card p-2 bg-zinc-900/40">
+        <div className="text-[10px] text-sky-300">{porCrear.c.referencia} · cliente nuevo en el ERP — revisa el nombre:</div>
+        <input value={porCrear.nombre} onChange={e => setPorCrear({ ...porCrear, nombre: e.target.value })} autoFocus
+          className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm" />
+        <div className="flex gap-1.5">
+          <button onClick={() => setPorCrear(null)} className="px-3 py-1.5 bg-zinc-800 text-zinc-400 text-[10px] font-bold uppercase rounded-card">Volver</button>
+          <button onClick={crearYElegir} disabled={creando} className="flex-1 py-1.5 bg-red-600 disabled:bg-zinc-800 text-white text-[10px] font-black uppercase rounded-card">{creando ? 'Creando…' : 'Crear cliente y seguir'}</button>
+        </div>
       </div>
     );
   }
@@ -1395,7 +1471,7 @@ function BuscadorCliente({ clientes, clienteId, proyectos = [], onElegir, onEleg
               <button key={c.referencia} disabled={creando} onMouseDown={(e) => { e.preventDefault(); elegirOdoo(c); }}
                 className="w-full text-left px-3 py-2 text-xs text-zinc-200 hover:bg-zinc-800 border-t border-zinc-800 first:border-t-0">
                 <div className="font-bold truncate">{c.referencia} · {c.cliente} <span className="text-[10px] text-sky-400">· Odoo</span></div>
-                <div className="text-[10px] text-zinc-500">{c.fecha} · RD$ {Number(c.monto).toLocaleString()}{!cl && <span className="text-amber-400"> · {creando ? 'creando el cliente…' : 'cliente nuevo en el ERP: se crea al elegir'}</span>}</div>
+                <div className="text-[10px] text-zinc-500">{c.fecha} · RD$ {Number(c.monto).toLocaleString()}{!cl && <span className="text-amber-400"> · {creando ? 'creando el cliente…' : 'cliente nuevo en el ERP: revisas el nombre al elegir'}</span>}</div>
               </button>
             );
           })}

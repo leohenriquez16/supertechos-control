@@ -1130,7 +1130,7 @@ function ModalNuevaReclamacion({ data, usuario, ubicaciones, garantias, onCerrar
           clienteId, ubicacionId, referenciaCotizacion: trabajoSel.ref, sistemaId: gar.sistemaId, sistemaNombre: nombreSis(sis),
           fechaInicio: gar.fechaInicio, duracionMeses: Math.round(Number(gar.anios) * 12), m2: gar.m2 ? Number(gar.m2) : null,
           origen: 'reclamacion', notas: 'Creada al abrir una reclamación (obra de antes del ERP).',
-        });
+        }, { cadaMeses: sis?.mantenimiento_cada_meses || sis?.mantenimientoCadaMeses || null }); // v8.74.4: con su calendario de mantenimientos
         garOdooId = g.id;
       }
       const rec = await db.crearReclamacion({

@@ -1049,11 +1049,27 @@ function ModalNuevaReclamacion({ data, usuario, ubicaciones, garantias, onCerrar
   const [odooBuscando, setOdooBuscando] = useState(false);
 
   const [clientesNuevos, setClientesNuevos] = useState([]); // v8.74.1: creados aquí desde una cotización de Odoo
+  // v8.74.3 (Leo): locación obligatoria (elegir o crear aquí) y, si la obra es de antes del ERP, la garantía también.
+  const [ubicsNuevas, setUbicsNuevas] = useState([]);
+  const [nuevaUbic, setNuevaUbic] = useState(null); // { nombre, direccion, ciudad }
+  const [gar, setGar] = useState({ fechaInicio: '', anios: '', sistemaId: '', m2: '' });
   const clientes = [...(data.clientes || []).filter(c => !c.archivado), ...clientesNuevos];
   const cli = clientes.find(c => c.id === clienteId);
   const esEmpresa = cli && cli.tipo !== 'persona'; // v8.53.4: persona = el cliente es el contacto
   const clientePersonaLocalizable = cli && !esEmpresa && !!((cli.telefonoPrincipal || '').trim() || (cli.emailPrincipal || '').trim());
-  const ubicsCli = ubicaciones.filter(u => u.clienteId === clienteId);
+  const ubicsCli = [...ubicaciones, ...ubicsNuevas].filter(u => u.clienteId === clienteId);
+  const listaSistemas = Array.isArray(data.sistemas) ? data.sistemas : Object.entries(data.sistemas || {}).map(([id, v]) => ({ id, ...v }));
+  const nombreSis = (x) => x?.data?.nombre || x?.nombre || x?.name || x?.id;
+  // Garantía de una cotización vieja: se reusa si ya existe por la referencia; si no, hay que crearla.
+  const garantiaOdoo = trabajoSel?.tipo === 'odoo' ? garantias.find(g => String(g.referenciaCotizacion || '').toUpperCase() === String(trabajoSel.ref).toUpperCase()) : null;
+  const pideGarantia = trabajoSel?.tipo === 'odoo' && !garantiaOdoo;
+  const crearUbicAqui = async () => {
+    if (!nuevaUbic.nombre.trim()) { alert('Ponle nombre a la locación.'); return; }
+    try {
+      const u = await db.crearUbicacionCliente({ clienteId, nombre: nuevaUbic.nombre.trim(), direccion: nuevaUbic.direccion.trim() || null, ciudad: nuevaUbic.ciudad.trim() || null });
+      setUbicsNuevas(us => [...us, u]); setUbicacionId(u.id); setNuevaUbic(null);
+    } catch (e) { alert('No se pudo crear la locación: ' + (e.message || e)); }
+  };
   // Sin filtrar archivados: una reclamación suele ser de una obra YA terminada.
   const proysCli = (data.proyectos || []).filter(p => p.clienteId === clienteId);
   const garantiaDeProy = garantias.find(g => g.proyectoId === proyectoId);
@@ -1078,6 +1094,8 @@ function ModalNuevaReclamacion({ data, usuario, ubicaciones, garantias, onCerrar
     if (!clienteId) { alert('Elige el cliente.'); return; }
     // v8.63.0: el trabajo es obligatorio — obra ERP, cotización de Odoo, o "no identificado" explícito.
     if (!trabajoSel) { alert('Elige de cuál trabajo es la reclamación (o marca "no identificado aún").'); return; }
+    if (trabajoSel.tipo !== 'desconocido' && !ubicacionId) { alert('Elige o crea la locación del trabajo.'); return; }
+    if (pideGarantia && (!gar.fechaInicio || !Number(gar.anios) || !gar.sistemaId)) { alert('Esta obra es de antes del ERP: completa la garantía (fecha de entrega, años y sistema).'); return; }
     if (!descripcion.trim()) { alert('Describe la reclamación.'); return; }
     // v8.53.4: contacto obligatorio con WhatsApp o correo (empresa: de sus contactos; persona: el cliente).
     if (esEmpresa && !contactoId) { alert('Elige un contacto del cliente (con WhatsApp o correo) para dar seguimiento.'); return; }
@@ -1085,11 +1103,21 @@ function ModalNuevaReclamacion({ data, usuario, ubicaciones, garantias, onCerrar
     setGuardando(true);
     try {
       const proy = trabajoSel.tipo === 'erp' ? (data.proyectos || []).find(p => p.id === trabajoSel.proyectoId) : null;
+      let garOdooId = garantiaOdoo?.id || null;
+      if (pideGarantia) {
+        const sis = listaSistemas.find(x => x.id === gar.sistemaId);
+        const g = await db.crearGarantia({
+          clienteId, ubicacionId, referenciaCotizacion: trabajoSel.ref, sistemaId: gar.sistemaId, sistemaNombre: nombreSis(sis),
+          fechaInicio: gar.fechaInicio, duracionMeses: Math.round(Number(gar.anios) * 12), m2: gar.m2 ? Number(gar.m2) : null,
+          origen: 'reclamacion', notas: 'Creada al abrir una reclamación (obra de antes del ERP).',
+        });
+        garOdooId = g.id;
+      }
       const rec = await db.crearReclamacion({
         clienteId: clienteId || null, ubicacionId: ubicacionId || null,
         proyectoId: proy?.id || null,
         contactoId: esEmpresa ? (contactoId || null) : null,
-        garantiaId: proy ? (garantias.find(g => g.proyectoId === proy.id)?.id || null) : null,
+        garantiaId: proy ? (garantias.find(g => g.proyectoId === proy.id)?.id || null) : garOdooId,
         referenciaCotizacion: trabajoSel.tipo === 'odoo' ? trabajoSel.ref : (proy?.referenciaOdoo || null),
         // v8.63.0: responsable automático = el supervisor de la obra (puede cambiarse luego)
         asignadoA: proy?.supervisorId || null,
@@ -1178,14 +1206,53 @@ function ModalNuevaReclamacion({ data, usuario, ubicaciones, garantias, onCerrar
             {/* Ubicación: viene sola con la obra del ERP; editable solo si falta */}
             {trabajoSel && (
               <div>
-                <div className="text-[10px] uppercase text-zinc-500 mb-1">Ubicación</div>
+                <div className="text-[10px] uppercase text-zinc-500 mb-1">Locación{trabajoSel.tipo !== 'desconocido' ? ' *' : ''}</div>
                 {ubicacionId && trabajoSel.tipo === 'erp' ? (
                   <div className="flex items-center gap-2 text-[11px] text-emerald-300 bg-emerald-950/30 border border-emerald-800/50 rounded-card px-2 py-1.5">
                     📍 {ubicsCli.find(u => u.id === ubicacionId)?.nombre || 'de la obra'} <span className="text-zinc-500">(de la obra)</span>
                     <button onClick={() => setUbicacionId('')} className="ml-auto text-zinc-500 hover:text-white text-[10px] underline">cambiar</button>
                   </div>
                 ) : (
-                  <select value={ubicacionId} onChange={e => setUbicacionId(e.target.value)} className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-2 text-white text-xs"><option value="">— elegir —</option>{ubicsCli.map(u => <option key={u.id} value={u.id}>{u.nombre}{u.ciudad ? ` · ${u.ciudad}` : ''}</option>)}</select>
+                  nuevaUbic ? (
+                    <div className="space-y-1.5 border border-zinc-800 rounded-card p-2 bg-zinc-900/40">
+                      <input value={nuevaUbic.nombre} onChange={e => setNuevaUbic({ ...nuevaUbic, nombre: e.target.value })} placeholder="Nombre (ej. Oficina principal)" autoFocus className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-1.5 text-white text-xs" />
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <input value={nuevaUbic.direccion} onChange={e => setNuevaUbic({ ...nuevaUbic, direccion: e.target.value })} placeholder="Dirección" className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-1.5 text-white text-xs" />
+                        <input value={nuevaUbic.ciudad} onChange={e => setNuevaUbic({ ...nuevaUbic, ciudad: e.target.value })} placeholder="Ciudad" className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-1.5 text-white text-xs" />
+                      </div>
+                      <div className="flex gap-1.5">
+                        <button onClick={() => setNuevaUbic(null)} className="px-3 py-1.5 bg-zinc-800 text-zinc-400 text-[10px] font-bold uppercase rounded-card">Cancelar</button>
+                        <button onClick={crearUbicAqui} className="flex-1 py-1.5 bg-red-600 text-white text-[10px] font-black uppercase rounded-card">Guardar locación</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      <select value={ubicacionId} onChange={e => setUbicacionId(e.target.value)} className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-2 text-white text-xs"><option value="">{ubicsCli.length ? '— elegir —' : '— este cliente no tiene locaciones —'}</option>{ubicsCli.map(u => <option key={u.id} value={u.id}>{u.nombre}{u.ciudad ? ` · ${u.ciudad}` : ''}</option>)}</select>
+                      <div className="text-right"><button onClick={() => setNuevaUbic({ nombre: '', direccion: '', ciudad: '' })} className="text-[10px] font-bold uppercase text-sky-300 hover:text-white">+ Nueva locación</button></div>
+                    </div>
+                  )
+                )}
+              </div>
+            )}
+            {trabajoSel?.tipo === 'odoo' && (
+              <div>
+                <div className="text-[10px] uppercase text-zinc-500 mb-1">Garantía{pideGarantia ? ' *' : ''}</div>
+                {garantiaOdoo ? (
+                  <div className="text-[11px] text-emerald-300 bg-emerald-950/30 border border-emerald-800/50 rounded-card px-2 py-1.5">🛡 {garantiaOdoo.codigo || 'Garantía'} · {garantiaOdoo.sistemaNombre || ''} · vence {garantiaOdoo.fechaVencimiento || '—'}</div>
+                ) : (
+                  <div className="space-y-1.5 border border-amber-800/50 rounded-card p-2 bg-amber-950/20">
+                    <div className="text-[10px] text-amber-300">Obra de antes del ERP: registra su garantía para saber si la reclamación está cubierta.</div>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <label className="text-[10px] text-zinc-500">Fecha de entrega<input type="date" value={gar.fechaInicio} onChange={e => setGar({ ...gar, fechaInicio: e.target.value })} className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-1.5 text-white text-xs" /></label>
+                      <label className="text-[10px] text-zinc-500">Años de garantía<input type="number" min="1" value={gar.anios} onChange={e => setGar({ ...gar, anios: e.target.value })} className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-1.5 text-white text-xs" /></label>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <select value={gar.sistemaId} onChange={e => { const sis = listaSistemas.find(x => x.id === e.target.value); const m = sis?.garantia_meses || sis?.garantiaMeses || sis?.data?.garantia_meses; setGar({ ...gar, sistemaId: e.target.value, anios: gar.anios || (m ? String(m / 12) : '') }); }} className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-1.5 text-white text-xs">
+                        <option value="">— Sistema —</option>{listaSistemas.map(x => <option key={x.id} value={x.id}>{nombreSis(x)}</option>)}
+                      </select>
+                      <input type="number" min="0" value={gar.m2} onChange={e => setGar({ ...gar, m2: e.target.value })} placeholder="m² (opcional)" className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-1.5 text-white text-xs" />
+                    </div>
+                  </div>
                 )}
               </div>
             )}

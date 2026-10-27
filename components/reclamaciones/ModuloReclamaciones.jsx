@@ -16,6 +16,7 @@ import { evaluarSlaReclamacion, SLA_SEVERIDAD_HORAS } from '../../lib/helpers/sl
 import { resolverContacto, contactoLocalizable } from '../../lib/helpers/contactoCliente'; // v8.53.4
 import SolicitarCalificacion from '../common/SolicitarCalificacion'; // v8.54.1 C3
 import ModalInformeVisitaPDF from './ModalInformeVisitaPDF'; // v8.68.0 (ticket Edwin)
+import { sistemasDeCotizacion } from '../../lib/helpers/sistemasCotizacion'; // v8.74.3
 
 const fmtFecha = (s) => { if (!s) return '—'; try { return new Date(s + 'T12:00:00').toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return s; } };
 const COLS = [
@@ -1063,6 +1064,25 @@ function ModalNuevaReclamacion({ data, usuario, ubicaciones, garantias, onCerrar
   // Garantía de una cotización vieja: se reusa si ya existe por la referencia; si no, hay que crearla.
   const garantiaOdoo = trabajoSel?.tipo === 'odoo' ? garantias.find(g => String(g.referenciaCotizacion || '').toUpperCase() === String(trabajoSel.ref).toUpperCase()) : null;
   const pideGarantia = trabajoSel?.tipo === 'odoo' && !garantiaOdoo;
+  // v8.74.3 (Leo): los m² y el sistema se leen de la cotización de Odoo.
+  const [sisCot, setSisCot] = useState(null); // null=leyendo · [] = no reconoció sistemas
+  const aniosDe = (id) => { const x = listaSistemas.find(y => y.id === id); const m = x?.garantia_meses || x?.garantiaMeses || x?.data?.garantia_meses; return m ? String(m / 12) : ''; };
+  useEffect(() => {
+    if (!pideGarantia) { setSisCot(null); return; }
+    let vivo = true;
+    setSisCot(null);
+    fetch(`/api/odoo/cotizacion-ref?ref=${encodeURIComponent(trabajoSel.ref)}`).then(r => r.json()).then(j => {
+      if (!vivo) return;
+      const lista = j.ok ? sistemasDeCotizacion(j.cotizacion, listaSistemas) : [];
+      setSisCot(lista);
+      const p = lista[0];
+      if (p) setGar(g => ({ ...g, sistemaId: p.sistemaId, m2: String(p.m2 || ''), anios: g.anios || aniosDe(p.sistemaId) }));
+      const f = j.ok && j.cotizacion?.fechaOrden ? String(j.cotizacion.fechaOrden).slice(0, 10) : '';
+      if (f) setGar(g => ({ ...g, fechaInicio: g.fechaInicio || f }));
+    }).catch(() => vivo && setSisCot([]));
+    return () => { vivo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pideGarantia, trabajoSel?.ref]);
   const crearUbicAqui = async () => {
     if (!nuevaUbic.nombre.trim()) { alert('Ponle nombre a la locación.'); return; }
     try {
@@ -1242,15 +1262,20 @@ function ModalNuevaReclamacion({ data, usuario, ubicaciones, garantias, onCerrar
                 ) : (
                   <div className="space-y-1.5 border border-amber-800/50 rounded-card p-2 bg-amber-950/20">
                     <div className="text-[10px] text-amber-300">Obra de antes del ERP: registra su garantía para saber si la reclamación está cubierta.</div>
+                    {sisCot === null
+                      ? <div className="text-[10px] text-zinc-500">Leyendo la cotización en Odoo…</div>
+                      : sisCot.length
+                        ? <div className="text-[10px] text-zinc-400">De la cotización: {sisCot.map(x => `${x.nombre} ${x.m2.toLocaleString()} m²`).join(' · ')}</div>
+                        : <div className="text-[10px] text-zinc-500">No reconocí el sistema en la cotización: elígelo y pon los m².</div>}
                     <div className="grid grid-cols-2 gap-1.5">
-                      <label className="text-[10px] text-zinc-500">Fecha de entrega<input type="date" value={gar.fechaInicio} onChange={e => setGar({ ...gar, fechaInicio: e.target.value })} className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-1.5 text-white text-xs" /></label>
+                      <label className="text-[10px] text-zinc-500">Fecha de entrega (aprox.)<input type="date" value={gar.fechaInicio} onChange={e => setGar({ ...gar, fechaInicio: e.target.value })} className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-1.5 text-white text-xs" /></label>
                       <label className="text-[10px] text-zinc-500">Años de garantía<input type="number" min="1" value={gar.anios} onChange={e => setGar({ ...gar, anios: e.target.value })} className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-1.5 text-white text-xs" /></label>
                     </div>
                     <div className="grid grid-cols-2 gap-1.5">
-                      <select value={gar.sistemaId} onChange={e => { const sis = listaSistemas.find(x => x.id === e.target.value); const m = sis?.garantia_meses || sis?.garantiaMeses || sis?.data?.garantia_meses; setGar({ ...gar, sistemaId: e.target.value, anios: gar.anios || (m ? String(m / 12) : '') }); }} className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-1.5 text-white text-xs">
+                      <select value={gar.sistemaId} onChange={e => { const id = e.target.value; const deCot = (sisCot || []).find(x => x.sistemaId === id); setGar({ ...gar, sistemaId: id, anios: aniosDe(id) || gar.anios, m2: deCot ? String(deCot.m2) : gar.m2 }); }} className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-1.5 text-white text-xs">
                         <option value="">— Sistema —</option>{listaSistemas.map(x => <option key={x.id} value={x.id}>{nombreSis(x)}</option>)}
                       </select>
-                      <input type="number" min="0" value={gar.m2} onChange={e => setGar({ ...gar, m2: e.target.value })} placeholder="m² (opcional)" className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-1.5 text-white text-xs" />
+                      <input type="number" min="0" value={gar.m2} onChange={e => setGar({ ...gar, m2: e.target.value })} placeholder="m²" className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-1.5 text-white text-xs" />
                     </div>
                   </div>
                 )}

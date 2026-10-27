@@ -925,18 +925,48 @@ function SelectorContactoCliente({ clienteId, value, onChange, autoPrincipal = t
     return () => { cancel = true; };
   }, [clienteId]);
 
+  // v8.74.2 (Leo): agregar el contacto aquí mismo, sin salir a la ficha del cliente.
+  const [nuevo, setNuevo] = useState(null); // { nombre, whatsapp, email }
+  const [guardandoCt, setGuardandoCt] = useState(false);
+  const guardarNuevo = async () => {
+    const ct = { id: 'ct_' + Date.now() + Math.random().toString(36).slice(2, 7), clienteId, nombre: nuevo.nombre.trim(), whatsapp: nuevo.whatsapp.trim() || null, email: nuevo.email.trim() || null, esPrincipal: !contactos.length };
+    if (!ct.nombre) { alert('Pon el nombre del contacto.'); return; }
+    if (!contactoLocalizable(ct)) { alert('Pon su WhatsApp o su correo.'); return; }
+    setGuardandoCt(true);
+    try { await db.crearContacto(ct); setContactos(cs => [...cs, ct]); onChange(ct.id); setNuevo(null); }
+    catch (e) { alert('No se pudo guardar el contacto: ' + (e.message || e)); }
+    setGuardandoCt(false);
+  };
   const localizables = contactos.filter(contactoLocalizable);
   if (loading) return <div className="text-[11px] text-zinc-500">Cargando contactos…</div>;
+  const inp = 'w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-1.5 text-white text-xs';
+  if (nuevo) return (
+    <div className="space-y-1.5 border border-zinc-800 rounded-card p-2 bg-zinc-900/40">
+      <input value={nuevo.nombre} onChange={e => setNuevo({ ...nuevo, nombre: e.target.value })} placeholder="Nombre del contacto" autoFocus className={inp} />
+      <div className="grid grid-cols-2 gap-1.5">
+        <input value={nuevo.whatsapp} onChange={e => setNuevo({ ...nuevo, whatsapp: e.target.value })} placeholder="WhatsApp" inputMode="tel" className={inp} />
+        <input value={nuevo.email} onChange={e => setNuevo({ ...nuevo, email: e.target.value })} placeholder="Correo" inputMode="email" className={inp} />
+      </div>
+      <div className="flex gap-1.5">
+        <button onClick={() => setNuevo(null)} className="px-3 py-1.5 bg-zinc-800 text-zinc-400 text-[10px] font-bold uppercase rounded-card">Cancelar</button>
+        <button onClick={guardarNuevo} disabled={guardandoCt} className="flex-1 py-1.5 bg-red-600 disabled:bg-zinc-800 text-white text-[10px] font-black uppercase rounded-card">{guardandoCt ? 'Guardando…' : 'Guardar contacto'}</button>
+      </div>
+    </div>
+  );
+  const botonNuevo = <button onClick={() => setNuevo({ nombre: '', whatsapp: '', email: '' })} className="text-[10px] font-bold uppercase text-sky-300 hover:text-white">+ Agregar contacto</button>;
   if (!localizables.length) return (
-    <div className="text-[11px] text-amber-400 bg-amber-950/30 border border-amber-800/50 rounded-card px-2 py-1.5">
-      ⚠ Este cliente no tiene contactos con WhatsApp o correo. Agrégalo en la ficha del cliente (Clientes → Contactos) para poder crear la reclamación.
+    <div className="text-[11px] text-amber-400 bg-amber-950/30 border border-amber-800/50 rounded-card px-2 py-1.5 flex items-center justify-between gap-2">
+      <span>⚠ Este cliente no tiene contactos con WhatsApp o correo.</span>{botonNuevo}
     </div>
   );
   return (
+    <div className="space-y-1">
     <select value={value || ''} onChange={e => onChange(e.target.value || null)} className="w-full bg-zinc-900 border-2 border-zinc-800 rounded-card focus:border-red-600 outline-none px-2 py-2 text-white text-xs">
       <option value="">— Elige contacto —</option>
       {localizables.map(c => <option key={c.id} value={c.id}>{c.nombre}{c.cargo ? ` (${c.cargo})` : ''} · {(c.whatsapp || c.telefono) ? `📱 ${c.whatsapp || c.telefono}` : ''}{c.email ? ` ✉ ${c.email}` : ''}</option>)}
     </select>
+    <div className="text-right">{botonNuevo}</div>
+    </div>
   );
 }
 
@@ -1096,7 +1126,11 @@ function ModalNuevaReclamacion({ data, usuario, ubicaciones, garantias, onCerrar
             <div>
               <div className="text-[10px] uppercase text-zinc-500 mb-1">¿De cuál trabajo es? *</div>
               <div className="space-y-1 max-h-44 overflow-y-auto border border-zinc-800 rounded-card p-1.5 bg-zinc-900/40">
-                {proysCli.length === 0 && <div className="text-[11px] text-zinc-500 px-1.5 py-1">Este cliente no tiene obras en el ERP — busca su cotización en Odoo abajo.</div>}
+                {/* v8.74.2: la cotización elegida desde el buscador por número se ve marcada */}
+                {trabajoSel?.tipo === 'odoo' && !(odooCots || []).some(c => c.referencia === trabajoSel.ref) && (
+                  <div className="px-2.5 py-2 rounded-card border text-xs bg-sky-600/15 border-sky-500 text-white font-bold">{trabajoSel.ref} <span className="text-[10px] text-sky-400">· Odoo · elegida</span></div>
+                )}
+                {proysCli.length === 0 && trabajoSel?.tipo !== 'odoo' && <div className="text-[11px] text-zinc-500 px-1.5 py-1">Este cliente no tiene obras en el ERP — busca su cotización en Odoo abajo.</div>}
                 {proysCli.map(p => {
                   const sel = trabajoSel?.tipo === 'erp' && trabajoSel.proyectoId === p.id;
                   const gar = garantias.find(g => g.proyectoId === p.id);

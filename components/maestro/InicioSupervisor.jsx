@@ -20,6 +20,7 @@ import MisPendientes from '../pendientes/MisPendientes'; // v8.28.3
 
 export default function InicioSupervisor({ usuario, data, onIrAReportar, onVerProyecto, onIrAAsignaciones, onIrAProyectos, onIrAVista, onRecargar }) {
   const [levs, setLevs] = useState([]);
+  const [recs, setRecs] = useState([]); // v8.74.6: reclamaciones asignadas por visitar
   const [loading, setLoading] = useState(true);
   const [refrescando, setRefrescando] = useState(false);
 
@@ -41,7 +42,8 @@ export default function InicioSupervisor({ usuario, data, onIrAReportar, onVerPr
   const cargar = async ({ silent } = {}) => {
     if (silent) setRefrescando(true); else setLoading(true);
     try {
-      const [sp, sites] = await Promise.all([listarProyectosSurveys(), listarTodosLosSitesSurvey()]);
+      const [sp, sites, rs] = await Promise.all([listarProyectosSurveys(), listarTodosLosSitesSurvey(), db.listarReclamaciones().catch(() => [])]);
+      setRecs((rs || []).filter(r => r.asignadoA === usuario.id && !r.archivado && !['resuelta', 'cerrada', 'rechazada'].includes(r.estado)));
       const dirProj = {}, coordsProj = {};
       for (const s of sites) {
         if (!dirProj[s.project_id] && (s.address || s.name)) dirProj[s.project_id] = s.address || s.name;
@@ -285,6 +287,37 @@ export default function InicioSupervisor({ usuario, data, onIrAReportar, onVerPr
           </div>
         )}
       </div>
+
+      {/* v8.74.6: Reclamaciones asignadas por visitar (igual que las citas de levantamiento) */}
+      {recs.length > 0 && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-[11px] tracking-widest uppercase text-amber-400 font-bold">⚠ Reclamaciones por visitar</span>
+            <span className="text-[10px] text-zinc-500">({recs.length})</span>
+          </div>
+          <div className="space-y-2">
+            {[...recs].sort((a, b) => (a.fechaVisitaProgramada || '9999').localeCompare(b.fechaVisitaProgramada || '9999')).map(r => {
+              const cli = (data.clientes || []).find(c => c.id === r.clienteId)?.nombre || r.clienteNombre || '(sin cliente)';
+              const fv = r.fechaVisitaProgramada || '';
+              const esHoy = fv === hoyLocal, vencida = fv && fv < hoyLocal;
+              return (
+                <div key={r.id} className="bg-zinc-950 border border-zinc-800 rounded-card p-3 flex items-center justify-between gap-2" style={{ borderLeftColor: '#f59e0b', borderLeftWidth: 4 }}>
+                  <div className="min-w-0">
+                    <div className="font-bold text-sm truncate">{cli}</div>
+                    <div className="text-[11px] text-zinc-500 truncate">{r.referenciaCotizacion ? `${r.referenciaCotizacion} · ` : ''}{r.descripcion || ''}</div>
+                    <div className="mt-1">
+                      {fv
+                        ? <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-card ${esHoy ? 'bg-green-600/20 text-green-400' : vencida ? 'bg-red-600/20 text-red-400' : 'bg-zinc-800 text-zinc-300'}`}>📅 {esHoy ? 'Hoy' : fv}{vencida ? ' · atrasada' : ''}</span>
+                        : <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-card bg-amber-600/20 text-amber-400">Sin fecha de visita</span>}
+                    </div>
+                  </div>
+                  <button onClick={() => onIrAVista?.('reclamaciones')} className="flex-shrink-0 px-3 py-2.5 rounded-card bg-amber-600 hover:bg-amber-500 text-white text-xs font-black uppercase tracking-wide">Abrir</button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Cierre del día (después de las 5pm) */}
       {esTarde && proyEnEjec.length > 0 && (

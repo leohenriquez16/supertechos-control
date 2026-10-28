@@ -30,6 +30,9 @@ const SEV = { baja: 'text-zinc-400', media: 'text-amber-400', alta: 'text-red-40
 const CANAL_ICON = { whatsapp: '🟢 WS', email: '✉ Email', web: '🌐 Web', interno: '🏢 Interno' };
 
 export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProyecto }) {
+  // v8.74.6: supervisores que pueden tomar/visitar una reclamación.
+  const supervisores = useMemo(() => (data.personal || []).filter(p => p.activo !== false && (p.roles || []).includes('supervisor')), [data.personal]);
+  const nombreSup = (id) => (data.personal || []).find(p => p.id === id)?.nombre || '';
   const [vista, setVista] = useState('kanban'); // kanban|lista|mapa
   const [loading, setLoading] = useState(true);
   const [recs, setRecs] = useState([]);
@@ -43,6 +46,7 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
   const [fEstado, setFEstado] = useState('');
   const [fSeveridad, setFSeveridad] = useState('');
   const [fCanal, setFCanal] = useState('');
+  const [fSup, setFSup] = useState(''); // v8.74.6
   const [dragId, setDragId] = useState(null);
   const [dropCol, setDropCol] = useState(null);
   // v8.66.0: selector de etapa en el detalle (iPad/teléfono, sin drag)
@@ -94,9 +98,10 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
       if (fEstado && estadoOdoo(r) !== fEstado) return false;
       if (fSeveridad && r.severidad !== fSeveridad) return false;
       if (fCanal && (r.canal || '') !== fCanal) return false;
+      if (fSup && (fSup === '_sin' ? !!r.asignadoA : r.asignadoA !== fSup)) return false;
       return true;
     });
-  }, [recs, busqueda, fEstado, fSeveridad, fCanal, data.clientes, ubicaciones]);
+  }, [recs, busqueda, fEstado, fSeveridad, fCanal, fSup, data.clientes, ubicaciones]);
 
   // Opciones presentes para los filtros.
   const opcCanales = useMemo(() => [...new Set(recs.map(r => r.canal).filter(Boolean))], [recs]);
@@ -270,6 +275,19 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
           )}
           {/* v8.49.11: fotos del trabajo realizado (ticket Edwin) */}
           <FotosReclamacion r={r} usuario={usuario} onCambio={() => setReload(x => x + 1)} />
+          {/* v8.74.6: supervisor asignado → le aparece en Inicio y Mis asignaciones */}
+          <div className="mt-3 flex items-center gap-2 flex-wrap bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2">
+            <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">👷 Supervisor</span>
+            <select value={r.asignadoA || ''} onChange={async e => {
+              try { await db.actualizarReclamacion(r.id, { asignadoA: e.target.value || null }); setReload(x => x + 1); }
+              catch (err) { alert('Error: ' + (err.message || err)); }
+            }} className="bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1.5 text-xs text-white outline-none focus:border-red-600">
+              <option value="">— Sin asignar —</option>
+              {r.asignadoA && !supervisores.some(p => p.id === r.asignadoA) && <option value={r.asignadoA}>{nombreSup(r.asignadoA) || r.asignadoA}</option>}
+              {supervisores.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+            </select>
+            {!r.asignadoA && r.estado !== 'resuelta' && r.estado !== 'cerrada' && <span className="text-[10px] text-amber-400 font-bold">⚠ nadie la va a visitar hasta que la asignes</span>}
+          </div>
           {/* v8.65.0: la visita programada es la puerta para tomar la reclamación */}
           <div className="mt-3 flex items-center gap-2 flex-wrap bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2">
             <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">📅 Visita</span>
@@ -370,6 +388,7 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
       <div className="text-[11px] text-zinc-400 mt-1 line-clamp-2">{r.descripcion}</div>
       <div className="flex items-center justify-between mt-1.5">
         <span className={`text-[8px] uppercase font-black ${SEV[r.severidad] || ''}`}>● {r.severidad}</span>
+        {r.asignadoA ? <span className="text-[9px] text-zinc-300 font-bold truncate max-w-[45%]">👷 {nombreSup(r.asignadoA).split(' ')[0]}</span> : <span className="text-[9px] text-amber-500">sin asignar</span>}
         <span className="text-[9px] text-zinc-600">{fmtFecha(r.fechaApertura)}</span>
       </div>
     </div>
@@ -398,8 +417,9 @@ export default function ModuloReclamaciones({ data, usuario, onVolver, onVerProy
             <FiltroSelectRec value={fEstado} onChange={setFEstado} placeholder="Estado" options={columnasRecl.map(e => [e, e])} />
             <FiltroSelectRec value={fSeveridad} onChange={setFSeveridad} placeholder="Severidad" options={opcSeveridades.map(s => [s, s.charAt(0).toUpperCase() + s.slice(1)])} />
             <FiltroSelectRec value={fCanal} onChange={setFCanal} placeholder="Canal" options={opcCanales.map(c => [c, CANAL_ICON[c] || c])} />
-            {(fEstado || fSeveridad || fCanal || busqueda) && (
-              <button onClick={() => { setFEstado(''); setFSeveridad(''); setFCanal(''); setBusqueda(''); }} className="text-[10px] text-zinc-400 hover:text-red-500 underline px-1">Limpiar</button>
+            <FiltroSelectRec value={fSup} onChange={setFSup} placeholder="Supervisor" options={[['_sin', 'Sin asignar'], ...supervisores.map(p => [p.id, p.nombre])]} />
+            {(fEstado || fSeveridad || fCanal || fSup || busqueda) && (
+              <button onClick={() => { setFEstado(''); setFSeveridad(''); setFCanal(''); setFSup(''); setBusqueda(''); }} className="text-[10px] text-zinc-400 hover:text-red-500 underline px-1">Limpiar</button>
             )}
             <span className="text-[10px] text-zinc-600 ml-auto">{filtradas.length} de {recs.length}</span>
             {vista === 'lista' && (

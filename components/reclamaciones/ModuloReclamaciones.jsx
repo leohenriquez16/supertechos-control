@@ -1413,6 +1413,7 @@ function BuscadorCliente({ clientes, clienteId, proyectos = [], onElegir, onEleg
   const cliPorId = new Map(clientes.map(c => [c.id, c]));
   const obras = esNumero ? proyectos.filter(p => cliPorId.has(p.clienteId) && String(p.referenciaOdoo || '').includes(num)).slice(0, 8) : [];
   const refsErp = new Set(obras.map(p => String(p.referenciaOdoo || '').toUpperCase()));
+  const odooFuera = (odoo || []).filter(c => !refsErp.has(String(c.referencia).toUpperCase()));
   const cliDeOdoo = (c) => clientes.find(x => c.partnerId && x.odooPartnerId === c.partnerId)
     || (normNombre(c.cliente) && clientes.find(x => normNombre(x.nombre) === normNombre(c.cliente))) || null;
   const [creando, setCreando] = useState(false);

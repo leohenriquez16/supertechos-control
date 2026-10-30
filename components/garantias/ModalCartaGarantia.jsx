@@ -11,6 +11,7 @@ import React, { useRef, useState } from 'react';
 import { X, FileDown, Loader2, ShieldCheck } from 'lucide-react';
 import { getTipoGarantia } from '../../lib/garantiasCatalogo';
 import { m2SistemaGarantizado } from '../../lib/helpers/calculos';
+import { vencimientoGarantia } from '../../lib/helpers/entregaObra';
 
 const cargarScriptCDN = (src) => new Promise((resolve, reject) => {
   if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
@@ -55,6 +56,12 @@ export default function ModalCartaGarantia({ garantia: g, clienteNombre, proyect
   const duracionTxt = g.duracionMeses
     ? (g.duracionMeses % 12 === 0 ? `${g.duracionMeses / 12} año${g.duracionMeses === 12 ? '' : 's'}` : `${g.duracionMeses} meses`)
     : '—';
+  // v8.74.8 (ticket de Miguel, 30-oct): el vencimiento se deduce del inicio + la duración
+  // cuando la fila no lo trae, en vez de imprimir un guion en la carta del cliente. Si no
+  // hay ni duración ni vencimiento no se puede afirmar una vigencia: la carta la omite y
+  // el modal avisa en pantalla (el aviso no entra al PDF).
+  const vencimiento = g.fechaVencimiento || vencimientoGarantia(g.fechaInicio, g.duracionMeses);
+  const sinVigencia = !borrador && !vencimiento && !g.duracionMeses;
   const mantsObligatorios = mantenimientos.filter(m => m.garantiaId === g.id && m.obligatorio !== false);
   const referencia = g.referenciaCotizacion || proyecto?.referenciaOdoo || g.codigo || '';
   // v8.70.0 (ticket de Miguel, ST-C5759): el m² se recalcula desde las áreas de la obra
@@ -116,7 +123,8 @@ export default function ModalCartaGarantia({ garantia: g, clienteNombre, proyect
         <div className="flex items-center justify-between p-3 border-b border-zinc-800 sticky top-0 bg-zinc-900 z-10">
           <h2 className="text-sm font-black uppercase tracking-wider flex items-center gap-2"><ShieldCheck className="w-4 h-4 text-green-400" /> Carta de garantía</h2>
           <div className="flex items-center gap-2">
-            <button onClick={descargarPDF} disabled={generando}
+            <button onClick={descargarPDF} disabled={generando || sinVigencia}
+              title={sinVigencia ? 'Falta la duración de la garantía' : undefined}
               className="bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white text-[11px] font-black uppercase px-3 py-1.5 rounded-card flex items-center gap-1.5">
               {generando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />} Descargar PDF
             </button>
@@ -124,6 +132,17 @@ export default function ModalCartaGarantia({ garantia: g, clienteNombre, proyect
           </div>
         </div>
         {error && <div className="mx-3 mt-2 text-[11px] text-red-400">{error}</div>}
+        {/* v8.74.8: antes esta carta salía con "hasta el —". Si no hay duración ni
+            vencimiento no se puede certificar una vigencia: se bloquea la descarga. */}
+        {sinVigencia && (
+          <div className="mx-3 mt-2 rounded-card border border-red-700/50 bg-red-950/30 px-3 py-2">
+            <div className="text-[11px] font-bold uppercase tracking-widest text-red-400">Falta la duración de la garantía</div>
+            <div className="text-[11px] text-red-200/80 mt-0.5">
+              Esta garantía no tiene duración ni fecha de vencimiento, así que la carta no puede certificar
+              hasta cuándo cubre. Complétala en el módulo Garantías y vuelve a emitirla.
+            </div>
+          </div>
+        )}
         {/* v8.71.0: por qué esto es un borrador y qué falta para la carta original. */}
         {borrador && (
           <div className="mx-3 mt-2 rounded-card border border-amber-700/50 bg-amber-950/30 px-3 py-2">
@@ -177,10 +196,14 @@ export default function ModalCartaGarantia({ garantia: g, clienteNombre, proyect
               <p style={{ textAlign: 'justify', margin: '0 0 12px' }}>
                 Distinguidos señores: por medio de la presente, <b>{empresa.razonSocial}</b> (RNC {empresa.rnc}) certifica que los
                 trabajos de <b>{g.sistemaNombre || 'impermeabilización'}</b>{proyecto?.nombre ? <> ejecutados en la obra <b>{proyecto.referenciaProyecto || proyecto.nombre}</b></> : null}
-                {m2Carta ? <> ({new Intl.NumberFormat('es-DO').format(m2Carta)} m²)</> : null} cuentan con una <b>garantía de {duracionTxt}</b>,
+                {m2Carta ? <> ({new Intl.NumberFormat('es-DO').format(m2Carta)} m²)</> : null} cuentan con una <b>garantía de {duracionTxt}</b>
                 {borrador
-                  ? <> con vigencia de <b>{duracionTxt}</b> a partir de la fecha de entrega{fechaEntrega ? <> (<b>{fmtF(fechaEntrega)}</b>)</> : null}.</>
-                  : <> con vigencia desde el <b>{fmtF(g.fechaInicio)}</b> hasta el <b>{fmtF(g.fechaVencimiento)}</b>.</>}
+                  ? <>, con vigencia de <b>{duracionTxt}</b> a partir de la fecha de entrega{fechaEntrega ? <> (<b>{fmtF(fechaEntrega)}</b>)</> : null}.</>
+                  : vencimiento
+                    ? <>, con vigencia desde el <b>{fmtF(g.fechaInicio)}</b> hasta el <b>{fmtF(vencimiento)}</b>.</>
+                    : g.duracionMeses
+                      ? <>, con vigencia de <b>{duracionTxt}</b> a partir del <b>{fmtF(g.fechaInicio)}</b>.</>
+                      : <>.</>}
               </p>
 
               {cobertura && (

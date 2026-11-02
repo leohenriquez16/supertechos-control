@@ -12,6 +12,7 @@ import { X, Loader2, FileText } from 'lucide-react';
 import * as db from '../../../lib/db';
 import { superficieRealObra, esSistemaAuxiliar } from '../../../lib/helpers/calculos';
 import { formatFechaLarga, formatNum } from '../../../lib/helpers/formato';
+import { nombreObraDocumento } from '../../../lib/helpers/proyectos';
 
 const tieneRol = (p, r) => p?.roles?.includes(r);
 const hoyISO = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo' }).format(new Date());
@@ -98,7 +99,8 @@ export default function ModalReporteFinalPDF({ proyecto, sistema, data, usuario,
       const filasId = [
         ['Cliente', proyecto.cliente || '—'],
         ['Referencia', proyecto.referenciaOdoo || '—'],
-        ['Locación / referencia', proyecto.referenciaProyecto || proyecto.ubicacionDireccion || '—'],
+        // v8.74.9: la locación es el nombre de la antena/sitio, no el número de la OC.
+        ['Locación / referencia', nombreObraDocumento(proyecto) || proyecto.ubicacionDireccion || '—'],
         ['Sistema(s) aplicado(s)', sistemasUsados.map(s => s.nombre).join(' · ') || (sistema?.nombre || '—')],
       ];
       filasId.forEach(([k, v]) => {
@@ -235,7 +237,7 @@ export default function ModalReporteFinalPDF({ proyecto, sistema, data, usuario,
         body: JSON.stringify({
           para: email,
           asunto: `Reporte final de obra — ${ref}`,
-          mensaje: `Saludos,\n\nAdjuntamos el REPORTE FINAL de su obra ${ref}${proyecto.referenciaProyecto ? ` (${proyecto.referenciaProyecto})` : ''}, con el detalle de los trabajos realizados, la garantía y el registro fotográfico final.\n\nLa carta de garantía formal se emite automáticamente al quedar saldada la factura.\n\nGracias por confiar en nosotros.\n\nSuper Techos, SRL`,
+          mensaje: `Saludos,\n\nAdjuntamos el REPORTE FINAL de su obra ${ref}${nombreObraDocumento(proyecto) ? ` (${nombreObraDocumento(proyecto)})` : ''}, con el detalle de los trabajos realizados, la garantía y el registro fotográfico final.\n\nLa carta de garantía formal se emite automáticamente al quedar saldada la factura.\n\nGracias por confiar en nosotros.\n\nSuper Techos, SRL`,
           pdfBase64: listo.base64,
           filename: listo.filename,
         }),

@@ -11,6 +11,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { X, Download, Loader2, FileText, Mail } from 'lucide-react';
 import * as db from '../../lib/db';
+import { nombreObraDocumento } from '../../lib/helpers/proyectos';
 
 // Empresa ejecutora datos (mismo helper que la carta de acceso, en pequeña duplicación)
 const EMPRESA_DATOS = {
@@ -231,7 +232,8 @@ function ReportePDFContenido({ proyecto, empresa, estructura, totalUnidades, tot
         <div style={{ color: '#18181b', fontSize: '22px', fontWeight: 600, lineHeight: 1.2 }}>{proyecto.cliente || proyecto.nombre}</div>
         <div style={{ color: '#71717a', fontSize: '11px', marginTop: '4px' }}>
           {proyecto.referenciaOdoo && `Ref. ${proyecto.referenciaOdoo}`}
-          {proyecto.referenciaProyecto && ` · ${proyecto.referenciaProyecto}`}
+          {/* v8.74.9: el nombre de la antena/sitio, no el número de la OC. */}
+          {nombreObraDocumento(proyecto) && ` · ${nombreObraDocumento(proyecto)}`}
           {proyecto.fecha_inicio && ` · Inicio ${formatearFechaCorta(proyecto.fecha_inicio)}`}
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginTop: 16, paddingTop: 12, borderTop: '1px solid #e4e4e7' }}>

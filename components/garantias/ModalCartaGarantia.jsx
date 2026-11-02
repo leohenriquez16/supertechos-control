@@ -12,6 +12,7 @@ import { X, FileDown, Loader2, ShieldCheck } from 'lucide-react';
 import { getTipoGarantia } from '../../lib/garantiasCatalogo';
 import { m2SistemaGarantizado } from '../../lib/helpers/calculos';
 import { vencimientoGarantia } from '../../lib/helpers/entregaObra';
+import { nombreObraDocumento } from '../../lib/helpers/proyectos';
 
 const cargarScriptCDN = (src) => new Promise((resolve, reject) => {
   if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
@@ -64,6 +65,12 @@ export default function ModalCartaGarantia({ garantia: g, clienteNombre, proyect
   const sinVigencia = !borrador && !vencimiento && !g.duracionMeses;
   const mantsObligatorios = mantenimientos.filter(m => m.garantiaId === g.id && m.obligatorio !== false);
   const referencia = g.referenciaCotizacion || proyecto?.referenciaOdoo || g.codigo || '';
+  // v8.74.9 (ticket de Leonardo, 2-nov): la obra se nombra con el nombre de la antena/sitio.
+  // Antes era `referenciaProyecto || nombre`, y en las obras de Sites cargadas desde las OC
+  // de SAP ese campo trae el número de orden: la carta certificaba trabajos "ejecutados en
+  // la obra OC Sites 4500148558". De paso, la frase ya no se condiciona a que exista
+  // `nombre`: con nombre vacío y referencia llena, la obra desaparecía de la carta.
+  const obraCarta = nombreObraDocumento(proyecto);
   // v8.70.0 (ticket de Miguel, ST-C5759): el m² se recalcula desde las áreas de la obra
   // en vez de confiar en el que quedó guardado en la fila. Las garantías creadas antes
   // del fix tienen la suma de áreas, que duplica la superficie cuando un mismo techo
@@ -195,7 +202,7 @@ export default function ModalCartaGarantia({ garantia: g, clienteNombre, proyect
 
               <p style={{ textAlign: 'justify', margin: '0 0 12px' }}>
                 Distinguidos señores: por medio de la presente, <b>{empresa.razonSocial}</b> (RNC {empresa.rnc}) certifica que los
-                trabajos de <b>{g.sistemaNombre || 'impermeabilización'}</b>{proyecto?.nombre ? <> ejecutados en la obra <b>{proyecto.referenciaProyecto || proyecto.nombre}</b></> : null}
+                trabajos de <b>{g.sistemaNombre || 'impermeabilización'}</b>{obraCarta ? <> ejecutados en la obra <b>{obraCarta}</b></> : null}
                 {m2Carta ? <> ({new Intl.NumberFormat('es-DO').format(m2Carta)} m²)</> : null} cuentan con una <b>garantía de {duracionTxt}</b>
                 {borrador
                   ? <>, con vigencia de <b>{duracionTxt}</b> a partir de la fecha de entrega{fechaEntrega ? <> (<b>{fmtF(fechaEntrega)}</b>)</> : null}.</>

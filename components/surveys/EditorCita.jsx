@@ -18,6 +18,8 @@ export default function EditorCita({ levantamiento: l, usuario, onCerrar, onGuar
   const [guardando, setGuardando] = useState(false);
 
   const guardar = async () => {
+    // v8.74.8: sin fecha la cita no se veía en ningún lado (salvo "cualquier día").
+    if (tipo && tipo !== 'cualquier_dia' && !fecha) { alert('Ponle la fecha a la cita.'); return; }
     setGuardando(true);
     try {
       const horaFinal = tipo === 'hora_fija' ? hora : '';

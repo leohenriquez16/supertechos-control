@@ -12,7 +12,7 @@
 //   - personal asignado (supervisor, maestro, ayudantes).
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { X, FileText, Mail, Loader2, Download, AlertTriangle, Check, Pencil } from 'lucide-react';
+import { X, FileText, Mail, Loader2, Download, AlertTriangle, Check, Pencil, MessageCircle } from 'lucide-react';
 import { EMPRESAS_RECEPTORAS } from '../../lib/constants';
 import Campo from '../common/Campo';
 import Input from '../common/Input';
@@ -63,7 +63,9 @@ const formatearFechaLarga = (iso) => {
   return d.toLocaleDateString('es-DO', { day: 'numeric', month: 'long', year: 'numeric' });
 };
 
-export default function ModalCartaAcceso({ proyecto, data, usuario, onCerrar }) {
+// v8.74.9: `levantamiento` = carta para la visita de levantamiento (texto adaptado) y
+// `whatsapp` = { url, onClick } para mandar el aviso por WhatsApp desde el mismo modal.
+export default function ModalCartaAcceso({ proyecto, data, usuario, onCerrar, levantamiento = false, whatsapp = null }) {
   // ---- Recipientes y candidatos ----
   const contactosCliente = useMemo(
     () => (data.contactos || []).filter(c => c.clienteId === proyecto.clienteId),
@@ -84,7 +86,7 @@ export default function ModalCartaAcceso({ proyecto, data, usuario, onCerrar }) 
   // Lista de personas asignadas al proyecto (sup + maestro + ayudantes)
   const personasAsignadas = useMemo(() => {
     const ids = [];
-    if (proyecto.supervisorId) ids.push({ id: proyecto.supervisorId, rolEnProyecto: 'Supervisor' });
+    if (proyecto.supervisorId) ids.push({ id: proyecto.supervisorId, rolEnProyecto: proyecto.supervisorRol || 'Supervisor' });
     if (proyecto.maestroId) ids.push({ id: proyecto.maestroId, rolEnProyecto: 'Maestro' });
     (proyecto.ayudantesIds || []).forEach(id => ids.push({ id, rolEnProyecto: 'Ayudante' }));
     return ids
@@ -135,21 +137,23 @@ export default function ModalCartaAcceso({ proyecto, data, usuario, onCerrar }) 
   const [emailsExtra, setEmailsExtra] = useState('');
   const [asuntoEmail, setAsuntoEmail] = useState('');
   useEffect(() => {
-    // v8.74.9: el nombre de la antena/sitio, no el número de la OC (ver nombreObraDocumento).
+    // v8.74.10: el nombre de la antena/sitio, no el número de la OC (ver nombreObraDocumento).
     const ref = nombreObraDocumento(proyecto);
-    setAsuntoEmail(`Carta de acceso de personal — ${ref}`.trim());
-  }, [proyecto.referenciaProyecto, proyecto.nombre, proyecto.sitioNombre, proyecto.sitioCodigo, proyecto.cliente]);
+    setAsuntoEmail((levantamiento ? `Visita de levantamiento — ${ref}` : `Carta de acceso de personal — ${ref}`).trim());
+  }, [levantamiento, proyecto.referenciaProyecto, proyecto.nombre, proyecto.sitioNombre, proyecto.sitioCodigo, proyecto.cliente]);
   const [mensajeEmail, setMensajeEmail] = useState('');
   useEffect(() => {
     setMensajeEmail(
       `Buenos días${contactoPrincipal?.nombre ? ', ' + contactoPrincipal.nombre.split(' ')[0] : ''},\n\n` +
-      `Adjunto encuentra la carta con el personal autorizado para acceder a la obra ` +
+      (levantamiento
+        ? `Adjunto encuentra la carta con los datos del personal que realizará el levantamiento en `
+        : `Adjunto encuentra la carta con el personal autorizado para acceder a la obra `) +
       `${nombreObraDocumento(proyecto) ? '"' + nombreObraDocumento(proyecto) + '" ' : ''}` +
       `por parte de ${empresaDatos?.razonSocial || ''}. ` +
       `Le agradeceríamos confirmar recibo y nos informe si necesitan documentación adicional.\n\n` +
       `Saludos,\n${firmanteNombre || ''}`
     );
-  }, [contactoPrincipal?.nombre, proyecto.referenciaProyecto, proyecto.nombre, proyecto.sitioNombre, proyecto.sitioCodigo, proyecto.cliente, empresaDatos?.razonSocial, firmanteNombre]);
+  }, [levantamiento, contactoPrincipal?.nombre, proyecto.referenciaProyecto, proyecto.nombre, proyecto.sitioNombre, proyecto.sitioCodigo, proyecto.cliente, empresaDatos?.razonSocial, firmanteNombre]);
 
   // Fecha de la carta
   const [fechaCarta, setFechaCarta] = useState(() => new Date().toISOString().split('T')[0]);
@@ -479,6 +483,18 @@ export default function ModalCartaAcceso({ proyecto, data, usuario, onCerrar }) 
 
             {/* Botones de acción */}
             <div className="space-y-2 border-t border-zinc-800 pt-3 sticky bottom-0 bg-zinc-900 pb-2 -mb-2">
+              {whatsapp && (
+                <a
+                  href={whatsapp.url || undefined}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={whatsapp.url ? whatsapp.onClick : (e) => e.preventDefault()}
+                  className={`w-full ${whatsapp.url ? 'bg-green-600 hover:bg-green-500' : 'bg-zinc-900 opacity-50 cursor-not-allowed'} text-white text-xs font-black uppercase py-2.5 flex items-center justify-center gap-2`}
+                  title={whatsapp.url ? 'Abrir WhatsApp con el mensaje' : 'El cliente no tiene teléfono móvil'}
+                >
+                  <MessageCircle className="w-3 h-3" /> Enviar por WhatsApp
+                </a>
+              )}
               <button
                 onClick={descargar}
                 disabled={generandoPDF || faltaEmpresa || personasIncluidas.length === 0}
@@ -526,6 +542,8 @@ export default function ModalCartaAcceso({ proyecto, data, usuario, onCerrar }) 
                 vehiculos={vehiculosIncluidos}
                 firmanteNombre={firmanteNombre}
                 firmanteCargo={firmanteCargo}
+                levantamiento={levantamiento}
+                fechaVisitaTexto={proyecto.fechaVisitaTexto}
               />
             </div>
           </div>
@@ -541,7 +559,7 @@ export default function ModalCartaAcceso({ proyecto, data, usuario, onCerrar }) 
 function CartaTemplate({
   empresa, clienteNombre, clienteRNC, contacto, contactoCustomNombre,
   proyectoRef, proyectoDireccion, fecha, vigenciaHasta,
-  personas, vehiculos = [], firmanteNombre, firmanteCargo,
+  personas, vehiculos = [], firmanteNombre, firmanteCargo, levantamiento = false, fechaVisitaTexto = '',
 }) {
   // Nombre del contacto: prioriza el contacto principal, luego el "contactoClienteNombre" del proyecto
   const nombreContacto = contacto?.nombre || contactoCustomNombre || '';
@@ -596,7 +614,8 @@ function CartaTemplate({
           personal de nuestra empresa, <strong>{empresa?.razonSocial}</strong>, pueda
           acceder a las instalaciones del proyecto <strong>{proyectoRef || ''}</strong>
           {proyectoDireccion ? <> ubicado en <strong>{proyectoDireccion}</strong></> : null}
-          {' '}a fin de realizar los trabajos contratados.
+          {' '}a fin de {levantamiento ? 'realizar el levantamiento técnico' : 'realizar los trabajos contratados'}.
+          {levantamiento && fechaVisitaTexto ? <> La visita está programada para el <strong>{fechaVisitaTexto}</strong>.</> : null}
         </p>
 
         {/* Tabla del personal — estilo idéntico al reporte (bordes ligeros, header gris) */}

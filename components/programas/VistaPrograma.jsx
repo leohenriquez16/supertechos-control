@@ -268,7 +268,7 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
 
         if (!obra) return null;
 
-        // v8.74.9: `data.sistemas` es un MAPA indexado por id (lib/db.js lo arma así), no
+        // v8.74.10: `data.sistemas` es un MAPA indexado por id (lib/db.js lo arma así), no
         // un arreglo. Con `.find()` esto tiraba un TypeError y tumbaba la pantalla, así que
         // desde el tablero del programa —justo el módulo de las antenas— no se podía sacar
         // ninguna carta: había que irse a la obra o al módulo Garantías, y cada ruta saca un

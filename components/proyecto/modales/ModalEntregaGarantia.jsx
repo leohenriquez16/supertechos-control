@@ -88,7 +88,7 @@ export default function ModalEntregaGarantia({ proyecto, sistema, data, usuario,
   // Garantía "de mentira" para que el borrador se vea igual que la carta buena.
   const garantiaBorrador = {
     ...(garantiaExistente || {}),
-    // v8.74.9: mismo orden que usa crearGarantiaDesdeProyecto al guardar la fila
+    // v8.74.10: mismo orden que usa crearGarantiaDesdeProyecto al guardar la fila
     // (data.nombre primero). Al revés, borrador y carta original podían nombrar
     // sistemas distintos cuando el sistema trae los dos campos con valores distintos.
     tipo, sistemaNombre: sistema?.data?.nombre || sistema?.nombre || garantiaExistente?.sistemaNombre || '',
@@ -109,7 +109,7 @@ export default function ModalEntregaGarantia({ proyecto, sistema, data, usuario,
         duracionMeses: mesesElegidos,
       });
       await onCambio?.();
-      // v8.74.9: si no hay fila que respalde la carta, no se emite nada. Antes caía a
+      // v8.74.10: si no hay fila que respalde la carta, no se emite nada. Antes caía a
       // `garantiaBorrador` con borrador:false — el cliente recibía el borrador rotulado
       // como carta definitiva, sin vencimiento ("hasta el —") y con la duración del input.
       if (!creada) throw new Error('No se pudo leer la garantía de esta obra. Revísala en el módulo Garantías antes de emitir la carta.');

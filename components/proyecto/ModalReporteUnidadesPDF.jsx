@@ -232,7 +232,7 @@ function ReportePDFContenido({ proyecto, empresa, estructura, totalUnidades, tot
         <div style={{ color: '#18181b', fontSize: '22px', fontWeight: 600, lineHeight: 1.2 }}>{proyecto.cliente || proyecto.nombre}</div>
         <div style={{ color: '#71717a', fontSize: '11px', marginTop: '4px' }}>
           {proyecto.referenciaOdoo && `Ref. ${proyecto.referenciaOdoo}`}
-          {/* v8.74.9: el nombre de la antena/sitio, no el número de la OC. */}
+          {/* v8.74.10: el nombre de la antena/sitio, no el número de la OC. */}
           {nombreObraDocumento(proyecto) && ` · ${nombreObraDocumento(proyecto)}`}
           {proyecto.fecha_inicio && ` · Inicio ${formatearFechaCorta(proyecto.fecha_inicio)}`}
         </div>

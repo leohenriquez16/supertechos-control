@@ -99,7 +99,7 @@ export default function ModalReporteFinalPDF({ proyecto, sistema, data, usuario,
       const filasId = [
         ['Cliente', proyecto.cliente || '—'],
         ['Referencia', proyecto.referenciaOdoo || '—'],
-        // v8.74.9: la locación es el nombre de la antena/sitio, no el número de la OC.
+        // v8.74.10: la locación es el nombre de la antena/sitio, no el número de la OC.
         ['Locación / referencia', nombreObraDocumento(proyecto) || proyecto.ubicacionDireccion || '—'],
         ['Sistema(s) aplicado(s)', sistemasUsados.map(s => s.nombre).join(' · ') || (sistema?.nombre || '—')],
       ];

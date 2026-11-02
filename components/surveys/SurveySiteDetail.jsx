@@ -20,6 +20,7 @@ import { imprimirLevantamiento } from './imprimirLevantamiento';
 import { imprimirInformeFotografico } from './imprimirInformeFotografico';
 import ChatterPanel from '../common/ChatterPanel';
 import SolicitarCalificacion from '../common/SolicitarCalificacion'; // v8.54.1 C3
+import ModalCartaAcceso from '../proyecto/ModalCartaAcceso'; // v8.74.9 aviso de visita
 import Lightbox from '../common/Lightbox';
 import MapaLeaflet from '../common/MapaLeaflet';
 import { registrarEvento as chatterEventoSurvey, registrarComunicacion } from '../../lib/chatter';
@@ -80,6 +81,7 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
     cita_confirmada: !!proyecto?.cita_confirmada,
   });
   const [editarCita, setEditarCita] = useState(false);
+  const [avisoVisita, setAvisoVisita] = useState(null); // v8.74.9
   // v8.19.72: requerimiento de escalera (clave para el maestro).
   const [escalera, setEscalera] = useState(proyecto?.requiere_escalera || '');
   const [guardandoEsc, setGuardandoEsc] = useState(false);
@@ -390,7 +392,10 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
           Acciones rápidas
         </div>
         <QuickActions site={site} proyecto={proyecto} surveyorNombre={usuario?.nombre}
-          onWhatsApp={() => { try { registrarComunicacion('levantamiento', proyecto?.id, { canal: 'whatsapp', direccion: 'saliente', cuerpo: `Se abrió WhatsApp para contactar sobre ${site?.name || 'el levantamiento'}.`, autor: usuario }); } catch { /* noop */ } }} />
+          onWhatsApp={() => { try { registrarComunicacion('levantamiento', proyecto?.id, { canal: 'whatsapp', direccion: 'saliente', cuerpo: `Se abrió WhatsApp para contactar sobre ${site?.name || 'el levantamiento'}.`, autor: usuario }); } catch { /* noop */ } }}
+          levantador={(data?.personal || []).find(p => p.id === asignadoId) || null}
+          cita={cita}
+          onAvisoVisita={setAvisoVisita} />
       </div>
 
       {/* v8.26.13: Ubicación — dirección visible + mini-mapa al lado */}
@@ -580,9 +585,11 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
           <div className="flex items-center justify-between gap-2">
             <div className="min-w-0">
               <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1">📅 Cita</div>
-              {cita.fecha_visita_programada ? (
+              {(cita.fecha_visita_programada || cita.tipo_cita) ? (
                 <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
-                  <span className="text-white font-bold">{cita.fecha_visita_programada}</span>
+                  {cita.fecha_visita_programada
+                    ? <span className="text-white font-bold">{cita.fecha_visita_programada}</span>
+                    : cita.tipo_cita !== 'cualquier_dia' && <span className="text-red-400 font-bold">Sin fecha</span>}
                   {citaTextoHora(cita) && <span className="text-zinc-300">· {citaTextoHora(cita)}</span>}
                   {TIPO_CITA[cita.tipo_cita] && <span style={{ color: TIPO_CITA[cita.tipo_cita].color }}>· {TIPO_CITA[cita.tipo_cita].icon} {TIPO_CITA[cita.tipo_cita].short}</span>}
                   {cita.cita_confirmada
@@ -593,11 +600,34 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
                 <div className="text-[11px] text-zinc-500">Sin agendar</div>
               )}
             </div>
-            <button onClick={() => setEditarCita(true)} className="flex-shrink-0 px-3 py-2 rounded-card bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-black uppercase">{cita.fecha_visita_programada ? 'Editar' : 'Agendar'}</button>
+            <button onClick={() => setEditarCita(true)} className="flex-shrink-0 px-3 py-2 rounded-card bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-black uppercase">{(cita.fecha_visita_programada || cita.tipo_cita) ? 'Editar' : 'Agendar'}</button>
           </div>
         </div>
       )}
       </div>
+      {avisoVisita && (
+        <ModalCartaAcceso
+          levantamiento
+          data={data}
+          usuario={usuario}
+          onCerrar={() => setAvisoVisita(null)}
+          proyecto={{
+            clienteId: site?.cliente_id || null,
+            cliente: proyecto?.client_name || '',
+            empresaEjecutora: proyecto?.company === 'prouco' ? 'prouco' : 'super_techos',
+            supervisorId: asignadoId || null,
+            supervisorRol: 'Levantamiento',
+            contactoClienteNombre: site?.contact_name || '',
+            referenciaProyecto: site?.name || proyecto?.client_name || '',
+            ubicacionDireccionTexto: [site?.address, site?.city].filter(Boolean).join(', '),
+            fechaVisitaTexto: avisoVisita.fecha,
+          }}
+          whatsapp={{
+            url: avisoVisita.url,
+            onClick: () => { try { registrarComunicacion('levantamiento', proyecto?.id, { canal: 'whatsapp', direccion: 'saliente', cuerpo: `Se avisó al cliente por WhatsApp quién hará el levantamiento de ${site?.name || 'el sitio'}.`, autor: usuario }); } catch { /* noop */ } },
+          }}
+        />
+      )}
       {editarCita && <EditorCita levantamiento={{ ...proyecto, ...cita, requiere_escalera: escalera }} usuario={usuario} onCerrar={() => setEditarCita(false)} onGuardado={(vals) => { setCita(c => ({ ...c, ...vals })); if (vals.requiere_escalera !== undefined) setEscalera(vals.requiere_escalera || ''); }} />}
 
       {/* v8.24.6: "Puntos singulares" y "Estimación / cotización preliminar" removidos por ahora */}

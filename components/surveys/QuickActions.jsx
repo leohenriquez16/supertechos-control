@@ -10,8 +10,8 @@
 // el mensaje de WhatsApp contextual.
 
 import React from 'react';
-import { Phone, MessageCircle, Map, Navigation } from 'lucide-react';
-import { COMPANIES, SERVICE_LINES } from '../../lib/surveys';
+import { Phone, MessageCircle, Map, Navigation, UserCheck } from 'lucide-react';
+import { COMPANIES, SERVICE_LINES, citaTextoHora } from '../../lib/surveys';
 
 const SERVICE_DISPLAY = {
   paint: 'pintura',
@@ -32,7 +32,13 @@ function normalizarTelefonoUrl(tel) {
   return digitos;
 }
 
-export default function QuickActions({ site, proyecto, surveyorNombre, onWhatsApp }) {
+function fechaLarga(f) {
+  if (!f) return '';
+  const d = new Date(String(f).slice(0, 10) + 'T12:00:00');
+  return d.toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'long' });
+}
+
+export default function QuickActions({ site, proyecto, surveyorNombre, onWhatsApp, levantador, cita, onAvisoVisita }) {
   const tieneGeo = site.latitude != null && site.longitude != null;
   const telMovil = (site.mobile_phone || '').replace(/\D/g, '');
   const telOficina = (site.office_phone || '').replace(/\D/g, '');
@@ -49,6 +55,25 @@ export default function QuickActions({ site, proyecto, surveyorNombre, onWhatsAp
     ? `https://wa.me/${waNumero}?text=${encodeURIComponent(mensajeWa)}`
     : null;
 
+  // v8.74.9: aviso al cliente con los datos de quien hará el levantamiento.
+  const telLev = levantador?.whatsapp || levantador?.telefono || '';
+  const fechaCita = cita?.fecha_visita_programada ? fechaLarga(cita.fecha_visita_programada) : '';
+  const horaCita = cita ? citaTextoHora(cita) : '';
+  const mensajeAviso = levantador ? [
+    `Buenos días, le escribimos de ${empresaLabel}.`,
+    `Le confirmamos la visita de levantamiento para ${servicioLabel} en ${site.name}.`,
+    '',
+    fechaCita || horaCita ? `📅 ${[fechaCita, horaCita].filter(Boolean).join(' · ')}` : null,
+    `👷 Lo visitará: ${levantador.nombre}`,
+    levantador.cedulaNumero ? `🪪 Cédula: ${levantador.cedulaNumero}` : null,
+    telLev ? `📞 ${telLev}` : null,
+    '',
+    'Cualquier cambio nos avisa por aquí. ¡Gracias!',
+  ].filter(l => l !== null).join('\n') : '';
+  const avisoUrl = waNumero && levantador
+    ? `https://wa.me/${waNumero}?text=${encodeURIComponent(mensajeAviso)}`
+    : null;
+
   const mapsUrl = tieneGeo
     ? `https://www.google.com/maps?q=${site.latitude},${site.longitude}`
     : null;
@@ -58,7 +83,7 @@ export default function QuickActions({ site, proyecto, surveyorNombre, onWhatsAp
     : null;
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+    <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
       <ActionButton
         icon={Phone}
         label="Llamar"
@@ -75,6 +100,15 @@ export default function QuickActions({ site, proyecto, surveyorNombre, onWhatsAp
         color="#25d366"
         title={waUrl ? 'Abrir WhatsApp con mensaje' : 'Sin teléfono móvil'}
         onClick={onWhatsApp}
+      />
+      <ActionButton
+        icon={UserCheck}
+        label="Avisar visita"
+        disabled={!levantador}
+        href="#"
+        color="#25d366"
+        title={levantador ? 'WhatsApp, correo o carta con quién lo visitará' : 'Asigna primero el levantador'}
+        onClick={(e) => { e.preventDefault(); onAvisoVisita?.({ url: avisoUrl, mensaje: mensajeAviso, fecha: [fechaCita, horaCita].filter(Boolean).join(' · ') }); }}
       />
       <ActionButton
         icon={Map}

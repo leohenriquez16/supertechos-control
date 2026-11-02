@@ -16,6 +16,7 @@ import { X, FileText, Mail, Loader2, Download, AlertTriangle, Check, Pencil, Mes
 import { EMPRESAS_RECEPTORAS } from '../../lib/constants';
 import Campo from '../common/Campo';
 import Input from '../common/Input';
+import { nombreObraDocumento } from '../../lib/helpers/proyectos';
 
 // Carga las librerías PDF on-demand (igual que ModalReporteAvancePDF)
 const cargarScriptCDN = (src) => new Promise((resolve, reject) => {
@@ -136,9 +137,10 @@ export default function ModalCartaAcceso({ proyecto, data, usuario, onCerrar, le
   const [emailsExtra, setEmailsExtra] = useState('');
   const [asuntoEmail, setAsuntoEmail] = useState('');
   useEffect(() => {
-    const ref = proyecto.referenciaProyecto || proyecto.nombre || '';
+    // v8.74.10: el nombre de la antena/sitio, no el número de la OC (ver nombreObraDocumento).
+    const ref = nombreObraDocumento(proyecto);
     setAsuntoEmail((levantamiento ? `Visita de levantamiento — ${ref}` : `Carta de acceso de personal — ${ref}`).trim());
-  }, [proyecto.referenciaProyecto, proyecto.nombre]);
+  }, [levantamiento, proyecto.referenciaProyecto, proyecto.nombre, proyecto.sitioNombre, proyecto.sitioCodigo, proyecto.cliente]);
   const [mensajeEmail, setMensajeEmail] = useState('');
   useEffect(() => {
     setMensajeEmail(
@@ -146,12 +148,12 @@ export default function ModalCartaAcceso({ proyecto, data, usuario, onCerrar, le
       (levantamiento
         ? `Adjunto encuentra la carta con los datos del personal que realizará el levantamiento en `
         : `Adjunto encuentra la carta con el personal autorizado para acceder a la obra `) +
-      `${proyecto.referenciaProyecto ? '"' + proyecto.referenciaProyecto + '"' : ''} ` +
+      `${nombreObraDocumento(proyecto) ? '"' + nombreObraDocumento(proyecto) + '" ' : ''}` +
       `por parte de ${empresaDatos?.razonSocial || ''}. ` +
       `Le agradeceríamos confirmar recibo y nos informe si necesitan documentación adicional.\n\n` +
       `Saludos,\n${firmanteNombre || ''}`
     );
-  }, [contactoPrincipal?.nombre, proyecto.referenciaProyecto, empresaDatos?.razonSocial, firmanteNombre]);
+  }, [levantamiento, contactoPrincipal?.nombre, proyecto.referenciaProyecto, proyecto.nombre, proyecto.sitioNombre, proyecto.sitioCodigo, proyecto.cliente, empresaDatos?.razonSocial, firmanteNombre]);
 
   // Fecha de la carta
   const [fechaCarta, setFechaCarta] = useState(() => new Date().toISOString().split('T')[0]);
@@ -280,7 +282,7 @@ export default function ModalCartaAcceso({ proyecto, data, usuario, onCerrar, le
   const descargar = async () => {
     const result = await generarPDF();
     if (!result) return;
-    const nombre = `carta-acceso-${(proyecto.referenciaProyecto || proyecto.nombre || 'proyecto').replace(/[^a-zA-Z0-9-]/g, '_')}.pdf`;
+    const nombre = `carta-acceso-${(nombreObraDocumento(proyecto) || 'proyecto').replace(/[^a-zA-Z0-9-]/g, '_')}.pdf`;
     result.pdf.save(nombre);
     guardarFirmanteLocal();
     setMensajeOk('PDF descargado.');
@@ -306,7 +308,7 @@ export default function ModalCartaAcceso({ proyecto, data, usuario, onCerrar, le
         .map(linea => `<p style="margin:0 0 8px;">${linea.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') || '&nbsp;'}</p>`)
         .join('');
 
-      const filename = `carta-acceso-${(proyecto.referenciaProyecto || proyecto.nombre || 'proyecto').replace(/[^a-zA-Z0-9-]/g, '_')}.pdf`;
+      const filename = `carta-acceso-${(nombreObraDocumento(proyecto) || 'proyecto').replace(/[^a-zA-Z0-9-]/g, '_')}.pdf`;
 
       const resp = await fetch('/api/email/carta-acceso', {
         method: 'POST',
@@ -314,7 +316,7 @@ export default function ModalCartaAcceso({ proyecto, data, usuario, onCerrar, le
         body: JSON.stringify({
           destinatarios: destinatariosRaw,
           cc: usuario?.email ? [usuario.email] : [],
-          asunto: asuntoEmail || `Carta de acceso — ${proyecto.referenciaProyecto || ''}`,
+          asunto: asuntoEmail || `Carta de acceso — ${nombreObraDocumento(proyecto)}`,
           mensaje_html,
           pdf_base64: result.base64,
           pdf_filename: filename,
@@ -348,7 +350,7 @@ export default function ModalCartaAcceso({ proyecto, data, usuario, onCerrar, le
             <FileText className="w-5 h-5 text-red-400" />
             <div>
               <div className="text-xs tracking-widest uppercase text-red-400 font-bold">Carta de acceso de personal</div>
-              <div className="text-[10px] text-zinc-500">{proyecto.cliente || cliente?.nombre || 'Sin cliente'} · {proyecto.referenciaProyecto || proyecto.nombre || proyecto.referenciaOdoo}</div>
+              <div className="text-[10px] text-zinc-500">{proyecto.cliente || cliente?.nombre || 'Sin cliente'} · {nombreObraDocumento(proyecto) || proyecto.referenciaOdoo}</div>
             </div>
           </div>
           <button onClick={onCerrar} className="text-zinc-500 hover:text-white"><X className="w-5 h-5" /></button>
@@ -532,7 +534,7 @@ export default function ModalCartaAcceso({ proyecto, data, usuario, onCerrar, le
                 clienteRNC={cliente?.rnc}
                 contacto={contactoPrincipal}
                 contactoCustomNombre={proyecto.contactoClienteNombre}
-                proyectoRef={proyecto.referenciaProyecto || proyecto.nombre || proyecto.referenciaOdoo}
+                proyectoRef={nombreObraDocumento(proyecto) || proyecto.referenciaOdoo}
                 proyectoDireccion={proyecto.ubicacionDireccionTexto || proyecto.ubicacionDireccion}
                 fecha={fechaCarta}
                 vigenciaHasta={vigenciaHasta}

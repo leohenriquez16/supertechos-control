@@ -268,7 +268,12 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
 
         if (!obra) return null;
 
-        const sis = (data.sistemas || []).find(x => x.id === obra.sistema);
+        // v8.74.10: `data.sistemas` es un MAPA indexado por id (lib/db.js lo arma así), no
+        // un arreglo. Con `.find()` esto tiraba un TypeError y tumbaba la pantalla, así que
+        // desde el tablero del programa —justo el módulo de las antenas— no se podía sacar
+        // ninguna carta: había que irse a la obra o al módulo Garantías, y cada ruta saca un
+        // papel distinto. Mismo acceso por clave que el resto del ERP.
+        const sis = (data.sistemas || {})[obra.sistema] || null;
 
         return <ModalEntregaGarantia proyecto={obra} sistema={sis} data={data} usuario={usuario}
 

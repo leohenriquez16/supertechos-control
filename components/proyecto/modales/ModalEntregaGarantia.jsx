@@ -31,6 +31,16 @@ export default function ModalEntregaGarantia({ proyecto, sistema, data, usuario,
   const [error, setError] = useState('');
   const [emitiendo, setEmitiendo] = useState(false);
   const [carta, setCarta] = useState(null);     // { garantia, borrador, fechaEntrega, motivo }
+  // v8.74.9 (ticket de Leonardo, 2-nov): la garantía ya emitida y sus mantenimientos, leídos
+  // de la base. Antes esto salía de `data.garantias` y `data.mantenimientos`, claves que
+  // loadAllData NO devuelve: `garantiaExistente` era SIEMPRE null. De ahí que la carta
+  // "original" se armara con el objeto del borrador (duración del input en vez de la
+  // registrada, inicio = fecha de entrega en vez del guardado) y que el párrafo de
+  // mantenimiento obligatorio no saliera nunca desde la obra, aunque las garantías de
+  // Sites tengan de 2 a 5 inspecciones registradas. El endpoint ya devolvía `garantiaId`
+  // y nadie lo usaba.
+  const [garantiaExistente, setGarantiaExistente] = useState(null);
+  const [mantenimientos, setMantenimientos] = useState([]);
 
   useEffect(() => {
     let vivo = true;
@@ -42,16 +52,25 @@ export default function ModalEntregaGarantia({ proyecto, sistema, data, usuario,
         });
         const j = await r.json();
         if (!vivo) return;
-        if (!j.ok) setError(j.error || 'No se pudo consultar el estado de la obra');
-        else setEstado(j);
+        if (!j.ok) { setError(j.error || 'No se pudo consultar el estado de la obra'); return; }
+        setEstado(j);
+        if (j.garantiaId) {
+          // incluirArchivadas: el endpoint tampoco filtra archivado, así que si la fila
+          // existe anulada hay que verla igual y no inventar una garantía nueva.
+          const [gars, mants] = await Promise.all([
+            db.listarGarantias({ incluirArchivadas: true }).catch(() => []),
+            db.listarMantenimientos({ garantiaId: j.garantiaId }).catch(() => []),
+          ]);
+          if (!vivo) return;
+          setGarantiaExistente((gars || []).find(g => g.id === j.garantiaId) || null);
+          setMantenimientos(mants || []);
+        }
       } catch (e) {
         if (vivo) setError(e?.message || 'No se pudo consultar el estado de la obra');
       } finally { if (vivo) setCargando(false); }
     })();
     return () => { vivo = false; };
   }, [proyecto.id]);
-
-  const garantiaExistente = (data?.garantias || []).find(g => g.proyectoId === proyecto.id) || null;
   const clienteNombre = proyecto.cliente || (data?.clientes || []).find(c => c.id === proyecto.clienteId)?.nombre || '';
   // v8.72.0: tipoSugeridoParaSistema lee sistema.data.nombre / sistema.nombre / su id, así que
   // recibe el OBJETO. Pasándole el nombre suelto, ningún campo resolvía, el nombre quedaba vacío
@@ -69,7 +88,10 @@ export default function ModalEntregaGarantia({ proyecto, sistema, data, usuario,
   // Garantía "de mentira" para que el borrador se vea igual que la carta buena.
   const garantiaBorrador = {
     ...(garantiaExistente || {}),
-    tipo, sistemaNombre: sistema?.nombre || sistema?.data?.nombre || garantiaExistente?.sistemaNombre || '',
+    // v8.74.10: mismo orden que usa crearGarantiaDesdeProyecto al guardar la fila
+    // (data.nombre primero). Al revés, borrador y carta original podían nombrar
+    // sistemas distintos cuando el sistema trae los dos campos con valores distintos.
+    tipo, sistemaNombre: sistema?.data?.nombre || sistema?.nombre || garantiaExistente?.sistemaNombre || '',
     duracionMeses: garantiaExistente?.duracionMeses || mesesElegidos,
     cobertura: garantiaExistente?.cobertura || cat?.cobertura || '',
     condicion: garantiaExistente?.condicion || cat?.condicion || '',
@@ -87,7 +109,12 @@ export default function ModalEntregaGarantia({ proyecto, sistema, data, usuario,
         duracionMeses: mesesElegidos,
       });
       await onCambio?.();
-      setCarta({ garantia: creada || garantiaBorrador, borrador: false });
+      // v8.74.10: si no hay fila que respalde la carta, no se emite nada. Antes caía a
+      // `garantiaBorrador` con borrador:false — el cliente recibía el borrador rotulado
+      // como carta definitiva, sin vencimiento ("hasta el —") y con la duración del input.
+      if (!creada) throw new Error('No se pudo leer la garantía de esta obra. Revísala en el módulo Garantías antes de emitir la carta.');
+      setGarantiaExistente(creada);
+      setCarta({ garantia: creada, borrador: false });
     } catch (e) {
       setError(e?.message || 'No se pudo emitir la garantía');
     } finally { setEmitiendo(false); }
@@ -100,7 +127,7 @@ export default function ModalEntregaGarantia({ proyecto, sistema, data, usuario,
         clienteNombre={clienteNombre}
         proyecto={proyecto}
         ubicacionNombre={proyecto.ubicacionDireccionTexto || ''}
-        mantenimientos={data?.mantenimientos || []}
+        mantenimientos={mantenimientos}
         borrador={carta.borrador}
         fechaEntrega={estado?.fechaEntrega}
         motivoBorrador={carta.motivo}

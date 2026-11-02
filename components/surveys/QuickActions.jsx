@@ -65,6 +65,7 @@ export default function QuickActions({ site, proyecto, surveyorNombre, onWhatsAp
     '',
     fechaCita || horaCita ? `📅 ${[fechaCita, horaCita].filter(Boolean).join(' · ')}` : null,
     `👷 Lo visitará: ${levantador.nombre}`,
+    levantador.cedulaNumero ? `🪪 Cédula: ${levantador.cedulaNumero}` : null,
     telLev ? `📞 ${telLev}` : null,
     '',
     'Cualquier cambio nos avisa por aquí. ¡Gracias!',

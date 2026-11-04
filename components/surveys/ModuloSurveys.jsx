@@ -9,7 +9,8 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Loader2, Plus, MapPin, Building, ChevronRight, ArrowLeft, List, Map as MapIcon, LayoutGrid, Search, User as UserIcon, Calendar, Mail, MessageCircle, Clock, ArrowLeftRight, Tag as TagIcon } from 'lucide-react';
-import { listarProyectosSurveys, listarSitesProyectoSurvey, listarTodosLosSitesSurvey, crearSiteSurvey, COMPANIES, PROJECT_STATUS, SITE_STATUS, SERVICE_LINES, ESCALERA, setEtapaSurvey, actualizarSiteSurvey, citaTextoHora } from '../../lib/surveys';
+import { listarProyectosSurveys, listarSitesProyectoSurvey, listarTodosLosSitesSurvey, crearSiteSurvey, COMPANIES, PROJECT_STATUS, SITE_STATUS, SERVICE_LINES, ESCALERA, setEtapaSurvey, actualizarSiteSurvey, citaTextoHora, obtenerProyectoSurvey } from '../../lib/surveys';
+import { nombreSitioVisible, textoBusquedaSitios, normalizarBusqueda, etapaDeLevantamiento } from '../../lib/helpers/sitioLevantamiento'; // v8.75.0
 import ModalUbicacionSite from './ModalUbicacionSite'; // v8.45.0
 import * as db from '../../lib/db';
 import MapaLeaflet from '../common/MapaLeaflet';
@@ -21,9 +22,9 @@ import ModalNuevoProyecto from './ModalNuevoProyecto';
 import ModalLevantamientoSimple from './ModalLevantamientoSimple';
 import CalendarioLevantamientos from './CalendarioLevantamientos';
 
-export default function ModuloSurveys({ usuario, data, onRecargar }) {
-  // Subvistas: 'lista' (default) | 'proyecto' | 'site'
-  const [subvista, setSubvista] = useState('lista');
+export default function ModuloSurveys({ usuario, data, onRecargar, abrirProyectoId = null, onVolverOrigen = null, etiquetaOrigen = 'Volver' }) {
+  // Subvistas: 'lista' (default) | 'proyecto' | 'site' | 'abriendo' (v8.75.0)
+  const [subvista, setSubvista] = useState(abrirProyectoId ? 'abriendo' : 'lista');
   const [proyectoActivo, setProyectoActivo] = useState(null);
   const [siteActivo, setSiteActivo] = useState(null);
   // v8.19.64: si entramos directo a la ficha del sitio (levantamiento de 1 sitio),
@@ -41,8 +42,30 @@ export default function ModuloSurveys({ usuario, data, onRecargar }) {
     setSubvista('proyecto');
   };
 
+  // v8.75.0: entrar directo a un levantamiento desde otro módulo (Programas → "Ver el
+  // levantamiento"). "Volver" regresa a ese módulo, no a la lista de Levantamientos.
+  const [desdeOrigen, setDesdeOrigen] = useState(!!abrirProyectoId);
+  useEffect(() => {
+    if (!abrirProyectoId) return;
+    let cancelado = false;
+    (async () => {
+      const p = await obtenerProyectoSurvey(abrirProyectoId);
+      if (cancelado) return;
+      if (p) { await abrirProyecto(p); return; }
+      alert('No encontré ese levantamiento. Te enseño la lista.');
+      setDesdeOrigen(false);
+      setSubvista('lista');
+    })();
+    return () => { cancelado = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abrirProyectoId]);
+  const volverAlOrigen = (desdeOrigen && onVolverOrigen) ? () => { setDesdeOrigen(false); onVolverOrigen(); } : null;
+
   return (
     <div className="space-y-4">
+      {subvista === 'abriendo' && (
+        <div className="py-12 text-center text-zinc-500 text-sm"><Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />Abriendo el levantamiento…</div>
+      )}
       {subvista === 'lista' && (
         <SurveysList
           usuario={usuario}
@@ -55,8 +78,9 @@ export default function ModuloSurveys({ usuario, data, onRecargar }) {
       {subvista === 'proyecto' && proyectoActivo && (
         <SurveyProjectDetail
           proyecto={proyectoActivo}
+          etiquetaVolver={volverAlOrigen ? etiquetaOrigen : 'Volver a Levantamientos'}
           onAbrirSite={(s) => { setSiteActivo(s); setSiteDirecto(false); setSubvista('site'); }}
-          onVolver={() => { setSubvista('lista'); setProyectoActivo(null); }}
+          onVolver={() => { if (volverAlOrigen) { volverAlOrigen(); return; } setSubvista('lista'); setProyectoActivo(null); }}
         />
       )}
       {subvista === 'site' && siteActivo && proyectoActivo && (
@@ -67,6 +91,7 @@ export default function ModuloSurveys({ usuario, data, onRecargar }) {
           data={data}
           onVerEdificaciones={() => { setSiteDirecto(false); setSiteActivo(null); setSubvista('proyecto'); }}
           onVolver={() => {
+            if (siteDirecto && volverAlOrigen) { volverAlOrigen(); return; }
             if (siteDirecto) { setSubvista('lista'); setSiteActivo(null); setProyectoActivo(null); }
             else { setSubvista('proyecto'); setSiteActivo(null); }
           }}
@@ -164,8 +189,9 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto, onRec
   const ORDEN_ODOO = ['New', 'Contactado', 'Asignado', 'Agendado', 'Realizado', 'Cotizacion en Revision', 'Cotizacion Realizada', 'No se pudo coordinar', 'No podemos cotizar', 'Cliente no esta interesado'];
   // Levantamientos creados localmente (sin odoo_stage) se mapean a una etapa de Odoo
   // para que el Kanban use SIEMPRE las columnas de Odoo en su orden real.
-  const MAP_STATUS_ODOO = { planning: 'New', survey_in_progress: 'Asignado', survey_completed: 'Realizado', quoted: 'Cotizacion Realizada', awarded: 'Cotizacion Realizada', in_execution: 'Realizado', completed: 'Realizado', cancelled: 'No se pudo coordinar' };
-  const estadoDe = (p) => p.odoo_stage || MAP_STATUS_ODOO[p.status] || 'New';
+  // v8.75.0: la traducción status → etapa vive en lib/helpers/sitioLevantamiento.js, que la
+  // comparte con la ficha del programa (para que las dos pantallas digan la misma etapa).
+  const estadoDe = etapaDeLevantamiento;
   const columnasKanban = React.useMemo(() => {
     // Orden: custom del admin (si existe) → pipeline Odoo → etapas extra presentes.
     const presentes = [...new Set(proyectos.map(estadoDe))];
@@ -197,6 +223,8 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto, onRec
 
   // v8.25.0: info para la tarjeta — cliente, contacto principal y canal preferido.
   const siteDeProy = React.useMemo(() => { const m = {}; for (const s of sites) { if (!m[s.project_id]) m[s.project_id] = s; } return m; }, [sites]);
+  // v8.75.0: buscar también por el sitio (antena, sucursal, tienda), su código LEV y su dirección.
+  const textoSitios = React.useMemo(() => textoBusquedaSitios(sites), [sites]);
   const clientesData = data?.clientes || [];
   const contactosData = data?.contactos || [];
   const infoTarjeta = (p) => {
@@ -209,7 +237,10 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto, onRec
     const ws = site?.mobile_phone || site?.office_phone || ppal?.whatsapp || ppal?.telefono || '';
     const email = ppal?.email || '';
     const canal = ws ? 'ws' : (ppal?.prefComunicacion || (email ? 'email' : null));
-    return { cliente: p.client_name || cli?.nombre || '—', contacto, canal };
+    // v8.75.0: el sitio distingue tarjetas del mismo cliente (las 33 antenas de Towers and Sites).
+    const nSites = sitesPorProy[p.id] || 0;
+    const sitio = nSites > 1 ? `${nSites} sitios` : nombreSitioVisible(site?.name, p.client_name || cli?.nombre);
+    return { cliente: p.client_name || cli?.nombre || '—', sitio, contacto, canal };
   };
   const tiempoEnEtapa = (p) => {
     const iso = p.stage_changed_at || p.updated_at || p.created_at;
@@ -260,6 +291,7 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto, onRec
   // Filtro de búsqueda + filtros (cliente, levantamiento, servicio, empresa, estado, levantador).
   const proyFiltrados = React.useMemo(() => {
     const q = busqueda.toLowerCase().trim();
+    const qNorm = normalizarBusqueda(busqueda); // v8.75.0: sin acentos, para el sitio
     const qDig = q.replace(/\D/g, ''); // v8.27.84: buscar la cotización por solo los dígitos (5774 → ST5774)
     return proyectos.filter(p => {
       if (esSup && !ETAPAS_SUP.includes(estadoDe(p))) return false; // supervisor: solo hasta "Realizado"
@@ -272,6 +304,7 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto, onRec
         (p.asignado_a_nombre || '').toLowerCase().includes(q) ||
         refCotiz.toLowerCase().includes(q) ||
         (qDig && refCotiz.replace(/\D/g, '').includes(qDig)) ||
+        (qNorm && (textoSitios[p.id] || '').includes(qNorm)) ||
         estadoDe(p).toLowerCase().includes(q)
       )) return false;
       if (fServicio && p.service_line !== fServicio) return false;
@@ -280,7 +313,7 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto, onRec
       if (fLevantador && levantadorDe(p) !== fLevantador) return false;
       return true;
     });
-  }, [proyectos, busqueda, fServicio, fEmpresa, fEstado, fLevantador, esSup, siteDeProy]);
+  }, [proyectos, busqueda, fServicio, fEmpresa, fEstado, fLevantador, esSup, siteDeProy, textoSitios]);
 
   // Opciones presentes (para los selects de filtro).
   const opcServicios = React.useMemo(() => [...new Set(proyectos.map(p => p.service_line).filter(Boolean))], [proyectos]);
@@ -406,7 +439,7 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto, onRec
               </div>
               <div className="relative">
                 <Search className="w-3.5 h-3.5 text-zinc-600 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                <input value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar…" className="bg-zinc-950 border border-zinc-800 rounded-card pl-8 pr-3 py-1.5 text-xs text-white outline-none focus:border-red-600 w-44 sm:w-56" />
+                <input value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar cliente o sitio…" className="bg-zinc-950 border border-zinc-800 rounded-card pl-8 pr-3 py-1.5 text-xs text-white outline-none focus:border-red-600 w-44 sm:w-56" />
               </div>
             </div>
             {/* Filtros (aplican a todas las vistas) + agrupar (lista) */}
@@ -478,6 +511,7 @@ function SurveysList({ usuario, data, onAbrirProyecto, onAbrirSiteDirecto, onRec
                             <div className="flex items-start justify-between gap-1.5">
                               <div className="min-w-0">
                                 <div className="font-bold text-xs truncate text-white">{info.cliente}</div>
+                                {info.sitio && <div className="text-[11px] text-zinc-200 truncate flex items-center gap-1" title={info.sitio}><MapPin className="w-2.5 h-2.5 text-zinc-500 shrink-0" />{info.sitio}</div>}
                                 {info.contacto && <div className="text-[10px] text-zinc-400 truncate flex items-center gap-1"><UserIcon className="w-2.5 h-2.5 text-zinc-600" />{info.contacto}</div>}
                               </div>
                               {info.canal === 'ws' ? <MessageCircle className="w-4 h-4 text-green-500 shrink-0" title="WhatsApp" /> : info.canal === 'email' ? <Mail className="w-4 h-4 text-blue-400 shrink-0" title="Email" /> : null}
@@ -584,7 +618,7 @@ function CotizacionBadge({ valor }) {
   );
 }
 
-function FilaSurvey({ p, nSites, estado, cotizacion, onAbrir }) {
+function FilaSurvey({ p, nSites, estado, cotizacion, sitio, onAbrir }) {
   const color = SERVICE_LINES[p.service_line]?.color || '#666';
   const company = COMPANIES[p.company] || p.company || '—';
   return (
@@ -594,7 +628,11 @@ function FilaSurvey({ p, nSites, estado, cotizacion, onAbrir }) {
         <div className="font-bold truncate">{p.client_name || '—'}</div>
         {p.description && <div className="text-[10px] text-zinc-500 truncate" title={p.description}>{p.description}</div>}
       </td>
-      <td className="px-3 py-2 text-zinc-400 text-xs max-w-[200px] truncate">{p.name || '—'}</td>
+      {/* v8.75.0: el sitio arriba — en Towers and Sites el nombre del levantamiento es igual en todos */}
+      <td className="px-3 py-2 text-xs max-w-[220px]">
+        {sitio && <div className="text-zinc-200 truncate" title={sitio}>{sitio}</div>}
+        <div className={`truncate ${sitio ? 'text-[10px] text-zinc-500' : 'text-zinc-400'}`} title={p.name || ''}>{p.name || '—'}</div>
+      </td>
       <td className="px-3 py-2"><ServiceLineBadge serviceLine={p.service_line} /></td>
       <td className="px-3 py-2 text-[10px] uppercase tracking-wider text-zinc-500">{company}</td>
       <td className="px-3 py-2"><span className="text-[10px] uppercase tracking-wider font-bold text-zinc-300">{estado}</span></td>
@@ -623,6 +661,10 @@ function FiltroSelect({ value, onChange, placeholder, options }) {
 
 function SurveysTabla({ grupos, sitesPorProy, siteDeProy = {}, estadoDe, agrupado, onAbrir }) {
   const total = grupos.reduce((a, g) => a + g.items.length, 0);
+  // v8.75.0: el sitio, sin repetir el cliente ni el nombre del levantamiento. En la tabla, los
+  // multi-sitio no lo llevan (ya está la columna Sitios); en la tarjeta del celular, "N sitios".
+  const sitioUnico = (p) => ((sitesPorProy[p.id] || 0) > 1 ? '' : nombreSitioVisible(siteDeProy[p.id]?.name, p.client_name, p.name));
+  const sitioTarjeta = (p) => ((sitesPorProy[p.id] || 0) > 1 ? `${sitesPorProy[p.id]} sitios` : sitioUnico(p));
   if (total === 0) {
     return <div className="bg-zinc-950 border border-zinc-800 rounded-card p-6 text-center text-zinc-500 text-sm">Sin resultados.</div>;
   }
@@ -662,7 +704,7 @@ function SurveysTabla({ grupos, sitesPorProy, siteDeProy = {}, estadoDe, agrupad
                   </tr>
                 )}
                 {g.items.map(p => (
-                  <FilaSurvey key={p.id} p={p} nSites={sitesPorProy[p.id]} estado={estadoDe(p)} cotizacion={cotizNum(siteDeProy[p.id]?.referencia_odoo)} onAbrir={onAbrir} />
+                  <FilaSurvey key={p.id} p={p} nSites={sitesPorProy[p.id]} estado={estadoDe(p)} cotizacion={cotizNum(siteDeProy[p.id]?.referencia_odoo)} sitio={sitioUnico(p)} onAbrir={onAbrir} />
                 ))}
               </React.Fragment>
             ))}
@@ -675,7 +717,7 @@ function SurveysTabla({ grupos, sitesPorProy, siteDeProy = {}, estadoDe, agrupad
         {grupos.map(g => (
           <div key={g.key} className="space-y-2">
             {agrupado && <div className="text-[10px] uppercase tracking-widest font-black text-zinc-500 px-1">{g.label} · {g.items.length}</div>}
-            {g.items.map(p => <ProyectoCard key={p.id} proyecto={p} cotizacion={cotizNum(siteDeProy[p.id]?.referencia_odoo)} onClick={() => onAbrir(p)} />)}
+            {g.items.map(p => <ProyectoCard key={p.id} proyecto={p} cotizacion={cotizNum(siteDeProy[p.id]?.referencia_odoo)} sitio={sitioTarjeta(p)} onClick={() => onAbrir(p)} />)}
           </div>
         ))}
       </div>
@@ -683,7 +725,7 @@ function SurveysTabla({ grupos, sitesPorProy, siteDeProy = {}, estadoDe, agrupad
   );
 }
 
-function ProyectoCard({ proyecto, cotizacion, onClick }) {
+function ProyectoCard({ proyecto, cotizacion, sitio, onClick }) {
   const estadoLabel = proyecto.odoo_stage || PROJECT_STATUS[proyecto.status] || proyecto.status;
   const company = COMPANIES[proyecto.company] || proyecto.company;
   const color = SERVICE_LINES[proyecto.service_line]?.color || '#666';
@@ -702,6 +744,7 @@ function ProyectoCard({ proyecto, cotizacion, onClick }) {
           {cotizacion && <CotizacionBadge valor={cotizacion} />}
         </div>
         <div className="font-bold text-sm truncate">{proyecto.name}</div>
+        {sitio && <div className="text-xs text-zinc-200 mt-0.5 truncate">{sitio}</div>}
         <div className="text-xs text-zinc-500 mt-0.5">{proyecto.client_name}</div>
         {proyecto.description && (
           <div className="text-[11px] text-zinc-600 mt-1 truncate">{proyecto.description}</div>
@@ -716,7 +759,7 @@ function ProyectoCard({ proyecto, cotizacion, onClick }) {
 // DETALLE DE PROYECTO (lista de sites)
 // PR 3B.1: versión básica sin mapa todavía. Mapa viene en 3B.2.
 // ============================================================
-function SurveyProjectDetail({ proyecto, onAbrirSite, onVolver }) {
+function SurveyProjectDetail({ proyecto, onAbrirSite, onVolver, etiquetaVolver = 'Volver a Levantamientos' }) {
   const [loading, setLoading] = useState(true);
   const [sites, setSites] = useState([]);
   const [errorMsg, setErrorMsg] = useState(null);
@@ -742,7 +785,7 @@ function SurveyProjectDetail({ proyecto, onAbrirSite, onVolver }) {
   return (
     <div className="space-y-4">
       <button onClick={onVolver} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm">
-        <ArrowLeft className="w-4 h-4" /> Volver a Levantamientos
+        <ArrowLeft className="w-4 h-4" /> {etiquetaVolver}
       </button>
 
       <div>

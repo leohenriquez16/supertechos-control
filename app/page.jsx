@@ -484,6 +484,10 @@ export default function App() {
       return prev.slice(0, -1);
     });
   }, [data]);
+  // v8.75.0: levantamiento que se abre al entrar a Levantamientos desde Programas
+  // ("Ver el levantamiento"). Se olvida al salir de Levantamientos, así el menú abre la lista.
+  const [levantamientoAbrir, setLevantamientoAbrir] = useState(null);
+  useEffect(() => { if (vista !== 'surveys') setLevantamientoAbrir(null); }, [vista]);
   const [syncing, setSyncing] = useState(false);
   const [perfilViendo, setPerfilViendo] = useState(null);
   const [tareas, setTareas] = useState([]);
@@ -918,7 +922,9 @@ export default function App() {
         {vista === 'planificacion' && puede(usuario, data.permisos, 'planificacion', 'ver') && <VistaPlanificacion usuario={usuario} data={data} onRecargar={recargar} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'miProduccion' && tieneRol(usuario, 'maestro') && <VistaMiProduccion usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'miCajaChica' && (tieneRol(usuario, 'maestro') || tieneRol(usuario, 'supervisor')) && usuario.cajaChicaHabilitada && <VistaMiCajaChica usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} />}
-        {vista === 'surveys' && (esAdmin || tieneRol(usuario, 'supervisor')) && <ModuloSurveys usuario={usuario} data={data} onRecargar={recargar} />}
+        {vista === 'surveys' && (esAdmin || tieneRol(usuario, 'supervisor')) && <ModuloSurveys usuario={usuario} data={data} onRecargar={recargar}
+          abrirProyectoId={levantamientoAbrir?.id || null} etiquetaOrigen="Volver al programa"
+          onVolverOrigen={levantamientoAbrir ? () => { setLevantamientoAbrir(null); volverAtras(); } : null} />}
         {vista === 'torreControl' && (esAdmin || tieneRol(usuario, 'supervisor')) && <TorreControl data={data} onVolver={() => setVista('dashboard')} />}
         {vista === 'solicitudes' && (esAdmin || tieneRol(usuario, 'supervisor')) && <ModuloSolicitudes usuario={usuario} onRecargar={recargar} />}
         {/* v8.27.0: Gotera — disponible para TODOS los usuarios (reportar); owner/admin ven el kanban completo */}
@@ -938,7 +944,8 @@ export default function App() {
         {/* v8.26.0: Contabilidad — reportes DGII (606/607/608) + resumen ITBIS/IT-1 */}
         {vista === 'contabilidad' && tieneRol(usuario, 'owner') && <VistaContabilidad usuario={usuario} onVolver={() => setVista('dashboard')} />}
         {vista === 'miPerfil' && <MiPerfil usuario={usuario} persona={usuario} soloLectura={false} onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }} onGuardar={(campos) => withSync(() => db.guardarPerfil(usuario.id, campos))} />}
-        {vista === 'programas' && <PantallaProgramas usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onAbrirProyecto={async (pid) => { const proy = data.proyectos.find(x => x.id === pid); if (proy) { setProyectoActivo(proy); setVista('proyecto'); setTab('avance'); } }} />}
+        {vista === 'programas' && <PantallaProgramas usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onAbrirProyecto={async (pid) => { const proy = data.proyectos.find(x => x.id === pid); if (proy) { setProyectoActivo(proy); setVista('proyecto'); setTab('avance'); } }}
+          onAbrirLevantamiento={(id) => { if (!id) return; setLevantamientoAbrir({ id }); navegarA('surveys'); }} />}
         {esAdmin && vista === 'personal' && <GestionPersonal usuario={usuario} personal={data.personal} data={data} onVolver={() => setVista('dashboard')} onActualizar={(p) => withSync(() => db.reemplazarPersonal(p))} onRecargar={recargar} onAbrirPerfil={(p) => { setPerfilViendo(p); setVista('perfilPersona'); }} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'perfilPersona' && perfilViendo && <MiPerfil usuario={usuario} persona={perfilViendo} soloLectura={false} onVolver={() => setVista('personal')} onGuardar={(campos) => withSync(async () => { await db.guardarPerfil(perfilViendo.id, campos); const d = await db.loadAllData(); const actualizada = d.personal.find(p => p.id === perfilViendo.id); if (actualizada) setPerfilViendo(actualizada); })} />}
         {esAdmin && vista === 'sistemas' && <GestionSistemas sistemas={data.sistemas} config={data.config} dataGlobal={data} onVolver={() => setVista('dashboard')} onActualizarSistemas={(s) => withSync(() => db.guardarSistemas(s))} onActualizarConfig={(c) => withSync(() => db.guardarConfig(c))} />}
@@ -11813,7 +11820,7 @@ function ModalCambiarEstado({ proyecto, usuario, personal, sistema, onCerrar, on
 // ============================================================
 // v8.58.0: contenedor de Programas — carga la campaña y sus locaciones con la etapa
 // ya derivada del levantamiento y la obra.
-function PantallaProgramas({ usuario, data, onVolver, onAbrirProyecto }) {
+function PantallaProgramas({ usuario, data, onVolver, onAbrirProyecto, onAbrirLevantamiento }) {
   const [programas, setProgramas] = useState([]);
   const [sel, setSel] = useState(null);
   const [locaciones, setLocaciones] = useState([]);
@@ -11851,7 +11858,7 @@ function PantallaProgramas({ usuario, data, onVolver, onAbrirProyecto }) {
         </div>
       )}
       <VistaPrograma programa={sel} locaciones={locaciones} usuario={usuario} data={data} onVolver={onVolver}
-        onRecargar={() => cargar(sel)} onAbrirProyecto={onAbrirProyecto} />
+        onRecargar={() => cargar(sel)} onAbrirProyecto={onAbrirProyecto} onAbrirLevantamiento={onAbrirLevantamiento} />
     </div>
   );
 }

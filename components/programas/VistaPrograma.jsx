@@ -16,6 +16,7 @@ import * as db from '../../lib/db';
 import { formatRD } from '../../lib/helpers/formato';
 import { ETAPAS, ETAPA, FASES, COLOR_ETAPA, turnoDe, resumenPrograma, pendientesDelCliente, agruparPorZona, textoCoordinacion } from '../../lib/helpers/programaSites';
 import FichaLocacion from './FichaLocacion';
+import { normalizarBusqueda } from '../../lib/helpers/sitioLevantamiento';
 
 // v8.59.0: un icono por etapa, para distinguirlas sin leer el texto.
 const ICONO = { lock: Lock, 'map-pin': MapPin, ruler: Ruler, file: FileText, calendar: CalendarDays, tool: Wrench, clipboard: ClipboardCheck, check: CheckCircle2 };
@@ -30,7 +31,7 @@ const Chip = ({ color, children }) => (
   </span>
 );
 
-export default function VistaPrograma({ programa, locaciones = [], usuario, data = {}, onVolver, onRecargar, onAbrirProyecto }) {
+export default function VistaPrograma({ programa, locaciones = [], usuario, data = {}, onVolver, onRecargar, onAbrirProyecto, onAbrirLevantamiento }) {
   const [tab, setTab] = useState('tablero');
   const [buscar, setBuscar] = useState('');
   const [guardando, setGuardando] = useState(null);
@@ -39,9 +40,11 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
   const [garantiaDe, setGarantiaDe] = useState(null); // v8.71.0: carta de garantía de la locación
 
   const filtradas = useMemo(() => {
-    const q = buscar.trim().toLowerCase();
+    const q = normalizarBusqueda(buscar);
     if (!q) return locaciones;
-    return locaciones.filter(l => `${l.nombre} ${l.codigoUt || ''} ${l.direccion || ''} ${l.cotizacionRef || ''}`.toLowerCase().includes(q));
+    // v8.75.0: también por el código del levantamiento (LEV-2026-10-013) y el nombre de su
+    // sitio, y sin acentos ("gallistico" encuentra GALLÍSTICO).
+    return locaciones.filter(l => normalizarBusqueda(`${l.nombre} ${l.codigoUt || ''} ${l.direccion || ''} ${l.cotizacionRef || ''} ${l.levantamiento?.codigo || ''} ${l.levantamiento?.sitio || ''}`).includes(q));
   }, [locaciones, buscar]);
 
   const resumen = useMemo(() => resumenPrograma(locaciones, { fechaMeta: programa?.fechaMeta }), [locaciones, programa]);
@@ -67,15 +70,26 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
   };
 
   // Crea el levantamiento ya amarrado a la locación (nace en el módulo de Levantamientos).
+  // v8.75.0: también desde la ficha, y al crearlo ofrece abrirlo para asignarlo y ponerle
+  // fecha. Nacer desde aquí lo deja amarrado por id, sin depender de que el amarre
+  // automático lo encuentre por nombre o por cercanía.
   const agendarLevantamiento = async (loc) => {
+    if (loc.levantamientoId) return;
     if (!loc.luzVerde && !confirm(`${loc.nombre} todavía no tiene luz verde del propietario.\n\n¿Crear el levantamiento igual?`)) return;
     setGuardando(loc.id);
+    let creado = null;
     try {
-      const codigo = await db.agendarLevantamientoLocacion(loc, programa, usuario);
+      creado = await db.agendarLevantamientoLocacion(loc, programa, usuario);
       await onRecargar?.();
-      alert(`Levantamiento ${codigo || ''} creado para ${loc.nombre}.\nAsígnalo y ponle fecha en Levantamientos.`);
     } catch (e) { alert('Error: ' + (e.message || e)); }
     setGuardando(null);
+    if (!creado) return;
+    const texto = `Levantamiento ${creado.codigo || ''} creado para ${loc.nombre}.`;
+    if (onAbrirLevantamiento && creado.projectId) {
+      if (confirm(`${texto}\n\n¿Abrirlo ahora para asignarlo y ponerle fecha?`)) onAbrirLevantamiento(creado.projectId);
+    } else {
+      alert(`${texto}\nAsígnalo y ponle fecha en Levantamientos.`);
+    }
   };
 
   const porEtapa = useMemo(() => {
@@ -220,7 +234,14 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
                               <button onClick={() => marcarLuzVerde(l, false)} disabled={guardando === l.id}
                                 className="text-[10px] underline text-zinc-500 hover:text-white">deshacer luz verde</button>
                             )}
-                            {e.id === 'por_levantar' && l.levantamientoId && (
+                            {/* v8.75.0: el levantamiento se abre desde la tarjeta, igual que la obra. */}
+                            {l.levantamientoId && onAbrirLevantamiento && (
+                              <button onClick={() => onAbrirLevantamiento(l.levantamientoId)}
+                                className={`text-[10px] underline hover:text-white ${e.id === 'por_levantar' ? 'text-sky-400' : 'text-zinc-400'}`}>
+                                {e.id === 'por_levantar' ? 'levantamiento creado · falta la visita' : 'ver levantamiento'}
+                              </button>
+                            )}
+                            {e.id === 'por_levantar' && l.levantamientoId && !onAbrirLevantamiento && (
                               <span className="text-[10px] text-sky-400">Levantamiento creado · falta la visita</span>
                             )}
                             {/* v8.71.0: la carta de garantía se saca desde la columna donde
@@ -284,6 +305,8 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
           onCerrar={() => setFicha(null)}
           onCambio={onRecargar}
           onAbrirProyecto={onAbrirProyecto}
+          onAbrirLevantamiento={onAbrirLevantamiento}
+          onAgendarLevantamiento={agendarLevantamiento}
         />
       )}
 

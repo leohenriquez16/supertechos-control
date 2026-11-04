@@ -2,7 +2,7 @@
 // Ejecutar desde la raíz:  node tests/programa-sites.test.mjs
 
 import assert from 'node:assert/strict';
-import { etapaDeLocacion, resumenPrograma, pendientesDelCliente, agruparPorZona, distanciaKm, ETAPAS, amarrarLocaciones, normalizarRefOdoo, textoCoordinacion, fechasPorEtapa, enEtapaDesde } from '../lib/helpers/programaSites.js';
+import { etapaDeLocacion, resumenPrograma, pendientesDelCliente, agruparPorZona, distanciaKm, ETAPAS, amarrarLocaciones, normalizarRefOdoo, textoCoordinacion, fechasPorEtapa, enEtapaDesde, visitaPrincipal, resumenLevantamiento } from '../lib/helpers/programaSites.js';
 
 let ok = 0; const fallos = [];
 const caso = (n, fn) => { try { fn(); ok++; } catch (e) { fallos.push(`${n}: ${e.message}`); } };
@@ -247,6 +247,51 @@ caso('un levantamiento amarrado pero sin visita todavía no mueve la locación',
   const sinVisita = { id: 'p185', siteNombre: 'ESPERANZA II', lat: 19.4, lng: -70.6 };
   assert.equal(amarrarLocaciones([yaAmarrada], [sinVisita], []).length, 0);
   assert.equal(etapaDeLocacion(yaAmarrada, {}), 'por_levantar');
+});
+
+// --- v8.75.0: lo que dejó el levantamiento, en la ficha del programa
+caso('la visita que cuenta es la última completada, aunque haya una abierta más nueva', () => {
+  const visitas = [{ id: 'v3', is_completed: false }, { id: 'v2', is_completed: true }, { id: 'v1', is_completed: true }];
+  assert.equal(visitaPrincipal(visitas).id, 'v2');
+});
+caso('si ninguna visita se completó, cuenta la última', () => {
+  assert.equal(visitaPrincipal([{ id: 'v2' }, { id: 'v1' }]).id, 'v2');
+  assert.equal(visitaPrincipal([]), null);
+  assert.equal(visitaPrincipal(null), null);
+});
+caso('sin visita no hay resumen (el levantamiento marcado sin nada cargado)', () => {
+  assert.equal(resumenLevantamiento(null, []), null);
+});
+caso('los m² salen de las áreas aunque la visita diga 0 (caso real de Sites)', () => {
+  const r = resumenLevantamiento({ id: 'v1', is_completed: true, total_measured_m2: 0 },
+    [{ name: 'Techo', area_number: 1, net_area_m2: 343, gross_area_m2: 350 }], { totalFotos: 14 });
+  assert.equal(r.totalM2, 343);
+  assert.deepEqual(r.areas, [{ nombre: 'Techo', m2: 343 }]);
+  assert.equal(r.totalFotos, 14);
+  assert.equal(r.completada, true);
+});
+caso('área con neto en 0 usa el bruto; área que no se trata no suma', () => {
+  const r = resumenLevantamiento({ id: 'v1' }, [
+    { name: 'Losa', area_number: 1, net_area_m2: '0.00', gross_area_m2: '157.9' },
+    { name: 'Caseta', area_number: 2, net_area_m2: 20, to_be_treated: false },
+    { area_number: 3, net_area_m2: 10.555 },
+  ]);
+  assert.deepEqual(r.areas.map(a => a.nombre), ['Losa', 'Área 3']);
+  assert.equal(r.totalM2, 168.46);
+});
+caso('sin áreas cae al total de la visita; sistema y días solo si existen', () => {
+  const r = resumenLevantamiento({ id: 'v1', total_measured_m2: '120.5', recommended_system: '  Silicona  ', estimated_days: 3 }, []);
+  assert.equal(r.totalM2, 120.5);
+  assert.equal(r.sistemaRecomendado, 'Silicona');
+  assert.equal(r.diasEstimados, 3);
+  const vacio = resumenLevantamiento({ id: 'v2', recommended_system: null, estimated_days: null }, []);
+  assert.equal(vacio.sistemaRecomendado, '');
+  assert.equal(vacio.diasEstimados, null);
+  assert.equal(vacio.totalM2, 0);
+});
+caso('la fecha del levantamiento es la salida del sitio, si no la llegada', () => {
+  assert.equal(resumenLevantamiento({ checkin_at: 'A', checkout_at: 'B' }).fecha, 'B');
+  assert.equal(resumenLevantamiento({ checkin_at: 'A' }).fecha, 'A');
 });
 
 console.log(`\n${ok} pasadas, ${fallos.length} fallidas`);

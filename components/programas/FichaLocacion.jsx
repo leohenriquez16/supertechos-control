@@ -5,20 +5,26 @@
 // tiempo con la fecha de entrada a cada etapa, la coordinación de la visita, el supervisor
 // del cliente y los documentos (OC, cotización, autorización, informe, garantía).
 // Los documentos se pueden marcar visibles u ocultos para el cliente en el portal.
+//
+// v8.75.0 — el LEVANTAMIENTO de la sucursal, dentro de la ficha: código, etapa, cita,
+// quién lo levanta y lo que dejó medido (áreas, m², fotos), con el botón para abrirlo en
+// Levantamientos. Antes la ficha escondía todo el bloque justo cuando el levantamiento se
+// hacía, y el portal del cliente enseñaba más que el ERP (ticket de Miguel, 3-nov-2026).
 
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Loader2, Upload, Eye, EyeOff, Trash2, FileText, ExternalLink, CalendarDays, Send, PenLine, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react';
+import { X, Loader2, Upload, Eye, EyeOff, Trash2, FileText, ExternalLink, CalendarDays, Send, PenLine, CheckCircle2, AlertTriangle, XCircle, Ruler, Camera, MapPin } from 'lucide-react';
 import FirmaPad from '../common/FirmaPad';
 import { EXTRAER_OC_PROMPT, parsearRespuestaIA, validarOC } from '../../lib/helpers/validarOC';
 import { buscarRecuadroProveedor, estamparFirmaYSello, blancoATransparente } from '../../lib/helpers/estamparOC';
 import * as db from '../../lib/db';
 import { formatRD } from '../../lib/helpers/formato';
 import { ETAPAS, ETAPA, COLOR_ETAPA, TIPOS_DOCUMENTO, turnoDe, textoCoordinacion } from '../../lib/helpers/programaSites';
+import { citaTextoHora } from '../../lib/surveys';
 
 const fmtF = (f) => { if (!f) return ''; try { return new Date(String(f).length === 10 ? f + 'T12:00:00' : f).toLocaleDateString('es-DO', { day: 'numeric', month: 'short', year: 'numeric' }); } catch { return ''; } };
 const etiquetaTipo = Object.fromEntries(TIPOS_DOCUMENTO.map(t => [t.id, t.label]));
 
-export default function FichaLocacion({ locacion: l, usuario, onCerrar, onCambio, onAbrirProyecto }) {
+export default function FichaLocacion({ locacion: l, usuario, onCerrar, onCambio, onAbrirProyecto, onAbrirLevantamiento, onAgendarLevantamiento }) {
   const [docs, setDocs] = useState(null);
   const [tipo, setTipo] = useState('oc');
   const [visible, setVisible] = useState(true);
@@ -31,11 +37,42 @@ export default function FichaLocacion({ locacion: l, usuario, onCerrar, onCambio
   const [registrarFirma, setRegistrarFirma] = useState(false);
   const padRef = useRef(null);
   const [enviando, setEnviando] = useState(null);
+  // v8.75.0: lo que dejó el levantamiento (undefined = cargando, null = sin visita cargada)
+  const [detalleLev, setDetalleLev] = useState(undefined);
+  const [errorLev, setErrorLev] = useState(null);
+  const [creandoLev, setCreandoLev] = useState(false);
 
   const cargarDocs = async () => {
     try { setDocs(await db.listarDocumentosLocacion(l.id)); } catch (e) { console.warn(e); setDocs([]); }
   };
   useEffect(() => { cargarDocs(); /* eslint-disable-next-line */ }, [l.id]);
+
+  useEffect(() => {
+    if (!l.levantamientoId) { setDetalleLev(null); return; }
+    let cancelado = false;
+    setDetalleLev(undefined); setErrorLev(null);
+    db.detalleLevantamientoLocacion(l.levantamientoId)
+      .then(d => { if (!cancelado) setDetalleLev(d); })
+      .catch(e => { if (!cancelado) { console.warn('detalleLevantamientoLocacion:', e?.message); setErrorLev(e?.message || 'No se pudo leer'); setDetalleLev(null); } });
+    return () => { cancelado = true; };
+  }, [l.levantamientoId]);
+
+  const lev = l.levantamiento || null;
+  // Solo con la visita ya coordinada: crear el levantamiento le da luz verde a la locación
+  // al releer el programa (amarrarLocaciones), y el cliente la vería "coordinada" sin fecha.
+  // Así la ficha guía los dos pasos: poner la fecha arriba y crearlo con esa cita.
+  const puedeCrearLev = !l.levantamientoId && l.luzVerde && l.etapa === 'por_levantar' && !!onAgendarLevantamiento;
+  const horaCita = lev ? citaTextoHora({ tipo_cita: lev.tipoCita, hora_visita: lev.horaVisita, cita_restriccion: lev.citaRestriccion }) : '';
+  // Levantamiento ya hecho: con fecha en el programa, o por su etapa en Levantamientos
+  // (hay levantamientos en "Cotización realizada" sin fecha de realizado).
+  const levHecho = !!l.levantadoAt || ['Realizado', 'Cotizacion en Revision', 'Cotizacion Realizada'].includes(lev?.etapaLevantamiento);
+  // La cita del levantamiento la maneja Levantamientos (tipo, hora, confirmación). Si el
+  // programa quedó coordinado para otro día, se avisa; no se pisa la cita desde aquí.
+  const fechaDistinta = !levHecho && lev?.fechaVisita && l.fechaVisita && String(lev.fechaVisita).slice(0, 10) !== String(l.fechaVisita).slice(0, 10);
+  const crearLevantamiento = async () => {
+    setCreandoLev(true);
+    try { await onAgendarLevantamiento(l); } finally { setCreandoLev(false); }
+  };
 
   const idx = ETAPAS.findIndex(e => e.id === l.etapa);
   const color = COLOR_ETAPA[l.etapa];
@@ -184,11 +221,12 @@ export default function FichaLocacion({ locacion: l, usuario, onCerrar, onCambio
               <div><span className="text-zinc-500">Tipo de trabajo:</span> {l.tipoTrabajo === 'pintura' ? 'Pintura' : l.tipoTrabajo === 'ambos' ? 'Techo y pintura' : 'Impermeabilización'}</div>
               <div className="flex gap-3 flex-wrap pt-1">
                 {l.lat && l.lng && <a href={`https://www.google.com/maps?q=${l.lat},${l.lng}`} target="_blank" rel="noreferrer" className="underline text-zinc-400 hover:text-white inline-flex items-center gap-1"><ExternalLink className="w-3 h-3" /> Mapa</a>}
+                {l.levantamientoId && onAbrirLevantamiento && <button onClick={() => onAbrirLevantamiento(l.levantamientoId)} className="underline text-zinc-400 hover:text-white">Ver el levantamiento</button>}
                 {l.proyectoId && onAbrirProyecto && <button onClick={() => onAbrirProyecto(l.proyectoId)} className="underline text-zinc-400 hover:text-white">Ver la obra</button>}
               </div>
             </div>
 
-            {!l.levantadoAt && (
+            {['sin_luz_verde', 'por_levantar'].includes(l.etapa) && (
               <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3 space-y-2">
                 <div className="text-[11px] uppercase tracking-widest text-zinc-400 font-bold flex items-center gap-1"><CalendarDays className="w-3.5 h-3.5" /> Visita de levantamiento</div>
                 {l.fechaVisita && <div className="text-[12px] text-zinc-200">Coordinada: <b>{textoCoordinacion(l.fechaVisita, l.horaVisita)}</b>{l.luzVerdePor ? <span className="text-zinc-500"> · {l.luzVerdePor}</span> : null}</div>}
@@ -200,10 +238,106 @@ export default function FichaLocacion({ locacion: l, usuario, onCerrar, onCambio
                   className="w-full bg-amber-700 hover:bg-amber-600 disabled:opacity-50 text-white font-bold uppercase py-2 text-[11px] rounded-card">
                   {guardando ? 'Guardando…' : l.fechaVisita ? 'Cambiar la fecha' : 'Marcar coordinado'}
                 </button>
+                {/* v8.75.0: el levantamiento se crea desde la ficha, justo después de coordinar
+                    la visita (antes el botón solo estaba en la tarjeta de "Coordinado para
+                    levantar", donde nunca había nadie). Nace amarrado y con la cita. */}
+                {!l.levantamientoId && !l.luzVerde && onAgendarLevantamiento && (
+                  <div className="text-[10px] text-zinc-500">Al marcarla coordinada, aquí mismo creas el levantamiento con esa cita.</div>
+                )}
+                {puedeCrearLev && (
+                  <button onClick={crearLevantamiento} disabled={creandoLev}
+                    className="w-full bg-sky-700 hover:bg-sky-600 disabled:opacity-50 text-white font-bold uppercase py-2 text-[11px] rounded-card flex items-center justify-center gap-1">
+                    {creandoLev ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MapPin className="w-3.5 h-3.5" />} Crear el levantamiento
+                  </button>
+                )}
               </div>
             )}
           </div>
         </div>
+
+        {/* v8.75.0: el levantamiento de la sucursal y lo que dejó medido */}
+        {l.levantamientoId && (
+          <div className="px-4 pb-3">
+            <div className="bg-zinc-950 border border-zinc-800 rounded-card p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="text-[11px] uppercase tracking-widest text-zinc-400 font-bold flex items-center gap-1">
+                  <Ruler className="w-3.5 h-3.5" /> Levantamiento{lev?.codigo ? <span className="normal-case tracking-normal font-mono text-zinc-300 ml-1">{lev.codigo}</span> : null}
+                </div>
+                {onAbrirLevantamiento && (
+                  <button onClick={() => onAbrirLevantamiento(l.levantamientoId)}
+                    className="text-[11px] font-bold uppercase px-2.5 py-1 rounded-card bg-sky-700 hover:bg-sky-600 text-white flex items-center gap-1">
+                    <ExternalLink className="w-3 h-3" /> Abrir el levantamiento
+                  </button>
+                )}
+              </div>
+              <div className="text-[12px] text-zinc-300 flex flex-wrap gap-x-3 gap-y-0.5">
+                {lev?.etapaLevantamiento && <span><span className="text-zinc-500">Etapa:</span> {lev.etapaLevantamiento}</span>}
+                {l.levantadoAt
+                  ? <span><span className="text-zinc-500">Levantado el</span> <b>{fmtF(l.levantadoAt)}</b></span>
+                  : levHecho ? <span className="text-zinc-400">Levantado</span>
+                  : <span><span className="text-zinc-500">Visita:</span> {lev?.fechaVisita
+                      ? <b>{textoCoordinacion(lev.fechaVisita)}{horaCita ? ` · ${horaCita}` : ''}</b>
+                      : lev?.tipoCita === 'cualquier_dia'
+                        ? <b>{horaCita}</b>
+                        : <span className="text-amber-400">sin fecha{horaCita ? ` (${horaCita})` : ''}</span>}</span>}
+                {lev?.levantador
+                  ? <span><span className="text-zinc-500">Levantador:</span> {lev.levantador}</span>
+                  : !levHecho && <span><span className="text-zinc-500">Levantador:</span> <span className="text-amber-400">sin asignar</span></span>}
+                {lev?.sitio && <span className="text-zinc-500 truncate max-w-full">{lev.sitio}</span>}
+              </div>
+
+              {fechaDistinta && (
+                <div className="text-[11px] text-amber-300 flex items-start gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                  En el programa quedó coordinada para el {textoCoordinacion(l.fechaVisita, l.horaVisita)}. El levantador ve la cita de arriba: si la fecha cambió, corrígela en el levantamiento.
+                </div>
+              )}
+              {detalleLev === undefined && <div className="text-[11px] text-zinc-500 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Leyendo el levantamiento…</div>}
+              {errorLev && <div className="text-[11px] text-red-400">No se pudo leer lo medido: {errorLev}</div>}
+              {detalleLev === null && !errorLev && (levHecho
+                ? <div className="text-[11px] text-amber-300 flex items-start gap-1.5"><AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> Está marcado como levantado, pero en el ERP no hay visita, medidas ni fotos de este sitio.</div>
+                : <div className="text-[11px] text-zinc-500">Todavía no hay visita cargada.</div>)}
+
+              {detalleLev && (
+                <div className="space-y-2">
+                  <div className="flex items-baseline gap-4 flex-wrap">
+                    <div><span className="text-xl font-black text-white tabular-nums">{detalleLev.totalM2.toLocaleString('es-DO', { maximumFractionDigits: 2 })}</span> <span className="text-[11px] text-zinc-400">m² medidos</span></div>
+                    {!detalleLev.completada && <span className="text-[10px] font-bold uppercase text-amber-400">visita sin cerrar</span>}
+                    {detalleLev.sistemaRecomendado && <div className="text-[12px]"><span className="text-zinc-500">Sistema recomendado:</span> {detalleLev.sistemaRecomendado}</div>}
+                    {detalleLev.diasEstimados && <div className="text-[12px]"><span className="text-zinc-500">Días estimados:</span> {detalleLev.diasEstimados}</div>}
+                  </div>
+                  {detalleLev.areas.length > 0 && (
+                    <div className="grid gap-x-4 gap-y-0.5 sm:grid-cols-2 text-[12px]">
+                      {detalleLev.areas.map((a, i) => (
+                        <div key={i} className="flex justify-between gap-2 border-b border-zinc-800/70 py-0.5">
+                          <span className="text-zinc-300 truncate">{a.nombre}</span>
+                          <span className="text-zinc-400 tabular-nums shrink-0">{a.m2.toLocaleString('es-DO', { maximumFractionDigits: 2 })} m²</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="text-[11px] text-zinc-400 flex items-center gap-1"><Camera className="w-3.5 h-3.5" /> {detalleLev.totalFotos} foto{detalleLev.totalFotos === 1 ? '' : 's'}</div>
+                  {detalleLev.fotos.length > 0 && (
+                    <div className="flex gap-1.5 overflow-x-auto pb-1">
+                      {detalleLev.fotos.map(f => (
+                        <a key={f.id} href={f.url} target="_blank" rel="noreferrer" title={f.titulo || 'Foto del levantamiento'}
+                          className={`shrink-0 rounded-card overflow-hidden border ${f.critica ? 'border-red-600' : 'border-zinc-800'} hover:border-zinc-500`}>
+                          <img src={f.url} alt={f.titulo || 'Foto del levantamiento'} loading="lazy" className="w-20 h-20 object-cover block" />
+                        </a>
+                      ))}
+                      {detalleLev.totalFotos > detalleLev.fotos.length && onAbrirLevantamiento && (
+                        <button onClick={() => onAbrirLevantamiento(l.levantamientoId)}
+                          className="shrink-0 w-20 h-20 rounded-card border border-zinc-800 hover:border-zinc-500 text-[11px] text-zinc-400 hover:text-white">
+                          +{detalleLev.totalFotos - detalleLev.fotos.length}<br />ver todas
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* v8.59.3: Orden de compra — subir cruda, validar, firmar y sellar, enviar */}
         <div className="px-4 pb-3">

@@ -91,8 +91,19 @@ export async function GET(request) {
   };
 
   // Tres grupos, en vez de una sola lista que mezclaba cosas distintas.
+  // v8.74.11: si ese mismo día la obra salió de ejecución (finalizada, parada,
+  // entregada…), no se le exige reporte de ese día.
+  const iniDiaEval = new Date(`${diaEval}T00:00:00-04:00`);
+  const salioEseDia = new Set();
+  if (ids.length) {
+    const { data: salidas } = await supabase.from('historial_estados')
+      .select('proyecto_id, estado_nuevo, created_at')
+      .in('proyecto_id', ids).neq('estado_nuevo', 'en_ejecucion')
+      .gte('created_at', iniDiaEval.toISOString());
+    (salidas || []).forEach(h => salioEseDia.add(h.proyecto_id));
+  }
   const recienArrancadas = (obras || []).filter(arrancoDespues);
-  const activasEseDia = (obras || []).filter(o => !arrancoDespues(o));
+  const activasEseDia = (obras || []).filter(o => !arrancoDespues(o) && !salioEseDia.has(o.id));
   const sinReporte = activasEseDia.filter(o => !conReporte.has(o.id));
   const trabajaronSinReporte = sinReporte.filter(o => conJornada.has(o.id));
   const sinJornadaNiReporte = sinReporte.filter(o => !conJornada.has(o.id));

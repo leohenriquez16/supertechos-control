@@ -46,10 +46,11 @@ t('keyword viva cuenta la salida', r.partidas[0].lineas[0].cantidadOdoo === 3, r
     { producto: 'GUANTE DE ALGODON CON PUNTOS DE PVC', cantidad: 3, costoRd: 0 },
     { producto: 'Polos Super Techos', cantidad: 5, costoRd: 0 },
     { producto: 'PALO DE ESCOBA MADERA', cantidad: 2, costoRd: 0 },
+    { producto: 'Escoba Super Samba 5020 COLIMA', cantidad: 2, costoRd: 295.2 },
   ] }, movimientosCajaChica: [{ id: 'm1', proyectoId: 'p1', tipo: 'gasto_factura', status: 'aprobado', concepto: 'Cuchillas y lentes de seguridad', monto: 450 }] });
   const g = r2_.gastos.find(x => x.categoria === 'material_gastable');
   t('fila Material Gastable existe aunque el ppto sea viejo', !!g);
-  t('real gastable = motas + caja chica', g && g.real === 1798, g?.real);
+  t('real gastable = motas + escobas + caja chica', g && g.real === 2093.2, g?.real);
   const mota = g?.articulos.find(a => a.nombre.startsWith('MOTA'));
   t('motas: cantidad 8 y RD$1,348', mota && mota.cantidad === 8 && mota.costoRd === 1348, mota);
   const guante = g?.articulos.find(a => a.nombre.startsWith('GUANTE'));
@@ -59,6 +60,8 @@ t('keyword viva cuenta la salida', r.partidas[0].lineas[0].cantidadOdoo === 3, r
   t('lona: real = costo FIFO de Odoo', lona.real === 34821.96, lona.real);
   t('lona: costo unitario real', Math.abs(lona.costoUnidadReal - 1055.21) < 0.01, lona.costoUnidadReal);
   t('lona: proyección = real (ya salió todo, más barato que ppto)', lona.proyeccion === 34821.96, lona.proyeccion);
+  const esc = g?.articulos.find(a => a.nombre.startsWith('Escoba'));
+  t('escoba es gastable con su costo', esc && esc.costoRd === 295.2, esc);
   t('palo de escoba es gastable', g?.articulos.some(a => a.nombre.startsWith('PALO')));
   t('no casados = solo polos', r2_.salidasOdooNoMatch.length === 1 && r2_.salidasOdooNoMatch[0].producto === 'Polos Super Techos', r2_.salidasOdooNoMatch);
 }

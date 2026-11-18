@@ -3,8 +3,9 @@
 @tailwind utilities;
 
 body {
-  background: #09090b;
-  color: #fafafa;
+  /* v8.74.13: siguen al tema (en oscuro = #09090b / #fafafa como antes) */
+  background: rgb(var(--c-zinc-950));
+  color: rgb(var(--c-zinc-50));
   font-family: 'Inter', system-ui, sans-serif;
 }
 
@@ -34,3 +35,10 @@ body {
 /* v8.43.1: controles nativos oscuros — los date/time dejaban la fecha en gris tenue */
 input, select, textarea { color-scheme: dark; }
 input::placeholder, textarea::placeholder { color: #71717a; }
+
+/* v8.74.13: tema claro — controles nativos claros y sombras suaves */
+html.tema-claro { color-scheme: light; }
+html.tema-claro input, html.tema-claro select, html.tema-claro textarea { color-scheme: light; }
+html.tema-claro input::placeholder, html.tema-claro textarea::placeholder { color: #a1a1aa; }
+html.tema-claro .shadow-card { box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 12px -4px rgba(0,0,0,0.10); }
+html.tema-claro .shadow-pop { box-shadow: 0 12px 32px -8px rgba(0,0,0,0.25); }

@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { UserCircle, LogOut } from 'lucide-react';
+import { UserCircle, LogOut, Sun, Moon } from 'lucide-react';
+import { leerTema, aplicarTema } from '../../lib/tema';
 import { APP_VERSION } from '../../lib/constants';
 
 /**
@@ -32,6 +33,11 @@ export default function Sidebar({
     window.addEventListener('resize', check);
     return () => window.removeEventListener('resize', check);
   }, []);
+
+  // v8.74.13: tema claro / oscuro (por dispositivo)
+  const [tema, setTema] = useState('oscuro');
+  useEffect(() => { setTema(leerTema()); }, []);
+  const cambiarTema = () => { const t = tema === 'claro' ? 'oscuro' : 'claro'; aplicarTema(t); setTema(t); };
 
   // En desktop: siempre visible. En móvil: depende de sidebarAbierta.
   const visible = esDesktop || sidebarAbierta;
@@ -146,6 +152,14 @@ export default function Sidebar({
               <div className="font-bold truncate">{usuario.nombre.split(' ')[0]}</div>
               <div className="text-[9px] text-zinc-500 uppercase truncate">{esAdmin ? 'Admin' : 'Campo'}</div>
             </div>
+          </button>
+          <button
+            onClick={cambiarTema}
+            title={tema === 'claro' ? 'Cambiar a pantalla oscura' : 'Cambiar a pantalla blanca'}
+            className="w-full flex items-center gap-2 text-left text-xs p-2 text-zinc-400 hover:text-white hover:bg-zinc-900"
+          >
+            {tema === 'claro' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+            {tema === 'claro' ? 'Pantalla oscura' : 'Pantalla blanca'}
           </button>
           <button
             onClick={onCerrarSesion}

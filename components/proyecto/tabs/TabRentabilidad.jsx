@@ -380,6 +380,7 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
                               <span className="ml-2 text-[10px] text-zinc-500">
                                 despachado {formatNum(l.cantidadReal)} {l.unidad}
                                 {(l.cantidadOdoo || 0) > 0 && <span className="ml-1 text-[8px] bg-purple-900/40 border border-purple-700 text-purple-300 px-1 uppercase">odoo</span>}
+                                {(l.sobreDespacho || 0) > 0 && <span className="ml-1 text-[8px] bg-amber-900/40 border border-amber-700 text-amber-300 px-1 uppercase" title="Despachado por encima de lo presupuestado">+{formatNum(l.sobreDespacho)} sobre ppto</span>}
                               </span>
                             )}
                           </>)}

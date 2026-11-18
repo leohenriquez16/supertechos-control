@@ -2530,6 +2530,8 @@ function GestionClientes({ clientes, contactos, proyectos, usuario, onVolver, on
   const [modalUbicacion, setModalUbicacion] = useState(null); // null | { clienteId } | { ...ubicacion }
   // v8.74.23: conteo de ubicaciones por cliente para la tabla.
   const [ubicPorCliente, setUbicPorCliente] = useState({});
+  const [verMapaUbic, setVerMapaUbic] = useState(false); // v8.74.24: lista | mapa en la ficha del cliente
+  const MapaUbicCliente = React.useMemo(() => React.lazy(() => import('../components/common/MapaLeaflet')), []);
   useEffect(() => {
     let cancel = false;
     db.listarUbicacionesCliente(null).then(us => {
@@ -2674,13 +2676,53 @@ function GestionClientes({ clientes, contactos, proyectos, usuario, onVolver, on
         <div className="bg-zinc-900 border border-zinc-800 rounded-card">
           <div className="flex justify-between items-center p-4 border-b border-zinc-800">
             <div className="text-xs tracking-widest uppercase text-zinc-400 font-bold flex items-center gap-1"><MapPin className="w-3.5 h-3.5 text-red-500" /> Ubicaciones ({ubicaciones.length})</div>
+            <div className="flex items-center gap-2">
+            {ubicaciones.length > 0 && (
+              <div className="flex gap-0.5 bg-zinc-950 border border-zinc-800 rounded-card p-0.5">
+                {[[false, 'Lista'], [true, 'Mapa']].map(([v, l]) => (
+                  <button key={l} onClick={() => setVerMapaUbic(v)} className={`px-2.5 py-1 text-[10px] font-bold uppercase rounded-card ${verMapaUbic === v ? 'bg-red-600 text-white' : 'text-zinc-400 hover:text-white'}`}>{l}</button>
+                ))}
+              </div>
+            )}
             <button onClick={() => setModalUbicacion({ clienteId: cliente.id })} className="text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 font-bold uppercase flex items-center gap-1 rounded-card">
               <Plus className="w-3 h-3" /> Agregar
             </button>
+            </div>
           </div>
           {ubicaciones.length === 0 ? (
             <div className="p-6 text-center text-sm text-zinc-500">Sin ubicaciones. Agrega la primera localidad del cliente.</div>
-          ) : (
+          ) : verMapaUbic ? (() => {
+            // GPS propio de la ubicación; si no tiene, el del primer proyecto de esa ubicación con GPS.
+            const pts = ubicaciones.map(u => {
+              const pg = misProyectos.find(p => p.ubicacionId === u.id && p.ubicacionLat != null && p.ubicacionLng != null);
+              const lat = u.latitud != null ? Number(u.latitud) : pg ? Number(pg.ubicacionLat) : null;
+              const lng = u.longitud != null ? Number(u.longitud) : pg ? Number(pg.ubicacionLng) : null;
+              return { u, lat, lng, n: misProyectos.filter(p => p.ubicacionId === u.id).length };
+            });
+            const conGps = pts.filter(x => x.lat != null && x.lng != null);
+            const sinGps = pts.filter(x => x.lat == null || x.lng == null);
+            const esc = (t) => String(t || '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+            return (
+              <div className="p-3 space-y-2">
+                {conGps.length === 0 ? (
+                  <div className="p-6 text-center text-sm text-zinc-500">Ninguna ubicación de este cliente tiene GPS todavía.</div>
+                ) : (
+                  <React.Suspense fallback={<div className="h-[420px] flex items-center justify-center text-zinc-500 text-xs"><Loader2 className="w-4 h-4 animate-spin mr-2" /> Cargando mapa…</div>}>
+                    <MapaUbicCliente center={[conGps[0].lat, conGps[0].lng]} zoom={14} height={420} scrollWheelZoom className="rounded-card overflow-hidden"
+                      markers={conGps.map(x => ({ lat: x.lat, lng: x.lng, color: x.n ? 'green' : 'red', label: x.u.nombre,
+                        popup: `<b>${esc(x.u.nombre)}</b><br/>${esc(x.u.direccion)}<br/>${x.n} proyecto${x.n !== 1 ? 's' : ''}`,
+                        onClick: () => setModalUbicacion({ ...x.u }) }))} />
+                  </React.Suspense>
+                )}
+                <div className="text-[11px] text-zinc-500 flex flex-wrap gap-x-3 gap-y-1">
+                  <span>{conGps.length} de {pts.length} en el mapa · verde = con proyectos · rojo = sin proyectos</span>
+                  {sinGps.length > 0 && <span className="text-amber-400">Sin GPS: {sinGps.map(x => (
+                    <button key={x.u.id} onClick={() => setModalUbicacion({ ...x.u, _abrirMapa: true })} className="underline hover:text-amber-300 mr-1.5">{x.u.nombre}</button>
+                  ))}</span>}
+                </div>
+              </div>
+            );
+          })() : (
             <div className="divide-y divide-zinc-800">
               {ubicaciones.map(u => {
                 const projsUbic = misProyectos.filter(p => p.ubicacionId === u.id);

@@ -45,6 +45,7 @@ t('keyword viva cuenta la salida', r.partidas[0].lineas[0].cantidadOdoo === 3, r
     { producto: 'MOTA SINTETICA 1 1/4 LANCO', cantidad: 8, costoRd: 1348 },
     { producto: 'GUANTE DE ALGODON CON PUNTOS DE PVC', cantidad: 3, costoRd: 0 },
     { producto: 'Polos Super Techos', cantidad: 5, costoRd: 0 },
+    { producto: 'PALO DE ESCOBA MADERA', cantidad: 2, costoRd: 0 },
   ] }, movimientosCajaChica: [{ id: 'm1', proyectoId: 'p1', tipo: 'gasto_factura', status: 'aprobado', concepto: 'Cuchillas y lentes de seguridad', monto: 450 }] });
   const g = r2_.gastos.find(x => x.categoria === 'material_gastable');
   t('fila Material Gastable existe aunque el ppto sea viejo', !!g);
@@ -58,6 +59,7 @@ t('keyword viva cuenta la salida', r.partidas[0].lineas[0].cantidadOdoo === 3, r
   t('lona: real = costo FIFO de Odoo', lona.real === 34821.96, lona.real);
   t('lona: costo unitario real', Math.abs(lona.costoUnidadReal - 1055.21) < 0.01, lona.costoUnidadReal);
   t('lona: proyección = real (ya salió todo, más barato que ppto)', lona.proyeccion === 34821.96, lona.proyeccion);
+  t('palo de escoba es gastable', g?.articulos.some(a => a.nombre.startsWith('PALO')));
   t('no casados = solo polos', r2_.salidasOdooNoMatch.length === 1 && r2_.salidasOdooNoMatch[0].producto === 'Polos Super Techos', r2_.salidasOdooNoMatch);
 }
 

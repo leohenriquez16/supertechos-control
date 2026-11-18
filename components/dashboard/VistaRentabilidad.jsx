@@ -7,36 +7,16 @@
 // computa de data.reportes (modo ligero — sin jornadas/costosDia por obra). El detalle
 // exacto vive en la pestaña Rentabilidad de cada ficha.
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Loader2, TrendingUp, EyeOff, Eye, MapPin } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatRD } from '../../lib/helpers/formato';
 import { calcRentabilidadObra } from '../../lib/helpers/presupuestoObra';
-import { lugarCorto, lugarCortoGuardado, claveLugar } from '../../lib/geo';
 
 // v8.74.14: el nombre de la obra viene del campo «Referencias» de la cotización y a
 // veces es genérico ("Parcial", "Área Parcial"). Debajo se muestra de quién es
-// (cliente · cotización) y dónde queda, para que toda fila se reconozca.
+// (cliente · cotización) y el nombre de su locación, para que toda fila se reconozca.
 const normTxt = (s) => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
-
-const LOCACION_GENERICA = /^(principal|general|unica|sede|oficina|obra|proyecto|area( principal)?|entrega( \d+)?|etapa( \d+)?|fase( \d+)?|locacion( \d+)?)$/;
-
-function datosUbicacion(proy, ubic) {
-  const coords = (proy.ubicacionLat != null && proy.ubicacionLng != null)
-    ? { lat: proy.ubicacionLat, lng: proy.ubicacionLng }
-    : (ubic && ubic.latitud != null && ubic.longitud != null) ? { lat: ubic.latitud, lng: ubic.longitud } : null;
-  const escrita = (proy.ubicacionDireccionTexto || '').trim()
-    || (ubic ? [ubic.direccion, ubic.sector, ubic.ciudad || ubic.provincia].map(x => (x || '').trim()).filter(Boolean).join(', ') : '')
-    || (proy.ubicacionDireccion || '').trim();
-  // El nombre de la locación solo suma si dice algo: no genérico ("Principal",
-  // "Entrega 1"…), distinto del nombre de la obra / cliente y no repetido en la dirección.
-  const nLoc = normTxt(ubic?.nombre);
-  const nombreLocacion = nLoc && !LOCACION_GENERICA.test(nLoc)
-    && ![normTxt(proy.nombre), normTxt(proy.cliente)].includes(nLoc)
-    && !normTxt(escrita).includes(nLoc) ? ubic.nombre.trim() : '';
-  const mapsUrl = (proy.googleMapsLink || '').trim() || (coords ? `https://www.google.com/maps?q=${coords.lat},${coords.lng}` : '');
-  return { coords, escrita, nombreLocacion, mapsUrl };
-}
 
 const SEM = {
   estrella: { dot: null, txt: 'text-green-300' },   // ⭐ +45% (o objetivo+15)
@@ -51,8 +31,6 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
   const [detalles, setDetalles] = useState([]);
   const [movimientos, setMovimientos] = useState([]);
   const [ubicaciones, setUbicaciones] = useState([]);
-  const [lugares, setLugares] = useState({}); // claveLugar → "Sector, Ciudad"
-  const lugaresIntentados = useRef(new Set()); // no repetir en esta visita los que fallaron
   const [soloEjecucion, setSoloEjecucion] = useState(true);
   // v8.46.1: obras escondidas del portafolio (en lo que ponen su presupuesto al día).
   // Preferencia por usuario/navegador (localStorage) — reversible con "ver ocultas".
@@ -115,36 +93,6 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
   const ubicPorId = useMemo(() => {
     const m = {}; ubicaciones.forEach(u => { m[u.id] = u; }); return m;
   }, [ubicaciones]);
-
-  // Sector/ciudad desde el GPS solo para las filas sin dirección escrita. Las
-  // consultas van en fila (1/seg) y quedan guardadas en el navegador.
-  useEffect(() => {
-    if (loading) return; // esperar las locaciones: su dirección escrita evita la consulta
-    let cancel = false;
-    const pendientes = [];
-    const ya = {};
-    for (const { proyecto } of filas) {
-      const { coords, escrita } = datosUbicacion(proyecto, ubicPorId[proyecto.ubicacionId]);
-      if (escrita || !coords) continue;
-      const k = claveLugar(coords.lat, coords.lng);
-      if (!k || ya[k] !== undefined) continue;
-      const guardado = lugarCortoGuardado(coords.lat, coords.lng);
-      if (guardado !== undefined) ya[k] = guardado;
-      else { ya[k] = null; if (!lugaresIntentados.current.has(k)) pendientes.push({ k, ...coords }); }
-    }
-    const conocidos = Object.fromEntries(Object.entries(ya).filter(([, v]) => v != null));
-    if (Object.keys(conocidos).length) setLugares(prev => ({ ...prev, ...conocidos }));
-    (async () => {
-      for (const c of pendientes) {
-        if (cancel) return;
-        const txt = await lugarCorto(c.lat, c.lng);
-        lugaresIntentados.current.add(c.k);
-        if (cancel) return;
-        setLugares(prev => ({ ...prev, [c.k]: txt }));
-      }
-    })();
-    return () => { cancel = true; };
-  }, [filas, ubicPorId, loading]);
 
   const tot = useMemo(() => {
     const conPpto = filas.filter(f => f.rent);
@@ -230,27 +178,14 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
                       {(() => {
                         const cli = (proyecto.cliente || '').trim();
                         const linea2 = [normTxt(cli) !== normTxt(proyecto.nombre) ? cli : '', proyecto.referenciaOdoo || ''].filter(Boolean).join(' · ');
-                        const u = datosUbicacion(proyecto, ubicPorId[proyecto.ubicacionId]);
-                        const k = u.coords ? claveLugar(u.coords.lat, u.coords.lng) : null;
-                        const geo = !u.escrita && k ? lugares[k] : undefined;
-                        const lugar = u.escrita || geo || '';
-                        const linea3 = [u.nombreLocacion, lugar].filter(Boolean).join(' · ');
-                        const buscando = !u.escrita && k && geo === undefined;
+                        const loc = (ubicPorId[proyecto.ubicacionId]?.nombre || '').trim();
                         return (<>
                           {linea2 && <div className={`text-[11px] text-zinc-500 truncate max-w-[380px] ${sem ? 'pl-4' : ''}`}>{linea2}</div>}
                           <div className={`text-[11px] truncate max-w-[380px] flex items-center gap-1 ${sem ? 'pl-4' : ''}`}>
                             <MapPin className="w-3 h-3 shrink-0 text-zinc-600" />
-                            {linea3 ? (
-                              u.mapsUrl
-                                ? <a href={u.mapsUrl} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} title="Abrir en Google Maps" className="text-zinc-500 hover:text-zinc-300 hover:underline truncate">{linea3}</a>
-                                : <span className="text-zinc-500 truncate">{linea3}</span>
-                            ) : buscando ? (
-                              <span className="text-zinc-600 italic">buscando ubicación…</span>
-                            ) : u.mapsUrl ? (
-                              <a href={u.mapsUrl} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-zinc-500 hover:text-zinc-300 hover:underline">Ver en el mapa</a>
-                            ) : (
-                              <span className="text-zinc-600 italic">Sin ubicación</span>
-                            )}
+                            {loc
+                              ? <span className="text-zinc-500 truncate" title="Locación del cliente">{loc}</span>
+                              : <span className="text-zinc-600 italic">Sin locación</span>}
                           </div>
                         </>);
                       })()}

@@ -1,6 +1,7 @@
 'use client';
 
 import { buscarPersonasParecidas } from '../lib/helpers/personasParecidas';
+import { leerTema, aplicarTema } from '../lib/tema';
 import AvisoFormaPago from '../components/proyecto/AvisoFormaPago';
 import { impactoCambioSistema } from '../lib/helpers/cambiosSistema';
 import AvanceArranque from '../components/proyecto/AvanceArranque';
@@ -551,6 +552,8 @@ const mapearProductoAMaterial = (descripcion, sistema) => {
 // ============================================================
 export default function App() {
   const [data, setData] = useState(null);
+  // v8.74.13: aplica la pantalla blanca/oscura guardada también si se llegó sin recargar (p. ej. desde /instalar)
+  useEffect(() => { aplicarTema(leerTema()); }, []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [usuario, setUsuario] = useState(null);

@@ -366,7 +366,7 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
         .modo-campo .border-2 { border-color:#a1a1aa !important; }
       `}</style>
       {brillo < 100 && (
-        <div className="fixed inset-0 bg-black pointer-events-none" style={{ opacity: ((100 - brillo) / 100) * 0.8, zIndex: 55 }} />
+        <div className="tema-original fixed inset-0 bg-black pointer-events-none" style={{ opacity: ((100 - brillo) / 100) * 0.8, zIndex: 55 }} />
       )}
       <div className="min-h-full p-2 sm:p-4">
         <div className={`bg-zinc-950 border-2 ${modoCampo ? 'border-zinc-400' : 'border-zinc-800'} max-w-3xl mx-auto`}>

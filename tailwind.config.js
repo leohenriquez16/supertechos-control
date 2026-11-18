@@ -38,10 +38,12 @@ const varsClaras = () => {
 // Tarjetas con degradado de color fuerte (from-red-600 to-red-800…): se ven como en oscuro.
 const DEGRADADOS = ACENTOS.flatMap(f => ['500', '600', '700'].map(s => `.from-${f}-${s}`)).join(',');
 const varsAcentosOriginales = () => {
-  const o = { '--c-white': '255 255 255' };
+  const o = { '--c-white': '255 255 255', '--c-black': '0 0 0' };
   ACENTOS.forEach(f => SHADES.forEach(s => { o[`--c-${f}-${s}`] = canales(twColors[f][s]); }));
   return o;
 };
+const OVERLAYS_FOTO = ['50', '60', '70', '80', '85', '90']
+  .flatMap(a => [`html.tema-claro [class*="bg-black/${a}"]:not(.fixed)`, `html.tema-claro [class*="bg-black/${a}"]:not(.fixed) *`]).join(', ');
 // Fondos de color sólidos: el texto blanco encima sigue siendo blanco.
 const FONDOS_SOLIDOS = [...ACENTOS.flatMap(f => ['500', '600', '700'].map(s => `.bg-${f}-${s}`)), '.bg-brand', '.bg-brand-hover'].join(',');
 
@@ -84,6 +86,8 @@ module.exports = {
           complete: '#22c55e', // green-500
         },
       },
+      // v8.74.13: anillo por defecto igual que antes (Tailwind no lo deriva de colores con variables)
+      ringColor: { DEFAULT: 'rgb(59 130 246 / 0.5)' },
       borderRadius: {
         // Esquinas suaves para modernizar (hoy casi todo es esquina recta).
         card: '0.625rem', // 10px — tarjetas, tablas, modales
@@ -109,11 +113,17 @@ module.exports = {
         // papel de PDFs, cartas y firmas: colores reales
         'html.tema-claro .bg-white, html.tema-claro .tema-original': originales,
         // texto blanco sobre botones/insignias de color
-        [`html.tema-claro :is(${FONDOS_SOLIDOS})`]: { '--c-white': '255 255 255' },
+        // (y el texto negro sobre ámbar/amarillo sigue negro)
+        [`html.tema-claro :is(${FONDOS_SOLIDOS})`]: { '--c-white': '255 255 255', '--c-black': '0 0 0' },
+        // texto sin clase sobre color fuerte: claro como en oscuro (especificidad 0, cualquier text-* manda)
+        [`:where(html.tema-claro) :where(${FONDOS_SOLIDOS}, ${DEGRADADOS})`]: { color: `rgb(${canales(twColors.zinc[50])})` },
         [`html.tema-claro :is(${DEGRADADOS})`]: varsAcentosOriginales(),
         // fondo oscuro detrás de los modales (bg-black/80, /70…)
         'html.tema-claro [class*="bg-black/"]': { '--c-black': '0 0 0' },
         'html.tema-claro [class*="bg-black/"] > *': { '--c-black': '255 255 255' },
+        // visores de fotos (bg-black/95) y etiquetas/botones/cargadores sobre fotos (negro ≥50% no fijo):
+        // colores originales completos, se ven igual que en oscuro
+        [`html.tema-claro .bg-black\\/95, html.tema-claro .bg-black\\/95 *, ${OVERLAYS_FOTO}`]: originales,
       });
     }),
   ],

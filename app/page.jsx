@@ -105,6 +105,7 @@ const VistaAlmacen = cargarVista(() => import('../components/logistica/VistaAlma
 const VistaCompras = cargarVista(() => import('../components/logistica/VistaCompras'), CargandoVista); // v8.67.0
 const VistaRutas = cargarVista(() => import('../components/logistica/VistaRutas'), CargandoVista); // v8.29.0
 import InicioChofer from '../components/logistica/InicioChofer'; // v8.29.0
+import TarjetaRutaHoy from '../components/logistica/TarjetaRutaHoy'; // rutas-chofer
 const TabCambios = cargarVista(() => import('../components/cambios/TabCambios'), CargandoVista); // v8.30.0
 const PlanObras = cargarVista(() => import('../components/planificacion/PlanObras'), CargandoVista); // v8.30.1
 const DondeEstaGente = cargarVista(() => import('../components/planificacion/DondeEstaGente'), CargandoVista); // v8.64.0
@@ -1377,7 +1378,7 @@ export default function App() {
         {!esAdmin && vista === 'misProyectos' && <MisProyectos usuario={usuario} data={data} onIrAReportar={(p) => { setProyectoActivo(p); setVista('reportar'); }} onVerDetalle={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {/* v8.29.0: el CHOFER (sin otros roles operativos) ve su ruta del día; el de ALMACÉN ve su cola */}
         {!esAdmin && vista === 'inicio' && tieneRol(usuario, 'chofer') && !tieneRol(usuario, 'supervisor') && !tieneRol(usuario, 'maestro') && <div className="p-4 md:p-6 max-w-2xl mx-auto"><InicioChofer usuario={usuario} data={data} /></div>}
-        {!esAdmin && vista === 'inicio' && tieneRol(usuario, 'almacen') && !tieneRol(usuario, 'chofer') && !tieneRol(usuario, 'supervisor') && !tieneRol(usuario, 'maestro') && <VistaAlmacen usuario={usuario} data={data} />}
+        {!esAdmin && vista === 'inicio' && tieneRol(usuario, 'almacen') && !tieneRol(usuario, 'chofer') && !tieneRol(usuario, 'supervisor') && !tieneRol(usuario, 'maestro') && <><TarjetaRutaHoy usuario={usuario} data={data} envoltura="px-4 pt-4 md:px-6 md:pt-6 max-w-2xl mx-auto" /><VistaAlmacen usuario={usuario} data={data} /></>}
         {!esAdmin && vista === 'inicio' && !((tieneRol(usuario, 'chofer') || tieneRol(usuario, 'almacen')) && !tieneRol(usuario, 'supervisor') && !tieneRol(usuario, 'maestro')) && <InicioSupervisor usuario={usuario} data={data} onRecargar={recargar} onVerProyecto={(p, tabDestino) => { setProyectoActivo(p); setVista('proyecto'); setTab(tabDestino || 'avance'); }} onIrAReportar={(p) => { setProyectoActivo(p); setVista('reportar'); }} onIrAAsignaciones={() => setVista('misAsignaciones')} onIrAProyectos={() => setVista('misProyectos')} onIrAVista={(v) => setVista(v)} />}
         {!esAdmin && vista === 'clima' && <div className="max-w-md mx-auto space-y-4"><button onClick={() => setVista(tieneRol(usuario, 'supervisor') ? 'inicio' : 'misProyectos')} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button><h1 className="text-2xl font-black tracking-tight">Clima</h1><ClimaWidget /></div>}
         {vista === 'citas' && <VistaCitas usuario={usuario} onVolver={() => setVista(esAdmin ? 'dashboard' : tieneRol(usuario, 'supervisor') ? 'inicio' : 'misProyectos')} onRecargar={recargar} />}

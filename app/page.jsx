@@ -412,7 +412,22 @@ const proyectoVisible = (persona, proy) => {
 // Al restaurar se vuelven a chequear los permisos: la misma regla que pinta cada vista.
 const NAV_KEY = 'supertechos_nav';
 const NAV_TTL_MS = 2 * 60 * 60 * 1000;
-const TABS_PROYECTO = new Set(['areas', 'asistencia', 'avance', 'cambios', 'costo', 'cronograma', 'dieta', 'equipo', 'fotos', 'info', 'jornada', 'materiales', 'mdo', 'pedidos', 'productos', 'tareasProy', 'unidades']);
+// Misma regla que los botones de pestaña de DetalleProyecto (esSupervisor = !esAdmin).
+const tabPermitida = (t, u, proy) => {
+  const admin = tieneRol(u, 'admin');
+  switch (t) {
+    case 'avance': case 'info': case 'asistencia': case 'equipo': case 'fotos':
+    case 'pedidos': case 'tareasProy': case 'cambios':
+      return true;
+    case 'cronograma': return admin || proy.cronogramaVisibleMaestro !== false;
+    case 'unidades': return proy.tipoAvance === 'unidades';
+    case 'materiales': return !tieneRol(u, 'maestro');
+    case 'areas': case 'mdo': case 'productos': return admin;
+    case 'costo': return tieneRol(u, 'owner') || tieneRol(u, 'rentabilidad');
+    case 'dieta': return admin && !!proy.dieta?.habilitada;
+    default: return false;
+  }
+};
 const vistaPermitida = (v, u, data) => {
   const admin = tieneRol(u, 'admin');
   const r = (rol) => tieneRol(u, rol);
@@ -446,11 +461,14 @@ const resolverNav = (nav, u, data) => {
   let vista = nav.vista;
   // un formulario a medias no se reabre: se vuelve a la obra
   if (vista === 'reportar') vista = 'proyecto';
-  const tab = vista === 'proyecto' && TABS_PROYECTO.has(nav.tab) ? nav.tab : 'avance';
+  let tab = 'avance';
   let proyecto = null, persona = null;
   if (vista === 'proyecto') {
+    // Igual que el render de la obra: la abre quien llegó a ella (Mis asignaciones,
+    // Programas, Reclamaciones, Planificación…); solo se exige que la obra exista.
     proyecto = (data.proyectos || []).find(p => p.id === nav.proyectoId) || null;
-    if (!proyecto || !proyectoVisible(u, proyecto)) return null;
+    if (!proyecto) return null;
+    if (nav.tab && tabPermitida(nav.tab, u, proyecto)) tab = nav.tab;
   }
   if (vista === 'perfilPersona') {
     persona = (data.personal || []).find(p => p.id === nav.personaId) || null;
@@ -467,8 +485,12 @@ const navDeUrl = () => {
   } catch { return null; }
 };
 // Primero la dirección (refrescar / link compartido); si no trae nada, lo último del dispositivo (reabrir la app).
+const NAV_SALIO_KEY = 'supertechos_nav_salio';
 const leerNavGuardada = (u, data) => {
-  const deUrl = resolverNav(navDeUrl(), u, data);
+  // si en esta pestaña alguien cerró sesión, la dirección es de esa persona: se ignora
+  let salio = false;
+  try { salio = sessionStorage.getItem(NAV_SALIO_KEY) === '1'; sessionStorage.removeItem(NAV_SALIO_KEY); } catch {}
+  const deUrl = salio ? null : resolverNav(navDeUrl(), u, data);
   if (deUrl) return deUrl;
   try {
     const s = JSON.parse(localStorage.getItem(NAV_KEY) || 'null');
@@ -547,6 +569,7 @@ export default function App() {
     if (opts.tab) setTab(opts.tab);
   }, [vista, proyectoActivo, tab]);
   const volverAtras = React.useCallback(() => {
+    navReemplazar.current = true; // v8.74.12: "Volver" no crea entrada nueva en el historial
     setPilaNav(prev => {
       if (prev.length === 0) { setVista('dashboard'); setProyectoActivo(null); return prev; }
       const anterior = prev[prev.length - 1];
@@ -570,11 +593,13 @@ export default function App() {
     if (nav.persona) setPerfilViendo(nav.persona);
   };
   const navDesdeHistorial = React.useRef(false);
+  const navReemplazar = React.useRef(false);
   const ultimaNav = React.useRef(null);
   const [syncing, setSyncing] = useState(false);
   const [perfilViendo, setPerfilViendo] = useState(null);
   useEffect(() => {
     if (!usuario || typeof window === 'undefined') return;
+    if (usuario.pinTemporal || !usuario.onboardingCompletado) return;
     const conObra = vista === 'proyecto' || vista === 'reportar';
     const st = {
       vista,
@@ -594,12 +619,13 @@ export default function App() {
     ultimaNav.current = clave;
     try {
       // cambio de pestaña = misma entrada; cambio de pantalla u obra = entrada nueva (para "atrás")
-      if (navDesdeHistorial.current || previa === null || previa === clave) window.history.replaceState(st, '', url);
+      if (navDesdeHistorial.current || navReemplazar.current || previa === null || previa === clave) window.history.replaceState(st, '', url);
       else window.history.pushState(st, '', url);
     } catch {}
     navDesdeHistorial.current = false;
+    navReemplazar.current = false;
     try { localStorage.setItem(NAV_KEY, JSON.stringify({ ...guardar, usuarioId: usuario.id, ts: Date.now() })); } catch {}
-  }, [usuario?.id, vista, proyectoActivo?.id, tab, perfilViendo?.id]);
+  }, [usuario?.id, usuario?.pinTemporal, usuario?.onboardingCompletado, vista, proyectoActivo?.id, tab, perfilViendo?.id]);
   useEffect(() => {
     if (!usuario || !data) return;
     const onPop = () => {
@@ -636,6 +662,8 @@ export default function App() {
   const [proyectosExpandidos, setProyectosExpandidos] = useState(true);
   const [modoReporte, setModoReporte] = useState(null); // v8.9.11: 'rapido' | 'manual' | null (chooser)
   const [modoManual, setModoManual] = useState('simple'); // v8.25.22: 'simple' (wizard 1-a-1) | 'lote' (varias áreas/pasos)
+  // v8.74.12: salir de 'reportar' por cualquier vía (atrás del navegador, menú…) reinicia el modo
+  useEffect(() => { if (vista !== 'reportar') { setModoReporte(null); setModoManual('simple'); } }, [vista]);
 
   const recargar = async () => {
     try {
@@ -699,7 +727,7 @@ export default function App() {
             if (u) {
               setUsuario(u);
               db.setAuditContext({ usuarioId: u.id, usuarioNombre: u.nombre });
-              setVista(tieneRol(u, 'admin') ? 'dashboard' : (tieneRol(u, 'supervisor') || tieneRol(u, 'chofer') || tieneRol(u, 'almacen')) ? 'inicio' : 'misProyectos'); // v8.44.1: logística también aterriza en su inicio
+              setVista(vistaAterrizaje(u)); // v8.74.12: misma regla que el login (antes Lily caía en Mis proyectos)
               // v8.74.12: volver a la pantalla donde estaba (dirección o, si reabrió la app, lo último guardado)
               if (!u.pinTemporal && u.onboardingCompletado) {
                 const nav = leerNavGuardada(u, d);
@@ -763,6 +791,13 @@ export default function App() {
   if (!data) return null;
   if (!usuario) return <Login onLogin={async (u) => {
     setUsuario(u);
+    // v8.74.12: aterrizaje + restauración en el mismo render que setUsuario (antes del
+    // await de geolocalización); si no, el efecto de la dirección la pisa con 'dashboard'.
+    if (!u.pinTemporal && u.onboardingCompletado) {
+      setVista(vistaAterrizaje(u)); // v8.27.36 facturas / v8.29.1 logística: ver vistaAterrizaje
+      const nav = leerNavGuardada(u, data);
+      if (nav) aplicarNav(nav);
+    }
     db.setAuditContext({ usuarioId: u.id, usuarioNombre: u.nombre });
     db.registrarAudit({ usuarioId: u.id, usuarioNombre: u.nombre, accion: 'login.exitoso', severidad: 'info' });
     // v8.14: capturar geolocation y registrar acceso (no bloquea si denegado)
@@ -771,18 +806,6 @@ export default function App() {
       db.registrarAcceso({ personaId: u.id, tipo: 'login.exitoso', lat: ubic.lat, lng: ubic.lng, precisionM: ubic.precision });
     } catch (e) {
       db.registrarAcceso({ personaId: u.id, tipo: 'login.exitoso', geoDenegada: true, geoError: String(e?.message || e) });
-    }
-    if (!u.pinTemporal && u.onboardingCompletado) {
-      // v8.27.36: usuario dedicado a Facturas (Lily) aterriza en su módulo.
-      const soloFacturas = !tieneRol(u, 'admin') && (tieneRol(u, 'facturas') || u.facturasHabilitada)
-        && !tieneRol(u, 'supervisor') && !tieneRol(u, 'maestro') && !tieneRol(u, 'ayudante');
-      // v8.29.1: chofer y almacén (sin roles de obra) aterrizan en su Inicio (ruta / cola)
-      const esLogistica = !tieneRol(u, 'admin') && (tieneRol(u, 'chofer') || tieneRol(u, 'almacen'))
-        && !tieneRol(u, 'supervisor') && !tieneRol(u, 'maestro');
-      setVista(soloFacturas ? 'facturasOdoo' : tieneRol(u, 'admin') ? 'dashboard' : (tieneRol(u, 'supervisor') || esLogistica) ? 'inicio' : 'misProyectos');
-      // v8.74.12: si entró por un link (?v=…) o venía de una pantalla reciente, ir ahí
-      const nav = leerNavGuardada(u, data);
-      if (nav) aplicarNav(nav);
     }
     try { localStorage.setItem('supertechos_usuario_id', u.id); } catch {}
   }} />;
@@ -971,7 +994,7 @@ export default function App() {
           // v8.17.91: db.logout() además cierra la sesión Supabase (si existe).
           await db.logout();
           // v8.74.12: la próxima persona en este dispositivo no hereda la pantalla
-          try { localStorage.removeItem(NAV_KEY); window.history.replaceState(null, '', window.location.pathname); } catch {}
+          try { localStorage.removeItem(NAV_KEY); sessionStorage.setItem(NAV_SALIO_KEY, '1'); window.history.replaceState(null, '', window.location.pathname); } catch {}
           ultimaNav.current = null;
           setUsuario(null);
           setProyectoActivo(null);

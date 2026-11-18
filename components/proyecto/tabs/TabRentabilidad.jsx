@@ -387,7 +387,7 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
                                 {(l.cantidadOdoo || 0) > 0 && <span className="ml-1 text-[8px] bg-purple-900/40 border border-purple-700 text-purple-300 px-1 uppercase">odoo</span>}
                                 {(l.costoOdooRd || 0) > 0 && l.costoUnidadReal != null && (
                                   <span className="ml-1 text-[10px] text-zinc-400" title={`Costo real de lo despachado${(l.fuentesCosto || []).length ? ' — ' + l.fuentesCosto.join(', ') : ''}`}>
-                                    a {formatRD(l.costoUnidadReal)}/{l.unidad || 'ud'} real{(l.fuentesCosto || []).some(f => f.startsWith('OC ')) ? ` (${l.fuentesCosto.filter(f => f.startsWith('OC ')).join(', ')})` : ''}
+                                    a {formatRD(l.costoUnidadReal)}/{l.unidad || 'ud'} real{(l.fuentesCosto || []).some(f => /^(OC |liquidación )/.test(f)) ? ` (${l.fuentesCosto.filter(f => /^(OC |liquidación )/.test(f)).join(', ')})` : ''}
                                   </span>
                                 )}
                                 {(l.sobreDespacho || 0) > 0 && <span className="ml-1 text-[8px] bg-amber-900/40 border border-amber-700 text-amber-300 px-1 uppercase" title="Despachado por encima de lo presupuestado">+{formatNum(l.sobreDespacho)} sobre ppto</span>}

@@ -8,10 +8,15 @@
 // exacto vive en la pestaña Rentabilidad de cada ficha.
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Loader2, TrendingUp, EyeOff, Eye } from 'lucide-react';
+import { ArrowLeft, Loader2, TrendingUp, EyeOff, Eye, MapPin } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatRD } from '../../lib/helpers/formato';
 import { calcRentabilidadObra } from '../../lib/helpers/presupuestoObra';
+
+// v8.74.14: el nombre de la obra viene del campo «Referencias» de la cotización y a
+// veces es genérico ("Parcial", "Área Parcial"). Debajo se muestra de quién es
+// (cliente · cotización) y el nombre de su locación, para que toda fila se reconozca.
+const normTxt = (s) => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 
 const SEM = {
   estrella: { dot: null, txt: 'text-green-300' },   // ⭐ +45% (o objetivo+15)
@@ -25,6 +30,7 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
   const [pptos, setPptos] = useState([]);
   const [detalles, setDetalles] = useState([]);
   const [movimientos, setMovimientos] = useState([]);
+  const [ubicaciones, setUbicaciones] = useState([]);
   const [soloEjecucion, setSoloEjecucion] = useState(true);
   // v8.46.1: obras escondidas del portafolio (en lo que ponen su presupuesto al día).
   // Preferencia por usuario/navegador (localStorage) — reversible con "ver ocultas".
@@ -47,13 +53,14 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
     (async () => {
       setLoading(true);
       try {
-        const [pp, det, movs] = await Promise.all([
+        const [pp, det, movs, ubs] = await Promise.all([
           db.listarPresupuestosAprobados().catch(() => []),
           db.listarTodosDetalles(),
           db.listarMovimientosCajaChica({}).catch(() => []),
+          db.listarUbicacionesCliente(null, true).catch(() => []),
         ]);
         if (cancel) return;
-        setPptos(pp); setDetalles(det); setMovimientos(movs || []);
+        setPptos(pp); setDetalles(det); setMovimientos(movs || []); setUbicaciones(ubs || []);
       } catch (e) { console.error('rentabilidad portafolio:', e); }
       if (!cancel) setLoading(false);
     })();
@@ -82,6 +89,10 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
       return { proyecto: proy, ppto, rent };
     }).sort((a, b) => (a.rent?.totales.margenPctProyectado ?? 999) - (b.rent?.totales.margenPctProyectado ?? 999));
   }, [pptos, detalles, movimientos, data, soloEjecucion, ocultos, verOcultos]);
+
+  const ubicPorId = useMemo(() => {
+    const m = {}; ubicaciones.forEach(u => { m[u.id] = u; }); return m;
+  }, [ubicaciones]);
 
   const tot = useMemo(() => {
     const conPpto = filas.filter(f => f.rent);
@@ -164,6 +175,20 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
                           : <span className="text-[11px] shrink-0" title="Margen estrella">⭐</span>)}
                         <span className="text-zinc-200 font-bold truncate max-w-[380px]">{proyecto.nombre}</span>
                       </div>
+                      {(() => {
+                        const cli = (proyecto.cliente || '').trim();
+                        const linea2 = [normTxt(cli) !== normTxt(proyecto.nombre) ? cli : '', proyecto.referenciaOdoo || ''].filter(Boolean).join(' · ');
+                        const loc = (ubicPorId[proyecto.ubicacionId]?.nombre || '').trim();
+                        return (<>
+                          {linea2 && <div className={`text-[11px] text-zinc-500 truncate max-w-[380px] ${sem ? 'pl-4' : ''}`}>{linea2}</div>}
+                          <div className={`text-[11px] truncate max-w-[380px] flex items-center gap-1 ${sem ? 'pl-4' : ''}`}>
+                            <MapPin className="w-3 h-3 shrink-0 text-zinc-600" />
+                            {loc
+                              ? <span className="text-zinc-500 truncate" title="Locación del cliente">{loc}</span>
+                              : <span className="text-zinc-600 italic">Sin locación</span>}
+                          </div>
+                        </>);
+                      })()}
                     </td>
                     {!ppto ? (
                       <td colSpan={7} className="px-3 py-2.5 text-right">

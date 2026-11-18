@@ -1,4 +1,52 @@
 /** @type {import('tailwindcss').Config} */
+// v8.74.13: tema claro. Los colores de Tailwind salen de variables CSS (rgb en canales).
+// En :root valen lo mismo que Tailwind por defecto → el tema oscuro queda idéntico.
+// Con <html class="tema-claro"> la paleta se invierte (los zinc oscuros pasan a claros y
+// los acentos claros a su tono oscuro), sin tocar las ~8,000 clases de la app.
+// Excepciones (vuelven a los colores originales): el "papel" de PDFs/cartas (.bg-white
+// o .tema-original), el texto blanco sobre botones de color y el fondo de los modales.
+const plugin = require('tailwindcss/plugin');
+const twColors = require('tailwindcss/colors');
+
+const NEUTROS = ['zinc', 'gray', 'neutral', 'slate', 'stone'];
+const ACENTOS = ['red', 'orange', 'amber', 'yellow', 'lime', 'green', 'emerald', 'teal', 'cyan', 'sky', 'blue', 'indigo', 'violet', 'purple', 'fuchsia', 'pink', 'rose'];
+const SHADES = ['50', '100', '200', '300', '400', '500', '600', '700', '800', '900', '950'];
+
+// Tema claro: qué tono original toma cada tono. 'W' = blanco.
+const MAPA_NEUTRO = { 50: '950', 100: '900', 200: '800', 300: '700', 400: '600', 500: '500', 600: '400', 700: '300', 800: '200', 900: 'W', 950: '100' };
+const MAPA_ACENTO = { 50: '950', 100: '900', 200: '800', 300: '800', 400: '700', 500: '500', 600: '600', 700: '700', 800: '200', 900: '100', 950: '50' };
+
+const canales = (hex) => {
+  const h = hex.replace('#', '');
+  const n = parseInt(h.length === 3 ? h.split('').map(c => c + c).join('') : h, 16);
+  return `${(n >> 16) & 255} ${(n >> 8) & 255} ${n & 255}`;
+};
+const v = (nombre) => `rgb(var(--c-${nombre}) / <alpha-value>)`;
+const familia = (f) => Object.fromEntries(SHADES.map(s => [s, v(`${f}-${s}`)]));
+
+const varsOriginales = () => {
+  const o = { '--c-white': '255 255 255', '--c-black': '0 0 0', '--c-elevated': canales('#1f1f23') };
+  [...NEUTROS, ...ACENTOS].forEach(f => SHADES.forEach(s => { o[`--c-${f}-${s}`] = canales(twColors[f][s]); }));
+  return o;
+};
+const varsClaras = () => {
+  const o = { '--c-white': canales(twColors.zinc[900]), '--c-black': '255 255 255', '--c-elevated': canales('#fafafa') };
+  NEUTROS.forEach(f => SHADES.forEach(s => { const d = MAPA_NEUTRO[s]; o[`--c-${f}-${s}`] = d === 'W' ? '255 255 255' : canales(twColors[f][d]); }));
+  ACENTOS.forEach(f => SHADES.forEach(s => { o[`--c-${f}-${s}`] = canales(twColors[f][MAPA_ACENTO[s]]); }));
+  return o;
+};
+// Tarjetas con degradado de color fuerte (from-red-600 to-red-800…): se ven como en oscuro.
+const DEGRADADOS = ACENTOS.flatMap(f => ['500', '600', '700'].map(s => `.from-${f}-${s}`)).join(',');
+const varsAcentosOriginales = () => {
+  const o = { '--c-white': '255 255 255', '--c-black': '0 0 0' };
+  ACENTOS.forEach(f => SHADES.forEach(s => { o[`--c-${f}-${s}`] = canales(twColors[f][s]); }));
+  return o;
+};
+const OVERLAYS_FOTO = ['50', '60', '70', '80', '85', '90']
+  .flatMap(a => [`html.tema-claro [class*="bg-black/${a}"]:not(.fixed)`, `html.tema-claro [class*="bg-black/${a}"]:not(.fixed) *`]).join(', ');
+// Fondos de color sólidos: el texto blanco encima sigue siendo blanco.
+const FONDOS_SOLIDOS = [...ACENTOS.flatMap(f => ['500', '600', '700'].map(s => `.bg-${f}-${s}`)), '.bg-brand', '.bg-brand-hover'].join(',');
+
 module.exports = {
   content: [
     './app/**/*.{js,jsx,ts,tsx}',
@@ -10,22 +58,23 @@ module.exports = {
   ],
   theme: {
     extend: {
-      // v8.19.36: primeros tokens del sistema de diseño. Aditivos — NO cambian
-      // las clases zinc/red existentes; solo habilitan alias semánticos nuevos
-      // (bg-surface-card, text-brand, etc.) para ir migrando de forma incremental.
       colors: {
+        white: v('white'),
+        black: v('black'),
+        ...Object.fromEntries([...NEUTROS, ...ACENTOS].map(f => [f, familia(f)])),
+        // v8.19.36: primeros tokens del sistema de diseño (alias semánticos).
         // Marca (rojo Super Techos)
         brand: {
-          DEFAULT: '#dc2626', // red-600 — acción primaria
-          hover:   '#b91c1c', // red-700
-          soft:    '#7f1d1d', // red-900 — fondos sutiles
+          DEFAULT: v('red-600'), // acción primaria
+          hover:   v('red-700'),
+          soft:    v('red-900'), // fondos sutiles
         },
-        // Superficies (neutrales del tema oscuro, alineados a los zinc en uso)
+        // Superficies (siguen al tema)
         surface: {
-          base:     '#09090b', // zinc-950 — fondo de página
-          card:     '#18181b', // zinc-900 — tarjetas/tablas
-          elevated: '#1f1f23', // hover/elevación
-          border:   '#27272a', // zinc-800 — bordes sutiles
+          base:     v('zinc-950'), // fondo de página
+          card:     v('zinc-900'), // tarjetas/tablas
+          elevated: v('elevated'), // hover/elevación
+          border:   v('zinc-800'), // bordes sutiles
         },
         // Estados de proyecto (semánticos)
         state: {
@@ -37,6 +86,8 @@ module.exports = {
           complete: '#22c55e', // green-500
         },
       },
+      // v8.74.13: anillo por defecto igual que antes (Tailwind no lo deriva de colores con variables)
+      ringColor: { DEFAULT: 'rgb(59 130 246 / 0.5)' },
       borderRadius: {
         // Esquinas suaves para modernizar (hoy casi todo es esquina recta).
         card: '0.625rem', // 10px — tarjetas, tablas, modales
@@ -53,5 +104,27 @@ module.exports = {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    plugin(({ addBase }) => {
+      const originales = varsOriginales();
+      addBase({
+        ':root': originales,
+        'html.tema-claro': varsClaras(),
+        // papel de PDFs, cartas y firmas: colores reales
+        'html.tema-claro .bg-white, html.tema-claro .tema-original': originales,
+        // texto blanco sobre botones/insignias de color
+        // (y el texto negro sobre ámbar/amarillo sigue negro)
+        [`html.tema-claro :is(${FONDOS_SOLIDOS})`]: { '--c-white': '255 255 255', '--c-black': '0 0 0' },
+        // texto sin clase sobre color fuerte: claro como en oscuro (especificidad 0, cualquier text-* manda)
+        [`:where(html.tema-claro) :where(${FONDOS_SOLIDOS}, ${DEGRADADOS})`]: { color: `rgb(${canales(twColors.zinc[50])})` },
+        [`html.tema-claro :is(${DEGRADADOS})`]: varsAcentosOriginales(),
+        // fondo oscuro detrás de los modales (bg-black/80, /70…)
+        'html.tema-claro [class*="bg-black/"]': { '--c-black': '0 0 0' },
+        'html.tema-claro [class*="bg-black/"] > *': { '--c-black': '255 255 255' },
+        // visores de fotos (bg-black/95) y etiquetas/botones/cargadores sobre fotos (negro ≥50% no fijo):
+        // colores originales completos, se ven igual que en oscuro
+        [`html.tema-claro .bg-black\\/95, html.tema-claro .bg-black\\/95 *, ${OVERLAYS_FOTO}`]: originales,
+      });
+    }),
+  ],
 };

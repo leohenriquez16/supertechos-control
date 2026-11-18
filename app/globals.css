@@ -3,8 +3,9 @@
 @tailwind utilities;
 
 body {
-  background: #09090b;
-  color: #fafafa;
+  /* v8.74.13: siguen al tema (en oscuro = #09090b / #fafafa como antes) */
+  background: rgb(var(--c-zinc-950));
+  color: rgb(var(--c-zinc-50));
   font-family: 'Inter', system-ui, sans-serif;
 }
 
@@ -34,3 +35,22 @@ body {
 /* v8.43.1: controles nativos oscuros — los date/time dejaban la fecha en gris tenue */
 input, select, textarea { color-scheme: dark; }
 input::placeholder, textarea::placeholder { color: #71717a; }
+
+/* v8.74.13: tema claro — controles nativos claros y sombras suaves */
+html.tema-claro { color-scheme: light; }
+html.tema-claro input, html.tema-claro select, html.tema-claro textarea { color-scheme: light; }
+html.tema-claro input::placeholder, html.tema-claro textarea::placeholder { color: #a1a1aa; }
+html.tema-claro .shadow-card { box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 12px -4px rgba(0,0,0,0.10); }
+html.tema-claro .shadow-pop { box-shadow: 0 12px 32px -8px rgba(0,0,0,0.25); }
+
+/* v8.74.13: chips con color inline de tono 500 (citas, escalera…): texto más oscuro en claro */
+html.tema-claro [style*="color: rgb(245, 158, 11)"]:not(:is(.bg-white, .tema-original) *) { color: rgb(180 83 9) !important; }
+html.tema-claro [style*="color: rgb(234, 179, 8)"]:not(:is(.bg-white, .tema-original) *) { color: rgb(161 98 7) !important; }
+html.tema-claro [style*="color: rgb(34, 197, 94)"]:not(:is(.bg-white, .tema-original) *) { color: rgb(21 128 61) !important; }
+html.tema-claro [style*="color: rgb(20, 184, 166)"]:not(:is(.bg-white, .tema-original) *) { color: rgb(15 118 110) !important; }
+html.tema-claro [style*="color: rgb(249, 115, 22)"]:not(:is(.bg-white, .tema-original) *) { color: rgb(194 65 12) !important; }
+html.tema-claro [style*="color: rgb(59, 130, 246)"]:not(:is(.bg-white, .tema-original) *) { color: rgb(29 78 216) !important; }
+html.tema-claro [style*="color: rgb(239, 68, 68)"]:not(:is(.bg-white, .tema-original) *) { color: rgb(185 28 28) !important; }
+html.tema-claro [style*="color: rgb(168, 85, 247)"]:not(:is(.bg-white, .tema-original) *) { color: rgb(126 34 206) !important; }
+html.tema-claro [style*="color: rgb(161, 161, 170)"]:not(:is(.bg-white, .tema-original) *) { color: rgb(82 82 91) !important; }
+html.tema-claro [style*="border-color: rgb(63, 63, 70)"]:not(:is(.bg-white, .tema-original) *) { border-color: rgb(212 212 216) !important; }

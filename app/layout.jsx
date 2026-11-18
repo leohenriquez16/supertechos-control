@@ -1,4 +1,5 @@
 import './globals.css';
+import { SCRIPT_TEMA_INICIAL } from '../lib/tema';
 
 export const metadata = {
   title: 'Super Techos - Control de Obras',
@@ -57,7 +58,11 @@ function EnvBanner() {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="es">
+    <html lang="es" suppressHydrationWarning>
+      <head>
+        {/* v8.74.13: tema claro antes de pintar (sin parpadeo) */}
+        <script dangerouslySetInnerHTML={{ __html: SCRIPT_TEMA_INICIAL }} />
+      </head>
       <body>
         <EnvBanner />
         {children}

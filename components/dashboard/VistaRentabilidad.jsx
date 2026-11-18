@@ -31,6 +31,10 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
   const [detalles, setDetalles] = useState([]);
   const [movimientos, setMovimientos] = useState([]);
   const [ubicaciones, setUbicaciones] = useState([]);
+  // v8.74.15: salidas de almacén de Odoo por cotización (costo real + Material Gastable),
+  // en una sola consulta para todo el portafolio. null = cargando / no disponible.
+  const [salidasPorRef, setSalidasPorRef] = useState(null);
+  const [errorOdoo, setErrorOdoo] = useState(false);
   const [soloEjecucion, setSoloEjecucion] = useState(true);
   // v8.46.1: obras escondidas del portafolio (en lo que ponen su presupuesto al día).
   // Preferencia por usuario/navegador (localStorage) — reversible con "ver ocultas".
@@ -67,6 +71,24 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
     return () => { cancel = true; };
   }, []);
 
+  const numRef = (ref) => { const n = String(ref || '').replace(/\D+/g, ''); return n.length >= 3 ? n : null; };
+  const refsPortafolio = useMemo(() => {
+    const conPpto = new Set(pptos.map(p => p.proyectoId));
+    return [...new Set((data.proyectos || [])
+      .filter(p => !p.archivado && conPpto.has(p.id) && numRef(p.referenciaOdoo))
+      .map(p => p.referenciaOdoo))].sort();
+  }, [pptos, data.proyectos]);
+  useEffect(() => {
+    if (!refsPortafolio.length) return;
+    let cancel = false;
+    setErrorOdoo(false);
+    fetch(`/api/odoo/salidas-almacen?agrupar=1&refs=${encodeURIComponent(refsPortafolio.join(','))}`)
+      .then(r => r.json())
+      .then(j => { if (cancel) return; if (j?.porReferencia) setSalidasPorRef(j.porReferencia); else setErrorOdoo(true); })
+      .catch(() => { if (!cancel) setErrorOdoo(true); });
+    return () => { cancel = true; };
+  }, [refsPortafolio.join(',')]);
+
   const filas = useMemo(() => {
     const pptoPorProyecto = {};
     pptos.forEach(p => { pptoPorProyecto[p.proyectoId] = p; });
@@ -85,10 +107,11 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
         reportes: data.reportes, envios: data.envios || [],
         movimientosCajaChica: movimientos, estadoPago: null,
         mdoPagadoRd: mdoPagadaPorProyecto[proy.id] ?? null, config: data.config || {},
+        salidasOdoo: salidasPorRef && numRef(proy.referenciaOdoo) ? (salidasPorRef[numRef(proy.referenciaOdoo)] || { productos: [] }) : null,
       });
       return { proyecto: proy, ppto, rent };
     }).sort((a, b) => (a.rent?.totales.margenPctProyectado ?? 999) - (b.rent?.totales.margenPctProyectado ?? 999));
-  }, [pptos, detalles, movimientos, data, soloEjecucion, ocultos, verOcultos]);
+  }, [pptos, detalles, movimientos, data, soloEjecucion, ocultos, verOcultos, salidasPorRef]);
 
   const ubicPorId = useMemo(() => {
     const m = {}; ubicaciones.forEach(u => { m[u.id] = u; }); return m;
@@ -114,6 +137,11 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
         <div>
           <h1 className="text-lg font-black uppercase tracking-wider flex items-center gap-2"><TrendingUp className="w-5 h-5 text-red-500" />Rentabilidad de obras</h1>
           <p className="text-[11px] text-zinc-500">Presupuesto vigente vs real vs proyección · ⭐ +45 · 🟢 35-45 · 🟠 30-35 · 🔴 debajo de 30 (bandas ancladas al objetivo de cada sistema; global {objetivo}%)</p>
+          {refsPortafolio.length > 0 && !salidasPorRef && (
+            <p className={`text-[10px] ${errorOdoo ? 'text-orange-400' : 'text-zinc-500 italic'}`}>
+              {errorOdoo ? 'No se pudieron traer las salidas de almacén de Odoo: el costo real y el Material Gastable no están incluidos.' : 'Trayendo costos reales de Odoo…'}
+            </p>
+          )}
         </div>
         <div className="flex-1" />
         {ocultos.size > 0 && (

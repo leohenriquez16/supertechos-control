@@ -228,7 +228,12 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
   const patchGasto = (gastoId, totalRd) => {
     setSel(prev => {
       const next = JSON.parse(JSON.stringify(prev));
-      const g = next.gastos.find(x => x.id === gastoId);
+      let g = next.gastos.find(x => x.id === gastoId);
+      // v8.74.15: presupuestos viejos no traen Material Gastable — se crea al ponerle monto.
+      if (!g && gastoId === 'g_material_gastable') {
+        g = { id: gastoId, categoria: 'material_gastable', nombre: 'Material Gastable', modo: 'monto', totalRd: 0 };
+        next.gastos = [...(next.gastos || []), g];
+      }
       if (g) { g.modo = 'monto'; g.totalRd = totalRd || 0; }
       return next;
     });
@@ -380,6 +385,11 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
                               <span className="ml-2 text-[10px] text-zinc-500">
                                 despachado {formatNum(l.cantidadReal)} {l.unidad}
                                 {(l.cantidadOdoo || 0) > 0 && <span className="ml-1 text-[8px] bg-purple-900/40 border border-purple-700 text-purple-300 px-1 uppercase">odoo</span>}
+                                {(l.costoOdooRd || 0) > 0 && l.costoUnidadReal != null && (
+                                  <span className="ml-1 text-[10px] text-zinc-400" title={`Costo real de lo despachado${(l.fuentesCosto || []).length ? ' — ' + l.fuentesCosto.join(', ') : ''}`}>
+                                    a {formatRD(l.costoUnidadReal)}/{l.unidad || 'ud'} real{(l.fuentesCosto || []).some(f => f.startsWith('OC ')) ? ` (${l.fuentesCosto.filter(f => f.startsWith('OC ')).join(', ')})` : ''}
+                                  </span>
+                                )}
                                 {(l.sobreDespacho || 0) > 0 && <span className="ml-1 text-[8px] bg-amber-900/40 border border-amber-700 text-amber-300 px-1 uppercase" title="Despachado por encima de lo presupuestado">+{formatNum(l.sobreDespacho)} sobre ppto</span>}
                               </span>
                             )}
@@ -431,7 +441,7 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
 
       {/* Gastos de obra */}
       <div className="space-y-2">
-        <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Gastos de obra (caja chica)</div>
+        <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Gastos de obra (caja chica y almacén)</div>
         {rent?.gastos.map(g => {
           const cfg = CATEGORIAS_GASTO[g.categoria] || CATEGORIAS_GASTO.otros;
           const abierto = expanded.has(g.id);
@@ -441,7 +451,8 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
                 <div className="flex items-center gap-2 min-w-0">
                   <ChevronDown className={`w-3 h-3 text-zinc-500 transition-transform ${abierto ? 'rotate-180' : ''}`} />
                   <span className="font-bold text-xs text-white">{cfg.label}</span>
-                  {g.movimientos.length > 0 && <span className="text-[10px] text-zinc-500">· {g.movimientos.length}</span>}
+                  {g.articulos ? (g.articulos.length > 0 && <span className="text-[10px] text-zinc-500">· {g.articulos.length} artículo{g.articulos.length === 1 ? '' : 's'}</span>)
+                    : (g.movimientos.length > 0 && <span className="text-[10px] text-zinc-500">· {g.movimientos.length}</span>)}
                 </div>
                 <div className="flex items-center gap-4 text-right shrink-0">
                   <div><div className="text-[9px] uppercase text-zinc-600">Ppto</div>
@@ -453,7 +464,43 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
                   <div><div className="text-[9px] uppercase text-zinc-600">Proy.</div><div className="text-xs font-bold tabular-nums text-white">{formatRD(g.proyeccion)}</div></div>
                 </div>
               </button>
-              {abierto && g.movimientos.length > 0 && (
+              {abierto && g.articulos && (
+                <div className="border-t border-zinc-800 px-3 py-2 bg-black/20">
+                  {g.articulos.length === 0 ? (
+                    <div className="text-[11px] text-zinc-500 italic py-1">Sin brochas, motas, guantes, lentes, cuchillas ni aparatos despachados a esta obra.</div>
+                  ) : (
+                    <table className="w-full text-[11px]">
+                      <thead><tr className="text-[9px] uppercase tracking-wider text-zinc-600">
+                        <th className="text-left font-bold py-1">Artículo</th>
+                        <th className="text-right font-bold py-1 px-2">Cantidad</th>
+                        <th className="text-right font-bold py-1 px-2">Costo unit.</th>
+                        <th className="text-right font-bold py-1">Total</th>
+                      </tr></thead>
+                      <tbody>
+                        {g.articulos.map(a => (
+                          <tr key={`${a.fuentes.join('+')}|${a.nombre}`} className="border-t border-zinc-900">
+                            <td className="py-1 pr-2 text-zinc-300">
+                              {a.nombre}
+                              {a.fuentes.includes('caja') && <span className="ml-1 text-[8px] uppercase border border-zinc-700 text-zinc-500 px-1">caja chica</span>}
+                            </td>
+                            <td className="py-1 px-2 text-right tabular-nums text-zinc-300">{a.cantidad > 0 ? formatNum(a.cantidad) : '—'}</td>
+                            <td className="py-1 px-2 text-right tabular-nums text-zinc-400">{a.cantidad > 0 && a.costoRd > 0 ? formatRD(a.costoRd / a.cantidad) : '—'}</td>
+                            <td className="py-1 text-right tabular-nums font-bold text-white">
+                              {a.sinCosto && !(a.costoRd > 0) ? <span className="text-[10px] font-normal text-orange-400">sin costo en Odoo</span> : formatRD(a.costoRd)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot><tr className="border-t border-zinc-700">
+                        <td className="py-1 text-[10px] uppercase text-zinc-500 font-bold">Total</td>
+                        <td /><td />
+                        <td className="py-1 text-right tabular-nums font-black text-white">{formatRD(g.real)}</td>
+                      </tr></tfoot>
+                    </table>
+                  )}
+                </div>
+              )}
+              {abierto && !g.articulos && g.movimientos.length > 0 && (
                 <div className="border-t border-zinc-800 px-3 py-2 bg-black/20 space-y-1">
                   {g.movimientos.slice(0, 50).map(m => (
                     <div key={m.id} className="grid grid-cols-[auto_1fr_auto] gap-2 text-[11px] py-1 border-t border-zinc-900 first:border-t-0">

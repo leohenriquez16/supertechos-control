@@ -9,7 +9,7 @@ import { calcEstadoPagoProyecto } from '../../../lib/helpers/calculos';
 const tieneRol = (p, r) => p?.roles?.includes(r);
 
 // v8.19.29: costos por día del personal asignado al proyecto (solo modo=dia).
-function CostosDiaPorPersona({ proyecto, data, esAdmin, onCambio }) {
+function CostosDiaPorPersona({ proyecto, data, esAdmin, onCambio, jornadas = [], detalles = [], cortes = [] }) {
   const [costos, setCostos] = React.useState({}); // { personaId: costoDia }
   const [loading, setLoading] = React.useState(true);
   const [guardandoId, setGuardandoId] = React.useState(null);
@@ -40,6 +40,25 @@ function CostosDiaPorPersona({ proyecto, data, esAdmin, onCambio }) {
     Object.values(proyecto.maestrosTareas || {}).forEach(id => { if (id) ids.add(id); });
     return [...ids].map(id => (data.personal || []).find(p => p.id === id)).filter(Boolean);
   }, [proyecto, data.personal]);
+
+  // v8.74.19: días trabajados en ESTA obra (jornadas; día doble = 2) y lo pagado
+  // por persona en cortes ya pagados. Se refresca solo al pagar un corte.
+  const resumen = React.useMemo(() => {
+    const estadoCorte = {};
+    (cortes || []).forEach(c => { estadoCorte[c.id] = c.estado; });
+    const r = {};
+    const get = (pid) => (r[pid] = r[pid] || { dias: 0, pagado: 0, enCorte: 0 });
+    (jornadas || []).forEach(j => {
+      const f = j.diaDoble ? 2 : 1;
+      (j.personasPresentesIds || []).forEach(pid => { get(pid).dias += f; });
+    });
+    (detalles || []).forEach(d => {
+      const e = estadoCorte[d.corteId];
+      if (e === 'pagado') get(d.personaId).pagado += Number(d.montoTotal) || 0;
+      else if (e === 'cerrado') get(d.personaId).enCorte += Number(d.montoTotal) || 0;
+    });
+    return r;
+  }, [jornadas, detalles, cortes]);
 
   const rolDe = (persona) => {
     if (proyecto.supervisorId === persona.id) return { label: 'Supervisor', color: 'bg-blue-900/40 border-blue-700 text-blue-300' };
@@ -80,6 +99,14 @@ function CostosDiaPorPersona({ proyecto, data, esAdmin, onCambio }) {
         <div className="text-[11px] text-zinc-500 italic py-2">Aún no hay personal asignado a este proyecto.</div>
       ) : (
         <div className="space-y-1">
+          <div className="hidden sm:flex items-center gap-2 px-2 text-[9px] uppercase tracking-wider text-zinc-500">
+            <div className="flex-1">Persona</div>
+            <div className="w-12 text-right">Días</div>
+            <div className="w-24 text-right">Total</div>
+            <div className="w-24 text-right">Pagado</div>
+            <div className="w-24 text-right">Pendiente</div>
+            <div className="w-32 text-right">Costo/día</div>
+          </div>
           {personas.map(p => {
             const costo = costos[p.id] || 0;
             const editing = editId === p.id;
@@ -94,7 +121,23 @@ function CostosDiaPorPersona({ proyecto, data, esAdmin, onCambio }) {
                     {sinConfigurar && <span className="text-yellow-400">⚠ sin costo</span>}
                   </div>
                 </div>
-                <div className="text-right shrink-0">
+                {(() => {
+                  const rs = resumen[p.id] || { dias: 0, pagado: 0, enCorte: 0 };
+                  const total = rs.dias * costo;
+                  const pendiente = Math.max(0, total - rs.pagado);
+                  return (
+                    <>
+                      <div className="w-12 text-right text-xs tabular-nums text-zinc-200" title="Días trabajados en esta obra">{formatNum(rs.dias)}<span className="sm:hidden text-[8px] text-zinc-500"> d</span></div>
+                      <div className="w-24 text-right text-xs tabular-nums font-bold text-white" title="Días × costo/día">{formatRD(total)}</div>
+                      <div className="w-24 text-right text-xs tabular-nums text-green-400" title={rs.enCorte ? `${formatRD(rs.enCorte)} en corte cerrado sin pagar` : 'Pagado en cortes'}>
+                        {formatRD(rs.pagado)}
+                        {rs.enCorte > 0 && <div className="text-[8px] text-yellow-400">+{formatRD(rs.enCorte)} en corte</div>}
+                      </div>
+                      <div className={`w-24 text-right text-xs tabular-nums ${pendiente > 0 ? 'text-yellow-400' : 'text-zinc-500'}`}>{formatRD(pendiente)}</div>
+                    </>
+                  );
+                })()}
+                <div className="w-32 text-right shrink-0">
                   {editing ? (
                     <span className="inline-flex items-center gap-1">
                       <input
@@ -325,7 +368,7 @@ export default function TabManoDeObra({ proyecto, data, usuario, onActualizarPro
 
       {/* v8.19.29: si el modo es "Por día", listar el personal y su costo/día */}
       {proyecto.modoPagoManoObra === 'dia' && (
-        <CostosDiaPorPersona proyecto={proyecto} data={data} esAdmin={esAdmin} onCambio={cargar} />
+        <CostosDiaPorPersona proyecto={proyecto} data={data} esAdmin={esAdmin} onCambio={cargar} jornadas={jornadas} detalles={detalles} cortes={cortes} />
       )}
 
       {/* KPIs principales — lo importante: devengado, pagado, por pagar */}

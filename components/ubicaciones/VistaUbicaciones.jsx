@@ -5,6 +5,7 @@
 // mantenimientos o reclamaciones. Lista + Mapa + filtros + ficha 360 por localidad.
 
 import React, { useEffect, useState, useMemo } from 'react';
+import TablaDatos from '../common/TablaDatos';
 import { ArrowLeft, Loader2, MapPin, Search, Briefcase, ShieldCheck, AlertTriangle, ClipboardList, Wrench } from 'lucide-react';
 import * as db from '../../lib/db';
 import { listarProyectosSurveys, SERVICE_LINES } from '../../lib/surveys';
@@ -163,6 +164,12 @@ export default function VistaUbicaciones({ data, usuario, onVolver, onVerProyect
   }
 
   // ---------- LISTA / MAPA ----------
+  // v8.74.23: última actividad = último reporte de sus proyectos, o fecha de garantía/reclamación.
+  const ultimaAct = (it) => [
+    ...it.proys.map(p => it.reportesPorProy[p.id] || p.fechaInicio || ''),
+    ...it.gars.map(g => g.fechaInicio || g.createdAt || ''),
+    ...it.recs.map(r => r.fechaApertura || r.createdAt || ''),
+  ].filter(Boolean).map(String).sort().pop() || '';
   const Chip = ({ n, label, color }) => n > 0 ? <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ backgroundColor: color + '22', color, border: `1px solid ${color}55` }}>{label} {n}</span> : null;
   const markers = filtrados.filter(it => it.coords).map(it => ({ lat: it.coords.lat, lng: it.coords.lng, color: it.gars.length ? 'green' : it.recs.length ? 'orange' : 'red', label: it.u.nombre, popup: `<b>${it.cliNombre}</b><br/>${it.u.nombre}<br/>${it.proys.length} proy · ${it.gars.length} gar · ${it.recs.length} recl`, onClick: () => setSel(it) }));
 
@@ -198,25 +205,26 @@ export default function VistaUbicaciones({ data, usuario, onVolver, onVerProyect
         markers.length === 0 ? <div className="bg-zinc-950 border border-zinc-800 rounded-card p-8 text-center text-zinc-500 text-sm">Ninguna localidad (de las filtradas) tiene GPS. Agrega coordenadas a la ubicación del cliente.</div>
           : <MapaLeaflet center={[markers[0].lat, markers[0].lng]} zoom={11} height={460} markers={markers} scrollWheelZoom className="rounded-card overflow-hidden" />
       ) : (
-        <div className="space-y-2">
-          {filtrados.length === 0 && <div className="bg-zinc-950 border border-zinc-800 rounded-card p-8 text-center text-zinc-500 text-sm">Sin resultados.</div>}
-          {filtrados.map(it => (
-            <button key={it.u.id} onClick={() => setSel(it)} className="w-full text-left bg-zinc-900 border border-zinc-800 rounded-card p-3 hover:border-red-600 flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="font-bold flex items-center gap-2 truncate"><MapPin className="w-4 h-4 text-red-500 shrink-0" /> {it.u.nombre}</div>
-                <div className="text-[11px] text-zinc-500 truncate">{it.cliNombre}{it.u.ciudad ? ` · ${it.u.ciudad}` : ''}{it.coords ? '' : ' · sin GPS'}</div>
-                <div className="flex flex-wrap gap-1 mt-1">
-                  <Chip n={it.levs.length} label="Lev" color="#3b82f6" />
-                  <Chip n={it.proys.length} label="Proy" color="#ef4444" />
-                  <Chip n={it.gars.length} label="Gar" color="#22c55e" />
-                  <Chip n={it.mants.length} label="Mant" color="#f59e0b" />
-                  <Chip n={it.recs.length} label="Recl" color="#fb923c" />
-                </div>
-              </div>
-              <span className="text-[10px] text-zinc-600 shrink-0">→</span>
-            </button>
-          ))}
-        </div>
+        <TablaDatos
+          filas={filtrados}
+          rowKey={it => it.u.id}
+          onFilaClick={it => setSel(it)}
+          ordenInicial={{ key: 'cliente', dir: 'asc' }}
+          columnas={[
+            { key: 'nombre', label: 'Localidad', sortValue: it => it.u.nombre || '', render: it => <span className="font-bold text-white">{it.u.nombre}</span>, className: 'min-w-[180px]' },
+            { key: 'cliente', label: 'Cliente', sortValue: it => it.cliNombre, render: it => <span className="text-zinc-300">{it.cliNombre || '—'}</span>, className: 'min-w-[160px]' },
+            { key: 'ciudad', label: 'Ciudad / Sector', sortValue: it => `${it.u.ciudad || ''} ${it.u.sector || ''}`, render: it => <span className="text-zinc-400 whitespace-nowrap">{[it.u.ciudad, it.u.sector].filter(Boolean).join(' · ') || '—'}</span> },
+            { key: 'dir', label: 'Dirección', sortValue: it => it.u.direccion || '', render: it => <span className="text-zinc-400">{it.u.direccion || '—'}</span>, className: 'min-w-[180px] max-w-[320px]' },
+            { key: 'contacto', label: 'Contacto', sortValue: it => it.u.contactoNombre || '', render: it => it.u.contactoNombre ? <span className="text-zinc-300">{it.u.contactoNombre}{it.u.contactoTelefono ? <span className="text-zinc-500 whitespace-nowrap"> · {it.u.contactoTelefono}</span> : ''}</span> : <span className="text-zinc-600">—</span> },
+            { key: 'gps', label: 'GPS', align: 'center', sortValue: it => it.coords ? (it.coords.fuente === 'ubicacion' ? 2 : 1) : 0, render: it => it.coords ? <a href={`https://maps.google.com/?q=${it.coords.lat},${it.coords.lng}`} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className={it.coords.fuente === 'ubicacion' ? 'text-green-400 hover:underline' : 'text-blue-400 hover:underline'} title={it.coords.fuente === 'ubicacion' ? 'GPS de la ubicación' : 'GPS tomado del proyecto'}>{it.coords.fuente === 'ubicacion' ? '✓' : 'proy.'}</a> : <span className="text-amber-400" title="Sin GPS">✗</span> },
+            { key: 'lev', label: 'Lev', align: 'center', sortValue: it => it.levs.length, render: it => it.levs.length || <span className="text-zinc-600">0</span> },
+            { key: 'proy', label: 'Proy', align: 'center', sortValue: it => it.proys.length, render: it => it.proys.length || <span className="text-zinc-600">0</span> },
+            { key: 'gar', label: 'Gar', align: 'center', sortValue: it => it.gars.length, render: it => it.gars.length ? <span className="text-green-400">{it.gars.length}</span> : <span className="text-zinc-600">0</span> },
+            { key: 'mant', label: 'Mant', align: 'center', sortValue: it => it.mants.length, render: it => it.mants.length ? <span className="text-amber-400">{it.mants.length}</span> : <span className="text-zinc-600">0</span> },
+            { key: 'recl', label: 'Recl', align: 'center', sortValue: it => it.recs.length, render: it => it.recs.length ? <span className="text-orange-400 font-bold">{it.recs.length}</span> : <span className="text-zinc-600">0</span> },
+            { key: 'ultima', label: 'Última actividad', sortValue: it => ultimaAct(it), render: it => <span className="text-zinc-400 whitespace-nowrap">{ultimaAct(it) ? ultimaAct(it).slice(0, 10) : '—'}</span> },
+          ]}
+        />
       )}
     </div>
   );

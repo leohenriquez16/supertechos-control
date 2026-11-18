@@ -3063,6 +3063,21 @@ function GestionSistemas({ sistemas, config, onVolver, onActualizarSistemas, onA
   const [importando, setImportando] = useState(false);
   const [plantillasModal, setPlantillasModal] = useState(false);
   const sistemasArray = Object.values(sistemas);
+  // v8.74.21: pestañas por categoría (como las hojas de «Costos por Sistema»).
+  const categoriasSis = useMemo(() => [...(dataGlobal?.categorias || [])].sort((a, b) => (a.orden ?? 99) - (b.orden ?? 99)), [dataGlobal?.categorias]);
+  const [catTab, setCatTabRaw] = useState(() => { try { return localStorage.getItem('sistemas_cat_tab') || 'todas'; } catch { return 'todas'; } });
+  const setCatTab = (v) => { setCatTabRaw(v); try { localStorage.setItem('sistemas_cat_tab', v); } catch {} };
+  const idsCat = new Set(categoriasSis.map(c => c.id));
+  const sinCat = sistemasArray.filter(s => !s.categoriaId || !idsCat.has(s.categoriaId));
+  const [busquedaSis, setBusquedaSis] = useState('');
+  const normSis = (x) => String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const terminos = normSis(busquedaSis).split(/\s+/).filter(Boolean);
+  const coincide = (s) => !terminos.length || terminos.every(t => normSis([s.nombre, ...(s.materiales || []).map(m => m.nombre), ...(s.keywords_cotizacion || [])].join(' ')).includes(t));
+  // Al buscar se busca en TODAS las categorías (para no esconder resultados de otra pestaña).
+  const sistemasVisibles = (terminos.length ? sistemasArray : catTab === 'todas' ? sistemasArray
+    : catTab === 'sin' ? sinCat
+    : sistemasArray.filter(s => s.categoriaId === catTab)
+  ).filter(coincide).slice().sort((a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es'));
 
   const guardarSistema = () => {
     if (!sistemaEditando.nombre) return;
@@ -3225,11 +3240,31 @@ function GestionSistemas({ sistemas, config, onVolver, onActualizarSistemas, onA
           <h2 className="text-xs tracking-widest uppercase text-zinc-400 font-bold">Sistemas ({sistemasArray.length})</h2>
           <div className="flex gap-2">
             <button onClick={() => setPlantillasModal(true)} className="text-xs text-zinc-400 flex items-center gap-1 font-bold uppercase tracking-wider hover:text-red-500"><Sparkles className="w-3 h-3" /> Plantillas</button>
-            <button onClick={() => setSistemaEditando({ id: 's_' + Date.now(), nombre: '', precio_m2: 0, costo_mo_m2: 0, tareas: [{ id: 't_' + Date.now(), nombre: '', peso: 100, reporta: 'm2' }], materiales: [], keywords_cotizacion: [] })} className="text-xs text-red-500 flex items-center gap-1 font-bold uppercase tracking-wider"><Plus className="w-3 h-3" /> Nuevo</button>
+            <button onClick={() => setSistemaEditando({ id: 's_' + Date.now(), categoriaId: (catTab !== 'todas' && catTab !== 'sin') ? catTab : '', nombre: '', precio_m2: 0, costo_mo_m2: 0, tareas: [{ id: 't_' + Date.now(), nombre: '', peso: 100, reporta: 'm2' }], materiales: [], keywords_cotizacion: [] })} className="text-xs text-red-500 flex items-center gap-1 font-bold uppercase tracking-wider"><Plus className="w-3 h-3" /> Nuevo</button>
           </div>
         </div>
+        <div className="relative mb-2">
+          <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
+          <input type="text" value={busquedaSis} onChange={e => setBusquedaSis(e.target.value)}
+            placeholder="Buscar sistema o material (ej. silicona, planiseal, epóxico)…"
+            className="w-full bg-zinc-900 border border-zinc-800 focus:border-red-600 outline-none rounded-card pl-8 pr-8 py-2 text-sm text-white" />
+          {busquedaSis && <button onClick={() => setBusquedaSis('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white" title="Limpiar"><X className="w-3.5 h-3.5" /></button>}
+        </div>
+        {terminos.length > 0 && <div className="text-[11px] text-zinc-500 mb-2">{sistemasVisibles.length} resultado{sistemasVisibles.length !== 1 ? 's' : ''} en todas las categorías</div>}
+        <div className={`flex flex-wrap gap-1 mb-3 border-b border-zinc-800 pb-2 ${terminos.length ? 'opacity-40' : ''}`}>
+          {[{ id: 'todas', nombre: 'Todas', n: sistemasArray.length },
+            ...categoriasSis.map(c => ({ id: c.id, nombre: c.nombre, n: sistemasArray.filter(s => s.categoriaId === c.id).length })),
+            ...(sinCat.length ? [{ id: 'sin', nombre: 'Sin categoría', n: sinCat.length }] : []),
+          ].map(t => (
+            <button key={t.id} onClick={() => setCatTab(t.id)}
+              className={`px-2.5 py-1 text-[11px] font-bold border rounded-t ${catTab === t.id ? 'bg-red-600 border-red-600 text-white' : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white'} ${t.id === 'sin' && catTab !== t.id ? 'text-yellow-400' : ''}`}>
+              {String(t.nombre).trim()} <span className="opacity-70 tabular-nums">({t.n})</span>
+            </button>
+          ))}
+        </div>
         <div className="space-y-2">
-          {sistemasArray.map(s => {
+          {sistemasVisibles.length === 0 && <div className="text-xs text-zinc-500 italic py-4 text-center">{terminos.length ? 'Ningún sistema coincide con la búsqueda.' : 'No hay sistemas en esta categoría.'}</div>}
+          {sistemasVisibles.map(s => {
             const isExp = expandidos[s.id];
             return (
               <div key={s.id} className="bg-zinc-900 border border-zinc-800 rounded-card">

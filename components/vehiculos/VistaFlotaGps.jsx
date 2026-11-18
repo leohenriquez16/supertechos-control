@@ -5,7 +5,7 @@
 // con las obras del ERP. Lo llena el agente diario desde los reportes de Pressto.
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Loader2, Truck, Satellite, MapPin, RefreshCw } from 'lucide-react';
+import { Loader2, Truck, Satellite, MapPin, RefreshCw, Fuel, ChevronDown } from 'lucide-react';
 import * as db from '../../lib/db';
 
 // v8.44.0: MAPA EN VIVO de toda la flota — posición actual de cada unidad con su
@@ -63,6 +63,10 @@ const CAT = [
 ];
 const hhmm = (s) => { const H = Math.floor(s / 3600), M = Math.round((s % 3600) / 60); return H > 0 ? `${H}h${M ? ' ' + M + 'm' : ''}` : `${M}m`; };
 const nfmt = (n) => Number(n || 0).toLocaleString('es-DO');
+const rd = (n) => 'RD$' + Number(n || 0).toLocaleString('es-DO', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+// v8.74.22: rendimiento con los km de los MISMOS días que cubren las facturas.
+const kmGal = (f) => (f.galones > 0 && f.kmCobertura != null ? f.kmCobertura / f.galones : null);
+const RENDIMIENTO_BAJO = 12; // km/galón: por debajo de esto ningún vehículo de la flota es normal
 const sevRal = (p) => p >= 30 ? 'crit' : p >= 13 ? 'warn' : 'good';
 const chipCls = { crit: 'text-red-300 bg-red-950/50', warn: 'text-amber-300 bg-amber-950/50', good: 'text-green-300 bg-green-950/40' };
 const flagBorder = { crit: 'border-l-red-500', warn: 'border-l-amber-500', good: 'border-l-green-500' };
@@ -73,6 +77,8 @@ export default function VistaFlotaGps({ usuario, data }) {
   const [periodo, setPeriodo] = useState(null);
   const [resumen, setResumen] = useState([]);
   const [vehiculos, setVehiculos] = useState([]);
+  const [abiertos, setAbiertos] = useState(() => new Set());
+  const toggle = (id) => setAbiertos((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   useEffect(() => {
     let cancel = false;
@@ -110,10 +116,16 @@ export default function VistaFlotaGps({ usuario, data }) {
     }).sort((a, b) => b.km - a.km);
   }, [resumen, vehiculos, data]);
 
-  const tot = useMemo(() => filas.reduce((a, f) => ({ km: a.km + f.km, mot: a.mot + f.motorS, ral: a.ral + f.ralentiS }), { km: 0, mot: 0, ral: 0 }), [filas]);
+  const tot = useMemo(() => filas.reduce((a, f) => ({ km: a.km + f.km, mot: a.mot + f.motorS, ral: a.ral + f.ralentiS,
+    comb: a.comb + (f.combustibleRd || 0), gal: a.gal + (f.galones || 0) }), { km: 0, mot: 0, ral: 0, comb: 0, gal: 0 }), [filas]);
 
   const flags = useMemo(() => {
     const out = [];
+    // v8.74.22: combustible sin recorrido en el GPS, y rendimiento anormalmente bajo.
+    filas.filter((f) => (f.galones || 0) > 0 && !(f.kmCobertura > 0)).forEach((f) => out.push({ s: 'crit', t: `⛽ ${f.nombre} — ${f.chofer}`,
+      d: `Tanqueó ${nfmt(Math.round(f.galones))} galones (${rd(f.combustibleRd)}, ${f.tanqueos} veces) y el GPS no registra kilómetros en esos días. Revisar el GPS o a dónde va el combustible.` }));
+    filas.filter((f) => kmGal(f) != null && f.kmCobertura > 0 && kmGal(f) < RENDIMIENTO_BAJO).forEach((f) => out.push({ s: 'crit', t: `⛽ ${f.nombre} — ${f.chofer}`,
+      d: `Rinde solo ${kmGal(f).toFixed(1)} km por galón (${nfmt(Math.round(f.kmCobertura))} km con ${nfmt(Math.round(f.galones))} gal${f.coberturaCombustible ? `, ${f.coberturaCombustible}` : ''}). Muy por debajo de lo normal: revisar.` }));
     const ral = [...filas].sort((a, b) => b.ralentiPct - a.ralentiPct)[0];
     if (ral && ral.ralentiPct >= 30) out.push({ s: 'crit', t: `🔴 ${ral.nombre} — ${ral.chofer}`, d: `${hhmm(ral.ralentiS)} con el motor prendido detenido = ${ral.ralentiPct}% del tiempo encendido, parado sin moverse. Combustible quemado. Revisar.` });
     filas.filter((f) => f.km < 1000 && !f.esOficina).forEach((f) => out.push({ s: 'warn', t: `🟡 ${f.nombre} — ${f.chofer}`, d: `Solo ${nfmt(f.km)} km y ${hhmm(f.obraS)} en obra en el período. Sub-utilizado.` }));
@@ -141,6 +153,7 @@ export default function VistaFlotaGps({ usuario, data }) {
     [hhmm(tot.mot), 'Motor encendido'],
     [hhmm(tot.ral), 'Motor prendido detenido'],
     [(tot.mot ? Math.round(tot.ral / tot.mot * 100) : 0) + '%', 'prendido detenido'],
+    ...(tot.comb > 0 ? [[rd(tot.comb), `Combustible · ${nfmt(Math.round(tot.gal))} gal`]] : []),
   ];
 
   return (
@@ -160,7 +173,7 @@ export default function VistaFlotaGps({ usuario, data }) {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
         {kpis.map((k, i) => (
           <div key={i} className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
             <div className="text-2xl font-black tabular-nums">{k[0]}</div>
@@ -218,6 +231,39 @@ export default function VistaFlotaGps({ usuario, data }) {
                     ))}
                   </div>
                 </div>
+                {f.galones != null && (
+                  <div className="border-t border-dashed border-zinc-800 pt-2 text-xs">
+                    <button onClick={() => toggle(f.id)} className="w-full flex items-center justify-between gap-2 text-left">
+                      <span className="text-[10px] uppercase tracking-wide text-zinc-500 font-bold flex items-center gap-1"><Fuel className="w-3 h-3" /> Combustible{f.coberturaCombustible ? ` · ${f.coberturaCombustible}` : ''}</span>
+                      <ChevronDown className={`w-3 h-3 text-zinc-500 transition-transform ${abiertos.has(f.id) ? 'rotate-180' : ''}`} />
+                    </button>
+                    <div className="grid grid-cols-3 gap-x-3 gap-y-2 mt-1.5">
+                      {[[rd(f.combustibleRd), 'gastado'], [nfmt(Math.round(f.galones * 10) / 10), 'galones'], [f.tanqueos, 'tanqueos'],
+                        [kmGal(f) != null && f.kmCobertura > 0 ? kmGal(f).toFixed(1) : '—', 'km / galón'],
+                        [f.kmCobertura > 0 ? 'RD$' + (f.combustibleRd / f.kmCobertura).toFixed(1) : '—', 'por km']].map((s, i) => (
+                        <div key={i} className="min-w-0"><div className={`text-base font-black tabular-nums leading-none whitespace-nowrap ${i === 3 && kmGal(f) != null && kmGal(f) < RENDIMIENTO_BAJO ? 'text-red-400' : ''}`}>{s[0]}</div><div className="text-[10px] uppercase tracking-wide text-zinc-500 font-bold mt-1">{s[1]}</div></div>
+                      ))}
+                    </div>
+                    {abiertos.has(f.id) && (
+                      <div className="mt-2 max-h-56 overflow-y-auto">
+                        <table className="w-full text-[11px]">
+                          <thead><tr className="text-[9px] uppercase text-zinc-600"><th className="text-left font-bold py-0.5">Fecha</th><th className="text-left font-bold">Estación</th><th className="text-right font-bold">Gal</th><th className="text-right font-bold">Monto</th><th className="text-right font-bold">Obra</th></tr></thead>
+                          <tbody>
+                            {f.combustibleDet.map((t, i) => (
+                              <tr key={i} className="border-t border-zinc-900">
+                                <td className="py-0.5 tabular-nums text-zinc-400 whitespace-nowrap">{t.fecha?.slice(8, 10)}/{t.fecha?.slice(5, 7)}{t.hora ? ` ${t.hora}` : ''}</td>
+                                <td className="text-zinc-300 truncate max-w-[120px]">{(t.lugar || '').replace(/^TotalEnergies\s*/i, '') || '—'}</td>
+                                <td className="text-right tabular-nums">{Number(t.galones || 0).toFixed(2)}</td>
+                                <td className="text-right tabular-nums">{rd(t.monto)}</td>
+                                <td className="text-right text-zinc-500">{(t.ref_obra || []).join(', ') || '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="border-t border-dashed border-zinc-800 pt-2 text-xs">
                   <div className="text-[10px] uppercase tracking-wide text-zinc-500 font-bold mb-1">Top obras visitadas</div>
                   {obras.length ? obras.map((o, i) => (
@@ -231,7 +277,7 @@ export default function VistaFlotaGps({ usuario, data }) {
       </div>
 
       <div className="text-[10px] text-zinc-600 leading-relaxed">
-        <b>«Motor prendido detenido»</b> (ralentí) = el motor encendido sin que el vehículo se mueva; gasta combustible parado. «Otros» incluye paradas cerca de obras que aún no tienen ubicación registrada en el ERP. Datos GPS de Pressto cruzados con las obras del ERP, la oficina y el parqueo de cada chofer.
+        <b>«Motor prendido detenido»</b> (ralentí) = el motor encendido sin que el vehículo se mueva; gasta combustible parado. «Otros» incluye paradas cerca de obras que aún no tienen ubicación registrada en el ERP. Datos GPS de Pressto cruzados con las obras del ERP, la oficina y el parqueo de cada chofer. «En obra» cuenta solo el horario laboral (lun–sáb 6:00–19:00); las noches estacionado en una obra van en «Otros». Combustible: facturas de TotalEnergies en Odoo por la tarjeta de cada vehículo; el km/galón usa los km de los mismos días que cubren las facturas. Se actualiza solo cada día.
       </div>
     </div>
   );

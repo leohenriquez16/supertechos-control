@@ -1,6 +1,8 @@
 import { cruzarParadasConGps, distanciaM, ventanaViajeGps, cambioDatosGps, esParadaBase } from '../lib/helpers/rutas.js';
 import { normalizarHistorialGPS, fechaGpsAISO, recortarHistorialAlDia } from '../lib/gps.js';
 import { crearLimitador } from '../lib/server/limiteFrecuencia.js';
+// Los casos de abajo se escribieron con raw_time en UTC; Pressto real manda hora local (ver caso «Pressto real»).
+process.env.GPS_RAW_TIME_UTC = '1';
 let ok = 0, ko = 0;
 const t = (n, c) => { if (c) ok++; else { ko++; console.error('FALLA:', n); } };
 
@@ -176,5 +178,11 @@ t('límite: otra clave pasa', lim('ana|f:2026-11-17', 30000).ok);
 t('límite: a los 60 s pasa otra vez', lim('ana|f:2026-11-18', 60000).ok);
 t('límite: soloConsultar no anota', lim('ana|x', 0, { soloConsultar: true }).ok && lim('ana|x', 1000).ok && !lim('ana|x', 2000).ok);
 
+{ // v8.75.1: Pressto real — raw_time en hora local RD
+  const prev = process.env.GPS_RAW_TIME_UTC; delete process.env.GPS_RAW_TIME_UTC;
+  const h = normalizarHistorialGPS({ items: [{ status: 1, items: [{ lat: 18.47, lng: -69.99, raw_time: '2026-11-17 05:57:32', speed: 30 }] }] });
+  t('Pressto real: 05:57 hora RD = 09:57 UTC', h.puntos[0]?.t === '2026-11-17T09:57:32.000Z', h.puntos[0]?.t);
+  process.env.GPS_RAW_TIME_UTC = prev;
+}
 console.log(`rutas-gps: ${ok} ok, ${ko} fallas`);
 if (ko) process.exit(1);

@@ -12,6 +12,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Loader2, Plus, X, Trash2, FileText, Send, CheckCircle2, Hammer } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatRD, formatFechaCorta } from '../../lib/helpers/formato';
+import { puedeGestionarOC } from '../../lib/helpers/excesoM2';
 
 const ESTADOS_OC = {
   borrador:         { label: 'Borrador', color: 'bg-zinc-700/40 text-zinc-300' },
@@ -162,6 +163,7 @@ export default function TabCambios({ usuario, proyecto, data, esAdmin, onRecarga
           nuevasAreas.push({
             id: 'a_' + Date.now() + Math.random().toString(36).slice(2, 5),
             nombre: `${l.nombreArea} (OC-${oc.numero})`, m2: l.m2,
+            m2Cotizado: 0, // v8.77.0: área nacida de una orden de cambio (no estaba cotizada)
             sistemaId: l.sistemaId || proyecto.sistema || null,
             ...(l.precioM2 > 0 ? { precioVentaM2: l.precioM2 } : {}),
           });
@@ -280,7 +282,8 @@ export default function TabCambios({ usuario, proyecto, data, esAdmin, onRecarga
                 <button onClick={() => setModalAprobo({ oc, nombre: '', via: 'correo', nota: '' })} className="bg-purple-600 hover:bg-purple-500 text-white text-[10px] font-black uppercase px-3 py-2 rounded-card flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Cliente aprobó</button>
                 <button onClick={() => rechazar(oc)} className="border border-zinc-700 hover:border-red-500 text-zinc-400 text-[10px] font-black uppercase px-3 py-2 rounded-card">Rechazada</button>
               </>)}
-              {oc.estado === 'aprobada_cliente' && esAdmin && (
+              {/* v8.77.0: aplican el owner y el rol 'ordenes_cambio' (Miguel, Erisdania) */}
+              {oc.estado === 'aprobada_cliente' && puedeGestionarOC(usuario) && (
                 <button onClick={() => aplicar(oc)} disabled={procesando === oc.id} className="bg-green-600 hover:bg-green-500 disabled:opacity-60 text-white text-[10px] font-black uppercase px-3 py-2 rounded-card flex items-center gap-1">
                   {procesando === oc.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Hammer className="w-3 h-3" />} Aplicar al proyecto
                 </button>

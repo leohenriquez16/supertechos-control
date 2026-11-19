@@ -31,6 +31,7 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
   const [detalles, setDetalles] = useState([]);
   const [movimientos, setMovimientos] = useState([]);
   const [ubicaciones, setUbicaciones] = useState([]);
+  const [ordenesCambio, setOrdenesCambio] = useState([]); // v8.77.0: exceso de m² con/sin orden de cambio
   // v8.74.15: salidas de almacén de Odoo por cotización (costo real + Material Gastable),
   // en una sola consulta para todo el portafolio. null = cargando / no disponible.
   const [salidasPorRef, setSalidasPorRef] = useState(null);
@@ -57,14 +58,15 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
     (async () => {
       setLoading(true);
       try {
-        const [pp, det, movs, ubs] = await Promise.all([
+        const [pp, det, movs, ubs, ocs] = await Promise.all([
           db.listarPresupuestosAprobados().catch(() => []),
           db.listarTodosDetalles(),
           db.listarMovimientosCajaChica({}).catch(() => []),
           db.listarUbicacionesCliente(null, true).catch(() => []),
+          db.listarOrdenesCambio().catch(() => []),
         ]);
         if (cancel) return;
-        setPptos(pp); setDetalles(det); setMovimientos(movs || []); setUbicaciones(ubs || []);
+        setPptos(pp); setDetalles(det); setMovimientos(movs || []); setUbicaciones(ubs || []); setOrdenesCambio(ocs || []);
       } catch (e) { console.error('rentabilidad portafolio:', e); }
       if (!cancel) setLoading(false);
     })();
@@ -108,10 +110,11 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
         movimientosCajaChica: movimientos, estadoPago: null,
         mdoPagadoRd: mdoPagadaPorProyecto[proy.id] ?? null, config: data.config || {},
         salidasOdoo: salidasPorRef && numRef(proy.referenciaOdoo) ? (salidasPorRef[numRef(proy.referenciaOdoo)] || { productos: [] }) : null,
+        ordenesCambio,
       });
       return { proyecto: proy, ppto, rent };
     }).sort((a, b) => (a.rent?.totales.margenPctProyectado ?? 999) - (b.rent?.totales.margenPctProyectado ?? 999));
-  }, [pptos, detalles, movimientos, data, soloEjecucion, ocultos, verOcultos, salidasPorRef]);
+  }, [pptos, detalles, movimientos, data, soloEjecucion, ocultos, verOcultos, salidasPorRef, ordenesCambio]);
 
   const ubicPorId = useMemo(() => {
     const m = {}; ubicaciones.forEach(u => { m[u.id] = u; }); return m;
@@ -125,6 +128,8 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
       obras: conPpto.length, sinPpto: filas.length - conPpto.length,
       venta, costoReal: s(t => t.costoReal), costoProyectado: proy,
       margen: venta - proy, margenPct: venta > 0 ? ((venta - proy) / venta) * 100 : 0,
+      porCobrarExceso: s(t => t.ventaPorCobrarExceso || 0),
+      obrasConExceso: conPpto.filter(f => (f.rent.totales.ventaPorCobrarExceso || 0) > 0).length,
     };
   }, [filas]);
 
@@ -157,16 +162,17 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
       </div>
 
       {/* KPIs del portafolio */}
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
         {[
           ['Obras con presupuesto', `${tot.obras}`, tot.sinPpto ? `${tot.sinPpto} sin presupuesto` : ''],
           ['Venta s/ITBIS', formatRD(tot.venta), ''],
           ['Costo proyectado', formatRD(tot.costoProyectado), `real ${formatRD(tot.costoReal)}`],
           ['Margen proyectado', formatRD(tot.margen), `${tot.margenPct.toFixed(1)}%`],
-        ].map(([l, v, s]) => (
-          <div key={l} className="bg-zinc-900 border border-zinc-800 rounded-card p-4">
-            <div className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">{l}</div>
-            <div className="text-2xl font-black mt-1">{v}</div>
+          ['Metros de más sin cobrar', formatRD(tot.porCobrarExceso), tot.obrasConExceso ? `en ${tot.obrasConExceso} obra${tot.obrasConExceso === 1 ? '' : 's'} · ver cada ficha` : 'ninguna obra pasa lo cotizado', tot.porCobrarExceso > 0],
+        ].map(([l, v, s, alerta]) => (
+          <div key={l} className={`bg-zinc-900 border rounded-card p-4 ${alerta ? 'border-orange-700/60' : 'border-zinc-800'}`}>
+            <div className={`text-[10px] uppercase tracking-widest font-bold ${alerta ? 'text-orange-400' : 'text-zinc-500'}`}>{l}</div>
+            <div className={`text-2xl font-black mt-1 ${alerta ? 'text-orange-300' : ''}`}>{v}</div>
             {s && <div className="text-[10px] text-zinc-500 mt-0.5">{s}</div>}
           </div>
         ))}
@@ -224,7 +230,12 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
                       </td>
                     ) : (<>
                       <td className="text-right tabular-nums px-3 py-2.5 text-zinc-400">{t.avanceGlobalPct != null ? `${t.avanceGlobalPct.toFixed(0)}%` : '—'}</td>
-                      <td className="text-right tabular-nums px-3 py-2.5 text-zinc-300">{formatRD(t.ventaSinItbisRd)}</td>
+                      <td className="text-right tabular-nums px-3 py-2.5 text-zinc-300">
+                        {formatRD(t.ventaSinItbisRd)}
+                        {t.ventaPorCobrarExceso > 0 && (
+                          <div className="text-[10px] font-bold text-orange-400" title="Metros ejecutados por encima de lo cotizado, al mismo precio por m²">+{formatRD(t.ventaPorCobrarExceso)} m² de más</div>
+                        )}
+                      </td>
                       <td className="text-right tabular-nums px-3 py-2.5 text-zinc-400">{formatRD(t.costoPpto)}</td>
                       <td className="text-right tabular-nums px-3 py-2.5 text-zinc-400">{formatRD(t.costoReal)}</td>
                       <td className="text-right tabular-nums px-3 py-2.5 text-zinc-300">{formatRD(t.costoProyectado)}</td>

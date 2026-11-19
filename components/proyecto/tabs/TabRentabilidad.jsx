@@ -15,6 +15,7 @@ import { calcEstadoPagoProyecto } from '../../../lib/helpers/calculos';
 import {
   generarPresupuestoDesdeProyecto, calcRentabilidadObra, CATEGORIAS_GASTO,
 } from '../../../lib/helpers/presupuestoObra';
+import ExcesoM2Card from '../rentabilidad/ExcesoM2Card';
 
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
@@ -57,11 +58,12 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
   const [movimientos, setMovimientos] = useState([]);
   const [odooCompras, setOdooCompras] = useState(null); // { totalCosto, lineas } | null
   const [salidasOdoo, setSalidasOdoo] = useState(null);  // { pickings, productos } | null
+  const [ordenesCambio, setOrdenesCambio] = useState([]); // v8.77.0: para el exceso de m²
 
   const cargar = async () => {
     setLoading(true);
     try {
-      const [pptos, det, aj, ct, jrn, cd, movs] = await Promise.all([
+      const [pptos, det, aj, ct, jrn, cd, movs, ocs] = await Promise.all([
         db.listarPresupuestosObra(proyecto.id).catch(() => []),
         db.listarTodosDetalles({ proyectoId: proyecto.id }),
         db.listarAjustes({ proyectoId: proyecto.id }),
@@ -69,6 +71,7 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
         db.listarJornadasProyecto(proyecto.id).catch(() => []),
         db.listarCostosDia(proyecto.id).catch(() => []),
         db.listarMovimientosCajaChica({ proyectoId: proyecto.id }).catch(() => []),
+        db.listarOrdenesCambio(proyecto.id).catch(() => []),
       ]);
       setVersiones(pptos);
       const vigente = pptos.find(p => p.estado === 'aprobado') || pptos[0] || null;
@@ -76,6 +79,7 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
       setDirty(false);
       setDetalles(det); setAjustes(aj); setCortes(ct); setJornadas(jrn); setCostosDia(cd);
       setMovimientos(movs || []);
+      setOrdenesCambio(ocs || []);
     } catch (e) { console.error('rentabilidad:', e); }
     setLoading(false);
   };
@@ -125,8 +129,9 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
       reportes: data.reportes, envios: data.envios || [],
       movimientosCajaChica: movimientos, estadoPago, salidasOdoo,
       mdoPagadoRd: estadoPago?.montoPagado ?? null, config: data.config || {},
+      ordenesCambio,
     });
-  }, [sel, proyecto, data.sistemas, data.reportes, data.envios, movimientos, estadoPago, data.config, salidasOdoo]);
+  }, [sel, proyecto, data.sistemas, data.reportes, data.envios, movimientos, estadoPago, data.config, salidasOdoo, ordenesCambio]);
 
   const esBorrador = sel?.estado === 'borrador';
   const editable = esBorrador && esAdmin;
@@ -329,6 +334,12 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
           <div className="text-[10px] text-zinc-500 mt-0.5">devengado {formatRD(t.ventaDevengada)}</div>
         </div>
       </div>
+
+      {/* v8.77.0: metros ejecutados de más (venta sin cobrar) */}
+      {rent?.exceso && (
+        <ExcesoM2Card exceso={rent.exceso} totales={t} proyecto={proyecto} usuario={usuario}
+          onCreada={async () => setOrdenesCambio(await db.listarOrdenesCambio(proyecto.id).catch(() => ordenesCambio))} />
+      )}
 
       {/* Partidas */}
       {rent?.partidas.map(p => {

@@ -202,7 +202,37 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
       const ok = confirm(`⚠️ Este proyecto tiene VALOR RD$ 0 (m² total: ${m2TotalCalc}, precio del sistema: 0). Esto suele significar que falta el precio por m² del sistema o que el sistema no se cargó bien. ¿Guardar igual?`);
       if (!ok) return;
     }
+    // v8.77.0: subir los m² de un área que ya tiene avances esconde metros ejecutados de
+    // más que no se están cobrando. Lo correcto es una orden de cambio (pestaña Cambios).
+    const reportesProy = (data.reportes || []).filter(r => r.proyectoId === proyecto.id);
+    const subidas = (form.areas || []).map(aNew => {
+      const aOld = (proyecto.areas || []).find(a => a.id === aNew.id);
+      const antes = Number(aOld?.m2) || 0, despues = Number(aNew.m2) || 0;
+      return aOld && despues > antes + 0.01 && reportesProy.some(r => r.areaId === aNew.id) ? { aNew, antes, despues } : null;
+    }).filter(Boolean);
+    if (subidas.length) {
+      const lista = subidas.map(x => `• ${x.aNew.nombre || 'Área'}: ${x.antes} → ${x.despues} m²`).join('\n');
+      const ok = confirm(`Estas áreas ya tienen avances reportados:\n${lista}\n\nSi son metros adicionales del cliente, hazlo con una Orden de Cambio (pestaña Cambios) para que se cobren. Si es una corrección de la medida, puedes seguir.\n\n¿Cambiar los m² igual?`);
+      if (!ok) return;
+    }
     setGuardando(true);
+    // v8.77.0: constancia de cada cambio de m² de un área
+    try {
+      (form.areas || []).forEach(aNew => {
+        const aOld = (proyecto.areas || []).find(a => a.id === aNew.id);
+        if (!aOld) return;
+        const antes = Number(aOld.m2) || 0, despues = Number(aNew.m2) || 0;
+        if (Math.abs(antes - despues) < 0.01) return;
+        db.registrarAudit({
+          usuarioId: usuario?.id, usuarioNombre: usuario?.nombre,
+          accion: 'proyecto.m2_area_editado', recursoTipo: 'proyecto', recursoId: proyecto.id,
+          recursoNombre: `${proyecto.referenciaOdoo || ''} ${proyecto.cliente || proyecto.nombre || ''}`.trim(),
+          datosAntes: { areaId: aNew.id, areaNombre: aNew.nombre, m2: antes, m2Cotizado: aOld.m2Cotizado ?? null },
+          datosDespues: { areaId: aNew.id, areaNombre: aNew.nombre, m2: despues, conAvances: reportesProy.some(r => r.areaId === aNew.id) },
+          severidad: 'warning',
+        });
+      });
+    } catch (e) { console.warn('Audit de m² no registrado:', e?.message); }
     // v8.9.27: audit log de cambios de precio custom por área
     try {
       const areasAntes = proyecto.areas || [];

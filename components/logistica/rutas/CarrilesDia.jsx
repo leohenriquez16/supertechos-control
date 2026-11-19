@@ -135,8 +135,11 @@ function NuevaRuta({ nuevo, setNuevo, vehiculos, personal, choferes, viajesDelDi
         </div>
       ) : (
         <select value={nuevo.choferId || ''} onChange={e => setNuevo({ ...nuevo, choferId: e.target.value })} className="w-full bg-zinc-950 border border-zinc-700 rounded-card px-2 py-2 text-sm">
-          <option value="">{choferes.length === 0 ? 'Chofer… (asigna el rol Chofer en Personal)' : 'Elige el chofer…'}</option>
-          {choferes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+          <option value="">Quién maneja…</option>
+          {/* v8.80.0: cualquier persona activa, agrupada (choferes primero) */}
+          {[...new Set(choferes.map(c => c.grupo || 'Choferes'))].map(g => (
+            <optgroup key={g} label={g}>{choferes.filter(c => (c.grupo || 'Choferes') === g).map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}</optgroup>
+          ))}
         </select>
       ))}
       {(nuevo.vehiculoId || nuevo.tipoEnvio !== 'camion' || nuevo.otro) && (

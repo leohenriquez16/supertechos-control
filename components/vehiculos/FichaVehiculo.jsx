@@ -32,6 +32,64 @@ const Seccion = ({ titulo, children }) => (
   </div>
 );
 
+// v8.74.26: visitas DIARIAS del vehículo a obras según el GPS (vehiculo_gps_visitas).
+function VisitasObras({ vehiculoId, proyectos }) {
+  const [visitas, setVisitas] = useState(null);
+  const [mes, setMes] = useState('');
+  useEffect(() => {
+    let cancel = false;
+    db.listarGpsVisitas({ vehiculoId }).then(r => { if (!cancel) setVisitas(r || []); }).catch(() => { if (!cancel) setVisitas([]); });
+    return () => { cancel = true; };
+  }, [vehiculoId]);
+  if (visitas === null) return <div className="text-xs text-zinc-500 py-2 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Cargando…</div>;
+  if (!visitas.length) return <div className="text-xs text-zinc-500 py-2">Sin visitas a obras registradas por GPS.</div>;
+  const proy = Object.fromEntries((proyectos || []).map(p => [p.id, p]));
+  const meses = [...new Set(visitas.map(v => v.fecha.slice(0, 7)))].sort().reverse();
+  const mesSel = mes || meses[0];
+  const delMes = visitas.filter(v => v.fecha.startsWith(mesSel));
+  const horas = delMes.reduce((a, v) => a + v.segundos, 0) / 3600;
+  const obrasN = new Set(delMes.map(v => v.proyectoId)).size;
+  const diasN = new Set(delMes.map(v => v.fecha)).size;
+  // Top obras del mes por horas
+  const porObra = {};
+  delMes.forEach(v => { porObra[v.proyectoId] = (porObra[v.proyectoId] || 0) + v.segundos; });
+  const top = Object.entries(porObra).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const nombre = (id) => { const p = proy[id]; return p ? `${p.referenciaOdoo ? p.referenciaOdoo + ' · ' : ''}${p.referenciaProyecto || p.nombre}${p.cliente ? ' — ' + p.cliente : ''}` : id; };
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 flex-wrap text-xs">
+        <select value={mesSel} onChange={e => setMes(e.target.value)} className="bg-zinc-950 border border-zinc-700 rounded-card px-2 py-1 text-xs text-white">
+          {meses.map(m => <option key={m} value={m}>{m}</option>)}
+        </select>
+        <span className="text-zinc-400">{delMes.length} visitas · {diasN} días · {obrasN} obras · <b className="text-white">{horas.toFixed(1)} h</b> en obra (horario laboral)</span>
+      </div>
+      {top.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {top.map(([id, s]) => <span key={id} className="text-[10px] px-1.5 py-0.5 rounded border border-zinc-700 bg-zinc-950 text-zinc-300">{nombre(id).slice(0, 48)} · {(s / 3600).toFixed(1)} h</span>)}
+        </div>
+      )}
+      <div className="max-h-72 overflow-auto border border-zinc-800 rounded-card">
+        <table className="w-full text-xs">
+          <thead className="sticky top-0 bg-zinc-950 text-[10px] uppercase tracking-wider text-zinc-400">
+            <tr><th className="text-left px-2 py-1.5">Fecha</th><th className="text-left px-2 py-1.5">Obra / cliente</th><th className="text-center px-2 py-1.5">Llegada</th><th className="text-center px-2 py-1.5">Salida</th><th className="text-right px-2 py-1.5">Horas</th></tr>
+          </thead>
+          <tbody>
+            {delMes.map((v, i) => (
+              <tr key={v.id} className={`border-t border-zinc-800/70 ${i % 2 ? 'bg-zinc-950/40' : ''}`}>
+                <td className="px-2 py-1 whitespace-nowrap text-zinc-300">{v.fecha}</td>
+                <td className="px-2 py-1 text-zinc-200">{nombre(v.proyectoId)}</td>
+                <td className="px-2 py-1 text-center tabular-nums">{v.llegada || '—'}</td>
+                <td className="px-2 py-1 text-center tabular-nums">{v.salida || '—'}</td>
+                <td className="px-2 py-1 text-right tabular-nums">{(v.segundos / 3600).toFixed(1)}{v.paradas > 1 ? <span className="text-zinc-500"> ({v.paradas})</span> : ''}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // v8.50.0: consumo de peajes del vehículo. Se compara contra su PROPIO promedio
 // (solo meses activos): un camión siempre gasta más que una camioneta, y eso no
 // es una desviación.
@@ -95,7 +153,7 @@ function ConsumoPeajes({ vehiculoId }) {
   );
 }
 
-export default function FichaVehiculo({ vehiculo: v, personal = [], licencia = null, puedeEditar, onCerrar, onEditar, onLog, onRutas, onInspecciones, onGps }) {
+export default function FichaVehiculo({ vehiculo: v, personal = [], proyectos = [], licencia = null, puedeEditar, onCerrar, onEditar, onLog, onRutas, onInspecciones, onGps }) {
   const resp = personal.find(p => p.id === v.responsableId);
   const [gpsViva, setGpsViva] = useState(null);
   useEffect(() => {
@@ -117,7 +175,7 @@ export default function FichaVehiculo({ vehiculo: v, personal = [], licencia = n
 
   return (
     <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
-      <div className="bg-zinc-900 border border-zinc-700 rounded-card max-w-2xl w-full p-6 my-8 space-y-1" onClick={e => e.stopPropagation()}>
+      <div className="bg-zinc-900 border border-zinc-700 rounded-card max-w-3xl w-full p-6 my-8 space-y-1" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-start gap-3 mb-2">
           <div className="min-w-0">
             <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Ficha del vehículo</div>
@@ -188,6 +246,9 @@ export default function FichaVehiculo({ vehiculo: v, personal = [], licencia = n
             </Seccion>
           </div>
         </div>
+        <Seccion titulo="📍 Visitas a obras (GPS)">
+          <VisitasObras vehiculoId={v.id} proyectos={proyectos} />
+        </Seccion>
         {v.notas && <div className="text-xs text-zinc-400 border-t border-zinc-800 mt-3 pt-2">📝 {v.notas}</div>}
       </div>
     </div>

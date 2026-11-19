@@ -2,6 +2,7 @@
 //   GET  /api/solicitudes?estado=nueva  → lista + resolución de cliente por RNC
 //   POST /api/solicitudes  { id, accion:'aprobar'|'descartar', ...datos }
 import { createClient } from '@supabase/supabase-js';
+import { buscarClienteEnLista } from '../../../lib/helpers/clienteMatch.js';
 
 export const dynamic = 'force-dynamic';
 
@@ -83,8 +84,10 @@ export async function POST(request) {
 
     // 1) Resolver / crear CLIENTE
     let clienteId = b.clienteId || null;
-    if (!clienteId && sol.rnc) {
-      const { data: c } = await db.from('clientes').select('id').eq('rnc', sol.rnc).maybeSingle();
+    if (!clienteId) {
+      // v8.75.2: por RNC o nombre normalizado, contra todos los clientes activos.
+      const { data: lista } = await db.from('clientes').select('id, nombre, rnc, odoo_partner_id, archivado').eq('archivado', false);
+      const c = buscarClienteEnLista(lista || [], { rnc: sol.rnc, nombre: sol.cliente_nombre });
       if (c) clienteId = c.id;
     }
     if (!clienteId) {

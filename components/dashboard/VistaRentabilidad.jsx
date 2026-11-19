@@ -26,6 +26,23 @@ const SEM = {
   rojo:     { dot: 'bg-red-500',   txt: 'text-red-400' },
 };
 
+// v8.82.1: ¿el presupuesto tiene huecos de costo? Si sí, el margen sale inflado.
+function huecosPresupuesto(rent) {
+  const h = [];
+  (rent?.partidas || []).forEach(p => {
+    if (!(p.ventaRd > 0)) return;
+    const ls = p.lineas || [];
+    const mats = ls.filter(l => l.tipo === 'material');
+    const esSistema = p.tipo === 'sistema' || p.sistemaVinculadoId;
+    if (esSistema && !mats.length) h.push(`${p.nombre}: sin materiales`);
+    const sinCosto = mats.filter(l => l.costoUnidad == null).map(l => l.nombre);
+    if (sinCosto.length) h.push(`${p.nombre}: sin costo → ${sinCosto.join(', ')}`);
+    if (esSistema && !ls.some(l => String(l.tipo || '').startsWith('mdo') && (l.totalRd || 0) > 0)) h.push(`${p.nombre}: sin mano de obra`);
+    if (!ls.length && !esSistema && p.ventaRd > 0 && !/moviliz|transporte/i.test(p.nombre || '')) h.push(`${p.nombre}: sin costos`);
+  });
+  return h;
+}
+
 export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyecto }) {
   const [loading, setLoading] = useState(true);
   const [pptos, setPptos] = useState([]);
@@ -116,7 +133,7 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
         salidasOdoo: salidasPorRef && numRef(proy.referenciaOdoo) ? (salidasDeObra(salidasPorRef, proy, numRef) || { productos: [] }) : null,
         ordenesCambio, estadosArea: data.estadosArea || [],
       });
-      return { proyecto: proy, ppto, rent };
+      return { proyecto: proy, ppto, rent, huecos: huecosPresupuesto(rent) };
     }).sort((a, b) => (a.rent?.totales.margenPctProyectado ?? 999) - (b.rent?.totales.margenPctProyectado ?? 999));
   }, [pptos, detalles, movimientos, data, soloEjecucion, ocultos, verOcultos, salidasPorRef, ordenesCambio]);
 
@@ -135,6 +152,7 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
       porCobrarExceso: s(t => t.ventaPorCobrarExceso || 0),
       sinOcExceso: s(t => t.excesoSinOcRd || 0),
       deMenos: s(t => t.ventaDeMenos || 0),
+      incompletos: conPpto.filter(f => f.huecos?.length).length,
       obrasConExceso: conPpto.filter(f => (f.rent.totales.ventaPorCobrarExceso || 0) > 0).length,
     };
   }, [filas]);
@@ -170,7 +188,7 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
       {/* KPIs del portafolio */}
       <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
         {[
-          ['Obras con presupuesto', `${tot.obras}`, tot.sinPpto ? `${tot.sinPpto} sin presupuesto` : ''],
+          ['Obras con presupuesto', `${tot.obras}`, [tot.sinPpto ? `${tot.sinPpto} sin presupuesto` : '', tot.incompletos ? `⚠ ${tot.incompletos} incompleto${tot.incompletos === 1 ? '' : 's'} (margen inflado)` : ''].filter(Boolean).join(' · '), tot.incompletos > 0],
           ['Venta s/ITBIS', formatRD(tot.venta), ''],
           ['Costo proyectado', formatRD(tot.costoProyectado), `real ${formatRD(tot.costoReal)}`],
           ['Margen proyectado', formatRD(tot.margen), `${tot.margenPct.toFixed(1)}%`],
@@ -201,7 +219,7 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
               <th className="w-9" />
             </tr></thead>
             <tbody>
-              {filas.map(({ proyecto, ppto, rent }) => {
+              {filas.map(({ proyecto, ppto, rent, huecos }) => {
                 const t = rent?.totales;
                 const sem = rent ? (SEM[rent.semaforo] || SEM.ambar) : null;
                 return (
@@ -249,7 +267,12 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
                       <td className="text-right tabular-nums px-3 py-2.5 text-zinc-400">{formatRD(t.costoReal)}</td>
                       <td className="text-right tabular-nums px-3 py-2.5 text-zinc-300">{formatRD(t.costoProyectado)}</td>
                       <td className={`text-right tabular-nums px-3 py-2.5 font-bold ${sem.txt}`}>{formatRD(t.margenProyectado)}</td>
-                      <td className={`text-right tabular-nums px-4 py-2.5 font-black ${sem.txt}`}>{(t.margenPctProyectado || 0).toFixed(1)}%</td>
+                      <td className={`text-right tabular-nums px-4 py-2.5 font-black ${huecos?.length ? 'text-zinc-500' : sem.txt}`}>
+                        {(t.margenPctProyectado || 0).toFixed(1)}%
+                        {huecos?.length > 0 && (
+                          <div className="text-[10px] font-bold text-amber-400 whitespace-nowrap" title={'Presupuesto incompleto — el margen sale inflado:\n' + huecos.join('\n')}>⚠ incompleto</div>
+                        )}
+                      </td>
                     </>)}
                     <td className="px-2 py-2.5 text-right">
                       <button

@@ -12,6 +12,7 @@ import * as db from '../../lib/db';
 import { toast } from '../../lib/toast';
 import TablaDatos from '../common/TablaDatos';
 import ImportacionTramites from './ImportacionTramites';
+import ForecastInventario from './ForecastInventario';
 
 const ESTADOS = {
   produccion: { label: 'En producción', cls: 'bg-zinc-700 text-zinc-200' },
@@ -171,6 +172,7 @@ export default function VistaImportaciones({ usuario, onVolver }) {
   const [ficha, setFicha] = useState(null);
   const [verRecibidas, setVerRecibidas] = useState(false);
   const [q, setQ] = useState('');
+  const [tab, setTab] = useState('cargas'); // v8.79.0: cargas | inventario
 
   const cargar = async () => { setCargando(true); setItems(await db.listarImportaciones()); setCargando(false); };
   useEffect(() => { cargar(); }, []);
@@ -229,6 +231,13 @@ export default function VistaImportaciones({ usuario, onVolver }) {
         </div>
       </div>
 
+      <div className="flex gap-1 border-b border-zinc-800">
+        {[['cargas', 'Cargas'], ['inventario', 'Inventario y llegadas']].map(([k, l]) => (
+          <button key={k} onClick={() => setTab(k)} className={`px-3 py-1.5 text-sm -mb-px border-b-2 ${tab === k ? 'border-blue-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'}`}>{l}</button>
+        ))}
+      </div>
+
+      {tab === 'inventario' ? <ForecastInventario importaciones={items} /> : (<>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3"><div className="text-[10px] uppercase tracking-wider text-zinc-500">Cargas abiertas</div><div className="text-xl font-bold text-white">{kpi.abiertas}</div></div>
         <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3"><div className="text-[10px] uppercase tracking-wider text-zinc-500">En tránsito / puerto</div><div className="text-xl font-bold text-white">{kpi.transito}</div></div>
@@ -249,6 +258,7 @@ export default function VistaImportaciones({ usuario, onVolver }) {
           ordenInicial={{ key: 'eta', dir: 'asc' }} vacio="Sin importaciones abiertas." />
       )}
       <p className="text-[11px] text-zinc-500">Se actualiza solo cada 15 min desde Odoo (OC, pagos, factura, recepción) y desde la naviera (tracking, una vez al día). Clic en una fila para ver el detalle y capturar contenedor/BL.</p>
+      </>)}
 
       {ficha && <Ficha imp={ficha} usuario={usuario} onCambio={cargar} onCerrar={() => setFicha(null)} onGuardado={() => { setFicha(null); cargar(); }} />}
     </div>

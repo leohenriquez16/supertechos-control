@@ -144,6 +144,7 @@ const ModalImportarOdoo = cargarVista(() => import('../components/proyecto/Modal
 // v8.14: Onboarding obligatorio para maestros
 import PantallaCambiarPin from '../components/onboarding/PantallaCambiarPin';
 import TablaDatos from '../components/common/TablaDatos';
+import FichaCliente from '../components/clientes/FichaCliente';
 import WizardOnboarding from '../components/onboarding/WizardOnboarding';
 const ModalInvitarMaestro = cargarVista(() => import('../components/onboarding/ModalInvitarMaestro'), CargandoModal);
 // v8.55.0 (Fase A · velocidad en campo): las vistas/modales/tabs condicionales se cargan BAJO
@@ -1109,7 +1110,7 @@ export default function App() {
         {esAdmin && vista === 'personal' && <GestionPersonal usuario={usuario} personal={data.personal} data={data} onVolver={() => setVista('dashboard')} onActualizar={(p) => withSync(() => db.reemplazarPersonal(p))} onRecargar={recargar} onAbrirPerfil={(p) => { setPerfilViendo(p); setVista('perfilPersona'); }} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'perfilPersona' && perfilViendo && <MiPerfil usuario={usuario} persona={perfilViendo} soloLectura={false} onVolver={() => setVista('personal')} onGuardar={(campos) => withSync(async () => { await db.guardarPerfil(perfilViendo.id, campos); const d = await db.loadAllData(); const actualizada = d.personal.find(p => p.id === perfilViendo.id); if (actualizada) setPerfilViendo(actualizada); })} />}
         {esAdmin && vista === 'sistemas' && <GestionSistemas sistemas={data.sistemas} config={data.config} dataGlobal={data} onVolver={() => setVista('dashboard')} onActualizarSistemas={(s) => withSync(() => db.guardarSistemas(s))} onActualizarConfig={(c) => withSync(() => db.guardarConfig(c))} />}
-        {esAdmin && vista === 'clientes' && <GestionClientes clientes={data.clientes || []} contactos={data.contactos || []} proyectos={data.proyectos || []} usuario={usuario} onVolver={() => setVista('dashboard')} onRecargar={recargar} />}
+        {esAdmin && vista === 'clientes' && <GestionClientes clientes={data.clientes || []} contactos={data.contactos || []} proyectos={data.proyectos || []} usuario={usuario} onVolver={() => setVista('dashboard')} onRecargar={recargar} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {esAdmin && vista === 'ubicaciones' && <VistaUbicaciones data={data} usuario={usuario} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {esAdmin && vista === 'notificaciones' && <SettingsNotificaciones usuario={usuario} onVolver={() => setVista('dashboard')} />}
         {esAdmin && vista === 'garantias' && <VistaGarantias data={data} usuario={usuario} onVolver={() => setVista('dashboard')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
@@ -2520,7 +2521,7 @@ function Login({ onLogin }) {
 // ============================================================
 // v8.9.9: GESTIÓN DE CLIENTES + CONTACTOS
 // ============================================================
-function GestionClientes({ clientes, contactos, proyectos, usuario, onVolver, onRecargar }) {
+function GestionClientes({ clientes, contactos, proyectos, usuario, onVolver, onRecargar, onVerProyecto }) {
   const [busqueda, setBusqueda] = useState('');
   const [clienteSeleccionado, setClienteSeleccionado] = useState(null);
   const [modalCliente, setModalCliente] = useState(null); // null | 'nuevo' | { ...cliente }
@@ -2531,6 +2532,7 @@ function GestionClientes({ clientes, contactos, proyectos, usuario, onVolver, on
   const [modalUbicacion, setModalUbicacion] = useState(null); // null | { clienteId } | { ...ubicacion }
   // v8.74.23: conteo de ubicaciones por cliente para la tabla.
   const [ubicPorCliente, setUbicPorCliente] = useState({});
+
   useEffect(() => {
     let cancel = false;
     db.listarUbicacionesCliente(null).then(us => {
@@ -2642,150 +2644,31 @@ function GestionClientes({ clientes, contactos, proyectos, usuario, onVolver, on
     }
   };
 
-  // Vista detalle de un cliente
+  // Vista detalle de un cliente — v8.74.25: ficha 360 (components/clientes/FichaCliente.jsx)
   if (clienteSeleccionado) {
     const cliente = clientes.find(c => c.id === clienteSeleccionado.id) || clienteSeleccionado;
-    const misContactos = contactosDelCliente(cliente.id);
-    const misProyectos = proyectosDelCliente(cliente);
     return (
-      <div className="max-w-3xl mx-auto space-y-5">
-        <button onClick={() => setClienteSeleccionado(null)} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm"><ArrowLeft className="w-4 h-4" /> Volver a clientes</button>
-
-        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-5">
-          <div className="flex justify-between items-start mb-3">
-            <div>
-              <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">{cliente.tipo === 'persona' ? 'Persona' : 'Empresa'}</div>
-              <h1 className="text-2xl font-black">{cliente.nombre}</h1>
-              {cliente.rnc && <div className="text-xs text-zinc-400 mt-1">RNC: <span className="font-mono">{cliente.rnc}</span></div>}
-            </div>
-            <div className="flex gap-2">
-              <button onClick={() => setModalCliente({ ...cliente })} className="text-xs bg-zinc-800 hover:bg-zinc-700 text-white px-3 py-2 font-bold uppercase">Editar</button>
-              <button onClick={() => archivarCliente(cliente.id)} className="text-xs bg-zinc-800 hover:bg-red-900 text-zinc-400 hover:text-white px-3 py-2 font-bold uppercase">Archivar</button>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            {cliente.direccion && <div><div className="text-[10px] text-zinc-500 uppercase">Dirección</div><div>{cliente.direccion}</div></div>}
-            {cliente.telefonoPrincipal && <div><div className="text-[10px] text-zinc-500 uppercase">Teléfono principal</div><a href={`tel:${cliente.telefonoPrincipal}`} className="text-green-400 hover:underline">{cliente.telefonoPrincipal}</a></div>}
-            {cliente.emailPrincipal && <div><div className="text-[10px] text-zinc-500 uppercase">Email principal</div><a href={`mailto:${cliente.emailPrincipal}`} className="text-blue-400 hover:underline">{cliente.emailPrincipal}</a></div>}
-          </div>
-          {cliente.nota && <div className="mt-3 text-xs bg-zinc-950 border border-zinc-800 rounded-card p-2 text-zinc-400 italic">{cliente.nota}</div>}
-        </div>
-
-        {/* v8.19.54: Ubicaciones / localidades */}
-        <div className="bg-zinc-900 border border-zinc-800 rounded-card">
-          <div className="flex justify-between items-center p-4 border-b border-zinc-800">
-            <div className="text-xs tracking-widest uppercase text-zinc-400 font-bold flex items-center gap-1"><MapPin className="w-3.5 h-3.5 text-red-500" /> Ubicaciones ({ubicaciones.length})</div>
-            <button onClick={() => setModalUbicacion({ clienteId: cliente.id })} className="text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 font-bold uppercase flex items-center gap-1 rounded-card">
-              <Plus className="w-3 h-3" /> Agregar
-            </button>
-          </div>
-          {ubicaciones.length === 0 ? (
-            <div className="p-6 text-center text-sm text-zinc-500">Sin ubicaciones. Agrega la primera localidad del cliente.</div>
-          ) : (
-            <div className="divide-y divide-zinc-800">
-              {ubicaciones.map(u => {
-                const projsUbic = misProyectos.filter(p => p.ubicacionId === u.id);
-                return (
-                  <div key={u.id} className="p-4 flex justify-between items-start gap-2">
-                    <div className="min-w-0 flex-1">
-                      <div className="font-bold flex items-center gap-2">{u.nombre}
-                        {u.latitud != null && <a href={`https://maps.google.com/?q=${u.latitud},${u.longitud}`} target="_blank" rel="noreferrer" className="text-[10px] text-blue-400 hover:underline flex items-center gap-0.5"><MapPin className="w-3 h-3" /> mapa</a>}
-                        {/* v8.45.2: locación sin GPS → asignarla aquí mismo (abre el modal con el mapa) */}
-                        {u.latitud == null && (
-                          <button onClick={() => setModalUbicacion({ ...u, _abrirMapa: true })} className="text-[9px] font-bold px-1.5 py-0.5 rounded-card bg-amber-600/20 text-amber-300 border border-amber-800/60 hover:bg-amber-600 hover:text-black" title="Esta locación no tiene GPS — asígnalo en el mapa o con el link de Maps">📍 sin GPS — asignar</button>
-                        )}
-                      </div>
-                      {u.direccion && <div className="text-xs text-zinc-400 truncate">{u.direccion}{u.sector ? ` · ${u.sector}` : ''}</div>}
-                      <div className="text-[10px] text-zinc-500 mt-0.5 flex flex-wrap gap-x-3">
-                        {u.contactoNombre && <span>{u.contactoNombre}{u.contactoTelefono ? ` · ${u.contactoTelefono}` : ''}</span>}
-                        <span>{projsUbic.length} proyecto{projsUbic.length !== 1 ? 's' : ''}</span>
-                      </div>
-                    </div>
-                    <div className="flex gap-1 shrink-0">
-                      <button onClick={() => setModalUbicacion({ ...u })} className="text-zinc-500 hover:text-white p-1" title="Editar"><Edit2 className="w-3.5 h-3.5" /></button>
-                      <button onClick={() => eliminarUbicacion(u.id)} className="text-zinc-500 hover:text-red-400 p-1" title="Archivar"><Trash2 className="w-3.5 h-3.5" /></button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Contactos */}
-        <div className="bg-zinc-900 border border-zinc-800 rounded-card">
-          <div className="flex justify-between items-center p-4 border-b border-zinc-800">
-            <div className="text-xs tracking-widest uppercase text-zinc-400 font-bold">Contactos ({misContactos.length})</div>
-            <button onClick={() => setModalContacto({ clienteId: cliente.id })} className="text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 font-bold uppercase flex items-center gap-1">
-              <Plus className="w-3 h-3" /> Agregar
-            </button>
-          </div>
-          {misContactos.length === 0 ? (
-            <div className="p-6 text-center text-sm text-zinc-500">
-              Sin contactos registrados. Click en "Agregar" para crear el primero.
-            </div>
-          ) : (
-            <div className="divide-y divide-zinc-800">
-              {misContactos.map(ct => (
-                <div key={ct.id} className="p-4">
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        {ct.esPrincipal && <Star className="w-3.5 h-3.5 text-yellow-500" />}
-                        <div className="font-bold">{ct.nombre}</div>
-                        {ct.cargo && <span className="text-[10px] text-zinc-500 uppercase tracking-wider">· {ct.cargo}</span>}
-                      </div>
-                      <div className="space-y-1 text-xs">
-                        {ct.telefono && (
-                          <div className="flex items-center gap-2">
-                            <a href={`tel:${ct.telefono}`} className="flex items-center gap-1 text-green-400 hover:underline">
-                              <Phone className="w-3 h-3" /> {ct.telefono}
-                            </a>
-                            <a href={`https://wa.me/${(ct.whatsapp || ct.telefono).replace(/\D/g, '').replace(/^(?!1)(8[024]9)/, '1$1')}`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-green-400 hover:underline">
-                              <MessageCircle className="w-3 h-3" /> WhatsApp
-                            </a>
-                          </div>
-                        )}
-                        {ct.email && (
-                          <a href={`mailto:${ct.email}`} className="flex items-center gap-1 text-blue-400 hover:underline">
-                            <Mail className="w-3 h-3" /> {ct.email}
-                          </a>
-                        )}
-                      </div>
-                      {ct.nota && <div className="mt-2 text-[10px] text-zinc-500 italic">{ct.nota}</div>}
-                    </div>
-                    <div className="flex gap-1">
-                      <button onClick={() => setModalContacto({ ...ct })} className="text-zinc-500 hover:text-white p-1" title="Editar"><Edit2 className="w-3.5 h-3.5" /></button>
-                      <button onClick={() => eliminarContacto(ct.id)} className="text-zinc-500 hover:text-red-400 p-1" title="Eliminar"><Trash2 className="w-3.5 h-3.5" /></button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Proyectos */}
-        {misProyectos.length > 0 && (
-          <div className="bg-zinc-900 border border-zinc-800 rounded-card">
-            <div className="p-4 border-b border-zinc-800">
-              <div className="text-xs tracking-widest uppercase text-zinc-400 font-bold">Proyectos de este cliente ({misProyectos.length})</div>
-            </div>
-            <div className="divide-y divide-zinc-800">
-              {misProyectos.map(p => (
-                <div key={p.id} className="p-3 text-sm">
-                  <div className="font-bold">{p.referenciaOdoo ? `${p.referenciaOdoo} · ` : ''}{p.referenciaProyecto || p.nombre}</div>
-                  <div className="text-[10px] text-zinc-500 uppercase">{p.estado || 'sin estado'}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
+      <>
+        <FichaCliente
+          cliente={cliente}
+          contactos={contactosDelCliente(cliente.id)}
+          proyectos={proyectosDelCliente(cliente)}
+          ubicaciones={ubicaciones}
+          onVolver={() => setClienteSeleccionado(null)}
+          onEditar={() => setModalCliente({ ...cliente })}
+          onArchivar={() => archivarCliente(cliente.id)}
+          onAgregarContacto={() => setModalContacto({ clienteId: cliente.id })}
+          onEditarContacto={(ct) => setModalContacto({ ...ct })}
+          onEliminarContacto={eliminarContacto}
+          onAgregarUbicacion={() => setModalUbicacion({ clienteId: cliente.id })}
+          onEditarUbicacion={(u, abrirMapa) => setModalUbicacion(abrirMapa ? { ...u, _abrirMapa: true } : { ...u })}
+          onEliminarUbicacion={eliminarUbicacion}
+          onVerProyecto={onVerProyecto}
+        />
         {modalCliente && <ModalEditarCliente cliente={modalCliente} onCerrar={() => setModalCliente(null)} onGuardar={guardarCliente} guardando={guardando} />}
         {modalContacto && <ModalEditarContacto contacto={modalContacto} usuario={usuario} onCerrar={() => setModalContacto(null)} onGuardar={guardarContacto} guardando={guardando} />}
         {modalUbicacion && <ModalEditarUbicacion ubicacion={modalUbicacion} onCerrar={() => setModalUbicacion(null)} onGuardar={guardarUbicacion} guardando={guardando} />}
-      </div>
+      </>
     );
   }
 

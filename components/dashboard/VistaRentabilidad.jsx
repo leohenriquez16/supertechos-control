@@ -26,6 +26,29 @@ const SEM = {
   rojo:     { dot: 'bg-red-500',   txt: 'text-red-400' },
 };
 
+// v8.82.1: ¿el presupuesto tiene huecos de costo? Si sí, el margen sale inflado.
+function huecosPresupuesto(rent) {
+  const h = [];
+  (rent?.partidas || []).forEach(p => {
+    if (!(p.ventaRd > 0)) return;
+    const ls = p.lineas || [];
+    const mats = ls.filter(l => l.tipo === 'material');
+    const esSistema = p.tipo === 'sistema' || p.sistemaVinculadoId;
+    if (esSistema && !mats.length) h.push(`${p.nombre}: sin materiales`);
+    const sinCosto = mats.filter(l => l.costoUnidad == null).map(l => l.nombre);
+    if (sinCosto.length) h.push(`${p.nombre}: sin costo → ${sinCosto.join(', ')}`);
+    if (esSistema && !ls.some(l => String(l.tipo || '').startsWith('mdo') && (l.totalRd || 0) > 0)) h.push(`${p.nombre}: sin mano de obra`);
+    if (!ls.length && !esSistema && p.ventaRd > 0 && !/moviliz|transporte/i.test(p.nombre || '')) h.push(`${p.nombre}: sin costos`);
+  });
+  return h;
+}
+
+const ESTADOS_RENT = [
+  ['en_ejecucion', 'En ejecución'], ['parado', 'Parado'], ['planificado', 'Planificado'], ['aprobado', 'Aprobado'],
+  ['finalizado_no_entregado', 'Finalizado sin entregar'], ['finalizado_recibido_conforme', 'Recibido conforme'], ['facturado', 'Facturado'],
+];
+const ORDEN_RENT = Object.fromEntries(ESTADOS_RENT.map(([e], i) => [e, i]));
+
 export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyecto }) {
   const [loading, setLoading] = useState(true);
   const [pptos, setPptos] = useState([]);
@@ -37,7 +60,8 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
   // en una sola consulta para todo el portafolio. null = cargando / no disponible.
   const [salidasPorRef, setSalidasPorRef] = useState(null);
   const [errorOdoo, setErrorOdoo] = useState(false);
-  const [soloEjecucion, setSoloEjecucion] = useState(true);
+  // v8.82.1: clasificación por estado del proyecto (antes: solo un toggle "en ejecución")
+  const [estadosSel, setEstadosSel] = useState(() => new Set(['en_ejecucion', 'parado', 'planificado', 'aprobado']));
   // v8.46.1: obras escondidas del portafolio (en lo que ponen su presupuesto al día).
   // Preferencia por usuario/navegador (localStorage) — reversible con "ver ocultas".
   const [ocultos, setOcultos] = useState(new Set());
@@ -99,7 +123,7 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
       if (d.proyectoId) mdoPagadaPorProyecto[d.proyectoId] = (mdoPagadaPorProyecto[d.proyectoId] || 0) + (d.montoTotal || 0);
     });
     const proyectos = (data.proyectos || []).filter(p => !p.archivado &&
-      (!soloEjecucion || ['en_ejecucion', 'aprobado'].includes(p.estado)) &&
+      estadosSel.has(p.estado) &&
       (verOcultos || !ocultos.has(p.id)));
     return proyectos.map(proy => {
       // v8.82.0: obra sin presupuesto guardado → se calcula al vuelo desde los costos por sistema
@@ -116,9 +140,9 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
         salidasOdoo: salidasPorRef && numRef(proy.referenciaOdoo) ? (salidasDeObra(salidasPorRef, proy, numRef) || { productos: [] }) : null,
         ordenesCambio, estadosArea: data.estadosArea || [],
       });
-      return { proyecto: proy, ppto, rent };
-    }).sort((a, b) => (a.rent?.totales.margenPctProyectado ?? 999) - (b.rent?.totales.margenPctProyectado ?? 999));
-  }, [pptos, detalles, movimientos, data, soloEjecucion, ocultos, verOcultos, salidasPorRef, ordenesCambio]);
+      return { proyecto: proy, ppto, rent, huecos: huecosPresupuesto(rent) };
+    }).sort((a, b) => ((ORDEN_RENT[a.proyecto.estado] ?? 99) - (ORDEN_RENT[b.proyecto.estado] ?? 99)) || ((a.rent?.totales.margenPctProyectado ?? 999) - (b.rent?.totales.margenPctProyectado ?? 999)));
+  }, [pptos, detalles, movimientos, data, estadosSel, ocultos, verOcultos, salidasPorRef, ordenesCambio]);
 
   const ubicPorId = useMemo(() => {
     const m = {}; ubicaciones.forEach(u => { m[u.id] = u; }); return m;
@@ -135,6 +159,7 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
       porCobrarExceso: s(t => t.ventaPorCobrarExceso || 0),
       sinOcExceso: s(t => t.excesoSinOcRd || 0),
       deMenos: s(t => t.ventaDeMenos || 0),
+      incompletos: conPpto.filter(f => f.huecos?.length).length,
       obrasConExceso: conPpto.filter(f => (f.rent.totales.ventaPorCobrarExceso || 0) > 0).length,
     };
   }, [filas]);
@@ -161,16 +186,23 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
             <EyeOff className="w-3 h-3" /> {ocultos.size} oculta{ocultos.size === 1 ? '' : 's'}
           </button>
         )}
-        <button onClick={() => setSoloEjecucion(v => !v)}
-          className={`text-[10px] px-2 py-1 border uppercase tracking-wider font-bold ${soloEjecucion ? 'border-red-600 text-white' : 'border-zinc-700 text-zinc-400'}`}>
-          {soloEjecucion ? 'En ejecución' : 'Todas'}
-        </button>
+        {ESTADOS_RENT.map(([e, label]) => {
+          const n = (data.proyectos || []).filter(p => !p.archivado && p.estado === e).length;
+          if (!n) return null;
+          const on = estadosSel.has(e);
+          return (
+            <button key={e} onClick={() => setEstadosSel(prev => { const x = new Set(prev); x.has(e) ? x.delete(e) : x.add(e); return x; })}
+              className={`text-[10px] px-2 py-1 border uppercase tracking-wider font-bold ${on ? 'border-red-600 text-white' : 'border-zinc-700 text-zinc-500'}`}>
+              {label} <span className="opacity-60">{n}</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* KPIs del portafolio */}
       <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
         {[
-          ['Obras con presupuesto', `${tot.obras}`, tot.sinPpto ? `${tot.sinPpto} sin presupuesto` : ''],
+          ['Obras con presupuesto', `${tot.obras}`, [tot.sinPpto ? `${tot.sinPpto} sin presupuesto` : '', tot.incompletos ? `⚠ ${tot.incompletos} incompleto${tot.incompletos === 1 ? '' : 's'} (margen inflado)` : ''].filter(Boolean).join(' · '), tot.incompletos > 0],
           ['Venta s/ITBIS', formatRD(tot.venta), ''],
           ['Costo proyectado', formatRD(tot.costoProyectado), `real ${formatRD(tot.costoReal)}`],
           ['Margen proyectado', formatRD(tot.margen), `${tot.margenPct.toFixed(1)}%`],
@@ -178,7 +210,7 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
         ].map(([l, v, s, alerta]) => (
           <div key={l} className={`bg-zinc-900 border rounded-card p-4 ${alerta ? 'border-orange-700/60' : 'border-zinc-800'}`}>
             <div className={`text-[10px] uppercase tracking-widest font-bold ${alerta ? 'text-orange-400' : 'text-zinc-500'}`}>{l}</div>
-            <div className={`text-2xl font-black mt-1 ${alerta ? 'text-orange-300' : ''}`}>{v}</div>
+            <div className={`text-lg 2xl:text-2xl font-black mt-1 tabular-nums break-words ${alerta ? 'text-orange-300' : ''}`}>{v}</div>
             {s && <div className="text-[10px] text-zinc-500 mt-0.5">{s}</div>}
           </div>
         ))}
@@ -201,11 +233,29 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
               <th className="w-9" />
             </tr></thead>
             <tbody>
-              {filas.map(({ proyecto, ppto, rent }) => {
+              {filas.map(({ proyecto, ppto, rent, huecos }, idx) => {
+                const nuevoGrupo = idx === 0 || filas[idx - 1].proyecto.estado !== proyecto.estado;
+                const grupo = nuevoGrupo ? filas.filter(f => f.proyecto.estado === proyecto.estado) : null;
+                const gs = grupo ? grupo.filter(f => f.rent).reduce((a, f) => ({ v: a.v + f.rent.totales.ventaSinItbisRd, c: a.c + f.rent.totales.costoProyectado, r: a.r + f.rent.totales.costoReal, inc: a.inc + (f.huecos?.length ? 1 : 0) }), { v: 0, c: 0, r: 0, inc: 0 }) : null;
                 const t = rent?.totales;
                 const sem = rent ? (SEM[rent.semaforo] || SEM.ambar) : null;
-                return (
-                  <tr key={proyecto.id}
+                return (<React.Fragment key={proyecto.id}>
+                  {nuevoGrupo && (
+                    <tr className="bg-zinc-900/80 border-t-2 border-zinc-700">
+                      <td className="px-4 py-2 text-[11px] uppercase tracking-widest font-black text-zinc-300">
+                        {(ESTADOS_RENT.find(([e]) => e === proyecto.estado) || [null, proyecto.estado])[1]} <span className="text-zinc-500 font-bold">· {grupo.length} obra{grupo.length === 1 ? '' : 's'}{gs.inc ? ` · ⚠ ${gs.inc} incompleta${gs.inc === 1 ? '' : 's'}` : ''}</span>
+                      </td>
+                      <td />
+                      <td className="text-right tabular-nums px-3 py-2 text-[11px] font-bold text-zinc-300">{formatRD(gs.v)}</td>
+                      <td />
+                      <td className="text-right tabular-nums px-3 py-2 text-[11px] font-bold text-zinc-400">{formatRD(gs.r)}</td>
+                      <td className="text-right tabular-nums px-3 py-2 text-[11px] font-bold text-zinc-300">{formatRD(gs.c)}</td>
+                      <td className="text-right tabular-nums px-3 py-2 text-[11px] font-black text-zinc-200">{formatRD(gs.v - gs.c)}</td>
+                      <td className="text-right tabular-nums px-4 py-2 text-[11px] font-black text-zinc-200">{gs.v > 0 ? `${(((gs.v - gs.c) / gs.v) * 100).toFixed(1)}%` : '—'}</td>
+                      <td />
+                    </tr>
+                  )}
+                  <tr
                     onClick={() => onVerProyecto && onVerProyecto(proyecto)}
                     className={`border-t border-zinc-900 hover:bg-zinc-900/60 cursor-pointer ${ocultos.has(proyecto.id) ? "opacity-40" : ""}`}>
                     <td className="px-4 py-2.5">
@@ -249,7 +299,12 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
                       <td className="text-right tabular-nums px-3 py-2.5 text-zinc-400">{formatRD(t.costoReal)}</td>
                       <td className="text-right tabular-nums px-3 py-2.5 text-zinc-300">{formatRD(t.costoProyectado)}</td>
                       <td className={`text-right tabular-nums px-3 py-2.5 font-bold ${sem.txt}`}>{formatRD(t.margenProyectado)}</td>
-                      <td className={`text-right tabular-nums px-4 py-2.5 font-black ${sem.txt}`}>{(t.margenPctProyectado || 0).toFixed(1)}%</td>
+                      <td className={`text-right tabular-nums px-4 py-2.5 font-black ${huecos?.length ? 'text-zinc-500' : sem.txt}`}>
+                        {(t.margenPctProyectado || 0).toFixed(1)}%
+                        {huecos?.length > 0 && (
+                          <div className="text-[10px] font-bold text-amber-400 whitespace-nowrap" title={'Presupuesto incompleto — el margen sale inflado:\n' + huecos.join('\n')}>⚠ incompleto</div>
+                        )}
+                      </td>
                     </>)}
                     <td className="px-2 py-2.5 text-right">
                       <button
@@ -260,10 +315,10 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
                       </button>
                     </td>
                   </tr>
-                );
+                </React.Fragment>);
               })}
               {filas.length === 0 && (
-                <tr><td colSpan={9} className="px-3 py-6 text-center text-zinc-500 italic">No hay obras {soloEjecucion ? 'en ejecución' : ''}.</td></tr>
+                <tr><td colSpan={9} className="px-3 py-6 text-center text-zinc-500 italic">No hay obras en los estados seleccionados.</td></tr>
               )}
             </tbody>
             <tfoot>

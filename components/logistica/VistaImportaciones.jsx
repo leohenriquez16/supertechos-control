@@ -4,6 +4,7 @@
 // Datos de Odoo (OC, pagos, factura, recepción) y tracking de la naviera los llena
 // ~/erp-agente/importaciones/sync_importaciones.py cada 15 min desde la Mac.
 // Aquí solo se capturan a mano BL / contenedor / naviera / factura comercial / notas.
+// Los documentos del correo los archiva archivar_correo.py en la carpeta Dropbox de la carga.
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Loader2, RefreshCw, Ship, AlertTriangle, X, Save, Search } from 'lucide-react';
@@ -121,6 +122,16 @@ function Ficha({ imp, onCerrar, onGuardado }) {
               <tr key={k} className="border-t border-zinc-800"><td className="py-1 pr-2">{p.producto}</td><td className="text-right tabular-nums">{p.cantidad}</td><td className="text-right tabular-nums">{p.recibido}</td><td className="text-right tabular-nums">{usd(p.precio)}</td><td className="text-right tabular-nums">{usd(p.cantidad * p.precio)}</td></tr>
             ))}</tbody></table></div>
         </div>
+        {imp.documentos?.length > 0 && (
+          <div className="px-5 pb-4">
+            <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Documentos archivados del correo · Dropbox «Cargas ST - PG/{imp.carpeta}»</div>
+            <div className="overflow-x-auto"><table className="w-full text-xs"><tbody>
+              {[...imp.documentos].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')).map((d, k) => (
+                <tr key={k} className="border-t border-zinc-800"><td className="py-1 pr-3 whitespace-nowrap tabular-nums text-zinc-400">{fecha(d.fecha)}</td><td className="pr-3 text-white">{d.archivo}</td><td className="text-zinc-500">{d.asunto}</td></tr>
+              ))}
+            </tbody></table></div>
+          </div>
+        )}
         {eventos.length > 0 && (
           <div className="px-5 pb-4">
             <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-2">Tracking del contenedor</div>

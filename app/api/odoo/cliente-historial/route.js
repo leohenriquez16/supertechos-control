@@ -10,8 +10,10 @@ export async function GET(req) {
     const { searchParams } = new URL(req.url);
     const rnc = searchParams.get('rnc') || '';
     const nombre = searchParams.get('nombre') || '';
-    if (!rnc && !nombre) return NextResponse.json({ error: 'rnc o nombre requerido' }, { status: 400 });
-    return NextResponse.json(await historialClienteOdoo({ rnc, nombre }));
+    const partnerId = Number(searchParams.get('partnerId')) || null; // v8.85.1
+    const refs = (searchParams.get('refs') || '').split(',').map(x => x.trim()).filter(Boolean);
+    if (!rnc && !nombre && !partnerId && !refs.length) return NextResponse.json({ error: 'rnc o nombre requerido' }, { status: 400 });
+    return NextResponse.json(await historialClienteOdoo({ rnc, nombre, partnerId, refs }));
   } catch (e) {
     return NextResponse.json({ error: e?.message || 'Error Odoo' }, { status: 500 });
   }

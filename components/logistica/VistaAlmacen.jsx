@@ -20,6 +20,7 @@ import ModalConfirmarRecepcion from './ModalConfirmarRecepcion'; // v8.49.4
 import useSalidasPedidos from './useSalidasPedidos';
 import SalidaOdooChip from './SalidaOdooChip';
 import { salidaDePedidoVista, textoOrigenOdoo } from '../../lib/helpers/porMontar';
+import { idsSalidasEnAmarre } from '../../lib/helpers/amarreSalidas';
 // v8.80.0: avance automático al marcar renglones, "Salió" (quién lo lleva) y tiempos
 import ModalSalio from './ModalSalio';
 import { estadoTrasMarcarItem, puedeMarcarSalio, tiemposPedidos, textoHoras } from '../../lib/helpers/salidasAlmacen';
@@ -159,10 +160,27 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
   const deshacerSalida = async (r) => {
     if (!confirm(`¿Deshacer la salida de ${r.codigo || 'este pedido'}? Vuelve a «Listas» como si no hubiera salido.`)) return;
     setProcesando(r.id);
-    try { if (!(await db.deshacerSalidaRequisicion(r.id))) alert('No se pudo: el pedido ya no está En ruta.'); await recargar(); }
+    try { if (!(await db.deshacerSalidaRequisicion(r.id, { pickingIds: (vistaSalida(r)?.salidas || []).map(s => Number(s.id)).filter(Number.isFinite) }))) alert('No se pudo: el pedido ya no está En ruta.'); await recargar(); }
     catch (e) { alert('Error: ' + (e?.message || e)); }
     setProcesando(null);
   };
+  // v8.84.0: la oficina/almacén elige o descarta la salida de Odoo sugerida por la cotización.
+  const elegirSalidaOdoo = async (r, s) => {
+    if (!confirm(`¿${s.name} es la salida de ${r.codigo || 'este pedido'}?`)) return;
+    setProcesando(r.id);
+    try { await db.fijarSalidaOdoo(r.id, { pickingId: s.id, pickingName: s.name }); await recargar(); }
+    catch (e) { alert('Error: ' + (e?.message || e)); }
+    setProcesando(null);
+  };
+  const descartarSalidaOdoo = async (r, salidas) => {
+    const nombres = (salidas || []).map(s => s.name).join(', ');
+    if (!nombres || !confirm(`¿${nombres} NO es de ${r.codigo || 'este pedido'}? No se vuelve a sugerir para este pedido.`)) return;
+    setProcesando(r.id);
+    try { for (const s of salidas) await db.descartarSalidaOdoo(r.id, s.id); await recargar(); }
+    catch (e) { alert('Error: ' + (e?.message || e)); }
+    setProcesando(null);
+  };
+  const accionesSalida = (r) => (puedeCrear ? { onElegir: (s) => elegirSalidaOdoo(r, s), onDescartar: (ss) => descartarSalidaOdoo(r, ss), ocupado: procesando === r.id } : {});
   const esAdminAlm = (usuario?.roles || []).includes('admin');
   // v8.39.0: renglón sin stock → flujo de compras (solicitado → cotizado → esperando → comprado).
   const marcarCompra = async (it, estado) => {
@@ -219,11 +237,12 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
   const pedidosConSalida = useMemo(() => reqs.filter(r => r.tipo !== 'compra' && (enCola(r) || entregadas7.includes(r))),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [reqs, entregadas7]);
-  const salidasOdoo = useSalidasPedidos(pedidosConSalida, proyectoDe);
+  const salidasOdoo = useSalidasPedidos(pedidosConSalida, proyectoDe, { universo: reqs });
   const vistaSalida = (r) => r.tipo === 'compra' ? null : salidaDePedidoVista(r, salidasOdoo.resp, proyectoDe(r), { cargando: salidasOdoo.cargando });
-  // v8.80.0: si la salida AL/OUT con el código REQ EXACTO ya está HECHA en Odoo y el pedido no
-  // tiene salida registrada, se registra sola (origen 'odoo'). Solo con el código exacto: nunca
-  // por cotización. Una sola vez por pedido en esta pantalla.
+  // v8.80.0: si la salida AL/OUT del pedido ya está HECHA en Odoo y el pedido no tiene salida
+  // registrada, se registra sola (origen 'odoo'). v8.84.0: vista.automatica — SOLO cuando sus
+  // salidas traen el REQ; lo amarrado por cotización avisa «Odoo ya la validó» y lo marca una
+  // persona. Una sola vez por pedido en esta pantalla; "Deshacer salida" descarta esas salidas.
   const autoSalidaHecha = useRef(new Set());
   useEffect(() => {
     if (!puedeCrear || !salidasOdoo.resp || salidasOdoo.cargando) return;
@@ -231,7 +250,7 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
     // arrancar) y solo si TODAS sus salidas con el REQ están hechas (sin backorder abierto).
     const candidatos = reqs.filter(r => r.tipo !== 'compra' && r.modoEntrega !== 'retiro' && !r.salidaAt
       && r.estado === 'lista' && !enParadaViva.has(r.id) && !autoSalidaHecha.current.has(r.id));
-    const hacer = candidatos.map(r => ({ r, v: vistaSalida(r) })).filter(x => x.v?.estado === 'exacta' && x.v.todasHechas);
+    const hacer = candidatos.map(r => ({ r, v: vistaSalida(r) })).filter(x => x.v?.automatica);
     if (!hacer.length) return;
     (async () => {
       let alguno = false;
@@ -239,7 +258,7 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
         autoSalidaHecha.current.add(r.id);
         const hecha = (v.salidas || []).find(s => s.state === 'done') || v.salidas[0];
         try {
-          alguno = (await db.registrarSalidaRequisicion(r.id, { origen: 'odoo', porNombre: 'Odoo', odooPickingId: Number(hecha?.id) || undefined, odooPickingName: hecha?.name || undefined, salidaAt: v.fechaHecha || null, estadosDesde: ['lista'] })) || alguno;
+          alguno = (await db.registrarSalidaRequisicion(r.id, { origen: 'odoo', porNombre: 'Odoo', odooPickingId: r.tipo === 'despacho' ? undefined : (Number(hecha?.id) || undefined), odooPickingName: r.tipo === 'despacho' ? undefined : (hecha?.name || undefined), salidaAt: v.fechaHecha || null, estadosDesde: ['lista'] })) || alguno;
         } catch (e) { console.warn('Salida desde Odoo:', e?.message); }
       }
       if (alguno) await recargar();
@@ -330,11 +349,14 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
             <div className="mt-2 border-t border-zinc-800 pt-2 space-y-1">
               <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
                 <span className="text-zinc-400 font-bold">Salida en Odoo:</span>
-                <SalidaOdooChip vista={vista} codigo={r.codigo} error={salidasOdoo.error} detalle alerta={ESTADOS_ALERTA_SALIDA.includes(r.estado)} />
+                <SalidaOdooChip vista={vista} codigo={r.codigo} error={salidasOdoo.error} detalle alerta={ESTADOS_ALERTA_SALIDA.includes(r.estado)} {...accionesSalida(r)} />
               </div>
-              {origen && vista?.estado !== 'exacta' && (
-                <div className="flex items-center gap-1.5 flex-wrap text-[11px] text-zinc-400">
-                  <span>Pon <b className="text-zinc-200">{r.codigo}</b> en el Documento origen de la salida en Odoo:</span>
+              {vista?.validadaEnOdoo && !vista.automatica && !r.salidaAt && ['lista', 'en_ruta'].includes(r.estado) && (
+                <div className="text-[11px] text-emerald-400">Odoo ya validó esta salida{vista.cobertura < 1 ? ' (no trae todos los renglones del pedido)' : ''}: si el material salió, toca «Salió».</div>
+              )}
+              {origen && ['sin_salida', 'dudosa'].includes(vista?.estado) && (
+                <div className="flex items-center gap-1.5 flex-wrap text-[11px] text-zinc-500">
+                  <span>Opcional: con <b className="text-zinc-300">{r.codigo}</b> en el Documento origen la salida se amarra sin duda:</span>
                   <code className="bg-zinc-950 border border-zinc-700 rounded-card px-1.5 py-0.5 text-zinc-200">{origen}</code>
                   <button onClick={() => copiarOrigen(r, origen)} className="text-[10px] font-bold text-amber-400 hover:text-amber-300">{copiado === r.id ? '✓ Copiado' : 'Copiar'}</button>
                 </div>
@@ -410,7 +432,7 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
             <h1 className="text-2xl font-black flex items-center gap-2"><Package className="w-6 h-6 text-amber-400" /> Almacén</h1>
             <div className="text-[11px] text-zinc-500">Pedidos de obra y despachos/ventas · se alistan aquí, no en el WhatsApp</div>
             {reqs.some(r => r.codigo) && (
-              <div className="text-[11px] text-amber-400/90 mt-0.5">Al hacer la salida en Odoo, pon el número del pedido (REQ-xxxx) en el Documento origen, junto a la cotización. Ej.: «ST 5867 REQ-0142».</div>
+              <div className="text-[11px] text-zinc-500 mt-0.5">La salida de Odoo se amarra sola por la cotización de la obra; si hay duda, el pedido muestra «¿AL/OUT/…?» para elegir. Con el REQ en el Documento origen (ej. «ST 5867 REQ-0142») se amarra sin duda.</div>
             )}
           </div>
         </div>
@@ -451,8 +473,10 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
               </button>
             </div>
             {odooPend !== null && (() => {
-              const importados = new Set(reqs.map(r => r.odooPickingId).filter(Boolean));
-              const nuevas = odooPend.filter(v => !importados.has(v.pickingId));
+              // v8.84: tampoco las salidas que el ERP ya amarró (o tiene en duda) a un pedido de obra
+              const importados = new Set([...reqs.map(r => r.odooPickingId), ...reqs.flatMap(r => r.odooPickingsFijos || [])].filter(Boolean).map(String));
+              const enAmarre = idsSalidasEnAmarre(salidasOdoo.resp?.amarre);
+              const nuevas = odooPend.filter(v => !importados.has(String(v.pickingId)) && !enAmarre.has(String(v.pickingId)));
               if (!nuevas.length) return <div className="text-xs text-zinc-600 italic mt-2">Sin ventas pendientes de traer{odooPend.length ? ` (${odooPend.length} ya están en la cola)` : ''}.</div>;
               return (
                 <div className="space-y-1.5 mt-2">
@@ -496,7 +520,7 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
               <div className="bg-zinc-900 border border-zinc-800 rounded-card px-2.5 py-2">
                 <div className="text-[10px] text-zinc-500">Abiertos ahora</div>
                 <div className="text-lg font-black tabular-nums">{tiempos.abiertos}</div>
-                <div className="text-[10px] text-zinc-600">{tiempos.salidasPorOdoo} salida{tiempos.salidasPorOdoo === 1 ? '' : 's'} por Odoo (REQ) · {tiempos.recepcionConfirmada} confirmada{tiempos.recepcionConfirmada === 1 ? '' : 's'} por la obra</div>
+                <div className="text-[10px] text-zinc-600">{tiempos.salidasPorOdoo} salida{tiempos.salidasPorOdoo === 1 ? '' : 's'} registrada{tiempos.salidasPorOdoo === 1 ? '' : 's'} por Odoo · {tiempos.recepcionConfirmada} confirmada{tiempos.recepcionConfirmada === 1 ? '' : 's'} por la obra</div>
               </div>
             </div>
           </div>
@@ -544,7 +568,7 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
                           className={`w-full text-left px-2.5 py-2 rounded-card border bg-zinc-900 ${selId === r.id ? 'border-amber-500 bg-zinc-800/70' : r.urgente ? 'border-red-800/70 hover:border-red-700' : 'border-zinc-800 hover:border-zinc-600'}`}>
                           {r.codigo && <div className="text-sm font-black tabular-nums leading-tight">{r.codigo}</div>}
                           <div className="text-xs font-bold truncate">{r.urgente && '🔥 '}{r.tipo === 'despacho' && '📦 '}{etiqueta(r)}</div>
-                          {r.tipo !== 'compra' && <div className="mt-0.5"><SalidaOdooChip vista={vistaSalida(r)} codigo={r.codigo} error={salidasOdoo.error} alerta={ESTADOS_ALERTA_SALIDA.includes(r.estado)} max={1} /></div>}
+                          {r.tipo !== 'compra' && <div className="mt-0.5"><SalidaOdooChip vista={vistaSalida(r)} codigo={r.codigo} error={salidasOdoo.error} alerta={ESTADOS_ALERTA_SALIDA.includes(r.estado)} max={1} pieDuda="abre el pedido para confirmar" /></div>}
                           {r.salidaAt && <div className="text-[10px] text-emerald-300 truncate mt-0.5">🚚 Salió{r.llevadoPorNombre ? ` · ${r.llevadoPorNombre}` : r.salidaOrigen === 'odoo' ? ' · Odoo' : ''}</div>}
                           <div className="flex items-center justify-between mt-0.5">
                             <span className="text-[10px] text-zinc-500 truncate">{formatFechaCorta((r.createdAt || '').slice(0, 10))} · {r.modoEntrega === 'retiro' ? '🙋' : '🚚'} {r.solicitadoPorNombre || '—'}</span>
@@ -570,7 +594,7 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
                     className={`w-full text-left px-2.5 py-2 rounded-card border bg-zinc-900 ${selId === r.id ? 'border-amber-500 bg-zinc-800/70' : 'border-zinc-800 hover:border-zinc-600'}`}>
                     {r.codigo && <div className="text-sm font-black tabular-nums leading-tight">{r.codigo}</div>}
                     <div className="text-xs font-bold truncate text-green-300">{r.tipo === 'despacho' && '📦 '}{etiqueta(r)}</div>
-                    {r.tipo !== 'compra' && <div className="mt-0.5"><SalidaOdooChip vista={vistaSalida(r)} codigo={r.codigo} error={salidasOdoo.error} alerta={ESTADOS_ALERTA_SALIDA.includes(r.estado)} max={1} /></div>}
+                    {r.tipo !== 'compra' && <div className="mt-0.5"><SalidaOdooChip vista={vistaSalida(r)} codigo={r.codigo} error={salidasOdoo.error} alerta={ESTADOS_ALERTA_SALIDA.includes(r.estado)} max={1} pieDuda="abre el pedido para confirmar" /></div>}
                     <div className="flex items-center justify-between mt-0.5">
                       <span className="text-[10px] text-zinc-500 truncate">✓ {formatFechaCorta(((r.entregadaAt || r.retiradaAt || '')).slice(0, 10))} · {r.modoEntrega === 'retiro' ? '🙋' : '🚚'}</span>
                       <span className={`shrink-0 text-[9px] font-bold ml-1 ${r.recepcionConfirmadaAt ? 'text-green-400' : 'text-amber-400'}`}>{r.recepcionConfirmadaAt ? '✅ conf.' : '⏳ sin conf.'}</span>

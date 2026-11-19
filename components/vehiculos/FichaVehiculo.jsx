@@ -55,7 +55,8 @@ function VisitasObras({ vehiculoId, proyectos }) {
   const porObra = {};
   delMes.forEach(v => { porObra[v.proyectoId] = (porObra[v.proyectoId] || 0) + v.segundos; });
   const top = Object.entries(porObra).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  const nombre = (id) => { const p = proy[id]; return p ? `${p.referenciaOdoo ? p.referenciaOdoo + ' · ' : ''}${p.referenciaProyecto || p.nombre}${p.cliente ? ' — ' + p.cliente : ''}` : id; };
+  const obraDe = (id) => { const p = proy[id]; return p ? `${p.referenciaOdoo ? p.referenciaOdoo + ' · ' : ''}${p.referenciaProyecto || p.nombre || ''}` : id; };
+  const clienteDe = (id) => proy[id]?.cliente || '';
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2 flex-wrap text-xs">
@@ -65,20 +66,30 @@ function VisitasObras({ vehiculoId, proyectos }) {
         <span className="text-zinc-400">{delMes.length} visitas · {diasN} días · {obrasN} obras · <b className="text-white">{horas.toFixed(1)} h</b> en obra (horario laboral)</span>
       </div>
       {top.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {top.map(([id, s]) => <span key={id} className="text-[10px] px-1.5 py-0.5 rounded border border-zinc-700 bg-zinc-950 text-zinc-300">{nombre(id).slice(0, 48)} · {(s / 3600).toFixed(1)} h</span>)}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
+          {top.map(([id, s]) => (
+            <div key={id} className="flex items-center justify-between gap-2 px-2 py-1 rounded border border-zinc-800 bg-zinc-950 min-w-0" title={`${obraDe(id)} — ${clienteDe(id)}`}>
+              <div className="min-w-0">
+                <div className="text-[11px] text-zinc-200 truncate">{obraDe(id)}</div>
+                <div className="text-[10px] text-zinc-500 truncate">{clienteDe(id) || '—'}</div>
+              </div>
+              <span className="text-xs font-bold text-white tabular-nums shrink-0">{(s / 3600).toFixed(1)} h</span>
+            </div>
+          ))}
         </div>
       )}
-      <div className="max-h-72 overflow-auto border border-zinc-800 rounded-card">
-        <table className="w-full text-xs">
+      <div className="max-h-96 overflow-auto border border-zinc-800 rounded-card">
+        <table className="w-full text-xs table-fixed">
+          <colgroup><col className="w-24" /><col /><col className="w-[28%]" /><col className="w-16" /><col className="w-16" /><col className="w-16" /></colgroup>
           <thead className="sticky top-0 bg-zinc-950 text-[10px] uppercase tracking-wider text-zinc-400">
-            <tr><th className="text-left px-2 py-1.5">Fecha</th><th className="text-left px-2 py-1.5">Obra / cliente</th><th className="text-center px-2 py-1.5">Llegada</th><th className="text-center px-2 py-1.5">Salida</th><th className="text-right px-2 py-1.5">Horas</th></tr>
+            <tr><th className="text-left px-2 py-1.5">Fecha</th><th className="text-left px-2 py-1.5">Obra</th><th className="text-left px-2 py-1.5">Cliente</th><th className="text-center px-2 py-1.5">Llegada</th><th className="text-center px-2 py-1.5">Salida</th><th className="text-right px-2 py-1.5">Horas</th></tr>
           </thead>
           <tbody>
             {delMes.map((v, i) => (
               <tr key={v.id} className={`border-t border-zinc-800/70 ${i % 2 ? 'bg-zinc-950/40' : ''}`}>
                 <td className="px-2 py-1 whitespace-nowrap text-zinc-300">{v.fecha}</td>
-                <td className="px-2 py-1 text-zinc-200">{nombre(v.proyectoId)}</td>
+                <td className="px-2 py-1 text-zinc-200 truncate" title={obraDe(v.proyectoId)}>{obraDe(v.proyectoId)}</td>
+                <td className="px-2 py-1 text-zinc-400 truncate" title={clienteDe(v.proyectoId)}>{clienteDe(v.proyectoId) || '—'}</td>
                 <td className="px-2 py-1 text-center tabular-nums">{v.llegada || '—'}</td>
                 <td className="px-2 py-1 text-center tabular-nums">{v.salida || '—'}</td>
                 <td className="px-2 py-1 text-right tabular-nums">{(v.segundos / 3600).toFixed(1)}{v.paradas > 1 ? <span className="text-zinc-500"> ({v.paradas})</span> : ''}</td>
@@ -176,7 +187,7 @@ export default function FichaVehiculo({ vehiculo: v, personal = [], proyectos = 
 
   return (
     <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-auto" onClick={onCerrar}>
-      <div className="bg-zinc-900 border border-zinc-700 rounded-card max-w-3xl w-full p-6 my-8 space-y-1" onClick={e => e.stopPropagation()}>
+      <div className="bg-zinc-900 border border-zinc-700 rounded-card max-w-5xl w-full p-6 my-8 space-y-1" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-start gap-3 mb-2">
           <div className="min-w-0">
             <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold">Ficha del vehículo</div>
@@ -247,6 +258,7 @@ export default function FichaVehiculo({ vehiculo: v, personal = [], proyectos = 
             </Seccion>
           </div>
         </div>
+        <div className="border-t border-zinc-800 mt-4 pt-1" />
         <Seccion titulo="📍 Visitas a obras (GPS)">
           <VisitasObras vehiculoId={v.id} proyectos={proyectos} />
         </Seccion>

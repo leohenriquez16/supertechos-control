@@ -5,17 +5,24 @@
 //  - línea punteada = lo planificado; línea continua = lo que recorrió el camión (GPS)
 //  - camiones en vivo, lo que está por montar y la oficina
 //  - clic en el mapa = poner una parada en ese punto
+//  - las paradas de las OTRAS rutas del día en gris tenue (para no mandar dos camiones a la misma zona)
+//  - solo se re-encuadra al cambiar de ruta o de cantidad de paradas (firmaEncuadre):
+//    si Erisdania hizo zoom, el mapa no salta cuando se mueve un camión o entra un pin
 
-import React, { useMemo } from 'react';
-import { OFICINA, coordsParada, estadoVisualParada, etiquetaTipo } from '../../../lib/helpers/rutasOficina';
+import React, { useMemo, useState } from 'react';
+import { OFICINA, coordsParada, estadoVisualParada, etiquetaTipo, firmaEncuadreRuta } from '../../../lib/helpers/rutasOficina';
 
 const MapaLeaflet = React.lazy(() => import('../../common/MapaLeaflet'));
 // Colores de las líneas (contrastan sobre el mapa claro de OpenStreetMap).
 const COLOR_PLAN = '#0e7490';
 const COLOR_REAL = '#be123c';
+const COLOR_PLAN_LEYENDA = '#22d3ee'; // la leyenda va sobre fondo oscuro: un tono más claro
+const COLOR_OTRAS = '#94a3b8';        // paradas de las otras rutas del día
+const COLOR_CAMION_PROPIO = '#0891b2'; // el camión de esta ruta (morado = "el GPS la vio")
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-export default function MapaRuta({ viaje, proyectos, nombreObra, listas, diligencias, gpsUnidades, vehiculos, recorrido, puntoMapa, onMapClick, height, verCamiones = true }) {
+export default function MapaRuta({ viaje, otrasRutas = [], proyectos, nombreObra, listas, diligencias, gpsUnidades, vehiculos, recorrido, puntoMapa, onMapClick, height, verCamiones = true }) {
+  const [verOtras, setVerOtras] = useState(true);
   const { markers, polylines, centro } = useMemo(() => {
     const ms = [];
     const lineas = [];
@@ -39,7 +46,20 @@ export default function MapaRuta({ viaje, proyectos, nombreObra, listas, diligen
       });
     }
     if (plan.length > 1) lineas.push({ points: plan, color: COLOR_PLAN, dashed: true, weight: 4, opacity: 0.9 });
-    if (recorrido && recorrido.length > 1) lineas.push({ points: recorrido.map(p => [p.lat, p.lng]), color: COLOR_REAL, weight: 5, opacity: 0.75 });
+    // el recorrido real NO cuenta para el encuadre (si el camión anduvo lejos, las paradas quedarían diminutas)
+    if (recorrido && recorrido.length > 1) lineas.push({ points: recorrido.map(p => [p.lat, p.lng]), color: COLOR_REAL, weight: 5, opacity: 0.75, sinEncuadre: true });
+    // Paradas de las OTRAS rutas del día (gris tenue, sin número, sin encuadre; se apagan con el check)
+    if (verOtras) (otrasRutas || []).forEach(o => {
+      const quien = o.choferNombre || o.vehiculo || 'otra ruta';
+      (o.paradas || []).forEach(p => {
+        if (p.estado === 'cancelada') return;
+        const c = coordsParada(p, proyectos);
+        if (!c) return;
+        const nombre = p.proyectoId ? nombreObra(p.proyectoId) : (p.lugar || '');
+        ms.push({ ...c, color: COLOR_OTRAS, sinEncuadre: true, label: `Ruta de ${quien}: ${nombre}`,
+          popup: `<b>Ruta de ${esc(quien)}</b><br>${esc(etiquetaTipo(p.tipo))} · ${esc(nombre)}${p.estado === 'completada' ? '<br>✓ hecha' : ''}` });
+      });
+    });
     // Por montar (naranja = requisición lista, rojo = retiro de sobrante)
     const coordsObra = (pid) => { const p = (proyectos || []).find(x => x.id === pid); return (p?.ubicacionLat != null && p?.ubicacionLng != null) ? { lat: Number(p.ubicacionLat), lng: Number(p.ubicacionLng) } : null; };
     listas.forEach(r => { const c = coordsObra(r.proyectoId); if (c) ms.push({ ...c, color: 'orange', sinEncuadre: conParadas, label: `Por montar: ${nombreObra(r.proyectoId)}`, popup: `<b>📦 Lista para envío</b><br>${esc(nombreObra(r.proyectoId))}` }); });
@@ -49,7 +69,7 @@ export default function MapaRuta({ viaje, proyectos, nombreObra, listas, diligen
       if (u.lat == null || u.lng == null) return;
       const veh = (vehiculos || []).find(x => String(x.gpsDeviceId) === String(u.id));
       const deEsta = !!viaje && !!veh && veh.id === viaje.vehiculoId;
-      ms.push({ lat: u.lat, lng: u.lng, vehiculoTipo: veh?.tipo || 'camion', color: deEsta ? 'purple' : u.velocidad > 2 ? 'green' : u.online === 'online' ? 'yellow' : 'gray',
+      ms.push({ lat: u.lat, lng: u.lng, vehiculoTipo: veh?.tipo || 'camion', color: deEsta ? COLOR_CAMION_PROPIO : u.velocidad > 2 ? 'green' : u.online === 'online' ? 'yellow' : 'gray',
         sinEncuadre: !deEsta || conParadas,
         label: `🛰 ${veh ? `${veh.marca} ${veh.modelo}` : u.nombre}${deEsta ? ' (esta ruta)' : ''}`,
         popup: `<b>🛰 ${esc(u.nombre)}</b><br>${u.velocidad} km/h · ${u.velocidad > 2 ? 'en movimiento' : u.online === 'online' ? 'encendido detenido' : 'apagado'}<br><span style="font-size:11px;color:#a1a1aa">${esc(u.hora || '')}</span>` });
@@ -57,21 +77,31 @@ export default function MapaRuta({ viaje, proyectos, nombreObra, listas, diligen
     if (puntoMapa) ms.push({ lat: puntoMapa.lat, lng: puntoMapa.lng, color: 'yellow', label: 'Parada nueva aquí', sinEncuadre: true });
     const primero = ms.find(m => !m.sinEncuadre) || ms[0];
     return { markers: ms, polylines: lineas, centro: [primero.lat, primero.lng] };
-  }, [viaje, proyectos, nombreObra, listas, diligencias, gpsUnidades, vehiculos, recorrido, puntoMapa, verCamiones]);
+  }, [viaje, otrasRutas, verOtras, proyectos, nombreObra, listas, diligencias, gpsUnidades, vehiculos, recorrido, puntoMapa, verCamiones]);
+  // Re-encuadrar solo al cambiar de ruta o de cantidad de paradas (sin ruta: al cambiar lo por montar).
+  const firma = firmaEncuadreRuta(viaje, proyectos, `${listas.length}|${diligencias.length}`);
+  const hayOtras = (otrasRutas || []).some(o => (o.paradas || []).some(p => p.estado !== 'cancelada'));
 
   return (
     <div className="relative">
       <React.Suspense fallback={<div className="bg-zinc-950 border border-zinc-800 rounded-card flex items-center justify-center" style={{ height }}><span className="text-xs text-zinc-500">Cargando mapa…</span></div>}>
-        <MapaLeaflet center={centro} zoom={12} height={height} markers={markers} polylines={polylines} onMapClick={onMapClick} scrollWheelZoom className="border border-zinc-800 rounded-card" />
+        <MapaLeaflet center={centro} zoom={12} height={height} markers={markers} polylines={polylines} firmaEncuadre={firma} onMapClick={onMapClick} scrollWheelZoom className="border border-zinc-800 rounded-card" />
       </React.Suspense>
       <div className="flex gap-x-3 gap-y-1 flex-wrap text-[11px] text-zinc-400 mt-1.5">
         <span><b className="text-blue-400">●</b> Pendiente</span>
         <span><b className="text-green-400">●</b> Hecha</span>
         <span><b className="text-purple-400">●</b> El GPS la vio, falta marcar</span>
         <span><b className="text-zinc-500">●</b> Cancelada</span>
-        <span><b style={{ color: COLOR_PLAN }}>┄┄</b> planificado</span>
+        <span><b style={{ color: COLOR_PLAN_LEYENDA }}>┄┄</b> planificado</span>
         <span><b style={{ color: COLOR_REAL }}>━━</b> recorrido real (GPS)</span>
         <span><b className="text-orange-400">●</b> Por montar</span>
+        <span><b style={{ color: COLOR_CAMION_PROPIO }}>■</b> camión de esta ruta</span>
+        {hayOtras && (
+          <label className="flex items-center gap-1 cursor-pointer select-none">
+            <input type="checkbox" checked={verOtras} onChange={e => setVerOtras(e.target.checked)} className="accent-cyan-600" />
+            <b style={{ color: COLOR_OTRAS }}>●</b> otras rutas del día
+          </label>
+        )}
         {onMapClick && <span className="text-zinc-500">· Clic en el mapa para poner una parada ahí</span>}
       </div>
     </div>

@@ -21,7 +21,8 @@ import { formatFechaCorta } from '../../lib/helpers/formato';
 import { toast } from '../../lib/toast';
 // v8.68.0: cancelar viajes viejos + marcar parada hecha desde oficina (ticket Erisdania)
 import { planCancelacionViaje, notaCancelacion, notaHechaDesdeOficina, filtrarViajes, viajesViejosSinCerrar, requisicionesMontadas, esViajeCancelado, VIAJE_CANCELADO, PARADA_CANCELADA } from '../../lib/helpers/rutas';
-import { construirCandidatos, agregarReciente, OFICINA, totalRutaM, reducirPuntos, sumarDias } from '../../lib/helpers/rutasOficina';
+import { construirCandidatos, agregarReciente, OFICINA, totalRutaM, reducirPuntos, sumarDias, siguienteOrden, porMontarDeObra, debeRevisarGps } from '../../lib/helpers/rutasOficina';
+import { fetchConSesion } from '../../lib/fetchConSesion';
 import { distanciaMetros } from '../../lib/geo';
 import { llamarApi } from './rutas/llamarApi';
 import CarrilesDia from './rutas/CarrilesDia';
@@ -76,6 +77,8 @@ export default function VistaRutas({ usuario, data, onVolver }) {
   const [recorrido, setRecorrido] = useState({ clave: null, puntos: [] });
   const [tick, setTick] = useState(0);             // cada 5 min (solo hoy)
   const [esDesktop, setEsDesktop] = useState(true);
+  const [enfocarBuscador, setEnfocarBuscador] = useState(null); // id de la ruta recién creada
+  const [fechaCargada, setFechaCargada] = useState(null);         // fecha de los `viajes` que hay en pantalla
   const pedido = useRef(0);
 
   useEffect(() => { setRecientes(leerRecientes()); }, []);
@@ -113,7 +116,8 @@ export default function VistaRutas({ usuario, data, onVolver }) {
       ]);
       db.listarSuplidores().then(setSuplidores).catch(() => {});
       // v8.43.0: posiciones en vivo de la flota (no bloquea la vista si falla)
-      fetch('/api/gps/posiciones').then(r => r.json()).then(d => setGpsUnidades(d.dispositivos || [])).catch(() => {});
+      // v8.75: con sesión (la ruta pide sesión; sin ella da 401 y no salen los camiones)
+      fetchConSesion('/api/gps/posiciones').then(r => r.json()).then(d => setGpsUnidades(d.dispositivos || [])).catch(() => {});
       // v8.68.0: las paradas/viajes cancelados no cuentan (su requisición volvió a 'lista')
       const asignadas = requisicionesMontadas(vs);
       const otras = await db.listarViajes({ desde: hoyRD().slice(0, 8) + '01' }).catch(() => []);
@@ -124,7 +128,7 @@ export default function VistaRutas({ usuario, data, onVolver }) {
         hist = await db.listarViajes({ desde: d.toISOString().slice(0, 10) }).catch(() => []);
       }
       if (mio !== pedido.current) return; // llegó tarde: ya se pidió otra fecha
-      setViajes(vs);
+      setViajes(vs); setFechaCargada(fecha);
       if (hist) setHistorial(hist);
       // v8.48.0: los alistos en modo RETIRO no van a camión (se firman en el almacén)
       setListas(reqs.filter(r => !asignadas.has(r.id) && r.modoEntrega !== 'retiro'));
@@ -149,15 +153,28 @@ export default function VistaRutas({ usuario, data, onVolver }) {
     const id = setInterval(() => setTick(t => t + 1), CINCO_MIN);
     return () => clearInterval(id);
   }, [fecha, vista]);
+  // Días pasados: solo si alguna ruta con GPS no se ha revisado después de terminar
+  // ese día (navegar con ◀ no baja el historial de todos los camiones cada vez).
+  const conGpsViaje = (v) => { const veh = v?.vehiculoId ? (data.vehiculos || []).find(x => x.id === v.vehiculoId) : null; return !!veh?.gpsDeviceId; };
+  const ultimaRevision = useRef(null); // `${fecha}|${tick}` ya pedido: no repetir al recargar
   useEffect(() => {
-    if (filtro !== 'dia' || fecha > hoyRD()) { setGpsAviso(null); return; }
+    if (loading || fechaCargada !== fecha) return; // esperar los viajes de ESTE día
+    if (filtro !== 'dia' || !debeRevisarGps({ fecha, hoy: hoyRD(), viajes, conGps: conGpsViaje })) { setGpsAviso(null); return; }
+    const clave = `${fecha}|${tick}`;
+    if (ultimaRevision.current === clave) return;
+    ultimaRevision.current = clave;
     let vivo = true;
     llamarApi('POST', '/api/rutas/revisar-gps', { fecha })
       .then(() => { if (vivo) { setGpsAviso(null); recargar({ silencioso: true }); } })
-      .catch(() => { if (vivo) setGpsAviso('No pude revisar el GPS ahora; lo intento de nuevo en unos minutos.'); });
+      .catch((e) => {
+        if (!vivo) return;
+        // 403 = este usuario no revisa el GPS (lo hace logística) · 429 = otro lo acaba de revisar: no es un fallo
+        if (e?.status === 403 || e?.status === 429) { setGpsAviso(null); return; }
+        setGpsAviso('No pude revisar el GPS ahora; lo intento de nuevo en unos minutos.');
+      });
     return () => { vivo = false; };
     // eslint-disable-next-line
-  }, [fecha, filtro, tick]);
+  }, [fecha, filtro, tick, loading, fechaCargada]);
 
   // Recorrido REAL del camión de la ruta abierta (historial del GPS del día).
   const vehSel = vSel?.vehiculoId ? (data.vehiculos || []).find(x => x.id === vSel.vehiculoId) : null;
@@ -202,7 +219,7 @@ export default function VistaRutas({ usuario, data, onVolver }) {
         tipoEnvio: nuevo.tipoEnvio, creadoPorId: usuario.id,
       });
       setCreando(false); setNuevo({ tipoEnvio: 'camion', vehiculoId: '', vehiculo: '', choferId: '' });
-      setViajeSel(id);
+      setViajeSel(id); setEnfocarBuscador(id); // la primera parada: teclear y Enter
       await recargar({ silencioso: true });
     } catch (e) { fallo(e, 'No se pudo crear la ruta'); }
   };
@@ -216,7 +233,7 @@ export default function VistaRutas({ usuario, data, onVolver }) {
   const agregarRapida = async ({ cand, tipo, nota }) => {
     if (!vSel) return false;
     try {
-      await db.agregarParada({ viajeId: vSel.id, orden: vSel.paradas.length + 1, tipo, lugar: cand.lugar, proyectoId: cand.proyectoId || null, lat: cand.lat, lng: cand.lng, descripcion: nota || '' });
+      await db.agregarParada({ viajeId: vSel.id, orden: siguienteOrden(vSel.paradas), tipo, lugar: cand.lugar, proyectoId: cand.proyectoId || null, lat: cand.lat, lng: cand.lng, descripcion: nota || '' });
       if (cand.key) { const l = agregarReciente(recientes, cand.key); setRecientes(l); guardarRecientes(l); }
       await recargar({ silencioso: true });
       return true;
@@ -228,36 +245,39 @@ export default function VistaRutas({ usuario, data, onVolver }) {
   const paradaOficina = async (alInicio) => {
     if (!vSel) return;
     try {
-      const id = await db.agregarParada({ viajeId: vSel.id, orden: alInicio ? 0 : vSel.paradas.length + 1, tipo: 'visita', lugar: OFICINA.nombre, lat: OFICINA.lat, lng: OFICINA.lng,
+      const id = await db.agregarParada({ viajeId: vSel.id, orden: alInicio ? 0 : siguienteOrden(vSel.paradas), tipo: 'visita', lugar: OFICINA.nombre, lat: OFICINA.lat, lng: OFICINA.lng,
         descripcion: alInicio ? 'Salida de la oficina' : 'Regreso a la oficina' });
       if (alInicio) await db.reordenarParadas(vSel.id, [id, ...vSel.paradas.map(p => p.id)]);
       await recargar({ silencioso: true });
     } catch (e) { fallo(e); }
   };
 
+  // Devuelven true si quedó montada (el buscador lo usa para limpiar su panel).
   const montarRequisicion = async (req) => {
-    const viaje = vSel; if (!viaje) return;
+    const viaje = vSel; if (!viaje) return false;
     const prj = (data.proyectos || []).find(x => x.id === req.proyectoId);
-    if (prj?.ubicacionLat == null || prj?.ubicacionLng == null) { toast.warning(`La obra "${nombreObra(req.proyectoId)}" no tiene ubicación GPS. Asígnala en el proyecto (Info → Ubicación).`); return; }
+    if (prj?.ubicacionLat == null || prj?.ubicacionLng == null) { toast.warning(`La obra "${nombreObra(req.proyectoId)}" no tiene ubicación GPS. Asígnala en el proyecto (Info → Ubicación).`); return false; }
     try {
-      await db.agregarParada({ viajeId: viaje.id, orden: viaje.paradas.length + 1, tipo: 'entrega', proyectoId: req.proyectoId, requisicionId: req.id,
+      await db.agregarParada({ viajeId: viaje.id, orden: siguienteOrden(viaje.paradas), tipo: 'entrega', proyectoId: req.proyectoId, requisicionId: req.id,
         lat: prj.ubicacionLat, lng: prj.ubicacionLng, descripcion: `Entregar materiales en ${nombreObra(req.proyectoId)}` });
       // el envío pagado/sub-contratado entrega directo; el camión la lleva cuando el chofer arranca
       if (viaje.tipoEnvio === 'pagado' || viaje.tipoEnvio === 'subcontratado' || viaje.estado === 'en_curso') await db.actualizarRequisicion(req.id, { estado: 'en_ruta' });
       await recargar({ silencioso: true });
-    } catch (e) { fallo(e); }
+      return true;
+    } catch (e) { fallo(e); return false; }
   };
   // v8.40.0: RETIRO DE SOBRANTE → parada de recogida en la obra.
   const montarDiligencia = async (d) => {
-    const viaje = vSel; if (!viaje) return;
+    const viaje = vSel; if (!viaje) return false;
     const proy = (data.proyectos || []).find(x => x.id === d.proyectoId);
-    if (proy?.ubicacionLat == null || proy?.ubicacionLng == null) { toast.warning(`La obra "${nombreObra(d.proyectoId)}" no tiene ubicación GPS. Asígnala en el proyecto (Info → Ubicación).`); return; }
+    if (proy?.ubicacionLat == null || proy?.ubicacionLng == null) { toast.warning(`La obra "${nombreObra(d.proyectoId)}" no tiene ubicación GPS. Asígnala en el proyecto (Info → Ubicación).`); return false; }
     try {
-      await db.agregarParada({ viajeId: viaje.id, orden: viaje.paradas.length + 1, tipo: 'recogida', proyectoId: d.proyectoId, diligenciaId: d.id,
+      await db.agregarParada({ viajeId: viaje.id, orden: siguienteOrden(viaje.paradas), tipo: 'recogida', proyectoId: d.proyectoId, diligenciaId: d.id,
         lat: proy.ubicacionLat, lng: proy.ubicacionLng, descripcion: `Retirar sobrante en ${nombreObra(d.proyectoId)}: ${(d.descripcion || '').split('\n')[0]}` });
       await db.actualizarDiligencia(d.id, { estado: 'asignada', viajeId: viaje.id });
       await recargar({ silencioso: true });
-    } catch (e) { fallo(e); }
+      return true;
+    } catch (e) { fallo(e); return false; }
   };
 
   // ===== Editar paradas =====
@@ -291,14 +311,15 @@ export default function VistaRutas({ usuario, data, onVolver }) {
     if (!vSel) return;
     try {
       await db.actualizarViaje(vSel.id, campos);
-      if (campos.fecha && campos.fecha !== fecha) {
+      if (campos.fecha && (campos.fecha !== fecha || filtro !== 'dia')) {
         toast.success(`Ruta movida al ${diaLargo(campos.fecha)}`);
-        setFecha(campos.fecha); // la seguimos: queda abierta en su nuevo día
+        // la seguimos: queda abierta en su nuevo día (también si venía de «Viejas sin cerrar»)
+        setFiltro('dia'); setFecha(campos.fecha);
       } else await recargar({ silencioso: true });
     } catch (e) { fallo(e); }
   };
   const cambiarVehiculo = async (vehId) => {
-    if (!vehId) { await editarViaje({ vehiculoId: null }); return; }
+    if (!vehId) { await editarViaje({ vehiculoId: null, vehiculo: null }); return; } // que no quede el nombre viejo a la vista
     const veh = (data.vehiculos || []).find(x => x.id === vehId);
     if (!veh) return;
     const campos = { vehiculoId: veh.id, vehiculo: `${veh.marca || ''} ${veh.modelo || ''}${veh.placa ? ` · ${veh.placa}` : ''}`.trim() };
@@ -309,7 +330,7 @@ export default function VistaRutas({ usuario, data, onVolver }) {
   const duplicar = async (fechaDestino) => {
     if (!vSel) return false;
     try {
-      const nuevoV = await db.duplicarViaje(vSel.id, { fecha: fechaDestino });
+      const nuevoV = await db.duplicarViaje(vSel.id, { fecha: fechaDestino, creadoPorId: usuario?.id });
       setAviso({ texto: `Ruta copiada al ${diaLargo(fechaDestino)} con ${nuevoV.paradas.length} parada${nuevoV.paradas.length !== 1 ? 's' : ''}.`, accion: { label: 'Ir a ese día', fn: () => { setFiltro('dia'); setFecha(fechaDestino); setViajeSel(nuevoV.id); setAviso(null); } } });
       if (fechaDestino === fecha) await recargar({ silencioso: true });
       return true;
@@ -340,6 +361,8 @@ export default function VistaRutas({ usuario, data, onVolver }) {
   const hoy = hoyRD();
   const totalM = vSel ? totalRutaM(vSel.paradas, data.proyectos || []) : 0;
   const gpsRevisado = !!vSel?.gpsRevisadoAt;
+  const otrasRutasDia = useMemo(() => filtro === 'dia' ? viajesActivos.filter(v => v.id !== vSel?.id) : [], [filtro, viajesActivos, vSel?.id]);
+  const porMontarObra = (pid) => porMontarDeObra(pid, listas, diligencias);
 
   return (
     <div className="p-4 md:p-6 max-w-[1800px] mx-auto space-y-3">
@@ -410,7 +433,7 @@ export default function VistaRutas({ usuario, data, onVolver }) {
 
           {/* ===== Centro: mapa + jornada ===== */}
           <section className="order-3 lg:order-none space-y-3 min-w-0">
-            <MapaRuta viaje={vSel} proyectos={data.proyectos || []} nombreObra={nombreObra} listas={filtro === 'dia' ? listas : []} diligencias={filtro === 'dia' ? diligencias : []}
+            <MapaRuta viaje={vSel} otrasRutas={otrasRutasDia} proyectos={data.proyectos || []} nombreObra={nombreObra} listas={filtro === 'dia' ? listas : []} diligencias={filtro === 'dia' ? diligencias : []}
               gpsUnidades={(vSel?.fecha || fecha) === hoy ? gpsUnidades : []} vehiculos={data.vehiculos} recorrido={puntosRecorrido} puntoMapa={puntoMapa}
               onMapClick={puedeAgregar ? (lat, lng) => { setAvanzada(null); setPuntoMapa({ lat, lng }); } : null}
               height={esDesktop ? 'calc(100vh - 230px)' : 320} />
@@ -449,7 +472,9 @@ export default function VistaRutas({ usuario, data, onVolver }) {
                       <FormParadaAvanzada viaje={vSel} candidatos={candidatos} textoInicial={avanzada.texto} onCerrar={() => setAvanzada(null)} onGuardado={() => recargar({ silencioso: true })} />
                     ) : (
                       <BuscadorParada key={vSel.id} candidatos={candidatos} recientes={recientes} puntoMapa={puntoMapa} onLimpiarPuntoMapa={() => setPuntoMapa(null)}
-                        onAgregar={agregarRapida} onMasOpciones={(texto) => setAvanzada({ texto })} />
+                        onAgregar={agregarRapida} onMasOpciones={(texto) => setAvanzada({ texto })}
+                        autoFocus={enfocarBuscador === vSel.id} porMontarObra={porMontarObra} nombreObra={nombreObra}
+                        onMontarRequisicion={montarRequisicion} onMontarDiligencia={montarDiligencia} />
                     )}
                     {!avanzada && (
                       <div className="flex gap-1.5 flex-wrap">

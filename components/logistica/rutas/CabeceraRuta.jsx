@@ -7,7 +7,7 @@
 import React, { useState } from 'react';
 import { Loader2, Copy, Ban } from 'lucide-react';
 import { planCancelacionViaje, puedeCancelarViaje, esViajeCancelado } from '../../../lib/helpers/rutas';
-import { resumenRuta, formatKm, sumarDias } from '../../../lib/helpers/rutasOficina';
+import { resumenRuta, formatKm, sumarDias, resumenDuplicar } from '../../../lib/helpers/rutasOficina';
 import { tituloViaje, estadoViaje } from './CarrilesDia';
 
 const campo = 'bg-zinc-950 border border-zinc-700 hover:border-zinc-500 focus:border-cyan-600 outline-none rounded-card px-2 py-1.5 text-sm min-w-0';
@@ -22,6 +22,7 @@ export default function CabeceraRuta({ viaje: v, choferes, vehiculos, totalM, on
   const esCamion = v.tipoEnvio === 'camion';
 
   const plan = cancelando ? planCancelacionViaje(v) : null;
+  const dup = duplicando ? resumenDuplicar(v.paradas) : null;
   const s = (n) => n !== 1 ? 's' : '';
 
   return (
@@ -92,7 +93,13 @@ export default function CabeceraRuta({ viaje: v, choferes, vehiculos, totalM, on
 
       {duplicando && (
         <div className="bg-zinc-950 border border-cyan-800/60 rounded-card p-2.5 space-y-2">
-          <div className="text-xs font-bold text-cyan-300">Copiar esta ruta (mismas paradas, sin lo ya entregado) para el día:</div>
+          <div className="text-xs font-bold text-cyan-300">Copiar esta ruta para otro día (mismas paradas libres; las requisiciones y retiros no se copian):</div>
+          <div className="text-[11px] text-zinc-400">
+            Se copian <b className="text-zinc-200">{dup.copia} parada{s(dup.copia)}</b> pendiente{s(dup.copia)}.
+            {dup.montadas > 0 && ` ${dup.montadas} de requisición o retiro no se copia${dup.montadas !== 1 ? 'n' : ''} (se montan desde «Por montar»).`}
+            {dup.hechas > 0 && ` ${dup.hechas} ya hecha${s(dup.hechas)} no se copia${dup.hechas !== 1 ? 'n' : ''}.`}
+            {dup.copia === 0 && ' La ruta nueva saldrá vacía, con el mismo chofer y vehículo.'}
+          </div>
           <div className="flex gap-1.5 flex-wrap">
             {[1, 2, 7].map(n => { const f = sumarDias(v.fecha, n); return (
               <button key={n} onClick={() => setDuplicando({ ...duplicando, fecha: f })} className={`text-[11px] font-bold px-2 py-1 rounded-card border ${duplicando.fecha === f ? 'bg-cyan-700 border-cyan-700 text-white' : 'border-zinc-700 text-zinc-400'}`}>

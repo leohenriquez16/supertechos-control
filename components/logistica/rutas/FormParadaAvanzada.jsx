@@ -10,13 +10,14 @@ import { X, Loader2 } from 'lucide-react';
 import * as db from '../../../lib/db';
 import { parseCoords } from '../../../lib/helpers/geo';
 import { toast } from '../../../lib/toast';
+import { siguienteOrden, normalizar } from '../../../lib/helpers/rutasOficina';
 
 export default function FormParadaAvanzada({ viaje, candidatos, textoInicial = '', onCerrar, onGuardado }) {
   const [p, setP] = useState({ tipo: 'recogida', lugar: textoInicial, descripcion: '', lat: null, lng: null, proyectoId: null });
   const [guardando, setGuardando] = useState(false);
 
   const guardar = async () => {
-    const base = viaje.paradas.length;
+    const base = siguienteOrden(viaje.paradas) - 1; // max(orden): no choca con paradas que quedaron tras quitar otras
     const cOri = p.lat == null ? parseCoords(p.lugarMaps || '') : null;
     const cDes = p.destinoLat == null ? parseCoords(p.destinoMaps || '') : null;
     const origen = p.lugar?.trim() ? { lugar: p.lugar.trim(), lat: p.lat ?? cOri?.lat ?? null, lng: p.lng ?? cOri?.lng ?? null, proyectoId: p.proyectoId || null } : null;
@@ -106,8 +107,9 @@ export default function FormParadaAvanzada({ viaje, candidatos, textoInicial = '
 // v8.41.1: buscador de lugar con sugerencias en vivo. Texto libre también vale.
 function BuscadorLugar({ candidatos, valor, conGps, placeholder, onCambiar, autoFocus = false }) {
   const [foco, setFoco] = useState(false);
-  const q = (valor || '').toLowerCase().trim();
-  const sugerencias = q.length >= 2 ? candidatos.filter(c => c.label.toLowerCase().includes(q)).slice(0, 8) : [];
+  const q = normalizar(valor);
+  // sin acentos y por palabras (igual que el buscador principal): "nunez" encuentra "Núñez"
+  const sugerencias = q.length >= 2 ? candidatos.filter(c => { const hay = normalizar(`${c.label} ${c.sub || ''}`); return q.split(' ').every(w => hay.includes(w)); }).slice(0, 8) : [];
   return (
     <div className="relative">
       <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-700 rounded-card px-2 focus-within:border-cyan-600">

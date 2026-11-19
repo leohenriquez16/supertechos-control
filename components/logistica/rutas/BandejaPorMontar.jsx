@@ -27,10 +27,11 @@ export default function BandejaPorMontar({ listas, diligencias, enAlmacen, nombr
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 space-y-2">
       <div className="flex items-baseline justify-between gap-2">
-        <div className="text-xs font-black uppercase tracking-wider text-purple-300">Por montar {total > 0 && <span className="text-zinc-400">({total})</span>}</div>
+        <div className="text-xs font-black uppercase tracking-wider text-orange-300">Por montar {total > 0 && <span className="text-zinc-400">({total})</span>}</div>
         {destino && total > 0 && <div className="text-[11px] text-zinc-500 truncate">→ {destino}</div>}
       </div>
       {total === 0 && <div className="text-xs text-zinc-500">Nada esperando camión.</div>}
+      {total > 0 && !destino && <div className="text-[11px] text-amber-300/90">Abre o crea una ruta (arriba) para montar esto.</div>}
 
       {listas.map(r => (
         <div key={r.id} className="bg-zinc-950 border border-zinc-800 rounded-card px-2.5 py-2 flex items-center gap-2">

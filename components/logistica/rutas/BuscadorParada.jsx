@@ -4,6 +4,9 @@
 // suplidores, puertos/almacenes y la Oficina, todo en un solo campo.
 // Flujo: escribes → flechas/Enter → eliges tipo (ya viene uno sugerido) → Enter.
 // También acepta un punto del mapa (clic) o un link de Google Maps pegado.
+// Si eliges una OBRA que tiene requisición lista o retiro de sobrante en «Por montar»,
+// ofrece montarlo con un clic (en vez de una parada libre que dejaría la requisición
+// sin amarrar y nunca pasaría a entregada).
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, X, Loader2 } from 'lucide-react';
@@ -13,7 +16,8 @@ import { geocodificarInverso } from '../../../lib/geo';
 
 const TITULO_GRUPO = Object.fromEntries([...GRUPOS_LUGAR.map(g => [g.id, g.titulo]), ['recientes', 'Recientes'], ['pegado', 'Link pegado']]);
 
-export default function BuscadorParada({ candidatos, recientes = [], puntoMapa = null, onLimpiarPuntoMapa, onAgregar, onMasOpciones }) {
+export default function BuscadorParada({ candidatos, recientes = [], puntoMapa = null, onLimpiarPuntoMapa, onAgregar, onMasOpciones,
+  autoFocus = false, porMontarObra = null, nombreObra = null, onMontarRequisicion = null, onMontarDiligencia = null }) {
   const [texto, setTexto] = useState('');
   const [abierto, setAbierto] = useState(false);
   const [activo, setActivo] = useState(0);
@@ -25,6 +29,10 @@ export default function BuscadorParada({ candidatos, recientes = [], puntoMapa =
   const inputRef = useRef(null);
   const notaRef = useRef(null);
   const nombreRef = useRef(null);
+  const montarRef = useRef(null);
+  const [montando, setMontando] = useState(null); // id de la requisición/retiro que se está montando
+
+  useEffect(() => { if (autoFocus) setTimeout(() => inputRef.current?.focus(), 50); }, [autoFocus]);
 
   // Atajo: "/" enfoca el buscador (si no estás escribiendo en otro campo).
   useEffect(() => {
@@ -60,11 +68,21 @@ export default function BuscadorParada({ candidatos, recientes = [], puntoMapa =
   }, [candidatos, texto, recientes]);
   useEffect(() => { setActivo(0); }, [texto]);
 
+  const pmDe = (c) => (c?.proyectoId && porMontarObra) ? porMontarObra(c.proyectoId) : { requisiciones: [], retiros: [], total: 0 };
   function elegir(c) {
     setElegido(c); setTipo(c.tipoDefecto || 'entrega'); setNota(''); setNombre(c.pedirNombre ? '' : c.lugar);
     setAbierto(false); setTexto('');
-    setTimeout(() => (c.pedirNombre ? nombreRef.current : notaRef.current)?.focus(), 30);
+    const hayPorMontar = pmDe(c).total > 0;
+    setTimeout(() => (c.pedirNombre ? nombreRef.current : hayPorMontar ? montarRef.current : notaRef.current)?.focus(), 30);
   }
+  const limpiar = () => { setElegido(null); setNota(''); setNombre(''); setTimeout(() => inputRef.current?.focus(), 30); };
+  const montar = async (item, esRetiro) => {
+    if (montando) return;
+    setMontando(item.id);
+    const ok = await (esRetiro ? onMontarDiligencia?.(item) : onMontarRequisicion?.(item));
+    setMontando(null);
+    if (ok) limpiar();
+  };
   const cancelar = () => {
     setElegido(null); setNota(''); setNombre('');
     if (elegido?.grupo === 'mapa') onLimpiarPuntoMapa?.();
@@ -95,6 +113,8 @@ export default function BuscadorParada({ candidatos, recientes = [], puntoMapa =
   };
 
   if (elegido) {
+    const pm = pmDe(elegido);
+    const resumenItems = (r) => (r.items || []).map(i => i.descripcion).filter(Boolean).join(', ');
     return (
       <div className="bg-zinc-950 border-2 border-cyan-700 rounded-card p-2.5 space-y-2">
         <div className="flex items-start gap-2">
@@ -105,6 +125,36 @@ export default function BuscadorParada({ candidatos, recientes = [], puntoMapa =
           </div>
           <button onClick={cancelar} className="text-zinc-500 hover:text-white shrink-0" title="Cambiar (Esc)"><X className="w-4 h-4" /></button>
         </div>
+        {pm.total > 0 && (
+          <div className="bg-orange-950/40 border border-orange-700/70 rounded-card p-2 space-y-1.5">
+            <div className="text-xs font-bold text-orange-300">Esta obra tiene {pm.total === 1 ? 'algo' : `${pm.total} cosas`} en «Por montar». Móntalo aquí para que quede amarrado:</div>
+            {pm.requisiciones.map((r, i) => (
+              <button key={r.id} ref={i === 0 ? montarRef : null} onClick={() => montar(r, false)} disabled={!!montando}
+                onKeyDown={e => { if (e.key === 'Escape') cancelar(); }}
+                className="w-full text-left bg-orange-700 hover:bg-orange-600 disabled:opacity-50 text-white rounded-card px-2.5 py-2 flex items-center gap-2">
+                {montando === r.id ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : <span className="shrink-0">📦</span>}
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-black">Montar la requisición{r.urgente ? ' · urgente' : ''}</span>
+                  {resumenItems(r) && <span className="block text-[11px] opacity-90 truncate">{resumenItems(r)}</span>}
+                </span>
+                {i === 0 && <span className="text-[10px] font-bold opacity-70 shrink-0">Enter</span>}
+              </button>
+            ))}
+            {pm.retiros.map((d, i) => (
+              <button key={d.id} ref={pm.requisiciones.length === 0 && i === 0 ? montarRef : null} onClick={() => montar(d, true)} disabled={!!montando}
+                onKeyDown={e => { if (e.key === 'Escape') cancelar(); }}
+                className="w-full text-left bg-red-800 hover:bg-red-700 disabled:opacity-50 text-white rounded-card px-2.5 py-2 flex items-center gap-2">
+                {montando === d.id ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : <span className="shrink-0">♻</span>}
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-black">Montar el retiro de sobrante</span>
+                  {d.descripcion && <span className="block text-[11px] opacity-90 truncate">{d.descripcion.split('\n')[0]}</span>}
+                </span>
+                {pm.requisiciones.length === 0 && i === 0 && <span className="text-[10px] font-bold opacity-70 shrink-0">Enter</span>}
+              </button>
+            ))}
+            <div className="text-[11px] text-zinc-400">¿Es otra cosa? Agrégala abajo como parada aparte.</div>
+          </div>
+        )}
         {elegido.pedirNombre && (
           <input ref={nombreRef} value={nombre} onChange={e => setNombre(e.target.value)} onKeyDown={teclaFormulario}
             placeholder="¿Cómo se llama este lugar? (lo ve el chofer)" className="w-full bg-zinc-900 border border-amber-700 focus:border-cyan-600 outline-none rounded-card px-2.5 py-2 text-sm" />
@@ -120,8 +170,8 @@ export default function BuscadorParada({ candidatos, recientes = [], puntoMapa =
         <input ref={notaRef} value={nota} onChange={e => setNota(e.target.value)} onKeyDown={teclaFormulario}
           placeholder="Nota para el chofer (opcional): qué lleva, a quién buscar…" className="w-full bg-zinc-900 border border-zinc-700 focus:border-cyan-600 outline-none rounded-card px-2.5 py-2 text-sm" />
         <button onClick={agregar} disabled={guardando || (elegido.pedirNombre && !nombre.trim())}
-          className="w-full bg-cyan-700 hover:bg-cyan-600 disabled:opacity-40 text-white text-sm font-black py-2.5 rounded-card flex items-center justify-center gap-2">
-          {guardando && <Loader2 className="w-4 h-4 animate-spin" />} Agregar a la ruta <span className="text-[10px] font-bold opacity-70">Enter</span>
+          className={`w-full disabled:opacity-40 text-sm font-black py-2.5 rounded-card flex items-center justify-center gap-2 ${pm.total > 0 ? 'border border-zinc-600 text-zinc-300 hover:text-white hover:border-cyan-600' : 'bg-cyan-700 hover:bg-cyan-600 text-white'}`}>
+          {guardando && <Loader2 className="w-4 h-4 animate-spin" />} {pm.total > 0 ? 'Agregar como parada aparte' : 'Agregar a la ruta'} {pm.total === 0 && <span className="text-[10px] font-bold opacity-70">Enter</span>}
         </button>
       </div>
     );

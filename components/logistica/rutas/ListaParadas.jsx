@@ -6,7 +6,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { ChevronUp, ChevronDown, Trash2, X, GripVertical } from 'lucide-react';
-import { moverEnLista, distanciasRuta, formatKm, estadoVisualParada, insigniasParada, etiquetaTipo } from '../../../lib/helpers/rutasOficina';
+import { moverEnLista, distanciasRuta, formatKm, estadoVisualParada, insigniasParada, etiquetaTipo, primeraPosicionMovible } from '../../../lib/helpers/rutasOficina';
 
 const FONDO_NUMERO = { pendiente: 'bg-blue-600 text-white', hecha: 'bg-green-600 text-white', gps: 'bg-green-600 text-white ring-2 ring-purple-400', visitada: 'bg-purple-600 text-white', cancelada: 'bg-zinc-700 text-zinc-300' };
 const TONO_INSIGNIA = { verde: 'bg-green-900/40 text-green-300 border-green-800/60', morado: 'bg-purple-900/40 text-purple-300 border-purple-800/60', gris: 'bg-zinc-800 text-zinc-400 border-zinc-700' };
@@ -16,12 +16,15 @@ export default function ListaParadas({ viaje, proyectos, nombreObra, editable, p
   const [arrastrando, setArrastrando] = useState(null); // índice
   const [sobre, setSobre] = useState(null);             // índice destino
   const [marcandoId, setMarcandoId] = useState(null);
+  const [guardandoHecha, setGuardandoHecha] = useState(false);
   useEffect(() => { setIds(viaje.paradas.map(p => p.id)); }, [viaje.paradas]);
 
   const porId = useMemo(() => new Map(viaje.paradas.map(p => [p.id, p])), [viaje.paradas]);
   const paradas = useMemo(() => ids.map(id => porId.get(id)).filter(Boolean), [ids, porId]);
   const dist = useMemo(() => distanciasRuta(paradas, proyectos), [paradas, proyectos]);
   const movible = (p) => editable && p.estado !== 'completada' && p.estado !== 'cancelada';
+  // Una pendiente no se pone por encima de lo que ya se hizo.
+  const minPos = useMemo(() => primeraPosicionMovible(paradas), [paradas]);
 
   const aplicar = (nuevo) => {
     if (nuevo.join() === ids.join()) return;
@@ -29,7 +32,7 @@ export default function ListaParadas({ viaje, proyectos, nombreObra, editable, p
     onReordenar(nuevo);
   };
   const soltar = (destino) => {
-    if (arrastrando != null && destino != null && arrastrando !== destino) aplicar(moverEnLista(ids, arrastrando, destino));
+    if (arrastrando != null && destino != null && arrastrando !== destino) aplicar(moverEnLista(ids, arrastrando, Math.max(destino, minPos)));
     setArrastrando(null); setSobre(null);
   };
 
@@ -56,7 +59,7 @@ export default function ListaParadas({ viaje, proyectos, nombreObra, editable, p
           <div key={p.id}
             draggable={puedeMover}
             onDragStart={e => { setArrastrando(i); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', p.id); } catch { /* algunos navegadores */ } }}
-            onDragOver={e => { if (arrastrando == null || !editable) return; e.preventDefault(); if (sobre !== i) setSobre(i); }}
+            onDragOver={e => { if (arrastrando == null || !editable || i < minPos) return; e.preventDefault(); if (sobre !== i) setSobre(i); }}
             onDrop={e => { e.preventDefault(); soltar(i); }}
             onDragEnd={() => { setArrastrando(null); setSobre(null); }}
             className={`group bg-zinc-950 border rounded-card px-2 py-2 flex items-start gap-2 transition-colors
@@ -92,7 +95,8 @@ export default function ListaParadas({ viaje, proyectos, nombreObra, editable, p
               {marcandoId === p.id && (
                 <div className="flex items-center gap-1.5 mt-1.5">
                   <span className="text-[11px] text-zinc-400">¿Marcarla hecha desde la oficina?</span>
-                  <button onClick={async () => { await onMarcarHecha(p); setMarcandoId(null); }} className="text-[11px] font-black bg-green-700 hover:bg-green-600 text-white px-2.5 py-1 rounded-card">Sí, hecha</button>
+                  <button disabled={guardandoHecha} onClick={async () => { if (guardandoHecha) return; setGuardandoHecha(true); try { await onMarcarHecha(p); } finally { setGuardandoHecha(false); setMarcandoId(null); } }}
+                    className="text-[11px] font-black bg-green-700 hover:bg-green-600 disabled:opacity-50 text-white px-2.5 py-1 rounded-card">{guardandoHecha ? 'Guardando…' : 'Sí, hecha'}</button>
                   <button onClick={() => setMarcandoId(null)} className="text-zinc-500 hover:text-white"><X className="w-3.5 h-3.5" /></button>
                 </div>
               )}
@@ -104,7 +108,7 @@ export default function ListaParadas({ viaje, proyectos, nombreObra, editable, p
               )}
               {puedeMover && (
                 <>
-                  <button onClick={() => aplicar(moverEnLista(ids, i, i - 1))} disabled={i === 0} className="text-zinc-600 hover:text-white disabled:opacity-30 p-0.5" title="Subir"><ChevronUp className="w-4 h-4" /></button>
+                  <button onClick={() => aplicar(moverEnLista(ids, i, i - 1))} disabled={i <= minPos} className="text-zinc-600 hover:text-white disabled:opacity-30 p-0.5" title={i <= minPos && i > 0 ? 'No puede ir antes de una parada ya hecha' : 'Subir'}><ChevronUp className="w-4 h-4" /></button>
                   <button onClick={() => aplicar(moverEnLista(ids, i, i + 1))} disabled={i === ids.length - 1} className="text-zinc-600 hover:text-white disabled:opacity-30 p-0.5" title="Bajar"><ChevronDown className="w-4 h-4" /></button>
                   <button onClick={() => onQuitar(p)} className="text-zinc-600 hover:text-red-400 p-0.5" title="Quitar parada"><Trash2 className="w-4 h-4" /></button>
                 </>

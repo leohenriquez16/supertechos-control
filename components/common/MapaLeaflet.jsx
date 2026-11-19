@@ -20,7 +20,11 @@
  *      sinEncuadre,              — true: no cuenta para el encuadre automático
  *  - circle: { lat, lng, radius, color } — círculo opcional (ej. radio de check-in)
  *  - polyline: { points, color } — una línea punteada (compat. v8.41)
- *  - polylines: Array<{ points, color, dashed, weight, opacity }> — varias líneas (v8.75)
+ *  - polylines: Array<{ points, color, dashed, weight, opacity, sinEncuadre }> — varias líneas (v8.75)
+ *  - firmaEncuadre: string      — (opcional, v8.75) si viene, el mapa SOLO se re-encuadra cuando
+ *                                 cambia esta firma (ej. otra ruta abierta u otra cantidad de
+ *                                 paradas); así no le quita al usuario el zoom que puso cuando
+ *                                 se mueve un camión o entra un pin. Sin ella: como siempre.
  *  - scrollWheelZoom: bool       — permitir zoom con scroll (default false)
  */
 
@@ -84,6 +88,7 @@ export default function MapaLeaflet({
   onMapClick = null, // v8.45.0: (lat, lng) — elegir un punto haciendo clic en el mapa
   scrollWheelZoom = false,
   className = '',
+  firmaEncuadre = undefined,
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -92,6 +97,7 @@ export default function MapaLeaflet({
   const polylineRef = useRef(null);
   const polylinesRef = useRef([]);
   const clickCbRef = useRef(null);
+  const firmaRef = useRef(undefined); // v8.75: última firma encuadrada (si el caller usa firmaEncuadre)
   clickCbRef.current = onMapClick; // siempre el callback más reciente
 
   useEffect(() => {
@@ -210,10 +216,16 @@ export default function MapaLeaflet({
       }
 
       // Ajustar vista: si hay múltiples marcadores, hacer fitBounds.
-      // v8.75: las polilíneas nuevas también cuentan; marcadores con sinEncuadre no.
+      // v8.75: las polilíneas nuevas también cuentan (salvo las sinEncuadre, ej. el
+      // recorrido real del GPS); marcadores con sinEncuadre no.
+      // Con firmaEncuadre: solo se encuadra cuando la firma cambia (respeta el zoom del usuario).
       const ptsEncuadre = markers.filter(m => m.lat != null && m.lng != null && !m.sinEncuadre).map(m => [m.lat, m.lng]);
-      lineasValidas.forEach(l => l.points.forEach(pt => ptsEncuadre.push(pt)));
-      if (ptsEncuadre.length > 1) {
+      lineasValidas.filter(l => !l.sinEncuadre).forEach(l => l.points.forEach(pt => ptsEncuadre.push(pt)));
+      const encuadrar = firmaEncuadre === undefined || firmaEncuadre !== firmaRef.current;
+      firmaRef.current = firmaEncuadre;
+      if (!encuadrar) {
+        // misma firma: no mover la vista
+      } else if (ptsEncuadre.length > 1) {
         map.fitBounds(L.latLngBounds(ptsEncuadre), { padding: [40, 40], maxZoom: 14 });
       } else if (markers.length > 1 && !markers.some(m => m.sinEncuadre)) {
         // como antes: varios marcadores pero uno solo válido → no mover la vista
@@ -222,10 +234,11 @@ export default function MapaLeaflet({
       }
 
       // Forzar redibujado (necesario cuando el contenedor cambia de tamaño).
-      // v8.75: y volver a encuadrar con el tamaño real (si no, quedan pines fuera).
+      // v8.75: y, si se acaba de encuadrar, volver a encuadrar con el tamaño real
+      // (si no, quedan pines fuera).
       setTimeout(() => {
         map.invalidateSize();
-        if (ptsEncuadre.length > 1) map.fitBounds(L.latLngBounds(ptsEncuadre), { padding: [40, 40], maxZoom: 14 });
+        if (encuadrar && ptsEncuadre.length > 1) map.fitBounds(L.latLngBounds(ptsEncuadre), { padding: [40, 40], maxZoom: 14 });
       }, 100);
     });
 
@@ -276,7 +289,7 @@ export default function MapaLeaflet({
       // No destruir el mapa al desmontar para evitar re-inicializaciones costosas
       // Solo limpiar marcadores
     };
-  }, [center?.[0], center?.[1], zoom, JSON.stringify(markers), JSON.stringify(circle), JSON.stringify(polyline), JSON.stringify(polylines)]);
+  }, [center?.[0], center?.[1], zoom, JSON.stringify(markers), JSON.stringify(circle), JSON.stringify(polyline), JSON.stringify(polylines), firmaEncuadre]);
 
   // Destruir mapa al desmontar el componente completamente
   useEffect(() => {

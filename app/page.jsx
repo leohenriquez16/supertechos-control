@@ -4141,9 +4141,17 @@ function ListaProyectosMultivista({ usuario, data, onVerProyecto, onNuevoProyect
         </div>
       </div>
 
+      {/* v8.81.2: buscador siempre visible arriba, en Kanban, Lista y Mapa */}
+      <div className="sticky top-0 z-20 bg-zinc-950 pb-2 mb-1">
+        <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-card focus-within:border-red-600 px-3 py-2">
+          <Search className="w-4 h-4 text-zinc-500" />
+          <input type="text" value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar cliente, referencia..." className="flex-1 bg-transparent outline-none text-white text-sm placeholder:text-zinc-600" />
+          {busqueda && <button onClick={() => setBusqueda('')} className="text-zinc-500" aria-label="Limpiar búsqueda"><X className="w-4 h-4" /></button>}
+        </div>
+      </div>
+
       {filtrosAbiertos && (
         <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 space-y-2 mb-3">
-          <input type="text" value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar cliente, referencia..." className="w-full bg-zinc-950 border border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm" />
           <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
             <select value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-2 text-xs text-white"><option value="">Todos los estados</option>{ORDEN_ESTADOS.map(e => <option key={e} value={e}>{estadoLabel(e)}</option>)}</select>
             <select value={filtroMaestro} onChange={e => setFiltroMaestro(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-2 text-xs text-white"><option value="">Todos los maestros</option>{maestros.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select>
@@ -4331,18 +4339,6 @@ function VistaKanban({ proyectos, data, usuario, onVerProyecto, onCambiarEstadoR
       {/* Toolbar tipo Odoo */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-card p-2 space-y-2 text-xs">
         <div className="flex flex-wrap items-center gap-2">
-          {/* Buscador */}
-          <div className="flex items-center gap-1 flex-1 min-w-[180px] bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1">
-            <Search className="w-3 h-3 text-zinc-500" />
-            <input
-              type="text"
-              value={busqueda}
-              onChange={e => setBusqueda(e.target.value)}
-              placeholder="Buscar cliente, referencia..."
-              className="flex-1 bg-transparent outline-none text-white text-xs placeholder:text-zinc-600"
-            />
-            {busqueda && <button onClick={() => setBusqueda('')} className="text-zinc-500"><X className="w-3 h-3" /></button>}
-          </div>
           {/* Agrupar por */}
           <div className="flex items-center gap-1">
             <span className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold hidden sm:inline">Agrupar</span>

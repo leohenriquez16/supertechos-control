@@ -8702,12 +8702,16 @@ function FormReporteLote({ usuario, proyecto, reportes, sistema, sistemas, estad
     if (!lineas.length || guardando) return;
     // v8.77.0: avisar si alguna línea ya está cargada con la misma fecha (duplicado)
     if (!reparacion) {
+      // contra lo ya guardado y contra las líneas anteriores del mismo lote
+      const m2DeLinea = (l) => l.m2 != null ? Number(l.m2) : (Number(l.rollos) || 0) * 8.5;
+      const previas = (reportes || []).concat(lineas.map(l => ({ ...l, proyectoId: proyecto.id, fecha, m2: m2DeLinea(l), _lote: l })));
       const iguales = lineas.map(l => {
         const a = (proyecto.areas || []).find(x => x.id === l.areaId);
         const sis = (sistemas && sistemas[a?.sistemaId || proyecto.sistema]) || sistema;
         const t = (sis?.tareas || []).find(x => x.id === l.tareaId);
-        const m2 = l.m2 != null ? Number(l.m2) : (Number(l.rollos) || 0) * 8.5;
-        const igual = reporteParecido(reportes, { proyectoId: proyecto.id, areaId: l.areaId, tareaId: l.tareaId, fecha, m2 });
+        const m2 = m2DeLinea(l);
+        const otras = previas.filter(r => r._lote !== l && (!r._lote || lineas.indexOf(r._lote) < lineas.indexOf(l)));
+        const igual = reporteParecido(otras, { proyectoId: proyecto.id, areaId: l.areaId, tareaId: l.tareaId, fecha, m2 });
         return igual ? `• ${a?.nombre || 'Área'} · ${t?.nombre || 'tarea'}: ${formatNum(m2)} m²` : null;
       }).filter(Boolean);
       if (iguales.length && !confirm(`Estas líneas ya están cargadas con la misma fecha y los mismos m²:\n${iguales.join('\n')}\n\n¿Son trabajos distintos? Si son los mismos, cancela y quítalas para no duplicarlas.`)) return;

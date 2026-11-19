@@ -129,6 +129,7 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
       venta, costoReal: s(t => t.costoReal), costoProyectado: proy,
       margen: venta - proy, margenPct: venta > 0 ? ((venta - proy) / venta) * 100 : 0,
       porCobrarExceso: s(t => t.ventaPorCobrarExceso || 0),
+      sinOcExceso: s(t => t.excesoSinOcRd || 0),
       obrasConExceso: conPpto.filter(f => (f.rent.totales.ventaPorCobrarExceso || 0) > 0).length,
     };
   }, [filas]);
@@ -168,7 +169,7 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
           ['Venta s/ITBIS', formatRD(tot.venta), ''],
           ['Costo proyectado', formatRD(tot.costoProyectado), `real ${formatRD(tot.costoReal)}`],
           ['Margen proyectado', formatRD(tot.margen), `${tot.margenPct.toFixed(1)}%`],
-          ['Metros de más sin cobrar', formatRD(tot.porCobrarExceso), tot.obrasConExceso ? `en ${tot.obrasConExceso} obra${tot.obrasConExceso === 1 ? '' : 's'} · ver cada ficha` : 'ninguna obra pasa lo cotizado', tot.porCobrarExceso > 0],
+          ['Venta por metros de más', formatRD(tot.porCobrarExceso), tot.obrasConExceso ? `en ${tot.obrasConExceso} obra${tot.obrasConExceso === 1 ? '' : 's'}${tot.sinOcExceso > 0 ? ` · ${formatRD(tot.sinOcExceso)} sin orden de cambio` : ' · todo en orden de cambio'}` : 'ninguna obra pasa lo cotizado', tot.porCobrarExceso > 0],
         ].map(([l, v, s, alerta]) => (
           <div key={l} className={`bg-zinc-900 border rounded-card p-4 ${alerta ? 'border-orange-700/60' : 'border-zinc-800'}`}>
             <div className={`text-[10px] uppercase tracking-widest font-bold ${alerta ? 'text-orange-400' : 'text-zinc-500'}`}>{l}</div>
@@ -233,7 +234,7 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
                       <td className="text-right tabular-nums px-3 py-2.5 text-zinc-300">
                         {formatRD(t.ventaSinItbisRd)}
                         {t.ventaPorCobrarExceso > 0 && (
-                          <div className="text-[10px] font-bold text-orange-400" title="Metros ejecutados por encima de lo cotizado, al mismo precio por m²">+{formatRD(t.ventaPorCobrarExceso)} m² de más</div>
+                          <div className="text-[10px] font-bold text-orange-400" title="Metros ejecutados por encima de lo cotizado, al mismo precio por m²">+{formatRD(t.ventaPorCobrarExceso)} por metros de más</div>
                         )}
                       </td>
                       <td className="text-right tabular-nums px-3 py-2.5 text-zinc-400">{formatRD(t.costoPpto)}</td>

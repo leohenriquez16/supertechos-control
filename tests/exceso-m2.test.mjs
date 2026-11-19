@@ -1,7 +1,7 @@
 // tests de lib/helpers/excesoM2.js (v8.77: metros ejecutados de más vs contratado)
 import {
   excesoDeArea, excesoDeProyecto, duplicadosDeReportes, reporteParecido, lineasOcDesdeExceso,
-  congelarM2Cotizado, puedeGestionarOC, precioM2Area, TOLERANCIA_EXCESO,
+  congelarM2Cotizado, puedeGestionarOC, precioM2Area, TOLERANCIA_EXCESO, ventaOcPosteriores,
 } from '../lib/helpers/excesoM2.js';
 let ok = 0, ko = 0;
 const t = (n, c) => { if (c) ok++; else { ko++; console.error('FALLA:', n); } };
@@ -25,9 +25,9 @@ t('rd al precio del sistema', cerca(e.rdSinOc, 30000));
 t('pct 20%', cerca(e.pct, 0.2));
 t('maxTarea', e.maxTarea.m2 === 180);
 
-// --- solo lona pasada: pondera por peso (60%) ---
+// --- solo lona pasada: m² físicos (la tarea que más lleva) ---
 e = excesoDeArea({ area, sistema: sis, reportes: [R('lona', 180), R('top', 100)] });
-t('ponderado por peso', cerca(e.m2Exceso, 18) && cerca(e.rdSinOc, 18000));
+t('físico por la tarea mayor', cerca(e.m2Exceso, 30) && cerca(e.rdSinOc, 30000) && e.maxTarea.tareaId === 'lona');
 
 // --- tolerancia 5% ---
 e = excesoDeArea({ area, sistema: sis, reportes: [R('lona', 157), R('top', 157)] });
@@ -40,9 +40,8 @@ t('tolerancia es 5%', TOLERANCIA_EXCESO === 0.05);
 e = excesoDeArea({ area, sistema: sis, reportes: [R('lona', 180, '2026-10-01'), R('top', 180, '2026-10-02')] });
 t('todo antes del corte = perdido', e.estado === 'perdido' && e.rdSinOc === 0 && cerca(e.rdPerdido, 30000));
 e = excesoDeArea({ area, sistema: sis, reportes: [R('lona', 170, '2026-10-01'), R('lona', 20), R('top', 190)] });
-// lona: total 190 (exc 40), previo 170 (exc 20) · top: total 190 (exc 40), previo 0
-// total pond = 40 ; previo pond = 20*0.6 = 12 ; nuevo = 28
-t('mezcla: solo lo nuevo se cobra', cerca(e.m2Nuevo, 28) && cerca(e.m2SinOc, 28) && cerca(e.m2Perdido, 12));
+// máx previo 170 → perdido 20 ; ejecutado 190 → exceso 40 ; nuevo 20
+t('mezcla: solo lo nuevo se cobra', cerca(e.m2Nuevo, 20) && cerca(e.m2SinOc, 20) && cerca(e.m2Perdido, 20));
 
 // --- retoques, rechazados y excluidos de nómina no cuentan ---
 e = excesoDeArea({ area, sistema: sis, reportes: [R('lona', 150), R('top', 150), R('top', 30, '2026-11-25', { reparacion: true }), R('lona', 30, '2026-11-25', { atrasoEstado: 'rechazado' }), R('top', 30, '2026-11-25', { excluirNomina: true })] });
@@ -50,7 +49,7 @@ t('filtros', e.estado === 'ok');
 
 // --- rollos ---
 e = excesoDeArea({ area, sistema: sis, reportes: [{ proyectoId: 'p1', areaId: 'a1', tareaId: 'lona', rollos: 20, fecha: '2026-11-25' }, R('top', 170)] });
-t('rollos x 8.5', e.maxTarea.m2 === 170 && cerca(e.m2Exceso, 20 * 0.6 + 20 * 0.4));
+t('rollos x 8.5', e.maxTarea.m2 === 170 && cerca(e.m2Exceso, 20));
 
 // --- órdenes de cambio abiertas cubren el exceso ---
 const ocB = { proyectoId: 'p1', estado: 'borrador', lineas: [{ areaId: 'a1', m2: 20 }] };
@@ -71,6 +70,44 @@ t('OC aplicada: ok y sin ajuste manual', e.estado === 'ok' && e.ajusteManual ===
 e = excesoDeArea({ area: areaAplicada, sistema: sis, reportes: [R('lona', 180), R('top', 180)] });
 t('ajuste manual detectado', e.ajusteManual === 30);
 t('sin m2Cotizado no hay ajuste', excesoDeArea({ area, sistema: sis, reportes: [] }).ajusteManual === 0);
+
+// --- revisión: aplicar la OC no revive lo perdido ---
+{
+  const a100 = { id: 'a1', nombre: 'Techo', m2: 100, sistemaId: 's1' };
+  const reps = [R('lona', 120, '2026-10-01'), R('top', 120, '2026-10-01'), R('lona', 30), R('top', 30)];
+  let x = excesoDeArea({ area: a100, sistema: sis, reportes: reps });
+  t('antes de OC: perdido 20, nuevo 30', cerca(x.m2Perdido, 20) && cerca(x.m2SinOc, 30));
+  const oc = { proyectoId: 'p1', estado: 'aplicada', aplicadaAt: '2026-11-25T10:00:00Z', lineas: [{ areaId: 'a1', m2: 30 }] };
+  x = excesoDeArea({ area: { ...a100, m2: 130 }, sistema: sis, reportes: reps, ordenesCambio: [oc] });
+  t('después de OC: nada por cobrar', x.m2SinOc === 0 && x.rdSinOc === 0 && x.estado !== 'sin_oc');
+  t('después de OC: lo perdido sigue perdido', cerca(x.m2Perdido, 20) || x.estado === 'perdido');
+}
+// --- revisión: OC del exceso no genera otra (sin bucle) ---
+{
+  const reps = [R('lona', 300), R('top', 150)];
+  let x = excesoDeArea({ area, sistema: sis, reportes: reps });
+  t('exceso físico 150', cerca(x.m2SinOc, 150));
+  const oc = { proyectoId: 'p1', estado: 'aplicada', aplicadaAt: '2026-11-25T10:00:00Z', lineas: [{ areaId: 'a1', m2: 150 }] };
+  x = excesoDeArea({ area: { ...area, m2: 300 }, sistema: sis, reportes: reps, ordenesCambio: [oc] });
+  t('tras aplicarla, 0', x.m2SinOc === 0 && x.estado === 'ok');
+}
+// --- área nacida de OC no es ajuste manual ---
+t('área de OC sin ajuste', excesoDeArea({ area: { id: 'n', m2: 50, m2Cotizado: 0, origenOc: 'oc1', sistemaId: 's1' }, sistema: sis, reportes: [] }).ajusteManual === 0);
+// --- área con 0 m² y avances ---
+t('sin m2 con avances', excesoDeArea({ area: { id: 'a1', m2: 0, sistemaId: 's1' }, sistema: sis, reportes: [R('lona', 40)] }).estado === 'sin_m2');
+// --- tolerancia solo sobre lo nuevo ---
+{
+  const reps = [R('lona', 104.9 * 1.5, '2026-10-01'), R('top', 157, '2026-10-01'), R('lona', 1), R('top', 1)];
+  const x = excesoDeArea({ area, sistema: sis, reportes: reps });
+  t('poquito nuevo sobre viejo = tolerancia', x.estado === 'tolerancia' && x.rdSinOc === 0);
+}
+// --- venta de OCs aplicadas después del presupuesto ---
+t('venta OC posterior', ventaOcPosteriores([
+  { proyectoId: 'p1', estado: 'aplicada', aplicadaAt: '2026-12-01T00:00:00Z', montoTotal: 30000 },
+  { proyectoId: 'p1', estado: 'aplicada', aplicadaAt: '2026-10-01T00:00:00Z', montoTotal: 5000 },
+  { proyectoId: 'p1', estado: 'enviada', montoTotal: 7000 },
+  { proyectoId: 'p2', estado: 'aplicada', aplicadaAt: '2026-12-01T00:00:00Z', montoTotal: 9000 },
+], 'p1', { createdAt: '2026-11-01T00:00:00Z' }) === 30000);
 
 // --- precio propio del área ---
 t('precio del área', precioM2Area({ precioVentaM2: 1200 }, sis) === 1200);

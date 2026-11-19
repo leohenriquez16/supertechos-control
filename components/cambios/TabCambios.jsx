@@ -155,13 +155,17 @@ export default function TabCambios({ usuario, proyecto, data, esAdmin, onRecarga
     setProcesando(oc.id);
     try {
       const nuevasAreas = [...(proyecto.areas || [])];
+      const lineasFinal = [];
       for (const l of oc.lineas) {
         if (l.areaId) {
+          lineasFinal.push(l);
           const i = nuevasAreas.findIndex(a => a.id === l.areaId);
           if (i >= 0) nuevasAreas[i] = { ...nuevasAreas[i], m2: (Number(nuevasAreas[i].m2) || 0) + l.m2 };
         } else {
+          const idNueva = 'a_' + Date.now() + Math.random().toString(36).slice(2, 5);
+          lineasFinal.push({ ...l, areaId: idNueva }); // v8.77.0: la línea queda amarrada al área que crea
           nuevasAreas.push({
-            id: 'a_' + Date.now() + Math.random().toString(36).slice(2, 5),
+            id: idNueva, origenOc: oc.id,
             nombre: `${l.nombreArea} (OC-${oc.numero})`, m2: l.m2,
             m2Cotizado: 0, // v8.77.0: área nacida de una orden de cambio (no estaba cotizada)
             sistemaId: l.sistemaId || proyecto.sistema || null,
@@ -173,7 +177,7 @@ export default function TabCambios({ usuario, proyecto, data, esAdmin, onRecarga
         ...proyecto, areas: nuevasAreas,
         valorCotizacion: (Number(proyecto.valorCotizacion) || 0) + oc.montoTotal,
       });
-      await db.actualizarOrdenCambio(oc.id, { estado: 'aplicada', aplicadaPorId: usuario.id });
+      await db.actualizarOrdenCambio(oc.id, { estado: 'aplicada', aplicadaPorId: usuario.id, lineas: lineasFinal });
       // Tarea para ajustar la cotización en Odoo (Lily / facturación)
       const lily = (data.personal || []).find(p => (p.roles || []).includes('facturas'));
       try {

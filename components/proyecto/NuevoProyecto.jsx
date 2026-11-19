@@ -46,7 +46,7 @@ export default function NuevoProyecto({ personal, sistemas, clientes = [], conta
     clienteId: '', contactoPrincipalId: null, // v8.9.10
     contactosExtraIds: [], // v8.17.58: contactos adicionales al principal
     supervisorId: '', maestroId: '', ayudantesIds: [],
-    sistema: sistemasArray[0]?.id || '',
+    sistema: '', // v8.81.1: sin default (antes tomaba el 1º de la lista → Sika Mortero en 59 obras)
     fecha_inicio: '', fecha_entrega: '', referenciaOdoo: '',
     valorCotizacion: '', // v8.17.63
     areas: [{ nombre: '', m2: '' }],
@@ -555,7 +555,7 @@ export default function NuevoProyecto({ personal, sistemas, clientes = [], conta
             const faltantes = [];
             if (!form.nombre) faltantes.push('nombre');
             if (!form.cliente) faltantes.push('cliente');
-            if (!form.sistema) faltantes.push('sistema');
+            if (!form.sistema && form.areas.some(a => !a.sistemaId)) faltantes.push('sistema');
             if (form.areas.length === 0) faltantes.push('al menos un área');
             if (form.areas.some(a => !a.nombre || !a.m2)) faltantes.push('m² de todas las áreas');
             const puedeCrear = faltantes.length === 0;

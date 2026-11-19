@@ -3,12 +3,13 @@
 // Tarjeta "Tu ruta de hoy" para quien NO es chofer puro (supervisor, maestro,
 // almacén…) pero tiene viajes asignados (chofer_id = él). Si no tiene viajes de
 // hoy ni viejos sin cerrar, no pinta nada. Al tocarla abre su ruta completa
-// (InicioChofer) ahí mismo.
+// (InicioChofer) ahí mismo. El resumen se recalcula cada vez que InicioChofer
+// recarga (por ejemplo, al finalizar una parada dentro de la tarjeta).
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Truck, ChevronDown, ChevronUp } from 'lucide-react';
 import * as db from '../../lib/db';
-import { viajesViejosSinCerrar } from '../../lib/helpers/rutas';
+import { resumenRutaChofer } from '../../lib/helpers/rutasChofer';
 import InicioChofer from './InicioChofer';
 
 const hoyRD = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo' }).format(new Date());
@@ -23,23 +24,16 @@ export default function TarjetaRutaHoy({ usuario, data, envoltura = '' }) {
     let vivo = true;
     const hoy = hoyRD();
     db.listarViajes({ desde: restarDias(hoy, 60), hasta: hoy, choferId: usuario.id })
-      .then(lista => {
-        if (!vivo) return;
-        const activos = (lista || []).filter(v => v.estado !== 'cancelado');
-        const deHoy = activos.filter(v => v.fecha === hoy);
-        const viejos = viajesViejosSinCerrar(activos, hoy);
-        const paradas = deHoy.flatMap(v => (v.paradas || []).filter(p => p.estado !== 'cancelada'));
-        setResumen({
-          viajesHoy: deHoy.length, viejos: viejos.length,
-          total: paradas.length, hechas: paradas.filter(p => p.estado === 'completada').length,
-          enCurso: deHoy.some(v => v.estado === 'en_curso'),
-        });
-      })
+      .then(lista => { if (vivo) setResumen(resumenRutaChofer(lista, hoy)); })
       .catch(() => { /* sin ruta no se muestra nada */ });
     return () => { vivo = false; };
   }, [usuario?.id]);
 
-  if (!resumen || (resumen.viajesHoy === 0 && resumen.viejos === 0)) return null;
+  // InicioChofer embebido avisa con su lista cada vez que recarga.
+  const alRecargar = useCallback((lista) => setResumen(resumenRutaChofer(lista, hoyRD())), []);
+
+  // Abierta no se esconde aunque ya no quede nada (ej. acaba de cerrar su último viaje viejo).
+  if (!resumen || (resumen.viajesHoy === 0 && resumen.viejos === 0 && !abierta)) return null;
 
   const linea = resumen.viajesHoy > 0
     ? `${resumen.total} parada${resumen.total !== 1 ? 's' : ''} · ${resumen.hechas} hecha${resumen.hechas !== 1 ? 's' : ''}${resumen.enCurso ? ' · en curso' : ''}`
@@ -58,7 +52,7 @@ export default function TarjetaRutaHoy({ usuario, data, envoltura = '' }) {
       </button>
       {abierta && (
         <div className="border-t border-zinc-800 p-3">
-          <InicioChofer usuario={usuario} data={data} embebido />
+          <InicioChofer usuario={usuario} data={data} embebido onViajes={alRecargar} />
         </div>
       )}
     </div>

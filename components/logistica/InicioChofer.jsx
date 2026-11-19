@@ -9,15 +9,21 @@
 //    Entregas a obra: solo la FOTO es obligatoria; firma y nombre opcionales.
 //  - Las que marcó el GPS o la oficina dicen "✓ GPS 10:38" / "✓ Oficina".
 //  - También: viajes de días anteriores sin cerrar y lo de mañana (solo lectura).
+//    Los viajes viejos NO se inician ni se terminan (dañaría las horas extras):
+//    se marcan sus paradas y se usa "Cerrar viaje" (solo cambia el estado).
+//  - Entrega a obra marcada por el GPS o la oficina sin foto: "📷 Agregar foto de
+//    entrega" guarda solo la prueba, sin cambiar el estado ni quién la marcó.
 //  - Se refresca solo al volver a la app.
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { Loader2, Truck, Play, Flag, RefreshCw, CheckCircle2, Camera, X, Lock, AlertTriangle, CalendarDays, FileText, ChevronDown, ChevronUp } from 'lucide-react';
+import { Loader2, Truck, Play, Flag, RefreshCw, CheckCircle2, Camera, X, Lock, AlertTriangle, CalendarDays, FileText, ChevronDown, ChevronUp, Archive } from 'lucide-react';
 import * as db from '../../lib/db';
 import { comprimirImagenABlob } from '../../lib/imports';
 import { obtenerUbicacion } from '../../lib/geo';
 import { urlWaze, urlGoogleDestino, tramosRuta, rotuloTramo } from '../../lib/helpers/navegacion';
-import { viajesViejosSinCerrar, PARADA_CANCELADA } from '../../lib/helpers/rutas';
+import { viajesViejosSinCerrar } from '../../lib/helpers/rutas';
+import { esHecha, esCancelada, esEntregaObra, puedeMarcarParadas, faltaFotoEntrega, camposSoloFoto, textoTipoParada, escHtml } from '../../lib/helpers/rutasChofer';
+import { fetchConSesion } from '../../lib/fetchConSesion';
 import FirmaPad, { firmaABlob } from '../common/FirmaPad';
 import ModalBombas from '../vehiculos/ModalBombas'; // v8.51.1: bombas de la tarjeta flotilla
 
@@ -27,9 +33,6 @@ const hoyRD = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_
 const sumarDias = (ymd, n) => { const d = new Date(ymd + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const hora = (iso) => iso ? new Date(iso).toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit', hour12: true }) : '';
 const fechaCorta = (ymd) => ymd ? new Date(ymd + 'T12:00:00Z').toLocaleDateString('es-DO', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }) : '';
-const esHecha = (p) => p.estado === 'completada';
-const esCancelada = (p) => p.estado === PARADA_CANCELADA;
-const esEntregaObra = (p) => p.tipo === 'entrega' && !!(p.requisicionId || p.proyectoId);
 const DIAS_ATRAS = 60; // viajes viejos sin cerrar que todavía se le muestran al chofer
 
 // Quién marcó la parada: GPS, oficina o el chofer.
@@ -41,12 +44,15 @@ function marcaCompletada(p) {
 }
 
 function tipoParada(p) {
-  if (p.tipo === 'recogida') return { txt: '↑ Recoger', cls: 'bg-amber-600/20 text-amber-400 border-amber-700/60' };
-  if (p.tipo === 'entrega') return { txt: '↓ Entregar', cls: 'bg-cyan-600/20 text-cyan-400 border-cyan-700/60' };
-  return { txt: '• Parada', cls: 'bg-zinc-800 text-zinc-300 border-zinc-700' };
+  const txt = textoTipoParada(p.tipo);
+  if (p.tipo === 'recogida') return { txt, cls: 'bg-amber-600/20 text-amber-400 border-amber-700/60' };
+  if (p.tipo === 'entrega') return { txt, cls: 'bg-cyan-600/20 text-cyan-400 border-cyan-700/60' };
+  return { txt, cls: 'bg-zinc-800 text-zinc-300 border-zinc-700' };
 }
 
-export default function InicioChofer({ usuario, data, embebido = false }) {
+// onViajes(lista): avisa a quien la embebe (TarjetaRutaHoy) cada vez que se recarga,
+// para que su resumen "N paradas · X hechas" no se quede viejo.
+export default function InicioChofer({ usuario, data, embebido = false, onViajes }) {
   const [viajes, setViajes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refrescando, setRefrescando] = useState(false);
@@ -54,10 +60,13 @@ export default function InicioChofer({ usuario, data, embebido = false }) {
   const [procesando, setProcesando] = useState(null);
   const [confirmando, setConfirmando] = useState(null); // id de parada esperando "Sí, finalizada"
   const [mapaDe, setMapaDe] = useState(null); // v8.41.0: viaje cuyo mapa de ruta se muestra
-  const [entregando, setEntregando] = useState(null); // v8.42.0: {v,p} entrega a obra confirmándose (foto)
+  const [entregando, setEntregando] = useState(null); // v8.42.0: {v,p,soloFoto} entrega a obra confirmándose (foto)
   const [gpsUnidades, setGpsUnidades] = useState([]); // v8.43.0
   const [verBombas, setVerBombas] = useState(false); // v8.51.1
   const [verViejos, setVerViejos] = useState(null); // null = automático
+
+  const onViajesRef = useRef(onViajes);
+  onViajesRef.current = onViajes;
 
   const cargar = useCallback(async ({ silencioso } = {}) => {
     if (silencioso) setRefrescando(true); else setLoading(true);
@@ -65,8 +74,10 @@ export default function InicioChofer({ usuario, data, embebido = false }) {
       const hoy = hoyRD();
       const lista = await db.listarViajes({ desde: sumarDias(hoy, -DIAS_ATRAS), hasta: sumarDias(hoy, 1), choferId: usuario.id });
       // v8.68.0: un viaje cancelado desde la oficina ya no le sale al chofer
-      setViajes(lista.filter(v => v.estado !== 'cancelado'));
+      const activos = lista.filter(v => v.estado !== 'cancelado');
+      setViajes(activos);
       setError(null);
+      try { onViajesRef.current?.(activos); } catch (e) { /* solo informativo */ }
     } catch (e) {
       console.warn('InicioChofer:', e?.message);
       setError('No se pudo cargar tu ruta. Revisa la señal y toca Refrescar.');
@@ -81,10 +92,16 @@ export default function InicioChofer({ usuario, data, embebido = false }) {
     document.addEventListener('visibilitychange', alVolver);
     return () => document.removeEventListener('visibilitychange', alVolver);
   }, [cargar]);
-  // v8.43.0: posición en vivo del camión (si el vehículo del viaje tiene unidad GPS)
+  // v8.43.0: posición en vivo del camión (si el vehículo del viaje tiene unidad GPS).
+  // Solo cuando se abre el mapa (no en cada montaje) y con sesión (la ruta la exige).
+  const mapaAbierto = mapaDe != null;
   useEffect(() => {
-    fetch('/api/gps/posiciones').then(r => r.json()).then(d => setGpsUnidades(d.dispositivos || [])).catch(() => {});
-  }, []);
+    if (!mapaAbierto) return;
+    let vivo = true;
+    fetchConSesion('/api/gps/posiciones').then(r => r.ok ? r.json() : { dispositivos: [] })
+      .then(d => { if (vivo) setGpsUnidades(d.dispositivos || []); }).catch(() => {});
+    return () => { vivo = false; };
+  }, [mapaAbierto]);
 
   const proyecto = (pid) => (data?.proyectos || []).find(x => x.id === pid);
   const nombreObra = (pid) => { const p = proyecto(pid); return p ? ([p.referenciaOdoo, p.cliente || p.nombre].filter(Boolean).join(' · ') || pid) : pid; }; // v8.49.2
@@ -109,8 +126,8 @@ export default function InicioChofer({ usuario, data, embebido = false }) {
     setProcesando(null);
   };
 
-  const tocarFinalizado = (v, p) => {
-    if (v.estado !== 'en_curso') return;
+  const tocarFinalizado = (v, p, marcable) => {
+    if (!marcable) return;
     if (esEntregaObra(p)) { setEntregando({ v, p }); return; } // la foto es la confirmación
     setConfirmando(p.id);
   };
@@ -129,9 +146,21 @@ export default function InicioChofer({ usuario, data, embebido = false }) {
     setProcesando(null);
   };
 
-  const confirmarEntrega = async ({ p, fotoFile, firmaBlob, recibidoPor }) => {
+  const confirmarEntrega = async ({ p, fotoFile, firmaBlob, recibidoPor, soloFoto }) => {
     setProcesando(p.id);
     try {
+      if (soloFoto) {
+        // Parada ya completada (GPS/oficina): solo se agrega la prueba. No cambia
+        // el estado, ni quién la marcó, ni la hora, ni la requisición.
+        const fotoBlob = await comprimirImagenABlob(fotoFile);
+        const fotoUrl = await db.subirEntregaParada(fotoBlob, p.id, 'foto');
+        const firmaUrl = firmaBlob ? await db.subirEntregaParada(firmaBlob, p.id, 'firma') : null;
+        await db.actualizarParada(p.id, camposSoloFoto({ fotoUrl, firmaUrl, recibidoPor }));
+        setEntregando(null);
+        await cargar({ silencioso: true });
+        setProcesando(null);
+        return;
+      }
       const posP = obtenerUbicacion({ timeout: 6000 });
       const fotoBlob = await comprimirImagenABlob(fotoFile);
       const fotoUrl = await db.subirEntregaParada(fotoBlob, p.id, 'foto');
@@ -160,6 +189,22 @@ export default function InicioChofer({ usuario, data, embebido = false }) {
     setProcesando(null);
   };
 
+  // Viaje de un día anterior que quedó abierto: solo se cierra (estado 'completado').
+  // No se tocan horaInicio ni horaFin: poner la hora de hoy inflaría las horas extras.
+  const cerrarViejo = async (v) => {
+    const faltan = v.paradas.filter(p => !esHecha(p) && !esCancelada(p)).length;
+    const msg = faltan > 0
+      ? `Este viaje tiene ${faltan} parada${faltan !== 1 ? 's' : ''} sin marcar. ¿Cerrarlo igual? Avísale a la oficina lo que no se hizo.`
+      : '¿Cerrar este viaje?';
+    if (!confirm(msg)) return;
+    setProcesando(v.id);
+    try {
+      await db.actualizarViaje(v.id, { estado: 'completado' });
+      await cargar({ silencioso: true });
+    } catch (e) { alert('No se pudo cerrar: ' + (e?.message || e)); }
+    setProcesando(null);
+  };
+
   // --- Piezas ---
   const mapaRuta = (v, activas) => {
     const conCoords = activas.map((p, i) => ({ p, i, c: coordsParada(p) })).filter(x => x.c);
@@ -167,12 +212,12 @@ export default function InicioChofer({ usuario, data, embebido = false }) {
     const markers = conCoords.map(({ p, i, c }) => ({
       ...c, numero: i + 1, color: esHecha(p) ? 'green' : 'blue',
       label: `${i + 1}. ${lugarParada(p)}`,
-      popup: `<b>${i + 1}. ${tipoParada(p).txt}</b><br>${lugarParada(p)}${p.descripcion ? `<br><span style="font-size:11px;color:#a1a1aa">${p.descripcion}</span>` : ''}`,
+      popup: `<b>${i + 1}. ${escHtml(tipoParada(p).txt)}</b><br>${escHtml(lugarParada(p))}${p.descripcion ? `<br><span style="font-size:11px;color:#a1a1aa">${escHtml(p.descripcion)}</span>` : ''}`,
     }));
     // v8.43.0: "tú estás aquí" — el camión del viaje en vivo
     const veh = (data?.vehiculos || []).find(x => x.id === v.vehiculoId);
     const unidad = veh?.gpsDeviceId ? gpsUnidades.find(u => String(u.id) === String(veh.gpsDeviceId)) : null;
-    if (unidad && unidad.lat != null) markers.push({ lat: unidad.lat, lng: unidad.lng, vehiculoTipo: veh?.tipo || 'camion', color: 'purple', label: '🛰 Tu camión', popup: `<b>🛰 Tu camión</b><br>${unidad.velocidad} km/h · ${unidad.hora || ''}` });
+    if (unidad && unidad.lat != null) markers.push({ lat: unidad.lat, lng: unidad.lng, vehiculoTipo: veh?.tipo || 'camion', color: 'purple', label: '🛰 Tu camión', popup: `<b>🛰 Tu camión</b><br>${escHtml(unidad.velocidad)} km/h · ${escHtml(unidad.hora || '')}` });
     return (
       <React.Suspense fallback={<div className="bg-zinc-950 border border-zinc-800 rounded-card flex items-center justify-center" style={{ height: 280 }}><span className="text-xs text-zinc-500">Cargando mapa…</span></div>}>
         <MapaLeaflet center={[markers[0].lat, markers[0].lng]} zoom={11} height={280} markers={markers}
@@ -196,9 +241,9 @@ export default function InicioChofer({ usuario, data, embebido = false }) {
     );
   };
 
-  const botonFinalizado = (v, p, grande) => {
+  const botonFinalizado = (v, p, grande, marcable) => {
     const alto = grande ? 'h-16 text-base' : 'h-14 text-sm';
-    if (v.estado !== 'en_curso') {
+    if (!marcable) {
       return (
         <div>
           <button disabled className={`w-full ${alto} rounded-card bg-zinc-800 text-zinc-500 font-black uppercase flex items-center justify-center gap-2 cursor-not-allowed`}>
@@ -223,7 +268,7 @@ export default function InicioChofer({ usuario, data, embebido = false }) {
       );
     }
     return (
-      <button onClick={() => tocarFinalizado(v, p)} disabled={!!procesando}
+      <button onClick={() => tocarFinalizado(v, p, marcable)} disabled={!!procesando}
         className={`w-full ${alto} rounded-card bg-green-600 hover:bg-green-500 active:bg-green-700 disabled:opacity-60 text-white font-black uppercase flex items-center justify-center gap-2`}>
         {esEntregaObra(p) ? <Camera className="w-5 h-5" /> : <CheckCircle2 className="w-5 h-5" />}
         {esEntregaObra(p) ? '✓ Finalizado · tirar foto' : '✓ Finalizado'}
@@ -231,7 +276,7 @@ export default function InicioChofer({ usuario, data, embebido = false }) {
     );
   };
 
-  const tarjetaParada = (v, p, n, { destacada = false, soloLectura = false } = {}) => {
+  const tarjetaParada = (v, p, n, { destacada = false, soloLectura = false, marcable = false } = {}) => {
     const hecha = esHecha(p);
     const c = coordsParada(p);
     const tp = tipoParada(p);
@@ -258,8 +303,16 @@ export default function InicioChofer({ usuario, data, embebido = false }) {
         {!hecha && !soloLectura && (
           <>
             {botonesNavegar(c, destacada)}
-            {botonFinalizado(v, p, destacada)}
+            {botonFinalizado(v, p, destacada, marcable)}
           </>
+        )}
+        {faltaFotoEntrega(p) && (
+          procesando === p.id
+            ? <div className="w-full h-12 rounded-card bg-zinc-800 text-zinc-300 font-black uppercase text-sm flex items-center justify-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Guardando…</div>
+            : <button onClick={() => setEntregando({ v, p, soloFoto: true })} disabled={!!procesando}
+                className="w-full h-12 rounded-card border-2 border-green-600 text-green-400 hover:bg-green-900/30 disabled:opacity-60 font-black uppercase text-sm flex items-center justify-center gap-2">
+                <Camera className="w-5 h-5" /> 📷 Agregar foto de entrega
+              </button>
         )}
       </div>
     );
@@ -274,13 +327,14 @@ export default function InicioChofer({ usuario, data, embebido = false }) {
     const numero = (p) => activas.indexOf(p) + 1;
     const tramos = tramosRuta(pendientes.map(p => ({ ...coordsParada(p), numero: numero(p) })).filter(x => x.lat != null), 9);
     const pct = activas.length ? Math.round((hechas / activas.length) * 100) : 0;
+    const marcable = puedeMarcarParadas(v, { viejo });
 
     return (
       <div key={v.id} className={`bg-zinc-900 border rounded-card p-3 space-y-3 ${viejo ? 'border-amber-700/70' : 'border-zinc-800'}`}>
         {viejo && (
           <div className="bg-amber-900/30 border border-amber-700/60 rounded-card p-2.5 text-sm text-amber-300 flex gap-2">
             <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-            <span>Este viaje es del <b>{fechaCorta(v.fecha)}</b> y quedó abierto. Marca lo que hiciste y termínalo; si no salió, avísale a la oficina.</span>
+            <span>Este viaje es del <b>{fechaCorta(v.fecha)}</b> y quedó abierto. Marca lo que hiciste y toca <b>Cerrar viaje</b>; si no salió, avísale a la oficina.</span>
           </div>
         )}
         <div className="flex items-center justify-between gap-2">
@@ -300,7 +354,7 @@ export default function InicioChofer({ usuario, data, embebido = false }) {
         {v.notas && <div className="text-sm text-zinc-300 bg-zinc-950 border border-zinc-800 rounded-card p-2.5">📝 {v.notas}</div>}
 
         {/* Iniciar jornada: obligatorio para marcar paradas */}
-        {v.estado === 'planificado' && (
+        {v.estado === 'planificado' && !viejo && (
           <div className="space-y-1">
             <button onClick={() => iniciar(v)} disabled={procesando === v.id}
               className="w-full h-16 bg-green-600 hover:bg-green-500 active:bg-green-700 disabled:opacity-60 text-white text-lg font-black uppercase rounded-card flex items-center justify-center gap-2">
@@ -333,11 +387,11 @@ export default function InicioChofer({ usuario, data, embebido = false }) {
         {siguiente && (
           <div className="space-y-1.5">
             <div className="text-xs font-black uppercase tracking-widest text-cyan-400">➜ Siguiente parada</div>
-            {tarjetaParada(v, siguiente, numero(siguiente), { destacada: true })}
+            {tarjetaParada(v, siguiente, numero(siguiente), { destacada: true, marcable })}
           </div>
         )}
-        {v.estado === 'en_curso' && activas.length > 0 && pendientes.length === 0 && (
-          <div className="bg-green-900/30 border border-green-700/60 rounded-card p-3 text-sm text-green-300 font-bold text-center">¡Listo! Hiciste todas las paradas. Termina la jornada abajo.</div>
+        {marcable && activas.length > 0 && pendientes.length === 0 && (
+          <div className="bg-green-900/30 border border-green-700/60 rounded-card p-3 text-sm text-green-300 font-bold text-center">¡Listo! Hiciste todas las paradas. {viejo ? 'Cierra el viaje abajo.' : 'Termina la jornada abajo.'}</div>
         )}
 
         {activas.length > 0 && (
@@ -354,14 +408,23 @@ export default function InicioChofer({ usuario, data, embebido = false }) {
         <div className="space-y-2">
           {activas.map(p => p === siguiente
             ? <div key={p.id} className="border border-dashed border-cyan-700/60 rounded-card px-3 py-2 text-xs text-cyan-400 font-bold">{numero(p)}. {lugarParada(p)} · arriba, es la siguiente</div>
-            : tarjetaParada(v, p, numero(p), { soloLectura: v.estado === 'completado' }))}
+            : tarjetaParada(v, p, numero(p), { soloLectura: v.estado === 'completado', marcable }))}
           {activas.length === 0 && <div className="text-sm text-zinc-500 italic">La oficina aún no ha puesto paradas en este viaje.</div>}
           {canceladas.length > 0 && (
-            <div className="text-[11px] text-zinc-600">{canceladas.length} parada{canceladas.length !== 1 ? 's' : ''} cancelada{canceladas.length !== 1 ? 's' : ''} por la oficina: {canceladas.map(lugarParada).join(', ')}</div>
+            <div className="text-[11px] text-zinc-500">{canceladas.length} parada{canceladas.length !== 1 ? 's' : ''} cancelada{canceladas.length !== 1 ? 's' : ''} por la oficina: {canceladas.map(lugarParada).join(', ')}</div>
           )}
         </div>
 
-        {v.estado === 'en_curso' && (
+        {viejo && v.estado !== 'completado' && (
+          <div className="space-y-1 pt-1">
+            <button onClick={() => cerrarViejo(v)} disabled={procesando === v.id}
+              className={`w-full h-14 disabled:opacity-60 text-white text-sm font-black uppercase rounded-card flex items-center justify-center gap-2 ${pendientes.length === 0 ? 'bg-red-600 hover:bg-red-700' : 'bg-zinc-800 hover:bg-zinc-700 border border-zinc-600'}`}>
+              {procesando === v.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Archive className="w-4 h-4" />} Cerrar viaje
+            </button>
+            <div className="text-[11px] text-zinc-500 text-center">Solo lo cierra. Tus horas de ese día no cambian; si hay que corregirlas, la oficina lo hace.</div>
+          </div>
+        )}
+        {!viejo && v.estado === 'en_curso' && (
           <div className="space-y-1 pt-1">
             <button onClick={() => terminar(v)} disabled={procesando === v.id}
               className={`w-full h-14 disabled:opacity-60 text-white text-sm font-black uppercase rounded-card flex items-center justify-center gap-2 ${pendientes.length === 0 ? 'bg-red-600 hover:bg-red-700' : 'bg-zinc-800 hover:bg-zinc-700 border border-zinc-600'}`}>
@@ -384,11 +447,13 @@ export default function InicioChofer({ usuario, data, embebido = false }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          {!embebido && <div className="text-xs tracking-widest uppercase text-red-500 font-bold">Hola, {usuario.nombre.split(' ')[0]}</div>}
-          <h1 className={`${embebido ? 'text-xl' : 'text-2xl'} font-black tracking-tight`}>Tu ruta de hoy</h1>
-        </div>
+      <div className={`flex items-start gap-2 ${embebido ? 'justify-end' : 'justify-between'}`}>
+        {!embebido && (
+          <div>
+            <div className="text-xs tracking-widest uppercase text-red-500 font-bold">Hola, {(usuario.nombre || '').split(' ')[0]}</div>
+            <h1 className="text-2xl font-black tracking-tight">Tu ruta de hoy</h1>
+          </div>
+        )}
         <button onClick={() => cargar({ silencioso: true })} disabled={refrescando}
           className="flex-shrink-0 px-3 h-11 rounded-card text-xs font-bold uppercase flex items-center gap-1.5 border bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-blue-500 disabled:opacity-60">
           <RefreshCw className={`w-4 h-4 ${refrescando ? 'animate-spin' : ''}`} /> Refrescar
@@ -448,7 +513,7 @@ export default function InicioChofer({ usuario, data, embebido = false }) {
       )}
       {verBombas && <ModalBombas onCerrar={() => setVerBombas(false)} />}
 
-      {entregando && <ModalConfirmarEntrega p={entregando.p} data={data} procesando={procesando === entregando.p.id}
+      {entregando && <ModalConfirmarEntrega p={entregando.p} data={data} soloFoto={!!entregando.soloFoto} procesando={procesando === entregando.p.id}
         onCerrar={() => setEntregando(null)} onConfirmar={confirmarEntrega} />}
     </div>
   );
@@ -456,15 +521,19 @@ export default function InicioChofer({ usuario, data, embebido = false }) {
 
 // v8.42.0: PRUEBA DE ENTREGA a obra. Por decisión de Leo, solo la FOTO es obligatoria;
 // el nombre y la firma de quien recibe quedan opcionales (si los hay, mejor).
-function ModalConfirmarEntrega({ p, data, procesando, onCerrar, onConfirmar }) {
+// soloFoto: la parada ya está completada (GPS/oficina) y solo se agrega la prueba.
+function ModalConfirmarEntrega({ p, data, soloFoto = false, procesando, onCerrar, onConfirmar }) {
   const [fotoFile, setFotoFile] = useState(null);
   const [fotoPreview, setFotoPreview] = useState(null);
   const [tieneFirma, setTieneFirma] = useState(false);
-  const [recibidoPor, setRecibidoPor] = useState(() => {
+  // El nombre NO se prellena: como es opcional, quedaría "Recibió: <maestro>" aunque
+  // recibiera otra persona. El maestro de la obra sale como sugerencia tocable.
+  const [recibidoPor, setRecibidoPor] = useState('');
+  const sugerencia = (() => {
     const pr = (data?.proyectos || []).find(x => x.id === p.proyectoId);
     const maestro = pr ? (data?.personal || []).find(x => x.id === pr.maestroId) : null;
     return maestro?.nombre || '';
-  });
+  })();
   const firmaRef = useRef(null);
   const nombreObra = (() => { const pr = (data?.proyectos || []).find(x => x.id === p.proyectoId); return pr ? ([pr.referenciaOdoo, pr.cliente || pr.nombre].filter(Boolean).join(' · ')) : (p.lugar || ''); })(); // v8.49.2
 
@@ -481,7 +550,7 @@ function ModalConfirmarEntrega({ p, data, procesando, onCerrar, onConfirmar }) {
     if (tieneFirma) {
       try { firmaBlob = await firmaABlob(firmaRef.current); } catch (e) { firmaBlob = null; } // la firma es opcional: si falla, sigue sin ella
     }
-    await onConfirmar({ p, fotoFile, firmaBlob, recibidoPor: recibidoPor.trim() });
+    await onConfirmar({ p, fotoFile, firmaBlob, recibidoPor: recibidoPor.trim(), soloFoto });
   };
 
   return (
@@ -489,9 +558,10 @@ function ModalConfirmarEntrega({ p, data, procesando, onCerrar, onConfirmar }) {
       <div className="bg-zinc-900 border-2 border-green-600 rounded-card max-w-sm w-full p-4 space-y-4 my-4">
         <div className="flex justify-between items-start gap-2">
           <div>
-            <div className="text-xs tracking-widest uppercase text-green-400 font-bold">✓ Confirmar entrega</div>
+            <div className="text-xs tracking-widest uppercase text-green-400 font-bold">{soloFoto ? '📷 Foto de la entrega' : '✓ Confirmar entrega'}</div>
             <div className="text-base font-bold mt-0.5">{nombreObra}</div>
             {p.descripcion && <div className="text-sm text-zinc-400">{p.descripcion}</div>}
+            {soloFoto && <div className="text-[11px] text-zinc-500 mt-1">Ya está marcada hecha; solo se guarda la prueba.</div>}
           </div>
           <button onClick={onCerrar} className="text-zinc-400 shrink-0 w-10 h-10 flex items-center justify-center -mr-2 -mt-2"><X className="w-5 h-5" /></button>
         </div>
@@ -516,6 +586,12 @@ function ModalConfirmarEntrega({ p, data, procesando, onCerrar, onConfirmar }) {
         <div>
           <div className="text-xs font-bold text-zinc-300 mb-1.5">2 · ¿Quién recibe? <span className="text-zinc-500 font-normal">(opcional)</span></div>
           <input value={recibidoPor} onChange={e => setRecibidoPor(e.target.value)} placeholder="Nombre de quien recibe" className="w-full bg-zinc-950 border border-zinc-700 rounded-card px-3 h-12 text-base" />
+          {sugerencia && !recibidoPor && (
+            <button type="button" onClick={() => setRecibidoPor(sugerencia)}
+              className="mt-1.5 h-10 px-3 rounded-card border border-zinc-700 text-zinc-300 text-sm font-bold">
+              ¿Recibió {sugerencia}? Toca para ponerlo
+            </button>
+          )}
         </div>
 
         <div ref={firmaRef}>
@@ -525,7 +601,7 @@ function ModalConfirmarEntrega({ p, data, procesando, onCerrar, onConfirmar }) {
 
         <button onClick={confirmar} disabled={procesando || !fotoFile}
           className="w-full h-14 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white text-base font-black uppercase rounded-card flex items-center justify-center gap-2">
-          {procesando ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />} {procesando ? 'Guardando…' : 'Entregado ✓'}
+          {procesando ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />} {procesando ? 'Guardando…' : (soloFoto ? 'Guardar foto' : 'Entregado ✓')}
         </button>
         {!fotoFile && <div className="text-[11px] text-zinc-500 text-center -mt-2">Tira la foto para poder confirmar.</div>}
       </div>

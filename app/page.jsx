@@ -11,7 +11,7 @@ import PreciosAjustadosObra from '../components/proyecto/PreciosAjustadosObra';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic'; // v8.55.0: carga perezosa de vistas
 import { createPortal } from 'react-dom';
-import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed, Building2, Star, MessageCircle, Send, Search, Filter, CloudRain, Calculator, Receipt, Car, Award, Gauge, Route, ShoppingCart, ShieldCheck } from 'lucide-react';
+import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed, Building2, Star, MessageCircle, Send, Search, Filter, CloudRain, Calculator, Receipt, Car, Award, Gauge, Route, ShoppingCart, ShieldCheck, Ship } from 'lucide-react';
 import * as db from '../lib/db';
 import { completitudPersona } from '../lib/helpers/personas';
 import { leerArchivo, parseMateriales, parseSistemas, descargarPlantilla, comprimirImagen } from '../lib/imports';
@@ -106,6 +106,7 @@ const RequisicionesProyecto = cargarVista(() => import('../components/logistica/
 const ModalPedirAlmacen = cargarVista(() => import('../components/proyecto/ModalPedirAlmacen'), CargandoVista); // v8.76
 const VistaAlmacen = cargarVista(() => import('../components/logistica/VistaAlmacen'), CargandoVista); // v8.29.0
 const VistaCompras = cargarVista(() => import('../components/logistica/VistaCompras'), CargandoVista); // v8.67.0
+const VistaImportaciones = cargarVista(() => import('../components/logistica/VistaImportaciones'), CargandoVista); // v8.77.0
 const VistaRutas = cargarVista(() => import('../components/logistica/VistaRutas'), CargandoVista); // v8.29.0
 import InicioChofer from '../components/logistica/InicioChofer'; // v8.29.0
 import TarjetaRutaHoy from '../components/logistica/TarjetaRutaHoy'; // rutas-chofer
@@ -447,7 +448,7 @@ const vistaPermitida = (v, u, data) => {
       return admin;
     case 'produccion': case 'carga': case 'contabilidad': return r('owner');
     case 'rentabilidad': return r('owner') || r('rentabilidad');
-    case 'almacen': case 'compras': return admin || r('almacen') || r('facturas');
+    case 'almacen': case 'compras': case 'importaciones': return admin || r('almacen') || r('facturas');
     case 'rutas': return admin || r('almacen');
     case 'tareas': case 'miVehiculo': case 'pendientes': case 'gotera': case 'miPerfil':
     case 'programas': case 'citas': case 'proyecto':
@@ -842,6 +843,7 @@ export default function App() {
       { id: 'almacen', label: 'Almacén', icon: Package, vista: 'almacen' },
       // v8.67.0: Compras — todo lo pedido que no está en almacén, por estado o por artículo
       { id: 'compras', label: 'Compras', icon: ShoppingCart, vista: 'compras' },
+      { id: 'importaciones', label: 'Importaciones', icon: Ship, vista: 'importaciones' }, // v8.77.0
       // v8.27.38: Lily (capturista) también llena el módulo de Vehículos.
       { id: 'vehiculos', label: 'Vehículos', icon: Car, vista: 'vehiculos' },
       { id: 'gotera', label: 'Gotera', icon: CloudRain, vista: 'gotera' },
@@ -882,6 +884,7 @@ export default function App() {
       // v8.29.0: cola de almacén y rutas de camiones
       { id: 'almacen', label: 'Almacén', icon: Package, vista: 'almacen' },
       { id: 'compras', label: 'Compras', icon: ShoppingCart, vista: 'compras' }, // v8.67.0
+      { id: 'importaciones', label: 'Importaciones', icon: Ship, vista: 'importaciones' }, // v8.77.0
       { id: 'rutas', label: 'Rutas', icon: Truck, vista: 'rutas' },
       // v8.27.38: flota + docs (matrícula/seguro), elegibles en cartas de acceso
       { id: 'vehiculos', label: 'Vehículos', icon: Car, vista: 'vehiculos' },
@@ -954,6 +957,7 @@ export default function App() {
       ...(tieneRol(usuario, 'almacen') ? [
         { id: 'almacen', label: 'Almacén', icon: Package, vista: 'almacen' },
         { id: 'compras', label: 'Compras', icon: ShoppingCart, vista: 'compras' }, // v8.67.0
+        { id: 'importaciones', label: 'Importaciones', icon: Ship, vista: 'importaciones' }, // v8.77.0
         { id: 'rutas', label: 'Rutas', icon: Truck, vista: 'rutas' }, // v8.44.1: el almacén también ve las rutas
         { id: 'vehiculos', label: 'Vehículos', icon: Car, vista: 'vehiculos' },
       ] : []),
@@ -1071,6 +1075,7 @@ export default function App() {
         {(esAdmin || tieneRol(usuario, 'almacen') || tieneRol(usuario, 'facturas')) && vista === 'almacen' && <VistaAlmacen usuario={usuario} data={data} onVolver={esAdmin ? volverAtras : undefined} />}
         {/* v8.67.0: Compras */}
         {(esAdmin || tieneRol(usuario, 'almacen') || tieneRol(usuario, 'facturas')) && vista === 'compras' && <VistaCompras usuario={usuario} data={data} onVolver={esAdmin ? volverAtras : undefined} />}
+        {(esAdmin || tieneRol(usuario, 'almacen') || tieneRol(usuario, 'facturas')) && vista === 'importaciones' && <VistaImportaciones onVolver={esAdmin ? volverAtras : undefined} />}
         {vista === 'miVehiculo' && <MiVehiculo usuario={usuario} data={data} onRecargar={recargar} />}
         {(esAdmin || tieneRol(usuario, 'almacen')) && vista === 'rutas' && <VistaRutas usuario={usuario} data={data} onVolver={esAdmin ? volverAtras : undefined} />}
         {esAdmin && vista === 'planObras' && <PlanObras usuario={usuario} data={data} onVolver={volverAtras} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('cronograma'); }} onRecargar={recargar} />}

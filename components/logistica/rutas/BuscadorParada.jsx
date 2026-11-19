@@ -145,7 +145,7 @@ export default function BuscadorParada({ candidatos, recientes = [], puntoMapa =
                 className="w-full text-left bg-orange-700 hover:bg-orange-600 disabled:opacity-50 text-white rounded-card px-2.5 py-2 flex items-center gap-2">
                 {montando === r.id ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : <span className="shrink-0">📦</span>}
                 <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-black">Montar la requisición{r.urgente ? ' · urgente' : ''}</span>
+                  <span className="block text-sm font-black">Montar {r.codigo ? `el pedido ${r.codigo}` : 'la requisición'}{r.urgente ? ' · urgente' : ''}</span>
                   {resumenItems(r) && <span className="block text-[11px] opacity-90 truncate">{resumenItems(r)}</span>}
                 </span>
                 {i === 0 && <span className="text-[10px] font-bold opacity-70 shrink-0">Enter</span>}
@@ -199,18 +199,18 @@ export default function BuscadorParada({ candidatos, recientes = [], puntoMapa =
         <span className="hidden xl:inline text-[10px] text-zinc-600 border border-zinc-800 rounded px-1 shrink-0">/</span>
       </div>
       {abierto && (todos.length > 0 || texto.trim().length >= 2) && (
-        <div className="absolute z-30 left-0 right-0 mt-1 bg-zinc-900 border border-zinc-700 rounded-card shadow-pop max-h-80 overflow-y-auto">
+        <div className="mt-1.5 bg-zinc-900 border border-zinc-700 rounded-card shadow-pop max-h-[60vh] overflow-y-auto overscroll-contain">
           {todos.map((c, i) => {
             const cab = c.grupoMostrado !== ultimoGrupo ? (ultimoGrupo = c.grupoMostrado, TITULO_GRUPO[c.grupoMostrado]) : null;
             return (
               <React.Fragment key={(c.key || 'pt') + i}>
                 {cab && <div className="px-2.5 pt-2 pb-1 text-[10px] uppercase tracking-widest font-bold text-zinc-500">{cab}</div>}
                 <button key={'b' + i} onMouseDown={e => { e.preventDefault(); elegir(c); }} onMouseEnter={() => setActivo(i)}
-                  className={`w-full text-left px-2.5 py-2 flex items-center gap-2 ${i === activo ? 'bg-zinc-800' : ''}`}>
-                  <span className="shrink-0">{c.icono}</span>
+                  className={`w-full text-left px-3 py-2.5 flex items-start gap-2.5 ${i === activo ? 'bg-zinc-800' : ''}`}>
+                  <span className="shrink-0 text-base leading-tight">{c.icono}</span>
                   <span className="min-w-0 flex-1">
-                    <span className="block text-sm truncate">{c.label}</span>
-                    {c.sub && <span className="block text-[11px] text-zinc-500 truncate">{c.sub}</span>}
+                    <span className="block text-sm font-semibold leading-snug break-words">{c.label}</span>
+                    {c.sub && <span className="block text-xs text-zinc-500 leading-snug break-words">{c.sub}</span>}
                   </span>
                 </button>
               </React.Fragment>

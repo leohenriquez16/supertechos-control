@@ -185,11 +185,12 @@ export default function RequisicionesProyecto({ usuario, proyecto, esAdmin }) {
               <div key={r.id} className={`bg-zinc-950 border rounded-card p-3 ${r.urgente && r.estado !== 'entregada' && r.estado !== 'cancelada' ? 'border-red-800/70' : 'border-zinc-800'}`}>
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="flex items-center gap-1.5 flex-wrap">
+                    {r.codigo && <span className="text-base font-black tabular-nums leading-none mr-0.5" title="Número del pedido: el almacén lo pone en la salida de Odoo">{r.codigo}</span>}
                     <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-card ${est.color}`}>{est.label}</span>
                     {r.urgente && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-card bg-red-600/20 text-red-400">🔥 Urgente</span>}
                     {r.esCompra && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-card bg-orange-600/20 text-orange-300">🛒 Compra</span>}
                     {r.ocOdooName && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-card bg-purple-600/20 text-purple-300">📄 {r.ocOdooName} (borrador)</span>}
-                    <span className="text-[10px] text-zinc-500">{formatFechaCorta((r.createdAt || '').slice(0, 10))} · {r.solicitadoPorNombre || ''}</span>
+                    <span className="text-[10px] text-zinc-500">{formatFechaCorta((r.createdAt || '').slice(0, 10))} · {r.solicitadoPorNombre || ''}{r.fechaNecesaria ? <> · <b className="text-zinc-300">para el {formatFechaCorta(r.fechaNecesaria)}</b></> : null}</span>
                   </div>
                   {(r.estado === 'pendiente') && (esAdmin || r.solicitadoPorId === usuario.id) && (
                     <button onClick={() => cancelar(r)} className="text-[10px] text-zinc-500 hover:text-red-400 uppercase font-bold">Cancelar</button>
@@ -225,7 +226,7 @@ export default function RequisicionesProyecto({ usuario, proyecto, esAdmin }) {
       )}
 
       {confirmandoReq && (
-        <ModalConfirmarRecepcion req={confirmandoReq} etiqueta={`Solicitud del ${formatFechaCorta((confirmandoReq.createdAt || '').slice(0, 10))} · ${confirmandoReq.items.length} renglones`}
+        <ModalConfirmarRecepcion req={confirmandoReq} etiqueta={`${confirmandoReq.codigo ? confirmandoReq.codigo + ' · ' : ''}Solicitud del ${formatFechaCorta((confirmandoReq.createdAt || '').slice(0, 10))} · ${confirmandoReq.items.length} renglones`}
           usuario={usuario} origen="obra"
           onCerrar={() => setConfirmandoReq(null)}
           onConfirmado={async () => { setConfirmandoReq(null); await recargar(); }} />

@@ -16,6 +16,14 @@ import { comprimirImagenABlob } from '../../lib/imports';
 import FirmaPad, { firmaABlob } from '../common/FirmaPad';
 import { ESTADOS_REQ, ESTADOS_COMPRA } from './RequisicionesProyecto';
 import ModalConfirmarRecepcion from './ModalConfirmarRecepcion'; // v8.49.4
+// v8.76: número REQ del pedido + su salida AL/OUT en Odoo (solo lectura)
+import useSalidasPedidos from './useSalidasPedidos';
+import SalidaOdooChip from './SalidaOdooChip';
+import { salidaDePedidoVista, textoOrigenOdoo } from '../../lib/helpers/porMontar';
+
+// "sin salida en Odoo" solo es alerta cuando el pedido ya debería tener salida (listo o
+// después). En Nuevas y Preparando es lo normal: se muestra en gris.
+const ESTADOS_ALERTA_SALIDA = ['lista', 'en_ruta', 'entregada'];
 
 const COLS = [
   { estado: 'pendiente', titulo: '📥 Nuevas', siguiente: 'preparando', btn: 'Empezar a preparar' },
@@ -166,6 +174,19 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
       .sort((a, b) => (b.entregadaAt || b.retiradaAt || '').localeCompare(a.entregadaAt || a.retiradaAt || ''));
   }, [reqs]);
 
+  // v8.76: salida de Odoo (AL/OUT) de cada pedido de la cola y de las entregadas de la semana.
+  // Las compras internas no salen del almacén: no se buscan.
+  const pedidosConSalida = useMemo(() => reqs.filter(r => r.tipo !== 'compra' && (enCola(r) || entregadas7.includes(r))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [reqs, entregadas7]);
+  const salidasOdoo = useSalidasPedidos(pedidosConSalida, proyectoDe);
+  const vistaSalida = (r) => r.tipo === 'compra' ? null : salidaDePedidoVista(r, salidasOdoo.resp, proyectoDe(r), { cargando: salidasOdoo.cargando });
+  const [copiado, setCopiado] = useState(null);
+  const copiarOrigen = async (r, texto) => {
+    try { await navigator.clipboard.writeText(texto); setCopiado(r.id); setTimeout(() => setCopiado(c => (c === r.id ? null : c)), 2000); }
+    catch { window.prompt('Copia este texto para el Documento origen en Odoo:', texto); }
+  };
+
   // La tarjeta completa de siempre — se usa inline en móvil y como panel en desktop.
   const DetalleRequisicion = ({ r, col }) => {
     const todosDespachados = r.items.length > 0 && r.items.every(i => i.despachado);
@@ -173,8 +194,9 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
       <div className={`bg-zinc-900 border rounded-card p-3 ${r.urgente ? 'border-red-800/70' : 'border-zinc-800'}`}>
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="min-w-0">
+            {r.codigo && <div className="text-lg font-black tracking-tight tabular-nums leading-tight">{r.codigo}</div>}
             <div className="font-bold text-sm truncate">{etiqueta(r)} {r.tipo === 'despacho' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-card bg-amber-600/20 text-amber-300 align-middle">📦 Despacho</span>} <ModoBadge r={r} /> {r.urgente && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-card bg-red-600/20 text-red-400 align-middle">🔥 Urgente</span>} {r.esCompra && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-card bg-orange-600/20 text-orange-300 align-middle">🛒 Compra</span>} {r.odooPickingName && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-card bg-purple-600/20 text-purple-300 align-middle">🧾 {r.odooPickingName}</span>}</div>
-            <div className="text-[10px] text-zinc-500">{formatFechaCorta((r.createdAt || '').slice(0, 10))} · pidió {r.solicitadoPorNombre || '—'} · <span className={ESTADOS_REQ[r.estado]?.color || ''}>{ESTADOS_REQ[r.estado]?.label || r.estado}</span></div>
+            <div className="text-[10px] text-zinc-500">{formatFechaCorta((r.createdAt || '').slice(0, 10))} · pidió {r.solicitadoPorNombre || '—'}{r.fechaNecesaria ? <> · <b className="text-zinc-300">para el {formatFechaCorta(r.fechaNecesaria)}</b></> : null} · <span className={ESTADOS_REQ[r.estado]?.color || ''}>{ESTADOS_REQ[r.estado]?.label || r.estado}</span></div>
           </div>
           {col.siguiente && (
             <button onClick={() => avanzar(r, col.siguiente)} disabled={procesando === r.id || (col.siguiente === 'lista' && !todosDespachados)}
@@ -234,6 +256,26 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
           )
         )}
         {r.notas && <div className="text-[10px] text-zinc-500 mt-1">📝 {r.notas}</div>}
+        {/* v8.76: ¿ya está registrada la salida en Odoo? + qué poner en el Documento origen */}
+        {r.tipo !== 'compra' && (() => {
+          const vista = vistaSalida(r);
+          const origen = textoOrigenOdoo(r, proyectoDe(r));
+          return (
+            <div className="mt-2 border-t border-zinc-800 pt-2 space-y-1">
+              <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
+                <span className="text-zinc-400 font-bold">Salida en Odoo:</span>
+                <SalidaOdooChip vista={vista} codigo={r.codigo} error={salidasOdoo.error} detalle alerta={ESTADOS_ALERTA_SALIDA.includes(r.estado)} />
+              </div>
+              {origen && vista?.estado !== 'exacta' && (
+                <div className="flex items-center gap-1.5 flex-wrap text-[11px] text-zinc-400">
+                  <span>Pon <b className="text-zinc-200">{r.codigo}</b> en el Documento origen de la salida en Odoo:</span>
+                  <code className="bg-zinc-950 border border-zinc-700 rounded-card px-1.5 py-0.5 text-zinc-200">{origen}</code>
+                  <button onClick={() => copiarOrigen(r, origen)} className="text-[10px] font-bold text-amber-400 hover:text-amber-300">{copiado === r.id ? '✓ Copiado' : 'Copiar'}</button>
+                </div>
+              )}
+            </div>
+          );
+        })()}
         {/* v8.39.0: cotización adjunta + OC en Odoo */}
         {(r.cotizacionUrl || r.ocOdooName) && (
           <div className="flex items-center gap-2 flex-wrap mt-1.5">
@@ -272,6 +314,9 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
           <div>
             <h1 className="text-2xl font-black flex items-center gap-2"><Package className="w-6 h-6 text-amber-400" /> Almacén</h1>
             <div className="text-[11px] text-zinc-500">Pedidos de obra y despachos/ventas · se alistan aquí, no en el WhatsApp</div>
+            {reqs.some(r => r.codigo) && (
+              <div className="text-[11px] text-amber-400/90 mt-0.5">Al hacer la salida en Odoo, pon el número del pedido (REQ-xxxx) en el Documento origen, junto a la cotización. Ej.: «ST 5867 REQ-0142».</div>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -376,7 +421,9 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
                       return (
                         <button key={r.id} onClick={() => setSelId(r.id)}
                           className={`w-full text-left px-2.5 py-2 rounded-card border bg-zinc-900 ${selId === r.id ? 'border-amber-500 bg-zinc-800/70' : r.urgente ? 'border-red-800/70 hover:border-red-700' : 'border-zinc-800 hover:border-zinc-600'}`}>
+                          {r.codigo && <div className="text-sm font-black tabular-nums leading-tight">{r.codigo}</div>}
                           <div className="text-xs font-bold truncate">{r.urgente && '🔥 '}{r.tipo === 'despacho' && '📦 '}{etiqueta(r)}</div>
+                          {r.tipo !== 'compra' && <div className="mt-0.5"><SalidaOdooChip vista={vistaSalida(r)} codigo={r.codigo} error={salidasOdoo.error} alerta={ESTADOS_ALERTA_SALIDA.includes(r.estado)} max={1} /></div>}
                           <div className="flex items-center justify-between mt-0.5">
                             <span className="text-[10px] text-zinc-500 truncate">{formatFechaCorta((r.createdAt || '').slice(0, 10))} · {r.modoEntrega === 'retiro' ? '🙋' : '🚚'} {r.solicitadoPorNombre || '—'}</span>
                             <span className={`shrink-0 text-[10px] font-bold ml-1.5 ${completo ? 'text-green-400' : 'text-zinc-400'}`}>☑ {despachados}/{r.items.length}</span>
@@ -399,7 +446,9 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
                 {entregadas7.map(r => (
                   <button key={r.id} onClick={() => setSelId(r.id)}
                     className={`w-full text-left px-2.5 py-2 rounded-card border bg-zinc-900 ${selId === r.id ? 'border-amber-500 bg-zinc-800/70' : 'border-zinc-800 hover:border-zinc-600'}`}>
+                    {r.codigo && <div className="text-sm font-black tabular-nums leading-tight">{r.codigo}</div>}
                     <div className="text-xs font-bold truncate text-green-300">{r.tipo === 'despacho' && '📦 '}{etiqueta(r)}</div>
+                    {r.tipo !== 'compra' && <div className="mt-0.5"><SalidaOdooChip vista={vistaSalida(r)} codigo={r.codigo} error={salidasOdoo.error} alerta={ESTADOS_ALERTA_SALIDA.includes(r.estado)} max={1} /></div>}
                     <div className="flex items-center justify-between mt-0.5">
                       <span className="text-[10px] text-zinc-500 truncate">✓ {formatFechaCorta(((r.entregadaAt || r.retiradaAt || '')).slice(0, 10))} · {r.modoEntrega === 'retiro' ? '🙋' : '🚚'}</span>
                       <span className={`shrink-0 text-[9px] font-bold ml-1 ${r.recepcionConfirmadaAt ? 'text-green-400' : 'text-amber-400'}`}>{r.recepcionConfirmadaAt ? '✅ conf.' : '⏳ sin conf.'}</span>
@@ -422,7 +471,7 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
               <div className="space-y-1.5">
                 {sinConfirmar.map(r => (
                   <div key={r.id} className="flex items-center justify-between gap-2 text-xs">
-                    <span className="truncate">{etiqueta(r)} <span className="text-zinc-500">· entregada {formatFechaCorta((r.entregadaAt || '').slice(0, 10))}</span></span>
+                    <span className="truncate">{r.codigo && <b>{r.codigo} · </b>}{etiqueta(r)} <span className="text-zinc-500">· entregada {formatFechaCorta((r.entregadaAt || '').slice(0, 10))}</span></span>
                     {puedeCrear && (
                       <button onClick={() => setConfirmandoReq(r)}
                         className="shrink-0 text-[10px] font-black uppercase px-2.5 py-1.5 rounded-card bg-green-700 hover:bg-green-600 text-white">

@@ -36,7 +36,7 @@ export default function BuscadorMapa({ onElegir, deshabilitado = false }) {
         {texto && <button onMouseDown={e => { e.preventDefault(); setTexto(''); }} className="text-zinc-500 hover:text-white shrink-0"><X className="w-4 h-4" /></button>}
       </div>
       {abierto && q.length >= 3 && (
-        <div className="mt-1 bg-zinc-900 border border-zinc-700 rounded-card shadow-pop max-h-72 overflow-y-auto">
+        <div className="mt-1 bg-zinc-900 border border-zinc-700 rounded-card shadow-pop max-h-[50vh] overflow-y-auto">
           {lugares.map((l, i) => (
             <button key={`${l.nombre}-${l.lat}-${l.lng}`} onMouseDown={e => { e.preventDefault(); elegir(l); }} onMouseEnter={() => setActivo(i)}
               className={`w-full text-left px-2.5 py-2 flex items-start gap-2 ${i === activo ? 'bg-zinc-800' : ''}`}>

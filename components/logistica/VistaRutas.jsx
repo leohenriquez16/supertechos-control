@@ -14,7 +14,7 @@
 //               editar chofer/vehículo/fecha ahí mismo, duplicar para otro día.
 // Las piezas viven en components/logistica/rutas/.
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Loader2, Truck, RefreshCw, MapPin, ChevronLeft, ChevronRight, SlidersHorizontal } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatFechaCorta } from '../../lib/helpers/formato';
@@ -34,6 +34,7 @@ import BuscadorParada from './rutas/BuscadorParada';
 import ListaParadas from './rutas/ListaParadas';
 import FormParadaAvanzada from './rutas/FormParadaAvanzada';
 import ModalLugares from './rutas/ModalLugares';
+import useSalidasPedidos from './useSalidasPedidos'; // v8.76: salida AL/OUT de Odoo de cada pedido
 
 // v8.45.0: parseCoords vive en lib/helpers/geo (compartido); re-export por compatibilidad.
 export { parseCoords } from '../../lib/helpers/geo';
@@ -55,6 +56,7 @@ export default function VistaRutas({ usuario, data, onVolver }) {
   const [listas, setListas] = useState([]);        // requisiciones listas sin viaje
   const [diligencias, setDiligencias] = useState([]);
   const [enAlmacen, setEnAlmacen] = useState([]);  // requisiciones pendiente/preparando (aviso)
+  const [codigosReq, setCodigosReq] = useState({}); // v8.76: requisicionId → REQ-0142 (paradas montadas)
   const [lugares, setLugares] = useState([]);
   const [suplidores, setSuplidores] = useState([]);
   const [ubicaciones, setUbicaciones] = useState([]); // locaciones de clientes (con GPS)
@@ -85,6 +87,7 @@ export default function VistaRutas({ usuario, data, onVolver }) {
   const [recorrido, setRecorrido] = useState({ clave: null, puntos: [] });
   const [tick, setTick] = useState(0);             // cada 5 min (solo hoy)
   const [esDesktop, setEsDesktop] = useState(true);
+  const [esAncho, setEsAncho] = useState(true); // ≥1536 px: 3 columnas lado a lado (si no, el mapa queda arriba de la ruta)
   const [enfocarBuscador, setEnfocarBuscador] = useState(null); // id de la ruta recién creada
   const [fechaCargada, setFechaCargada] = useState(null);         // fecha de los `viajes` que hay en pantalla
   const pedido = useRef(0);
@@ -93,9 +96,10 @@ export default function VistaRutas({ usuario, data, onVolver }) {
   useEffect(() => {
     if (typeof window === 'undefined' || !window.matchMedia) return;
     const mq = window.matchMedia('(min-width: 1024px)');
-    const f = () => setEsDesktop(mq.matches);
-    f(); mq.addEventListener?.('change', f);
-    return () => mq.removeEventListener?.('change', f);
+    const mq2 = window.matchMedia('(min-width: 1536px)');
+    const f = () => { setEsDesktop(mq.matches); setEsAncho(mq2.matches); };
+    f(); mq.addEventListener?.('change', f); mq2.addEventListener?.('change', f);
+    return () => { mq.removeEventListener?.('change', f); mq2.removeEventListener?.('change', f); };
   }, []);
   // Locaciones de clientes para el buscador (una sola vez; no cambian en el día).
   useEffect(() => { db.listarUbicacionesCliente().then(setUbicaciones).catch(() => setUbicaciones([])); }, []);
@@ -135,7 +139,11 @@ export default function VistaRutas({ usuario, data, onVolver }) {
         const d = new Date(hoyRD() + 'T12:00:00'); d.setDate(d.getDate() - 120);
         hist = await db.listarViajes({ desde: d.toISOString().slice(0, 10) }).catch(() => []);
       }
+      // v8.76: número REQ de las requisiciones ya montadas en las rutas que se ven
+      const idsMontadas = [...new Set([...(vs || []), ...(hist || [])].flatMap(v => (v.paradas || []).map(p => p.requisicionId)).filter(Boolean))];
+      const montadas = idsMontadas.length ? await db.listarRequisiciones({ ids: idsMontadas }).catch(() => []) : [];
       if (mio !== pedido.current) return; // llegó tarde: ya se pidió otra fecha
+      setCodigosReq(Object.fromEntries([...montadas, ...reqs, ...viniendo].filter(r => r.codigo).map(r => [r.id, r.codigo])));
       setViajes(vs); setFechaCargada(fecha);
       if (hist) setHistorial(hist);
       // v8.48.0: los alistos en modo RETIRO no van a camión (se firman en el almacén)
@@ -207,6 +215,10 @@ export default function VistaRutas({ usuario, data, onVolver }) {
   }, [vista, diasSemana, viajes]);
 
   const nombreObra = (pid) => { const p = (data.proyectos || []).find(x => x.id === pid); return p ? ([p.referenciaOdoo, p.cliente || p.nombre].filter(Boolean).join(' · ') || pid) : pid; }; // v8.49.2
+  const proyectoDe = useCallback((pid) => (data.proyectos || []).find(x => x.id === pid), [data.proyectos]);
+  // v8.76: salidas de Odoo (AL/OUT) de lo que está por montar, desde el pedido más viejo
+  const salidasPorMontar = useSalidasPedidos(listas, (r) => proyectoDe(r.proyectoId));
+  const codigoReq = (id) => codigosReq[id] || null;
   const tieneGps = (pid) => { const p = (data.proyectos || []).find(x => x.id === pid); return p?.ubicacionLat != null && p?.ubicacionLng != null; };
 
   const candidatos = useMemo(() => construirCandidatos({ proyectos: data.proyectos || [], ubicaciones, clientes: data.clientes || [], suplidores, lugares }),
@@ -267,7 +279,7 @@ export default function VistaRutas({ usuario, data, onVolver }) {
     if (prj?.ubicacionLat == null || prj?.ubicacionLng == null) { toast.warning(`La obra "${nombreObra(req.proyectoId)}" no tiene ubicación GPS. Asígnala en el proyecto (Info → Ubicación).`); return false; }
     try {
       await db.agregarParada({ viajeId: viaje.id, orden: siguienteOrden(viaje.paradas), tipo: 'entrega', proyectoId: req.proyectoId, requisicionId: req.id,
-        lat: prj.ubicacionLat, lng: prj.ubicacionLng, descripcion: `Entregar materiales en ${nombreObra(req.proyectoId)}` });
+        lat: prj.ubicacionLat, lng: prj.ubicacionLng, descripcion: `Entregar materiales${req.codigo ? ` (${req.codigo})` : ''} en ${nombreObra(req.proyectoId)}` });
       // el envío pagado/sub-contratado entrega directo; el camión la lleva cuando el chofer arranca
       if (viaje.tipoEnvio === 'pagado' || viaje.tipoEnvio === 'subcontratado' || viaje.estado === 'en_curso') await db.actualizarRequisicion(req.id, { estado: 'en_ruta' });
       await recargar({ silencioso: true });
@@ -421,9 +433,12 @@ export default function VistaRutas({ usuario, data, onVolver }) {
       ) : loading ? (
         <div className="text-center py-16"><Loader2 className="w-6 h-6 text-cyan-500 animate-spin mx-auto" /></div>
       ) : (
-        <div className="grid gap-4 grid-cols-1 lg:grid-cols-[250px_minmax(0,1fr)_380px] xl:grid-cols-[280px_minmax(0,1fr)_440px] items-start">
-          {/* ===== Izquierda: rutas del día + por montar ===== */}
-          <aside className="space-y-3 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:pr-1">
+        <div className="grid gap-4 grid-cols-1 lg:grid-cols-[270px_minmax(0,1fr)] 2xl:grid-cols-[280px_minmax(0,1fr)_440px] items-start">
+          {/* ===== Izquierda: rutas del día + por montar =====
+              v8.76: en pantallas medianas (1024–1535 px) el mapa va arriba a lo ancho y la ruta
+              abierta debajo; las 3 columnas lado a lado solo desde 1536 px (si no, el mapa quedaba
+              de ~100 px de ancho). */}
+          <aside className="space-y-3 lg:col-start-1 lg:row-start-1 lg:row-span-2 2xl:row-span-1 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:pr-1">
             <div className="flex rounded-card border border-zinc-700 overflow-hidden">
               {[['dia', 'Del día'], ['viejos', 'Viejas sin cerrar'], ['cancelados', 'Canceladas']].map(([k, l]) => (
                 <button key={k} onClick={() => setFiltro(k)} className={`flex-1 text-[11px] font-bold px-1.5 py-1.5 ${filtro === k ? 'bg-zinc-700 text-white' : 'text-zinc-500 hover:text-white'}`}>{l}</button>
@@ -434,18 +449,19 @@ export default function VistaRutas({ usuario, data, onVolver }) {
               viajesDelDia={viajesActivos} onCrear={crearViaje} onBorrarVacio={borrarViaje} fecha={fecha} />
             {filtro === 'dia' && (
               <BandejaPorMontar listas={listas} diligencias={diligencias} enAlmacen={enAlmacen} nombreObra={nombreObra} tieneGps={tieneGps}
+                proyectoDe={proyectoDe} salidas={salidasPorMontar}
                 destino={puedeAgregar ? (vSel.choferNombre || vSel.vehiculo || 'esta ruta') : null}
                 onMontarRequisicion={montarRequisicion} onMontarDiligencia={montarDiligencia} />
             )}
           </aside>
 
           {/* ===== Centro: mapa + jornada ===== */}
-          <section className="order-3 lg:order-none space-y-3 min-w-0">
+          <section className="order-3 lg:order-none lg:col-start-2 lg:row-start-1 space-y-3 min-w-0">
             <MapaRuta viaje={vSel} otrasRutas={otrasRutasDia} proyectos={data.proyectos || []} nombreObra={nombreObra} listas={filtro === 'dia' ? listas : []} diligencias={filtro === 'dia' ? diligencias : []}
               gpsUnidades={(vSel?.fecha || fecha) === hoy ? gpsUnidades : []} vehiculos={data.vehiculos} recorrido={puntosRecorrido} puntoMapa={puntoMapa}
               onMapClick={puedeAgregar ? (lat, lng) => { setAvanzada(null); setPuntoMapa({ lat, lng }); } : null}
               foco={focoMapa} onElegirLugar={puedeAgregar ? elegirLugarMapa : undefined}
-              height={esDesktop ? 'calc(100vh - 230px)' : 320} />
+              height={esDesktop ? (esAncho ? 'calc(100vh - 230px)' : '55vh') : 320} />
             {horasChofer.length > 0 && (
               <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
                 <div className="text-[11px] tracking-wider uppercase text-zinc-400 font-bold mb-1.5">⏱ Jornada de choferes · {formatFechaCorta(fecha)} (extras sobre 8 h)</div>
@@ -462,7 +478,7 @@ export default function VistaRutas({ usuario, data, onVolver }) {
           </section>
 
           {/* ===== Derecha: la ruta abierta ===== */}
-          <aside className="order-2 lg:order-none lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:pr-1">
+          <aside className="order-2 lg:order-none lg:col-start-2 lg:row-start-2 2xl:col-start-3 2xl:row-start-1 2xl:sticky 2xl:top-4 2xl:max-h-[calc(100vh-2rem)] 2xl:overflow-y-auto 2xl:pr-1 min-w-0">
             {!vSel ? (
               <div className="bg-zinc-900 border border-dashed border-zinc-700 rounded-card p-6 text-center">
                 <div className="text-sm font-bold text-zinc-300">{filtro === 'dia' ? (viajesLista.length ? 'Elige una ruta a la izquierda' : 'No hay rutas para este día') : 'Elige una ruta de la lista'}</div>
@@ -497,7 +513,7 @@ export default function VistaRutas({ usuario, data, onVolver }) {
                   </div>
                 )}
 
-                <ListaParadas viaje={vSel} proyectos={data.proyectos || []} nombreObra={nombreObra}
+                <ListaParadas viaje={vSel} proyectos={data.proyectos || []} nombreObra={nombreObra} codigoReq={codigoReq}
                   editable={puedeAgregar} puedeMarcar={!esViajeCancelado(vSel)} gpsRevisado={gpsRevisado}
                   onReordenar={reordenar} onMarcarHecha={marcarHechaOficina} onQuitar={quitarParada} />
                 {puedeAgregar && vSel.paradas.length > 1 && <div className="text-[11px] text-zinc-500">Arrastra las paradas para cambiar el orden. Las distancias son en línea recta, solo para orientarte.</div>}

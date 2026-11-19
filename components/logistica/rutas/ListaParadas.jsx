@@ -11,7 +11,7 @@ import { moverEnLista, distanciasRuta, formatKm, estadoVisualParada, insigniasPa
 const FONDO_NUMERO = { pendiente: 'bg-blue-600 text-white', hecha: 'bg-green-600 text-white', gps: 'bg-green-600 text-white ring-2 ring-purple-400', visitada: 'bg-purple-600 text-white', cancelada: 'bg-zinc-700 text-zinc-300' };
 const TONO_INSIGNIA = { verde: 'bg-green-900/40 text-green-300 border-green-800/60', morado: 'bg-purple-900/40 text-purple-300 border-purple-800/60', gris: 'bg-zinc-800 text-zinc-400 border-zinc-700' };
 
-export default function ListaParadas({ viaje, proyectos, nombreObra, editable, puedeMarcar, gpsRevisado, onReordenar, onMarcarHecha, onQuitar }) {
+export default function ListaParadas({ viaje, proyectos, nombreObra, codigoReq = () => null, editable, puedeMarcar, gpsRevisado, onReordenar, onMarcarHecha, onQuitar }) {
   const [ids, setIds] = useState(() => viaje.paradas.map(p => p.id));
   const [arrastrando, setArrastrando] = useState(null); // índice
   const [sobre, setSobre] = useState(null);             // índice destino
@@ -72,6 +72,7 @@ export default function ListaParadas({ viaje, proyectos, nombreObra, editable, p
             <div className="min-w-0 flex-1">
               <div className="text-sm font-bold leading-tight">
                 <span className="text-zinc-500 font-semibold">{etiquetaTipo(p.tipo)} · </span>
+                {p.requisicionId && codigoReq(p.requisicionId) && <span className="text-[11px] font-black px-1.5 py-0.5 mr-1 rounded-card bg-orange-600/20 text-orange-300 align-middle" title="Pedido de material que lleva esta parada">{codigoReq(p.requisicionId)}</span>}
                 <span className={p.estado === 'completada' ? 'text-green-400' : ''}>{p.proyectoId ? nombreObra(p.proyectoId) : (p.lugar || 'Sin nombre')}</span>
                 {cancelada && <span className="text-zinc-500 font-normal"> · cancelada</span>}
               </div>

@@ -11,7 +11,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Loader2, TrendingUp, EyeOff, Eye, MapPin } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatRD } from '../../lib/helpers/formato';
-import { calcRentabilidadObra } from '../../lib/helpers/presupuestoObra';
+import { calcRentabilidadObra, generarPresupuestoDesdeProyecto } from '../../lib/helpers/presupuestoObra';
 import { refsDeObra, salidasDeObra } from '../../lib/helpers/refsObra';
 
 // v8.74.14: el nombre de la obra viene del campo «Referencias» de la cotización y a
@@ -76,9 +76,8 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
 
   const numRef = (ref) => { const n = String(ref || '').replace(/\D+/g, ''); return n.length >= 3 ? n : null; };
   const refsPortafolio = useMemo(() => {
-    const conPpto = new Set(pptos.map(p => p.proyectoId));
     return [...new Set((data.proyectos || [])
-      .filter(p => !p.archivado && conPpto.has(p.id) && numRef(p.referenciaOdoo))
+      .filter(p => !p.archivado && numRef(p.referenciaOdoo)) // v8.82.0: todas tienen presupuesto (guardado o al vuelo)
       .flatMap(p => refsDeObra(p)))].sort(); // v8.77.0: + sub-cotizaciones
   }, [pptos, data.proyectos]);
   useEffect(() => {
@@ -103,7 +102,11 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
       (!soloEjecucion || ['en_ejecucion', 'aprobado'].includes(p.estado)) &&
       (verOcultos || !ocultos.has(p.id)));
     return proyectos.map(proy => {
-      const ppto = pptoPorProyecto[proy.id] || null;
+      // v8.82.0: obra sin presupuesto guardado → se calcula al vuelo desde los costos por sistema
+      let ppto = pptoPorProyecto[proy.id] || null;
+      if (!ppto) {
+        try { const { warnings: _w, ...g } = generarPresupuestoDesdeProyecto({ proyecto: proy, sistemas: data.sistemas, config: data.config || {}, version: 1 }); ppto = (g.partidas || []).length ? { ...g, auto: true } : null; } catch { ppto = null; }
+      }
       if (!ppto) return { proyecto: proy, ppto: null };
       const rent = calcRentabilidadObra({
         presupuesto: ppto, proyecto: proy, sistemas: data.sistemas,

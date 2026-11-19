@@ -87,12 +87,14 @@ export default function FichaCliente({
   useEffect(() => {
     let cancel = false;
     setOdoo(null);
-    const qs = new URLSearchParams({ rnc: cliente.rnc || '', nombre: cliente.nombre || '' });
+    // v8.85.1: + ID de Odoo y las cotizaciones de sus obras (encuentra las hechas a nombre de un contacto)
+    const refs = [...new Set((proyectos || []).filter(p => p.clienteId === cliente.id).flatMap(p => [p.referenciaOdoo, ...((p.subCotizaciones || []).map(x => x.ref))]).filter(Boolean))];
+    const qs = new URLSearchParams({ rnc: cliente.rnc || '', nombre: cliente.nombre || '', partnerId: cliente.odooPartnerId || '', refs: refs.join(',') });
     fetch(`/api/odoo/cliente-historial?${qs}`).then(r => r.json())
       .then(j => { if (!cancel) setOdoo(j?.error ? { error: j.error } : j); })
       .catch(e => { if (!cancel) setOdoo({ error: e?.message || 'Error' }); });
     return () => { cancel = true; };
-  }, [cliente.id, cliente.rnc, cliente.nombre]);
+  }, [cliente.id, cliente.rnc, cliente.nombre, cliente.odooPartnerId]);
 
   // Visitas: resumen GPS de la flota + viajes de logística.
   useEffect(() => {

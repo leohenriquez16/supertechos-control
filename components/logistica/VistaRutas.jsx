@@ -468,7 +468,7 @@ export default function VistaRutas({ usuario, data, onVolver }) {
               <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
                 <div className="text-[11px] tracking-wider uppercase text-zinc-400 font-bold mb-1.5">⏱ Jornada de choferes · {formatFechaCorta(fecha)} (extras sobre 8 h)</div>
                 {horasChofer.map(({ v, horasTot, extras }) => (
-                  <div key={v.id} className="grid grid-cols-4 gap-2 items-center text-xs border-t border-zinc-800 py-1.5">
+                  <div key={v.id} className="grid grid-cols-2 sm:grid-cols-4 gap-2 items-center text-xs border-t border-zinc-800 py-1.5">
                     <span className="font-bold truncate">{v.choferNombre}</span>
                     <span className="text-zinc-400">{hora(v.horaInicio)} → {hora(v.horaFin)}</span>
                     <span className="text-zinc-300 tabular-nums">{horasTot != null ? horasTot.toFixed(1) + ' h' : 'en la calle'}</span>

@@ -4591,9 +4591,11 @@ function CardKanban({ p, data, compacto, arrastrando, hover, onHover, onClick, o
         )}
 
         {/* Footer: valor + días + avatars */}
-        <div className="mt-1.5 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <span className="text-[11px] text-green-400 font-bold whitespace-nowrap">
+        {/* v8.81.2: flex-wrap — en columnas angostas (teléfono/tableta) días y personas bajan
+            de línea en vez de montarse sobre el monto ("cot15d") */}
+        <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="text-[11px] text-green-400 font-bold whitespace-nowrap tabular-nums">
               {formatRD(valor)}
               <span className="ml-1 text-[8px] text-zinc-500 font-normal">{fuenteValor}</span>
             </span>
@@ -5009,8 +5011,8 @@ function VistaLista({ proyectos, data, densidad = 'detallado', dx, onVerProyecto
                             <td className={`${rowPad} text-right tabular-nums font-black text-green-400 whitespace-nowrap`} title={tooltipValor}>
                               {formatRD(valor)}
                               {/* v8.17.63: tag mini para distinguir la fuente del valor */}
-                              {fuenteValor === 'cotizacion' && <span className="ml-1 text-[8px] text-zinc-500 font-normal">cot</span>}
-                              {fuenteValor === 'cubicado' && <span className="ml-1 text-[8px] text-blue-400 font-normal">cub</span>}
+                              {fuenteValor === 'cotizacion' && <span className="block text-[9px] leading-none text-zinc-500 font-normal">cot</span>}
+                              {fuenteValor === 'cubicado' && <span className="block text-[9px] leading-none text-blue-400 font-normal">cub</span>}
                             </td>
                             <td className={`${rowPad} text-right whitespace-nowrap`} onClick={e => e.stopPropagation()}>
                               <div className="inline-flex gap-1">
@@ -6806,12 +6808,12 @@ function VistaCostosMateriales({ proyecto, envios, sistemas }) {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-zinc-800">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-3 pt-3 border-t border-zinc-800">
                   <div>
                     <div className="text-[9px] text-zinc-500 uppercase">Costo base (sistema)</div>
                     <div className="text-sm font-bold">RD${formatNum(grupo.costoBase)}/{grupo.unidad}</div>
                   </div>
-                  <div className="border-x border-zinc-800 px-2">
+                  <div className="sm:border-x border-zinc-800 sm:px-2">
                     <div className="text-[9px] text-zinc-500 uppercase">Promedio real ponderado</div>
                     <div className="text-sm font-bold">RD${formatNum(grupo.promedioPonderado)}/{grupo.unidad}</div>
                   </div>

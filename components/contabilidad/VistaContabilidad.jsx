@@ -1068,10 +1068,10 @@ function ConciliacionBancaria({ empresa, setEmpresa, usuario }) {
 
       {/* Resumen */}
       {bancoId && movs.length > 0 && (
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
           <Card titulo="Pendientes de conciliar"><div className="text-xl font-black text-amber-400">{pendientes.length}</div></Card>
-          <Card titulo="Entradas sin conciliar"><div className="text-xl font-black text-green-400">{formatRD(entradasPend)}</div></Card>
-          <Card titulo="Salidas sin conciliar"><div className="text-xl font-black text-red-400">{formatRD(salidasPend)}</div></Card>
+          <Card titulo="Entradas sin conciliar"><div className="text-lg sm:text-xl font-black text-green-400 tabular-nums whitespace-nowrap">{formatRD(entradasPend)}</div></Card>
+          <Card titulo="Salidas sin conciliar"><div className="text-lg sm:text-xl font-black text-red-400 tabular-nums whitespace-nowrap">{formatRD(salidasPend)}</div></Card>
         </div>
       )}
 

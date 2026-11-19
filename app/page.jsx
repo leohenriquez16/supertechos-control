@@ -22,6 +22,8 @@ import { APP_VERSION, EMPRESAS_RECEPTORAS } from '../lib/constants';
 import { TIPOS_GARANTIA, getTipoGarantia, serviciosDeTipo, tipoSugeridoParaSistema } from '../lib/garantiasCatalogo';
 import { toast } from '../lib/toast';
 import { formatRD, formatNum, formatFecha, formatFechaCorta, formatFechaLarga } from '../lib/helpers/formato';
+import { reporteParecido } from '../lib/helpers/excesoM2'; // v8.77.0: aviso de reporte duplicado
+import { refsDeObra } from '../lib/helpers/refsObra'; // v8.77.0: cotización original + sub-cotizaciones
 import {
   getM2Reporte, getPrecioVentaArea,
   getSuplementosArea, getPrecioSuplemento, getPrecioTotalM2Area, getSistemasDeArea,
@@ -3555,6 +3557,8 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
               <RolToggle active={form.roles.includes('rentabilidad')} onClick={() => toggleRol('rentabilidad')}>Rentabilidad</RolToggle>
               {/* v8.59.9: nómina — configura forma de pago, montos por día y precio ajustado (avance %) en las obras */}
               <RolToggle active={form.roles.includes('nomina')} onClick={() => toggleRol('nomina')}>Nómina</RolToggle>
+              {/* v8.77.0: crea (desde Rentabilidad) y aplica órdenes de cambio — además del owner */}
+              <RolToggle active={form.roles.includes('ordenes_cambio')} onClick={() => toggleRol('ordenes_cambio')}>Órdenes de cambio</RolToggle>
             </div>
           </Campo>
           {/* v8.17.89: el PIN guardado es hash bcrypt server-side y nunca se
@@ -7097,7 +7101,7 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
     (async () => {
       try {
         const [res, mod] = await Promise.all([
-          fetch(`/api/odoo/salidas-almacen?prefijo=1&refs=${encodeURIComponent(ref)}`),
+          fetch(`/api/odoo/salidas-almacen?prefijo=1&refs=${encodeURIComponent(refsDeObra(proyecto).join(','))}`),
           import('../lib/helpers/pedirAlmacen'),
         ]);
         const json = await res.json();
@@ -7107,7 +7111,7 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
       } catch { if (!cancel) setSalidasOdoo({ estado: 'error', productos: [] }); }
     })();
     return () => { cancel = true; };
-  }, [proyecto.referenciaOdoo, esAdmin]);
+  }, [refsDeObra(proyecto).join(','), esAdmin]);
   const odooListo = salidasOdoo.estado === 'ok' && !!helperPedir;
   const salioOdoo = {
     disponible: odooListo,
@@ -8488,6 +8492,11 @@ function FormReporte({ usuario, proyecto, reportes, sistema, sistemas, estadosAr
     if (tarea.reporta === 'rollos') { if (!form.rollos) return; vals = { rollos: parseFloat(form.rollos) }; }
     else if (tarea.reporta === 'm2_y_cubetas') { if (!form.m2) return; vals = { m2: parseFloat(form.m2) }; if (form.cubetas) vals.cubetas = parseFloat(form.cubetas); }
     else { if (!form.m2) return; vals = { m2: parseFloat(form.m2) }; }
+    // v8.77.0: el mismo avance cargado dos veces infla nómina y "metros de más"
+    if (!form.reparacion) {
+      const igual = reporteParecido(reportes, { proyectoId: proyecto.id, areaId: form.areaId, tareaId: form.tareaId, fecha: form.fecha, m2: m2Rep });
+      if (igual && !confirm(`Ya hay un reporte de ${formatNum(m2Rep)} m² de "${tarea.nombre}" en "${area.nombre}" con esta misma fecha${igual.supervisor ? ` (lo cargó ${igual.supervisor})` : ''}.\n\n¿Es otro trabajo distinto? Si es el mismo, cancela para no duplicarlo.`)) return;
+    }
     setGuardando(true);
     await onGuardar(construir(vals), fotos);
     setUltimo({ area: area.nombre, tarea: tarea.nombre, m2: m2Rep, fotosCount: fotos.length, ...vals });
@@ -8692,6 +8701,22 @@ function FormReporteLote({ usuario, proyecto, reportes, sistema, sistemas, estad
 
   const guardar = async () => {
     if (!lineas.length || guardando) return;
+    // v8.77.0: avisar si alguna línea ya está cargada con la misma fecha (duplicado)
+    if (!reparacion) {
+      // contra lo ya guardado y contra las líneas anteriores del mismo lote
+      const m2DeLinea = (l) => l.m2 != null ? Number(l.m2) : (Number(l.rollos) || 0) * 8.5;
+      const previas = (reportes || []).concat(lineas.map(l => ({ ...l, proyectoId: proyecto.id, fecha, m2: m2DeLinea(l), _lote: l })));
+      const iguales = lineas.map(l => {
+        const a = (proyecto.areas || []).find(x => x.id === l.areaId);
+        const sis = (sistemas && sistemas[a?.sistemaId || proyecto.sistema]) || sistema;
+        const t = (sis?.tareas || []).find(x => x.id === l.tareaId);
+        const m2 = m2DeLinea(l);
+        const otras = previas.filter(r => r._lote !== l && (!r._lote || lineas.indexOf(r._lote) < lineas.indexOf(l)));
+        const igual = reporteParecido(otras, { proyectoId: proyecto.id, areaId: l.areaId, tareaId: l.tareaId, fecha, m2 });
+        return igual ? `• ${a?.nombre || 'Área'} · ${t?.nombre || 'tarea'}: ${formatNum(m2)} m²` : null;
+      }).filter(Boolean);
+      if (iguales.length && !confirm(`Estas líneas ya están cargadas con la misma fecha y los mismos m²:\n${iguales.join('\n')}\n\n¿Son trabajos distintos? Si son los mismos, cancela y quítalas para no duplicarlas.`)) return;
+    }
     setGuardando(true);
     const ok = await onGuardarLote(lineas, fotos, { fecha, nota, reparacion });
     if (ok) { setResumen({ n: lineas.length, fotos: fotos.length, total: totalEstimado }); setEnviado(true); }

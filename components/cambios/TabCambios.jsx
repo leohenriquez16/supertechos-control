@@ -12,6 +12,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Loader2, Plus, X, Trash2, FileText, Send, CheckCircle2, Hammer } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatRD, formatFechaCorta } from '../../lib/helpers/formato';
+import { puedeGestionarOC } from '../../lib/helpers/excesoM2';
 
 const ESTADOS_OC = {
   borrador:         { label: 'Borrador', color: 'bg-zinc-700/40 text-zinc-300' },
@@ -21,7 +22,9 @@ const ESTADOS_OC = {
   rechazada:        { label: 'Rechazada', color: 'bg-red-600/20 text-red-400' },
 };
 const TIPOS = {
-  aumento: 'Aumento de volumen', nueva_area: 'Área nueva', etapa: 'Etapa adicional', otro: 'Otro cambio',
+  aumento: 'Aumento de volumen', nueva_area: 'Área nueva', etapa: 'Etapa adicional',
+  disminucion: 'Disminución de volumen', // v8.77.0: área terminada con menos m² (m² negativos)
+  otro: 'Otro cambio',
 };
 
 const lineaVacia = () => ({ areaId: '', nombreArea: '', m2: '', precioM2: '', monto: 0 });
@@ -71,7 +74,8 @@ export default function TabCambios({ usuario, proyecto, data, esAdmin, onRecarga
 
   const guardarOC = async () => {
     const lineas = form.lineas
-      .filter(l => (Number(l.m2) || 0) > 0 && (l.areaId || (l.nombreArea || '').trim()))
+      // v8.77.0: m² negativos = rebaja (solo sobre un área existente)
+      .filter(l => { const m = Number(l.m2) || 0; return (m > 0 && (l.areaId || (l.nombreArea || '').trim())) || (m < 0 && l.areaId); })
       .map(l => ({
         areaId: l.areaId || null,
         nombreArea: l.areaId ? (areas.find(a => a.id === l.areaId)?.nombre || l.nombreArea) : l.nombreArea.trim(),
@@ -105,11 +109,13 @@ export default function TabCambios({ usuario, proyecto, data, esAdmin, onRecarga
       <p style="margin:2px 0"><b>Proyecto:</b> ${proyecto.cliente || proyecto.nombre || ''} ${proyecto.referenciaOdoo ? '· Ref. ' + proyecto.referenciaOdoo : ''}</p>
       <p style="margin:2px 0 12px"><b>Tipo:</b> ${TIPOS[oc.tipo] || oc.tipo}${oc.motivo ? ' — ' + oc.motivo : ''}</p>
       <table style="border-collapse:collapse;width:100%;font-size:14px">
-        <tr style="background:#f3f3f3"><th style="border:1px solid #ccc;padding:6px;text-align:left">Área</th><th style="border:1px solid #ccc;padding:6px;text-align:right">m² adicionales</th><th style="border:1px solid #ccc;padding:6px;text-align:right">Precio/m²</th><th style="border:1px solid #ccc;padding:6px;text-align:right">Monto</th></tr>
-        ${(oc.lineas || []).map(l => `<tr><td style="border:1px solid #ccc;padding:6px">${l.nombreArea}</td><td style="border:1px solid #ccc;padding:6px;text-align:right">${l.m2}</td><td style="border:1px solid #ccc;padding:6px;text-align:right">RD$ ${Number(l.precioM2).toLocaleString()}</td><td style="border:1px solid #ccc;padding:6px;text-align:right">RD$ ${Number(l.monto).toLocaleString()}</td></tr>`).join('')}
-        <tr><td colspan="3" style="border:1px solid #ccc;padding:6px;text-align:right"><b>Total adicional (sin ITBIS)</b></td><td style="border:1px solid #ccc;padding:6px;text-align:right"><b>RD$ ${Number(oc.montoTotal).toLocaleString()}</b></td></tr>
+        <tr style="background:#f3f3f3"><th style="border:1px solid #ccc;padding:6px;text-align:left">Área</th><th style="border:1px solid #ccc;padding:6px;text-align:right">${oc.montoTotal < 0 ? 'm² de menos' : 'm² adicionales'}</th><th style="border:1px solid #ccc;padding:6px;text-align:right">Precio/m²</th><th style="border:1px solid #ccc;padding:6px;text-align:right">Monto</th></tr>
+        ${(oc.lineas || []).map(l => `<tr><td style="border:1px solid #ccc;padding:6px">${l.nombreArea}</td><td style="border:1px solid #ccc;padding:6px;text-align:right">${Math.abs(l.m2)}</td><td style="border:1px solid #ccc;padding:6px;text-align:right">RD$ ${Number(l.precioM2).toLocaleString()}</td><td style="border:1px solid #ccc;padding:6px;text-align:right">RD$ ${Math.abs(Number(l.monto)).toLocaleString()}</td></tr>`).join('')}
+        <tr><td colspan="3" style="border:1px solid #ccc;padding:6px;text-align:right"><b>${oc.montoTotal < 0 ? 'Total a descontar (sin ITBIS)' : 'Total adicional (sin ITBIS)'}</b></td><td style="border:1px solid #ccc;padding:6px;text-align:right"><b>RD$ ${Math.abs(Number(oc.montoTotal)).toLocaleString()}</b></td></tr>
       </table>
-      <p style="font-size:13px;margin-top:14px">Agradecemos confirmar su aprobación respondiendo este correo para proceder con los trabajos adicionales descritos. Este monto se suma al valor de la cotización original.</p>
+      <p style="font-size:13px;margin-top:14px">${oc.montoTotal < 0
+        ? 'Al terminar los trabajos, el área ejecutada resultó menor que la cotizada. Este monto se descuenta del valor de la cotización original. Agradecemos confirmar respondiendo este correo.'
+        : 'Agradecemos confirmar su aprobación respondiendo este correo para proceder con los trabajos adicionales descritos. Este monto se suma al valor de la cotización original.'}</p>
       <p style="font-size:13px;color:#666">LH Super Techos, SRL</p>
     </div>`;
 
@@ -154,14 +160,19 @@ export default function TabCambios({ usuario, proyecto, data, esAdmin, onRecarga
     setProcesando(oc.id);
     try {
       const nuevasAreas = [...(proyecto.areas || [])];
+      const lineasFinal = [];
       for (const l of oc.lineas) {
         if (l.areaId) {
+          lineasFinal.push(l);
           const i = nuevasAreas.findIndex(a => a.id === l.areaId);
           if (i >= 0) nuevasAreas[i] = { ...nuevasAreas[i], m2: (Number(nuevasAreas[i].m2) || 0) + l.m2 };
         } else {
+          const idNueva = 'a_' + Date.now() + Math.random().toString(36).slice(2, 5);
+          lineasFinal.push({ ...l, areaId: idNueva }); // v8.77.0: la línea queda amarrada al área que crea
           nuevasAreas.push({
-            id: 'a_' + Date.now() + Math.random().toString(36).slice(2, 5),
+            id: idNueva, origenOc: oc.id,
             nombre: `${l.nombreArea} (OC-${oc.numero})`, m2: l.m2,
+            m2Cotizado: 0, // v8.77.0: área nacida de una orden de cambio (no estaba cotizada)
             sistemaId: l.sistemaId || proyecto.sistema || null,
             ...(l.precioM2 > 0 ? { precioVentaM2: l.precioM2 } : {}),
           });
@@ -171,13 +182,13 @@ export default function TabCambios({ usuario, proyecto, data, esAdmin, onRecarga
         ...proyecto, areas: nuevasAreas,
         valorCotizacion: (Number(proyecto.valorCotizacion) || 0) + oc.montoTotal,
       });
-      await db.actualizarOrdenCambio(oc.id, { estado: 'aplicada', aplicadaPorId: usuario.id });
+      await db.actualizarOrdenCambio(oc.id, { estado: 'aplicada', aplicadaPorId: usuario.id, lineas: lineasFinal });
       // Tarea para ajustar la cotización en Odoo (Lily / facturación)
       const lily = (data.personal || []).find(p => (p.roles || []).includes('facturas'));
       try {
         await db.crearTarea({
           id: 't_' + Date.now() + Math.random(), proyectoId: proyecto.id, tipo: 'ajustar_cotizacion_odoo',
-          titulo: `Ajustar cotización en Odoo: +${formatRD(oc.montoTotal)} (OC-${oc.numero} · ${proyecto.referenciaOdoo || proyecto.cliente})`,
+          titulo: `Ajustar cotización en Odoo: ${oc.montoTotal < 0 ? '' : '+'}${formatRD(oc.montoTotal)} (OC-${oc.numero} · ${proyecto.referenciaOdoo || proyecto.cliente})`,
           descripcion: `Orden de cambio aprobada por ${oc.aprobadaPorCliente} (${oc.aprobadaVia}). Crear la SUB-COTIZACIÓN en Odoo eligiendo la cuenta analítica del proyecto original${proyecto.analiticaOdooNombre ? ` ("${proyecto.analiticaOdooNombre}")` : ` (la que empieza con ${proyecto.referenciaOdoo || 'la referencia original'})`} — la sub-cot tendrá su propio número, pero sirve a esa analítica. Líneas: ${oc.lineas.map(l => `${l.nombreArea} +${l.m2} m² @ RD$${l.precioM2}`).join('; ')}.`,
           asignadaAId: lily?.id || null, asignadaANombre: lily?.nombre || null,
         });
@@ -280,7 +291,8 @@ export default function TabCambios({ usuario, proyecto, data, esAdmin, onRecarga
                 <button onClick={() => setModalAprobo({ oc, nombre: '', via: 'correo', nota: '' })} className="bg-purple-600 hover:bg-purple-500 text-white text-[10px] font-black uppercase px-3 py-2 rounded-card flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Cliente aprobó</button>
                 <button onClick={() => rechazar(oc)} className="border border-zinc-700 hover:border-red-500 text-zinc-400 text-[10px] font-black uppercase px-3 py-2 rounded-card">Rechazada</button>
               </>)}
-              {oc.estado === 'aprobada_cliente' && esAdmin && (
+              {/* v8.77.0: aplican el owner y el rol 'ordenes_cambio' (Miguel, Erisdania) */}
+              {oc.estado === 'aprobada_cliente' && puedeGestionarOC(usuario) && (
                 <button onClick={() => aplicar(oc)} disabled={procesando === oc.id} className="bg-green-600 hover:bg-green-500 disabled:opacity-60 text-white text-[10px] font-black uppercase px-3 py-2 rounded-card flex items-center gap-1">
                   {procesando === oc.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Hammer className="w-3 h-3" />} Aplicar al proyecto
                 </button>

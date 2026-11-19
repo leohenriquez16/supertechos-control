@@ -1118,16 +1118,11 @@ export default function App() {
         {esAdmin && vista === 'nuevoProyecto' && <NuevoProyecto personal={data.personal} sistemas={data.sistemas} clientes={data.clientes || []} contactos={data.contactos || []} proyectos={data.proyectos || []} onCancelar={() => setVista('dashboard')} onCrear={(proy) => withSync(async () => {
           // v8.9.10: Si no hay clienteId pero hay nombre o RNC, matchear o crear
           if (!proy.clienteId && (proy.cliente || proy.rncCliente)) {
+            // v8.75.2: busca en la base (no en la lista en memoria, que no se refresca entre
+            // obras creadas seguidas) por RNC y nombre normalizado ("ALAMSA SRL" = "ALAMSA").
             let existente = null;
-            // Primero match por RNC (más confiable)
-            if (proy.rncCliente) {
-              existente = (data.clientes || []).find(c => (c.rnc || '').trim() === proy.rncCliente.trim());
-            }
-            // Luego match por nombre
-            if (!existente && proy.cliente) {
-              const nombreBuscado = proy.cliente.trim().toLowerCase();
-              existente = (data.clientes || []).find(c => c.nombre.trim().toLowerCase() === nombreBuscado);
-            }
+            try { existente = await db.buscarClienteExistente({ rnc: proy.rncCliente, nombre: proy.cliente }); }
+            catch (e) { console.warn('buscarClienteExistente:', e?.message); }
             if (existente) {
               proy.clienteId = existente.id;
               // Si el cliente existente tiene contacto principal, usarlo

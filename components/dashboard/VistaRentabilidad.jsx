@@ -12,6 +12,7 @@ import { ArrowLeft, Loader2, TrendingUp, EyeOff, Eye, MapPin } from 'lucide-reac
 import * as db from '../../lib/db';
 import { formatRD } from '../../lib/helpers/formato';
 import { calcRentabilidadObra } from '../../lib/helpers/presupuestoObra';
+import { refsDeObra, salidasDeObra } from '../../lib/helpers/refsObra';
 
 // v8.74.14: el nombre de la obra viene del campo «Referencias» de la cotización y a
 // veces es genérico ("Parcial", "Área Parcial"). Debajo se muestra de quién es
@@ -78,7 +79,7 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
     const conPpto = new Set(pptos.map(p => p.proyectoId));
     return [...new Set((data.proyectos || [])
       .filter(p => !p.archivado && conPpto.has(p.id) && numRef(p.referenciaOdoo))
-      .map(p => p.referenciaOdoo))].sort();
+      .flatMap(p => refsDeObra(p)))].sort(); // v8.77.0: + sub-cotizaciones
   }, [pptos, data.proyectos]);
   useEffect(() => {
     if (!refsPortafolio.length) return;
@@ -109,7 +110,7 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
         reportes: data.reportes, envios: data.envios || [],
         movimientosCajaChica: movimientos, estadoPago: null,
         mdoPagadoRd: mdoPagadaPorProyecto[proy.id] ?? null, config: data.config || {},
-        salidasOdoo: salidasPorRef && numRef(proy.referenciaOdoo) ? (salidasPorRef[numRef(proy.referenciaOdoo)] || { productos: [] }) : null,
+        salidasOdoo: salidasPorRef && numRef(proy.referenciaOdoo) ? (salidasDeObra(salidasPorRef, proy, numRef) || { productos: [] }) : null,
         ordenesCambio, estadosArea: data.estadosArea || [],
       });
       return { proyecto: proy, ppto, rent };

@@ -16,6 +16,7 @@ import {
   generarPresupuestoDesdeProyecto, calcRentabilidadObra, CATEGORIAS_GASTO,
 } from '../../../lib/helpers/presupuestoObra';
 import ExcesoM2Card from '../rentabilidad/ExcesoM2Card';
+import { refsDeObra } from '../../../lib/helpers/refsObra';
 
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
@@ -89,7 +90,8 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
   // real despachado a la obra, aunque no haya envíos registrados en el ERP.
   useEffect(() => {
     let cancel = false;
-    const refs = [proyecto.referenciaOdoo].filter(Boolean);
+    // v8.77.0: también las sub-cotizaciones (ampliaciones del mismo proyecto)
+    const refs = refsDeObra(proyecto);
     if (!refs.length) { setSalidasOdoo(null); return; }
     (async () => {
       try {
@@ -99,7 +101,7 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
       } catch { /* Odoo caído no bloquea el tab */ }
     })();
     return () => { cancel = true; };
-  }, [proyecto.referenciaOdoo]);
+  }, [refsDeObra(proyecto).join(',')]);
 
   // Compras facturadas en Odoo por cuenta analítica (referencia, no suma al costo)
   useEffect(() => {

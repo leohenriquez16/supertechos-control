@@ -23,6 +23,7 @@ import { TIPOS_GARANTIA, getTipoGarantia, serviciosDeTipo, tipoSugeridoParaSiste
 import { toast } from '../lib/toast';
 import { formatRD, formatNum, formatFecha, formatFechaCorta, formatFechaLarga } from '../lib/helpers/formato';
 import { reporteParecido } from '../lib/helpers/excesoM2'; // v8.77.0: aviso de reporte duplicado
+import { refsDeObra } from '../lib/helpers/refsObra'; // v8.77.0: cotización original + sub-cotizaciones
 import {
   getM2Reporte, getPrecioVentaArea,
   getSuplementosArea, getPrecioSuplemento, getPrecioTotalM2Area, getSistemasDeArea,
@@ -7100,7 +7101,7 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
     (async () => {
       try {
         const [res, mod] = await Promise.all([
-          fetch(`/api/odoo/salidas-almacen?prefijo=1&refs=${encodeURIComponent(ref)}`),
+          fetch(`/api/odoo/salidas-almacen?prefijo=1&refs=${encodeURIComponent(refsDeObra(proyecto).join(','))}`),
           import('../lib/helpers/pedirAlmacen'),
         ]);
         const json = await res.json();
@@ -7110,7 +7111,7 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
       } catch { if (!cancel) setSalidasOdoo({ estado: 'error', productos: [] }); }
     })();
     return () => { cancel = true; };
-  }, [proyecto.referenciaOdoo, esAdmin]);
+  }, [refsDeObra(proyecto).join(','), esAdmin]);
   const odooListo = salidasOdoo.estado === 'ok' && !!helperPedir;
   const salioOdoo = {
     disponible: odooListo,

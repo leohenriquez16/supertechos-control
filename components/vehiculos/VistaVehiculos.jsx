@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Car, Plus, Loader2, Edit2, Trash2, Copy, Check, FileText, Upload, X, AlertTriangle, Eye, MapPin, RefreshCw, ExternalLink, Camera, Satellite, Receipt } from 'lucide-react';
 import * as db from '../../lib/db';
+import { fetchConSesion } from '../../lib/fetchConSesion';
 import { toast } from '../../lib/toast';
 import { comprimirImagenABlob } from '../../lib/imports';
 import Campo from '../common/Campo';
@@ -762,7 +763,7 @@ function ModalGpsVehiculo({ vehiculo, onCerrar }) {
 function SelectorUnidadGPS({ value, onChange }) {
   const [unidades, setUnidades] = useState(null);
   useEffect(() => {
-    fetch('/api/gps/posiciones').then(r => r.json()).then(d => setUnidades(d.dispositivos || [])).catch(() => setUnidades([]));
+    fetchConSesion('/api/gps/posiciones').then(r => r.json()).then(d => setUnidades(d.dispositivos || [])).catch(() => setUnidades([]));
   }, []);
   return (
     <div className="mt-2">
@@ -790,7 +791,7 @@ function MapaUnidadViva({ deviceId, reloadKey, onDato }) {
   const [error, setError] = useState(null);
   useEffect(() => {
     let vivo = true;
-    fetch('/api/gps/posiciones').then(r => r.json()).then(d => {
+    fetchConSesion('/api/gps/posiciones').then(r => r.json()).then(d => {
       if (!vivo) return;
       const u = (d.dispositivos || []).find(x => String(x.id) === String(deviceId));
       if (u) { setUnidad(u); onDato?.(u); } else setError('La unidad no aparece en el GPS.');

@@ -17,6 +17,7 @@ import CitaRuta from '../surveys/CitaRuta';
 import ClimaWidget from './ClimaWidget';
 import MiBono from '../bonos/MiBono'; // v8.28.2
 import MisPendientes from '../pendientes/MisPendientes'; // v8.28.3
+import TarjetaRutaHoy from '../logistica/TarjetaRutaHoy'; // rutas-chofer: quien tenga viajes asignados ve su ruta
 
 export default function InicioSupervisor({ usuario, data, onIrAReportar, onVerProyecto, onIrAAsignaciones, onIrAProyectos, onIrAVista, onRecargar }) {
   const [levs, setLevs] = useState([]);
@@ -181,6 +182,9 @@ export default function InicioSupervisor({ usuario, data, onIrAReportar, onVerPr
           <RefreshCw className={`w-3.5 h-3.5 ${refrescando ? 'animate-spin' : ''}`} /> {refrescando ? '…' : 'Refrescar'}
         </button>
       </div>
+
+      {/* Si tiene viajes asignados como chofer, su ruta de hoy (solo sale si hay) */}
+      <TarjetaRutaHoy usuario={usuario} data={data} />
 
       {/* Clima (cerrable; reaparece al día siguiente desde las 7am) */}
       {climaVisible && <ClimaWidget cerrable onClose={cerrarClima} />}

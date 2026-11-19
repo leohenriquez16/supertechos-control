@@ -15,8 +15,19 @@
  *      popup,                    — contenido HTML del popup
  *      onClick,                  — callback al hacer click
  *    }>
+ *      numero,                   — número dentro del pin (rutas en orden)
+ *      borde,                    — color del borde del pin (default blanco)
+ *      sinEncuadre,              — true: no cuenta para el encuadre automático
  *  - circle: { lat, lng, radius, color } — círculo opcional (ej. radio de check-in)
+ *  - polyline: { points, color } — una línea punteada (compat. v8.41)
+ *  - polylines: Array<{ points, color, dashed, weight, opacity, sinEncuadre }> — varias líneas (v8.75)
+ *  - firmaEncuadre: string      — (opcional, v8.75) si viene, el mapa SOLO se re-encuadra cuando
+ *                                 cambia esta firma (ej. otra ruta abierta u otra cantidad de
+ *                                 paradas); así no le quita al usuario el zoom que puso cuando
+ *                                 se mueve un camión o entra un pin. Sin ella: como siempre.
  *  - scrollWheelZoom: bool       — permitir zoom con scroll (default false)
+ *  - foco: { lat, lng, zoom, clave } — (opcional, v8.75) vuela a ese punto cada vez que cambia
+ *                                 la clave (ej. al elegir un lugar en el buscador del mapa)
  */
 
 import React, { useEffect, useRef } from 'react';
@@ -55,14 +66,14 @@ function makeVehiculoIcon(tipo = 'camion', color = '#16a34a') {
 
 // Genera un ícono SVG de pin personalizado. v8.41.0: `numero` pinta el número
 // de la parada dentro del pin (para rutas en orden).
-function makeSvgIcon(color = '#dc2626', size = 32, numero = null) {
+function makeSvgIcon(color = '#dc2626', size = 32, numero = null, borde = null) {
   const centro = numero != null
     ? `<circle cx="16" cy="16" r="9" fill="white"/><text x="16" y="21" text-anchor="middle" font-family="Arial" font-size="13" font-weight="900" fill="${color}">${numero}</text>`
     : `<circle cx="16" cy="16" r="6" fill="white" opacity="0.9"/>`;
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size * 1.3}" viewBox="0 0 32 42">
       <path d="M16 0 C7.16 0 0 7.16 0 16 C0 28 16 42 16 42 C16 42 32 28 32 16 C32 7.16 24.84 0 16 0Z"
-        fill="${color}" stroke="white" stroke-width="2"/>
+        fill="${color}" stroke="${borde || 'white'}" stroke-width="${borde ? 4 : 2}"/>
       ${centro}
     </svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
@@ -75,16 +86,21 @@ export default function MapaLeaflet({
   markers = [],
   circle = null,
   polyline = null, // v8.41.0: { points: [[lat,lng],...], color } — la línea de la ruta en orden
+  polylines = null, // v8.75: [{ points, color, dashed, weight, opacity }] — ruta planificada + recorrido real
   onMapClick = null, // v8.45.0: (lat, lng) — elegir un punto haciendo clic en el mapa
   scrollWheelZoom = false,
   className = '',
+  firmaEncuadre = undefined,
+  foco = null,
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const markersRef = useRef([]);
   const circleRef = useRef(null);
   const polylineRef = useRef(null);
+  const polylinesRef = useRef([]);
   const clickCbRef = useRef(null);
+  const firmaRef = useRef(undefined); // v8.75: última firma encuadrada (si el caller usa firmaEncuadre)
   clickCbRef.current = onMapClick; // siempre el callback más reciente
 
   useEffect(() => {
@@ -136,6 +152,8 @@ export default function MapaLeaflet({
       // Agregar nuevos marcadores
       // Limpiar polyline anterior
       if (polylineRef.current) { polylineRef.current.remove(); polylineRef.current = null; }
+      polylinesRef.current.forEach(l => l.remove());
+      polylinesRef.current = [];
 
       markers.forEach((m) => {
         if (m.lat == null || m.lng == null) return;
@@ -146,7 +164,7 @@ export default function MapaLeaflet({
           const vi = makeVehiculoIcon(m.vehiculoTipo, colorHex);
           icon = L.icon({ iconUrl: vi.url, iconSize: [vi.w, vi.h], iconAnchor: [vi.w / 2, vi.h], popupAnchor: [0, -vi.h], tooltipAnchor: [0, -vi.h] });
         } else {
-          const iconUrl = makeSvgIcon(colorHex, m.numero != null ? 32 : 28, m.numero ?? null);
+          const iconUrl = makeSvgIcon(colorHex, m.numero != null ? 32 : 28, m.numero ?? null, m.borde ? (MARKER_COLORS[m.borde] || m.borde) : null);
           icon = L.icon({
             iconUrl,
             iconSize: [28, 36],
@@ -179,6 +197,15 @@ export default function MapaLeaflet({
         }).addTo(map);
       }
 
+      // v8.75: varias líneas (ej. ruta planificada punteada + recorrido real del GPS)
+      const lineasValidas = (Array.isArray(polylines) ? polylines : []).filter(l => l && Array.isArray(l.points) && l.points.length > 1);
+      lineasValidas.forEach(l => {
+        polylinesRef.current.push(L.polyline(l.points, {
+          color: l.color || '#22d3ee', weight: l.weight || 3, opacity: l.opacity ?? 0.85,
+          dashArray: l.dashed ? '8 6' : null,
+        }).addTo(map));
+      });
+
       // Agregar círculo (radio de check-in)
       if (circle && circle.lat != null && circle.lng != null && circle.radius > 0) {
         circleRef.current = L.circle([circle.lat, circle.lng], {
@@ -191,19 +218,31 @@ export default function MapaLeaflet({
         }).addTo(map);
       }
 
-      // Ajustar vista: si hay múltiples marcadores, hacer fitBounds
-      if (markers.length > 1) {
-        const validMarkers = markers.filter(m => m.lat != null && m.lng != null);
-        if (validMarkers.length > 1) {
-          const bounds = L.latLngBounds(validMarkers.map(m => [m.lat, m.lng]));
-          map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
-        }
+      // Ajustar vista: si hay múltiples marcadores, hacer fitBounds.
+      // v8.75: las polilíneas nuevas también cuentan (salvo las sinEncuadre, ej. el
+      // recorrido real del GPS); marcadores con sinEncuadre no.
+      // Con firmaEncuadre: solo se encuadra cuando la firma cambia (respeta el zoom del usuario).
+      const ptsEncuadre = markers.filter(m => m.lat != null && m.lng != null && !m.sinEncuadre).map(m => [m.lat, m.lng]);
+      lineasValidas.filter(l => !l.sinEncuadre).forEach(l => l.points.forEach(pt => ptsEncuadre.push(pt)));
+      const encuadrar = firmaEncuadre === undefined || firmaEncuadre !== firmaRef.current;
+      firmaRef.current = firmaEncuadre;
+      if (!encuadrar) {
+        // misma firma: no mover la vista
+      } else if (ptsEncuadre.length > 1) {
+        map.fitBounds(L.latLngBounds(ptsEncuadre), { padding: [40, 40], maxZoom: 14 });
+      } else if (markers.length > 1 && !markers.some(m => m.sinEncuadre)) {
+        // como antes: varios marcadores pero uno solo válido → no mover la vista
       } else if (center) {
         map.setView(center, zoom);
       }
 
-      // Forzar redibujado (necesario cuando el contenedor cambia de tamaño)
-      setTimeout(() => map.invalidateSize(), 100);
+      // Forzar redibujado (necesario cuando el contenedor cambia de tamaño).
+      // v8.75: y, si se acaba de encuadrar, volver a encuadrar con el tamaño real
+      // (si no, quedan pines fuera).
+      setTimeout(() => {
+        map.invalidateSize();
+        if (encuadrar && ptsEncuadre.length > 1) map.fitBounds(L.latLngBounds(ptsEncuadre), { padding: [40, 40], maxZoom: 14 });
+      }, 100);
     });
 
     // Cargar CSS de Leaflet dinámicamente
@@ -253,7 +292,18 @@ export default function MapaLeaflet({
       // No destruir el mapa al desmontar para evitar re-inicializaciones costosas
       // Solo limpiar marcadores
     };
-  }, [center?.[0], center?.[1], zoom, JSON.stringify(markers), JSON.stringify(circle), JSON.stringify(polyline)]);
+  }, [center?.[0], center?.[1], zoom, JSON.stringify(markers), JSON.stringify(circle), JSON.stringify(polyline), JSON.stringify(polylines), firmaEncuadre]);
+
+  // v8.75: volar al punto elegido en el buscador del mapa.
+  useEffect(() => {
+    if (!foco || foco.lat == null || foco.lng == null) return;
+    let intentos = 0;
+    const ir = () => {
+      if (mapRef.current) mapRef.current.flyTo([foco.lat, foco.lng], foco.zoom || 17, { duration: 0.8 });
+      else if (intentos++ < 20) setTimeout(ir, 150); // el mapa todavía se está creando
+    };
+    ir();
+  }, [foco?.clave]);
 
   // Destruir mapa al desmontar el componente completamente
   useEffect(() => {

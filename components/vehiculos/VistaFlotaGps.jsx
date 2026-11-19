@@ -7,6 +7,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Loader2, Truck, Satellite, MapPin, RefreshCw, Fuel, ChevronDown } from 'lucide-react';
 import * as db from '../../lib/db';
+import { fetchConSesion } from '../../lib/fetchConSesion';
 
 // v8.44.0: MAPA EN VIVO de toda la flota — posición actual de cada unidad con su
 // mini-vehículo a escala (camión > camioneta > carro > motor), color por estado.
@@ -15,7 +16,7 @@ function MapaFlotaViva({ data }) {
   const [refrescando, setRefrescando] = useState(false);
   const cargar = () => {
     setRefrescando(true);
-    fetch('/api/gps/posiciones').then(r => r.json()).then(d => setUnidades(d.dispositivos || [])).catch(() => setUnidades([])).finally(() => setRefrescando(false));
+    fetchConSesion('/api/gps/posiciones').then(r => r.json()).then(d => setUnidades(d.dispositivos || [])).catch(() => setUnidades([])).finally(() => setRefrescando(false));
   };
   useEffect(() => { cargar(); }, []);
 

@@ -8,6 +8,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Car, Edit2, MapPin, Loader2 } from 'lucide-react';
 import { formatFechaCorta } from '../../lib/helpers/formato';
 import * as db from '../../lib/db';
+import { fetchConSesion } from '../../lib/fetchConSesion';
 
 const hoyRD = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo' }).format(new Date());
 const dias = (f) => f ? Math.round((new Date(f + 'T00:00:00') - new Date(hoyRD() + 'T00:00:00')) / 86400000) : null;
@@ -158,7 +159,7 @@ export default function FichaVehiculo({ vehiculo: v, personal = [], proyectos = 
   const [gpsViva, setGpsViva] = useState(null);
   useEffect(() => {
     if (v.gpsDeviceId) {
-      fetch('/api/gps/posiciones').then(r => r.json())
+      fetchConSesion('/api/gps/posiciones').then(r => r.json())
         .then(d => setGpsViva((d.dispositivos || []).find(u => String(u.id) === String(v.gpsDeviceId)) || null))
         .catch(() => {});
     }

@@ -145,7 +145,7 @@ export default function BuscadorParada({ candidatos, recientes = [], puntoMapa =
                 className="w-full text-left bg-orange-700 hover:bg-orange-600 disabled:opacity-50 text-white rounded-card px-2.5 py-2 flex items-center gap-2">
                 {montando === r.id ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : <span className="shrink-0">📦</span>}
                 <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-black">Montar la requisición{r.urgente ? ' · urgente' : ''}</span>
+                  <span className="block text-sm font-black">Montar {r.codigo ? `el pedido ${r.codigo}` : 'la requisición'}{r.urgente ? ' · urgente' : ''}</span>
                   {resumenItems(r) && <span className="block text-[11px] opacity-90 truncate">{resumenItems(r)}</span>}
                 </span>
                 {i === 0 && <span className="text-[10px] font-bold opacity-70 shrink-0">Enter</span>}

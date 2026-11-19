@@ -10,6 +10,7 @@
 //    si Erisdania hizo zoom, el mapa no salta cuando se mueve un camión o entra un pin
 
 import React, { useMemo, useState } from 'react';
+import BuscadorMapa from './BuscadorMapa';
 import { OFICINA, coordsParada, estadoVisualParada, etiquetaTipo, firmaEncuadreRuta } from '../../../lib/helpers/rutasOficina';
 
 const MapaLeaflet = React.lazy(() => import('../../common/MapaLeaflet'));
@@ -21,7 +22,7 @@ const COLOR_OTRAS = '#94a3b8';        // paradas de las otras rutas del día
 const COLOR_CAMION_PROPIO = '#0891b2'; // el camión de esta ruta (morado = "el GPS la vio")
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-export default function MapaRuta({ viaje, otrasRutas = [], proyectos, nombreObra, listas, diligencias, gpsUnidades, vehiculos, recorrido, puntoMapa, onMapClick, height, verCamiones = true }) {
+export default function MapaRuta({ viaje, otrasRutas = [], proyectos, nombreObra, listas, diligencias, gpsUnidades, vehiculos, recorrido, puntoMapa, onMapClick, height, verCamiones = true, foco = null, onElegirLugar = null }) {
   const [verOtras, setVerOtras] = useState(true);
   const { markers, polylines, centro } = useMemo(() => {
     const ms = [];
@@ -74,7 +75,9 @@ export default function MapaRuta({ viaje, otrasRutas = [], proyectos, nombreObra
         label: `🛰 ${veh ? `${veh.marca} ${veh.modelo}` : u.nombre}${deEsta ? ' (esta ruta)' : ''}`,
         popup: `<b>🛰 ${esc(u.nombre)}</b><br>${u.velocidad} km/h · ${u.velocidad > 2 ? 'en movimiento' : u.online === 'online' ? 'encendido detenido' : 'apagado'}<br><span style="font-size:11px;color:#a1a1aa">${esc(u.hora || '')}</span>` });
     });
-    if (puntoMapa) ms.push({ lat: puntoMapa.lat, lng: puntoMapa.lng, color: 'yellow', label: 'Parada nueva aquí', sinEncuadre: true });
+    if (puntoMapa) ms.push({ lat: puntoMapa.lat, lng: puntoMapa.lng, color: 'yellow', sinEncuadre: true,
+      label: puntoMapa.nombre ? `Parada nueva: ${puntoMapa.nombre}` : 'Parada nueva aquí',
+      popup: `<b>📍 ${esc(puntoMapa.nombre || 'Parada nueva aquí')}</b>${puntoMapa.detalle ? `<br><span style="font-size:11px;color:#a1a1aa">${esc(puntoMapa.detalle)}</span>` : ''}<br><span style="font-size:11px">Complétala en «Agregar parada» y toca «Agregar a la ruta».</span>` });
     const primero = ms.find(m => !m.sinEncuadre) || ms[0];
     return { markers: ms, polylines: lineas, centro: [primero.lat, primero.lng] };
   }, [viaje, otrasRutas, verOtras, proyectos, nombreObra, listas, diligencias, gpsUnidades, vehiculos, recorrido, puntoMapa, verCamiones]);
@@ -85,8 +88,9 @@ export default function MapaRuta({ viaje, otrasRutas = [], proyectos, nombreObra
   return (
     <div className="relative">
       <React.Suspense fallback={<div className="bg-zinc-950 border border-zinc-800 rounded-card flex items-center justify-center" style={{ height }}><span className="text-xs text-zinc-500">Cargando mapa…</span></div>}>
-        <MapaLeaflet center={centro} zoom={12} height={height} markers={markers} polylines={polylines} firmaEncuadre={firma} onMapClick={onMapClick} scrollWheelZoom className="border border-zinc-800 rounded-card" />
+        <MapaLeaflet center={centro} zoom={12} height={height} markers={markers} polylines={polylines} firmaEncuadre={firma} onMapClick={onMapClick} foco={foco} scrollWheelZoom className="border border-zinc-800 rounded-card" />
       </React.Suspense>
+      {onElegirLugar !== null && <BuscadorMapa onElegir={onElegirLugar || undefined} deshabilitado={!onElegirLugar} />}
       <div className="flex gap-x-3 gap-y-1 flex-wrap text-[11px] text-zinc-400 mt-1.5">
         <span><b className="text-blue-400">●</b> Pendiente</span>
         <span><b className="text-green-400">●</b> Hecha</span>
@@ -102,7 +106,7 @@ export default function MapaRuta({ viaje, otrasRutas = [], proyectos, nombreObra
             <b style={{ color: COLOR_OTRAS }}>●</b> otras rutas del día
           </label>
         )}
-        {onMapClick && <span className="text-zinc-500">· Clic en el mapa para poner una parada ahí</span>}
+        {onMapClick && <span className="text-zinc-500">· Busca un lugar arriba del mapa o haz clic donde queda para poner una parada</span>}
       </div>
     </div>
   );

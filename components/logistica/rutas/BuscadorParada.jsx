@@ -13,11 +13,12 @@ import { Search, X, Loader2 } from 'lucide-react';
 import { buscarCandidatos, GRUPOS_LUGAR, TIPOS_PARADA } from '../../../lib/helpers/rutasOficina';
 import { parseCoords } from '../../../lib/helpers/geo';
 import { geocodificarInverso } from '../../../lib/geo';
+import useLugaresMapa from './useLugaresMapa';
 
-const TITULO_GRUPO = Object.fromEntries([...GRUPOS_LUGAR.map(g => [g.id, g.titulo]), ['recientes', 'Recientes'], ['pegado', 'Link pegado']]);
+const TITULO_GRUPO = Object.fromEntries([...GRUPOS_LUGAR.map(g => [g.id, g.titulo]), ['recientes', 'Recientes'], ['pegado', 'Link pegado'], ['enmapa', '📍 Lugares en el mapa (negocios, plazas, calles)']]);
 
 export default function BuscadorParada({ candidatos, recientes = [], puntoMapa = null, onLimpiarPuntoMapa, onAgregar, onMasOpciones,
-  autoFocus = false, porMontarObra = null, nombreObra = null, onMontarRequisicion = null, onMontarDiligencia = null }) {
+  autoFocus = false, porMontarObra = null, nombreObra = null, onMontarRequisicion = null, onMontarDiligencia = null, onElegirLugarMapa = null }) {
   const [texto, setTexto] = useState('');
   const [abierto, setAbierto] = useState(false);
   const [activo, setActivo] = useState(0);
@@ -49,7 +50,11 @@ export default function BuscadorParada({ candidatos, recientes = [], puntoMapa =
   // Clic en el mapa → ese punto queda elegido, pidiendo nombre.
   useEffect(() => {
     if (!puntoMapa) return;
-    elegir({ key: null, grupo: 'mapa', icono: '📌', label: 'Punto marcado en el mapa', sub: `${puntoMapa.lat.toFixed(5)}, ${puntoMapa.lng.toFixed(5)}`, lugar: '', lat: puntoMapa.lat, lng: puntoMapa.lng, proyectoId: null, tipoDefecto: 'visita', pedirNombre: true });
+    elegir({ key: null, grupo: 'mapa', icono: puntoMapa.nombre ? '📍' : '📌', label: puntoMapa.nombre || 'Punto marcado en el mapa',
+      sub: puntoMapa.detalle || `${puntoMapa.lat.toFixed(5)}, ${puntoMapa.lng.toFixed(5)}`, lugar: '', lat: puntoMapa.lat, lng: puntoMapa.lng,
+      proyectoId: null, tipoDefecto: puntoMapa.nombre ? 'recogida' : 'visita', pedirNombre: true });
+    // Lugar buscado en el mapa: ya trae nombre (editable). Clic suelto: se sugiere por la dirección.
+    if (puntoMapa.nombre) { setNombre(puntoMapa.nombre); return; }
     let vivo = true;
     geocodificarInverso(puntoMapa.lat, puntoMapa.lng).then(g => {
       if (!vivo || !g) return;
@@ -66,10 +71,16 @@ export default function BuscadorParada({ candidatos, recientes = [], puntoMapa =
     if (c) r.unshift({ key: null, grupo: 'pegado', grupoMostrado: 'pegado', icono: '📌', label: 'Usar el punto del link pegado', sub: `${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}`, lugar: '', lat: c.lat, lng: c.lng, proyectoId: null, tipoDefecto: 'visita', pedirNombre: true });
     return r;
   }, [candidatos, texto, recientes]);
+  // Lugares del mapa (negocios, plazas, calles en RD) debajo de lo del ERP.
+  const { lugares: lugaresMapa, cargando: buscandoMapa } = useLugaresMapa(texto, { activo: abierto && !!onElegirLugarMapa });
+  const todos = useMemo(() => [...resultados, ...lugaresMapa.map(l => ({ key: null, grupo: 'enmapa', grupoMostrado: 'enmapa', icono: '📍',
+    label: l.nombre, sub: l.detalle, lugarMapa: l }))], [resultados, lugaresMapa]);
   useEffect(() => { setActivo(0); }, [texto]);
 
   const pmDe = (c) => (c?.proyectoId && porMontarObra) ? porMontarObra(c.proyectoId) : { requisiciones: [], retiros: [], total: 0 };
   function elegir(c) {
+    // Lugar del mapa: el mapa vuela ahí y entra como punto (con nombre ya puesto).
+    if (c.lugarMapa) { setAbierto(false); setTexto(''); onElegirLugarMapa?.(c.lugarMapa); return; }
     setElegido(c); setTipo(c.tipoDefecto || 'entrega'); setNota(''); setNombre(c.pedirNombre ? '' : c.lugar);
     setAbierto(false); setTexto('');
     const hayPorMontar = pmDe(c).total > 0;
@@ -102,9 +113,9 @@ export default function BuscadorParada({ candidatos, recientes = [], puntoMapa =
   };
 
   const teclaBusqueda = (e) => {
-    if (e.key === 'ArrowDown') { e.preventDefault(); setAbierto(true); setActivo(i => Math.min(i + 1, resultados.length - 1)); }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setAbierto(true); setActivo(i => Math.min(i + 1, todos.length - 1)); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setActivo(i => Math.max(i - 1, 0)); }
-    else if (e.key === 'Enter') { e.preventDefault(); if (resultados[activo]) elegir(resultados[activo]); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (todos[activo]) elegir(todos[activo]); }
     else if (e.key === 'Escape') { setTexto(''); setAbierto(false); }
   };
   const teclaFormulario = (e) => {
@@ -184,17 +195,17 @@ export default function BuscadorParada({ candidatos, recientes = [], puntoMapa =
         <Search className="w-4 h-4 text-zinc-500 shrink-0" />
         <input ref={inputRef} value={texto} onChange={e => { setTexto(e.target.value); setAbierto(true); }}
           onFocus={() => setAbierto(true)} onBlur={() => setTimeout(() => setAbierto(false), 150)} onKeyDown={teclaBusqueda}
-          placeholder="Agregar parada: obra, cliente, suplidor, oficina…" className="flex-1 bg-transparent outline-none py-2.5 text-sm min-w-0" />
+          placeholder="Agregar parada: obra, cliente, suplidor, oficina, o cualquier lugar…" className="flex-1 bg-transparent outline-none py-2.5 text-sm min-w-0" />
         <span className="hidden xl:inline text-[10px] text-zinc-600 border border-zinc-800 rounded px-1 shrink-0">/</span>
       </div>
-      {abierto && (resultados.length > 0 || texto.trim().length >= 2) && (
+      {abierto && (todos.length > 0 || texto.trim().length >= 2) && (
         <div className="absolute z-30 left-0 right-0 mt-1 bg-zinc-900 border border-zinc-700 rounded-card shadow-pop max-h-80 overflow-y-auto">
-          {resultados.map((c, i) => {
+          {todos.map((c, i) => {
             const cab = c.grupoMostrado !== ultimoGrupo ? (ultimoGrupo = c.grupoMostrado, TITULO_GRUPO[c.grupoMostrado]) : null;
             return (
               <React.Fragment key={(c.key || 'pt') + i}>
                 {cab && <div className="px-2.5 pt-2 pb-1 text-[10px] uppercase tracking-widest font-bold text-zinc-500">{cab}</div>}
-                <button onMouseDown={e => { e.preventDefault(); elegir(c); }} onMouseEnter={() => setActivo(i)}
+                <button key={'b' + i} onMouseDown={e => { e.preventDefault(); elegir(c); }} onMouseEnter={() => setActivo(i)}
                   className={`w-full text-left px-2.5 py-2 flex items-center gap-2 ${i === activo ? 'bg-zinc-800' : ''}`}>
                   <span className="shrink-0">{c.icono}</span>
                   <span className="min-w-0 flex-1">
@@ -205,13 +216,16 @@ export default function BuscadorParada({ candidatos, recientes = [], puntoMapa =
               </React.Fragment>
             );
           })}
+          {buscandoMapa && lugaresMapa.length === 0 && texto.trim().length >= 3 && (
+            <div className="px-2.5 py-2 text-[11px] text-zinc-500 flex items-center gap-1.5"><Loader2 className="w-3 h-3 animate-spin" /> Buscando también en el mapa…</div>
+          )}
           {texto.trim().length >= 2 && (
             <button onMouseDown={e => { e.preventDefault(); onMasOpciones?.(texto.trim()); setTexto(''); }}
               className="w-full text-left px-2.5 py-2 border-t border-zinc-800 text-[12px] text-cyan-400 hover:bg-zinc-800">
-              {resultados.length === 0 ? `No encontré "${texto.trim()}". ` : ''}Escribirlo a mano y pegar el link de Google Maps →
+              {todos.length === 0 && !buscandoMapa ? `No encontré "${texto.trim()}". ` : ''}Escribirlo a mano y pegar el link de Google Maps →
             </button>
           )}
-          {resultados.length === 0 && texto.trim().length >= 2 && (
+          {todos.length === 0 && !buscandoMapa && texto.trim().length >= 2 && (
             <div className="px-2.5 pb-2 text-[11px] text-zinc-500">También puedes hacer clic en el mapa donde queda.</div>
           )}
         </div>

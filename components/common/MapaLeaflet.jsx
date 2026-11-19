@@ -26,6 +26,8 @@
  *                                 paradas); así no le quita al usuario el zoom que puso cuando
  *                                 se mueve un camión o entra un pin. Sin ella: como siempre.
  *  - scrollWheelZoom: bool       — permitir zoom con scroll (default false)
+ *  - foco: { lat, lng, zoom, clave } — (opcional, v8.75) vuela a ese punto cada vez que cambia
+ *                                 la clave (ej. al elegir un lugar en el buscador del mapa)
  */
 
 import React, { useEffect, useRef } from 'react';
@@ -89,6 +91,7 @@ export default function MapaLeaflet({
   scrollWheelZoom = false,
   className = '',
   firmaEncuadre = undefined,
+  foco = null,
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -290,6 +293,17 @@ export default function MapaLeaflet({
       // Solo limpiar marcadores
     };
   }, [center?.[0], center?.[1], zoom, JSON.stringify(markers), JSON.stringify(circle), JSON.stringify(polyline), JSON.stringify(polylines), firmaEncuadre]);
+
+  // v8.75: volar al punto elegido en el buscador del mapa.
+  useEffect(() => {
+    if (!foco || foco.lat == null || foco.lng == null) return;
+    let intentos = 0;
+    const ir = () => {
+      if (mapRef.current) mapRef.current.flyTo([foco.lat, foco.lng], foco.zoom || 17, { duration: 0.8 });
+      else if (intentos++ < 20) setTimeout(ir, 150); // el mapa todavía se está creando
+    };
+    ir();
+  }, [foco?.clave]);
 
   // Destruir mapa al desmontar el componente completamente
   useEffect(() => {

@@ -70,6 +70,14 @@ export default function VistaRutas({ usuario, data, onVolver }) {
   const [nuevo, setNuevo] = useState({ tipoEnvio: 'camion', vehiculoId: '', vehiculo: '', choferId: '' });
   const [avanzada, setAvanzada] = useState(null);  // { texto } — form "Más opciones"
   const [puntoMapa, setPuntoMapa] = useState(null);
+  const [focoMapa, setFocoMapa] = useState(null); // v8.75: el mapa vuela al lugar buscado
+  // Lugar elegido en el buscador del mapa (o en «Agregar parada» › Lugares en el mapa):
+  // el mapa vuela ahí, queda el pin amarillo y el formulario listo con el nombre puesto.
+  const elegirLugarMapa = (l) => {
+    setAvanzada(null);
+    setPuntoMapa({ lat: l.lat, lng: l.lng, nombre: l.nombre, detalle: l.detalle });
+    setFocoMapa({ lat: l.lat, lng: l.lng, zoom: 17, clave: Date.now() });
+  };
   const [gestionLugares, setGestionLugares] = useState(false);
   const [recientes, setRecientes] = useState([]);
   const [aviso, setAviso] = useState(null);        // { texto, accion: { label, fn } }
@@ -436,6 +444,7 @@ export default function VistaRutas({ usuario, data, onVolver }) {
             <MapaRuta viaje={vSel} otrasRutas={otrasRutasDia} proyectos={data.proyectos || []} nombreObra={nombreObra} listas={filtro === 'dia' ? listas : []} diligencias={filtro === 'dia' ? diligencias : []}
               gpsUnidades={(vSel?.fecha || fecha) === hoy ? gpsUnidades : []} vehiculos={data.vehiculos} recorrido={puntosRecorrido} puntoMapa={puntoMapa}
               onMapClick={puedeAgregar ? (lat, lng) => { setAvanzada(null); setPuntoMapa({ lat, lng }); } : null}
+              foco={focoMapa} onElegirLugar={puedeAgregar ? elegirLugarMapa : undefined}
               height={esDesktop ? 'calc(100vh - 230px)' : 320} />
             {horasChofer.length > 0 && (
               <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
@@ -474,7 +483,7 @@ export default function VistaRutas({ usuario, data, onVolver }) {
                       <BuscadorParada key={vSel.id} candidatos={candidatos} recientes={recientes} puntoMapa={puntoMapa} onLimpiarPuntoMapa={() => setPuntoMapa(null)}
                         onAgregar={agregarRapida} onMasOpciones={(texto) => setAvanzada({ texto })}
                         autoFocus={enfocarBuscador === vSel.id} porMontarObra={porMontarObra} nombreObra={nombreObra}
-                        onMontarRequisicion={montarRequisicion} onMontarDiligencia={montarDiligencia} />
+                        onMontarRequisicion={montarRequisicion} onMontarDiligencia={montarDiligencia} onElegirLugarMapa={elegirLugarMapa} />
                     )}
                     {!avanzada && (
                       <div className="flex gap-1.5 flex-wrap">

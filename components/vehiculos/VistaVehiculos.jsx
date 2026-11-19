@@ -233,7 +233,7 @@ export default function VistaVehiculos({ usuario, data, onRecargar }) {
 
       {logDe && <ModalLogVehiculo usuario={usuario} vehiculo={logDe} personal={data?.personal || []} onCerrar={() => setLogDe(null)} />}
       {rutasDe && <RutasVehiculo vehiculo={rutasDe} onCerrar={() => setRutasDe(null)} />}
-      {fichaDe && <FichaVehiculo vehiculo={fichaDe} personal={data?.personal || []} licencia={licencias[fichaDe.responsableId]} puedeEditar={true}
+      {fichaDe && <FichaVehiculo vehiculo={fichaDe} personal={data?.personal || []} proyectos={data?.proyectos || []} licencia={licencias[fichaDe.responsableId]} puedeEditar={true}
         onCerrar={() => setFichaDe(null)}
         onEditar={() => { setModal(fichaDe); setFichaDe(null); }}
         onLog={() => { setLogDe(fichaDe); setFichaDe(null); }}

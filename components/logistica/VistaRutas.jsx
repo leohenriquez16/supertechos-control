@@ -87,6 +87,7 @@ export default function VistaRutas({ usuario, data, onVolver }) {
   const [recorrido, setRecorrido] = useState({ clave: null, puntos: [] });
   const [tick, setTick] = useState(0);             // cada 5 min (solo hoy)
   const [esDesktop, setEsDesktop] = useState(true);
+  const [esAncho, setEsAncho] = useState(true); // ≥1536 px: 3 columnas lado a lado (si no, el mapa queda arriba de la ruta)
   const [enfocarBuscador, setEnfocarBuscador] = useState(null); // id de la ruta recién creada
   const [fechaCargada, setFechaCargada] = useState(null);         // fecha de los `viajes` que hay en pantalla
   const pedido = useRef(0);
@@ -95,9 +96,10 @@ export default function VistaRutas({ usuario, data, onVolver }) {
   useEffect(() => {
     if (typeof window === 'undefined' || !window.matchMedia) return;
     const mq = window.matchMedia('(min-width: 1024px)');
-    const f = () => setEsDesktop(mq.matches);
-    f(); mq.addEventListener?.('change', f);
-    return () => mq.removeEventListener?.('change', f);
+    const mq2 = window.matchMedia('(min-width: 1536px)');
+    const f = () => { setEsDesktop(mq.matches); setEsAncho(mq2.matches); };
+    f(); mq.addEventListener?.('change', f); mq2.addEventListener?.('change', f);
+    return () => { mq.removeEventListener?.('change', f); mq2.removeEventListener?.('change', f); };
   }, []);
   // Locaciones de clientes para el buscador (una sola vez; no cambian en el día).
   useEffect(() => { db.listarUbicacionesCliente().then(setUbicaciones).catch(() => setUbicaciones([])); }, []);
@@ -431,9 +433,12 @@ export default function VistaRutas({ usuario, data, onVolver }) {
       ) : loading ? (
         <div className="text-center py-16"><Loader2 className="w-6 h-6 text-cyan-500 animate-spin mx-auto" /></div>
       ) : (
-        <div className="grid gap-4 grid-cols-1 lg:grid-cols-[250px_minmax(0,1fr)_380px] xl:grid-cols-[280px_minmax(0,1fr)_440px] items-start">
-          {/* ===== Izquierda: rutas del día + por montar ===== */}
-          <aside className="space-y-3 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:pr-1">
+        <div className="grid gap-4 grid-cols-1 lg:grid-cols-[270px_minmax(0,1fr)] 2xl:grid-cols-[280px_minmax(0,1fr)_440px] items-start">
+          {/* ===== Izquierda: rutas del día + por montar =====
+              v8.76: en pantallas medianas (1024–1535 px) el mapa va arriba a lo ancho y la ruta
+              abierta debajo; las 3 columnas lado a lado solo desde 1536 px (si no, el mapa quedaba
+              de ~100 px de ancho). */}
+          <aside className="space-y-3 lg:col-start-1 lg:row-start-1 lg:row-span-2 2xl:row-span-1 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:pr-1">
             <div className="flex rounded-card border border-zinc-700 overflow-hidden">
               {[['dia', 'Del día'], ['viejos', 'Viejas sin cerrar'], ['cancelados', 'Canceladas']].map(([k, l]) => (
                 <button key={k} onClick={() => setFiltro(k)} className={`flex-1 text-[11px] font-bold px-1.5 py-1.5 ${filtro === k ? 'bg-zinc-700 text-white' : 'text-zinc-500 hover:text-white'}`}>{l}</button>
@@ -451,12 +456,12 @@ export default function VistaRutas({ usuario, data, onVolver }) {
           </aside>
 
           {/* ===== Centro: mapa + jornada ===== */}
-          <section className="order-3 lg:order-none space-y-3 min-w-0">
+          <section className="order-3 lg:order-none lg:col-start-2 lg:row-start-1 space-y-3 min-w-0">
             <MapaRuta viaje={vSel} otrasRutas={otrasRutasDia} proyectos={data.proyectos || []} nombreObra={nombreObra} listas={filtro === 'dia' ? listas : []} diligencias={filtro === 'dia' ? diligencias : []}
               gpsUnidades={(vSel?.fecha || fecha) === hoy ? gpsUnidades : []} vehiculos={data.vehiculos} recorrido={puntosRecorrido} puntoMapa={puntoMapa}
               onMapClick={puedeAgregar ? (lat, lng) => { setAvanzada(null); setPuntoMapa({ lat, lng }); } : null}
               foco={focoMapa} onElegirLugar={puedeAgregar ? elegirLugarMapa : undefined}
-              height={esDesktop ? 'calc(100vh - 230px)' : 320} />
+              height={esDesktop ? (esAncho ? 'calc(100vh - 230px)' : '55vh') : 320} />
             {horasChofer.length > 0 && (
               <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
                 <div className="text-[11px] tracking-wider uppercase text-zinc-400 font-bold mb-1.5">⏱ Jornada de choferes · {formatFechaCorta(fecha)} (extras sobre 8 h)</div>
@@ -473,7 +478,7 @@ export default function VistaRutas({ usuario, data, onVolver }) {
           </section>
 
           {/* ===== Derecha: la ruta abierta ===== */}
-          <aside className="order-2 lg:order-none lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:pr-1">
+          <aside className="order-2 lg:order-none lg:col-start-2 lg:row-start-2 2xl:col-start-3 2xl:row-start-1 2xl:sticky 2xl:top-4 2xl:max-h-[calc(100vh-2rem)] 2xl:overflow-y-auto 2xl:pr-1 min-w-0">
             {!vSel ? (
               <div className="bg-zinc-900 border border-dashed border-zinc-700 rounded-card p-6 text-center">
                 <div className="text-sm font-bold text-zinc-300">{filtro === 'dia' ? (viajesLista.length ? 'Elige una ruta a la izquierda' : 'No hay rutas para este día') : 'Elige una ruta de la lista'}</div>

@@ -95,7 +95,8 @@ export default function ModalPedirAlmacen({ usuario, proyecto, sistemas, grupos,
   const salioDet = useMemo(() => (odooOk ? salioDetallePorRenglon(base, salidasOdoo.productos || []) : { cantidades: {}, detalle: {}, otraUnidad: {} }), [odooOk, base, salidasOdoo]);
   const salio = salioDet.cantidades;
   const referencia = conPrefijo(proyecto.referenciaOdoo);
-  const conSalida = useMemo(() => pedidosConSalida(reqs, respPedidos, referencia, base), [reqs, respPedidos, referencia, base]);
+  // Si no se pudo leer lo que salió (Odoo falló), nada sale de «Ya pedido»: así no se pide dos veces.
+  const conSalida = useMemo(() => (odooOk ? pedidosConSalida(reqs, respPedidos, referencia, base) : pedidosConSalida(reqs, null, referencia, base)), [odooOk, reqs, respPedidos, referencia, base]);
   const ped = useMemo(() => pedidoPorRenglon(base, reqs, conSalida), [base, reqs, conSalida]);
   const renglones = useMemo(() => armarRenglones({ base, salio, pedido: ped.cantidades })
     .map(r => ({ ...r, ...(edits[r.clave] || {}) })), [base, salio, ped, edits]);

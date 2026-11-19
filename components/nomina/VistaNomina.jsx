@@ -908,7 +908,7 @@ export default function VistaNomina({ usuario, data, onVolver, onRecargarGlobal,
       })}</div>
 
       {/* v8.19.18: Tabla en desktop (md+) */}
-      <div className="hidden md:block bg-zinc-900 border border-zinc-800 rounded-card">
+      <div className="hidden md:block overflow-x-auto bg-zinc-900 border border-zinc-800 rounded-card">
         <table className="w-full text-sm">
           <thead className="bg-zinc-950 border-b border-zinc-800">
             <tr className="text-[10px] uppercase tracking-widest text-zinc-500">
@@ -1749,7 +1749,7 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
                 ));
               })()}
             </div>
-            <div className="hidden md:block bg-zinc-900 border border-zinc-800 rounded-card">
+            <div className="hidden md:block overflow-x-auto bg-zinc-900 border border-zinc-800 rounded-card">
               <table className="w-full text-sm">
                 <thead className="bg-zinc-950 border-b border-zinc-800">
                   <tr className="text-[10px] uppercase tracking-widest text-zinc-500">
@@ -1942,7 +1942,7 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
                 ));
               })()}
             </div>
-            <div className="hidden md:block bg-zinc-900 border border-zinc-800 rounded-card">
+            <div className="hidden md:block overflow-x-auto bg-zinc-900 border border-zinc-800 rounded-card">
               <table className="w-full text-sm">
                 <thead className="bg-zinc-950 border-b border-zinc-800">
                   <tr className="text-[10px] uppercase tracking-widest text-zinc-500">
@@ -2150,7 +2150,7 @@ function DetalleCorte({ corte, data, usuario, onVolver, onRecargarGlobal, onVerP
                 )}
               </div>
             </div>
-            <div className="grid grid-cols-4 gap-1 text-[10px] mt-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-2 gap-y-1 text-[11px] tabular-nums mt-2">
               <div><div className="text-zinc-500 uppercase">Base</div><div className="font-bold">{formatRD(d.montoBase)}</div></div>
               <div><div className="text-zinc-500 uppercase">Otros</div><div className="font-bold">{formatRD(d.montoOtros)}</div></div>
               <div><div className="text-zinc-500 uppercase">Adelantos</div><div className="font-bold text-red-400">-{formatRD(d.montoAdelantos)}</div></div>

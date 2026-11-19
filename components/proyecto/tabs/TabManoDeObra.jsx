@@ -128,10 +128,10 @@ function CostosDiaPorPersona({ proyecto, data, esAdmin, onCambio, jornadas = [],
                   return (
                     <>
                       <div className="w-12 text-right text-xs tabular-nums text-zinc-200" title="Días trabajados en esta obra">{formatNum(rs.dias)}<span className="sm:hidden text-[8px] text-zinc-500"> d</span></div>
-                      <div className="w-24 text-right text-xs tabular-nums font-bold text-white" title="Días × costo/día">{formatRD(total)}</div>
+                      <div className="min-w-[6rem] shrink-0 whitespace-nowrap text-right text-xs tabular-nums font-bold text-white" title="Días × costo/día">{formatRD(total)}</div>
                       <div className="w-24 text-right text-xs tabular-nums text-green-400" title={rs.enCorte ? `${formatRD(rs.enCorte)} en corte cerrado sin pagar` : 'Pagado en cortes'}>
                         {formatRD(rs.pagado)}
-                        {rs.enCorte > 0 && <div className="text-[8px] text-yellow-400">+{formatRD(rs.enCorte)} en corte</div>}
+                        {rs.enCorte > 0 && <div className="text-[10px] text-yellow-400 whitespace-nowrap">+{formatRD(rs.enCorte)} en corte</div>}
                       </div>
                       <div className={`w-24 text-right text-xs tabular-nums ${pendiente > 0 ? 'text-yellow-400' : 'text-zinc-500'}`}>{formatRD(pendiente)}</div>
                     </>

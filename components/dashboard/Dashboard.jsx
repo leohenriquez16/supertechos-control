@@ -310,7 +310,7 @@ export default function Dashboard({ usuario, data, onVerProyecto, onNuevoProyect
             <AutoFitText maxSize={24} minSize={12} className="font-black text-green-400">{formatRD(prodPeriodo)}</AutoFitText>
           </div>
           {deltaProd !== null && <div className={`text-[10px] truncate ${deltaProd >= 0 ? 'text-green-500' : 'text-red-400'}`}>{deltaProd >= 0 ? '↑' : '↓'} {Math.abs(deltaProd).toFixed(0)}% vs anterior</div>}
-          {deltaProd === null && <div className="text-[10px] text-zinc-600 truncate">{formatRD(prodAnt)} anterior</div>}
+          {deltaProd === null && <div className="text-[10px] text-zinc-600 leading-tight tabular-nums">{formatRD(prodAnt)} anterior</div>}
         </button>
         <button onClick={() => setModalDetalle('aprobados')} className="bg-zinc-900 border border-zinc-800 rounded-card shadow-card hover:border-cyan-600 p-3 sm:p-4 text-left cursor-pointer transition-all overflow-hidden">
           <div className="flex items-start justify-between gap-1">

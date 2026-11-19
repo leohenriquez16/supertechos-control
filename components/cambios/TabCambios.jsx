@@ -244,7 +244,7 @@ export default function TabCambios({ usuario, proyecto, data, esAdmin, onRecarga
               {!l.areaId && <input value={l.nombreArea} onChange={e => setLinea(i, 'nombreArea', e.target.value)} placeholder="Nombre del área nueva" className="flex-1 bg-zinc-950 border border-zinc-700 rounded-card px-2 py-2 text-xs min-w-[120px]" />}
               <input type="number" value={l.m2} onChange={e => setLinea(i, 'm2', e.target.value)} placeholder="m²" className="w-20 bg-zinc-950 border border-zinc-700 rounded-card px-2 py-2 text-xs" />
               <input type="number" value={l.precioM2} onChange={e => setLinea(i, 'precioM2', e.target.value)} placeholder="RD$/m²" className="w-24 bg-zinc-950 border border-zinc-700 rounded-card px-2 py-2 text-xs" />
-              <span className="text-xs text-green-400 font-bold w-24 text-right">{formatRD((Number(l.m2) || 0) * (Number(l.precioM2) || 0))}</span>
+              <span className="text-xs text-green-400 font-bold min-w-[6rem] shrink-0 whitespace-nowrap tabular-nums text-right">{formatRD((Number(l.m2) || 0) * (Number(l.precioM2) || 0))}</span>
               {form.lineas.length > 1 && <button onClick={() => setForm({ ...form, lineas: form.lineas.filter((_, n) => n !== i) })} className="text-zinc-600 hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>}
             </div>
           ))}

@@ -211,21 +211,21 @@ export default function VistaMiCajaChica({ usuario, data, onVolver }) {
                 <span className="w-2 h-2 bg-emerald-400 shrink-0" />
                 <div className="min-w-0">
                   <div className="font-bold truncate">Disponible</div>
-                  <div className="text-white/70">RD$ {formatNum(saldoProy, 0)}</div>
+                  <div className="text-white/70 whitespace-nowrap tabular-nums">RD$ {formatNum(saldoProy, 0)}</div>
                 </div>
               </div>
               <div className="flex items-center gap-1">
                 <span className="w-2 h-2 bg-orange-400 shrink-0" />
                 <div className="min-w-0">
                   <div className="font-bold truncate">Pendiente</div>
-                  <div className="text-white/70">RD$ {formatNum(pendientes, 0)}</div>
+                  <div className="text-white/70 whitespace-nowrap tabular-nums">RD$ {formatNum(pendientes, 0)}</div>
                 </div>
               </div>
               <div className="flex items-center gap-1">
                 <span className="w-2 h-2 bg-zinc-300/60 shrink-0" />
                 <div className="min-w-0">
                   <div className="font-bold truncate">Consumido</div>
-                  <div className="text-white/70">RD$ {formatNum(consumidoMonto, 0)}</div>
+                  <div className="text-white/70 whitespace-nowrap tabular-nums">RD$ {formatNum(consumidoMonto, 0)}</div>
                 </div>
               </div>
             </div>

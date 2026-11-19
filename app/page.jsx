@@ -4141,9 +4141,17 @@ function ListaProyectosMultivista({ usuario, data, onVerProyecto, onNuevoProyect
         </div>
       </div>
 
+      {/* v8.81.2: buscador siempre visible arriba, en Kanban, Lista y Mapa */}
+      <div className="sticky top-0 z-20 bg-zinc-950 pb-2 mb-1">
+        <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-card focus-within:border-red-600 px-3 py-2">
+          <Search className="w-4 h-4 text-zinc-500" />
+          <input type="text" value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar cliente, referencia..." className="flex-1 bg-transparent outline-none text-white text-sm placeholder:text-zinc-600" />
+          {busqueda && <button onClick={() => setBusqueda('')} className="text-zinc-500" aria-label="Limpiar búsqueda"><X className="w-4 h-4" /></button>}
+        </div>
+      </div>
+
       {filtrosAbiertos && (
         <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 space-y-2 mb-3">
-          <input type="text" value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar cliente, referencia..." className="w-full bg-zinc-950 border border-zinc-800 rounded-card focus:border-red-600 outline-none px-3 py-2 text-white text-sm" />
           <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
             <select value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-2 text-xs text-white"><option value="">Todos los estados</option>{ORDEN_ESTADOS.map(e => <option key={e} value={e}>{estadoLabel(e)}</option>)}</select>
             <select value={filtroMaestro} onChange={e => setFiltroMaestro(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded-card px-2 py-2 text-xs text-white"><option value="">Todos los maestros</option>{maestros.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select>
@@ -4331,18 +4339,6 @@ function VistaKanban({ proyectos, data, usuario, onVerProyecto, onCambiarEstadoR
       {/* Toolbar tipo Odoo */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-card p-2 space-y-2 text-xs">
         <div className="flex flex-wrap items-center gap-2">
-          {/* Buscador */}
-          <div className="flex items-center gap-1 flex-1 min-w-[180px] bg-zinc-950 border border-zinc-800 rounded-card px-2 py-1">
-            <Search className="w-3 h-3 text-zinc-500" />
-            <input
-              type="text"
-              value={busqueda}
-              onChange={e => setBusqueda(e.target.value)}
-              placeholder="Buscar cliente, referencia..."
-              className="flex-1 bg-transparent outline-none text-white text-xs placeholder:text-zinc-600"
-            />
-            {busqueda && <button onClick={() => setBusqueda('')} className="text-zinc-500"><X className="w-3 h-3" /></button>}
-          </div>
           {/* Agrupar por */}
           <div className="flex items-center gap-1">
             <span className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold hidden sm:inline">Agrupar</span>
@@ -4595,9 +4591,11 @@ function CardKanban({ p, data, compacto, arrastrando, hover, onHover, onClick, o
         )}
 
         {/* Footer: valor + días + avatars */}
-        <div className="mt-1.5 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <span className="text-[11px] text-green-400 font-bold whitespace-nowrap">
+        {/* v8.81.2: flex-wrap — en columnas angostas (teléfono/tableta) días y personas bajan
+            de línea en vez de montarse sobre el monto ("cot15d") */}
+        <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="text-[11px] text-green-400 font-bold whitespace-nowrap tabular-nums">
               {formatRD(valor)}
               <span className="ml-1 text-[8px] text-zinc-500 font-normal">{fuenteValor}</span>
             </span>
@@ -5013,8 +5011,8 @@ function VistaLista({ proyectos, data, densidad = 'detallado', dx, onVerProyecto
                             <td className={`${rowPad} text-right tabular-nums font-black text-green-400 whitespace-nowrap`} title={tooltipValor}>
                               {formatRD(valor)}
                               {/* v8.17.63: tag mini para distinguir la fuente del valor */}
-                              {fuenteValor === 'cotizacion' && <span className="ml-1 text-[8px] text-zinc-500 font-normal">cot</span>}
-                              {fuenteValor === 'cubicado' && <span className="ml-1 text-[8px] text-blue-400 font-normal">cub</span>}
+                              {fuenteValor === 'cotizacion' && <span className="block text-[9px] leading-none text-zinc-500 font-normal">cot</span>}
+                              {fuenteValor === 'cubicado' && <span className="block text-[9px] leading-none text-blue-400 font-normal">cub</span>}
                             </td>
                             <td className={`${rowPad} text-right whitespace-nowrap`} onClick={e => e.stopPropagation()}>
                               <div className="inline-flex gap-1">
@@ -6810,12 +6808,12 @@ function VistaCostosMateriales({ proyecto, envios, sistemas }) {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-zinc-800">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-3 pt-3 border-t border-zinc-800">
                   <div>
                     <div className="text-[9px] text-zinc-500 uppercase">Costo base (sistema)</div>
                     <div className="text-sm font-bold">RD${formatNum(grupo.costoBase)}/{grupo.unidad}</div>
                   </div>
-                  <div className="border-x border-zinc-800 px-2">
+                  <div className="sm:border-x border-zinc-800 sm:px-2">
                     <div className="text-[9px] text-zinc-500 uppercase">Promedio real ponderado</div>
                     <div className="text-sm font-bold">RD${formatNum(grupo.promedioPonderado)}/{grupo.unidad}</div>
                   </div>

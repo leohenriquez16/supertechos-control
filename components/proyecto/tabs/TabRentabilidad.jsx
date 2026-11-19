@@ -376,7 +376,7 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
                     : <b className="text-zinc-200">{formatRD(p.venta?.precioM2Rd)}</b>}
                   /{p.unidad} · total <b className="text-zinc-200">{formatRD(p.ventaRd)}</b>
                 </div>
-                <table className="w-full text-xs md:text-[13px]">
+                <div className="overflow-x-auto"><table className="w-full min-w-[520px] md:min-w-0 text-xs md:text-[13px]">
                   <thead><tr className="text-[10px] uppercase tracking-wider text-zinc-500">
                     <th className="text-left py-1">Concepto</th>
                     <th className="text-right py-1">Base</th>
@@ -440,7 +440,7 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
                       <CeldaMonto valor={p.margenProyectado} cls="text-green-400" />
                     </tr>
                   </tbody>
-                </table>
+                </table></div>
               </div>
             )}
           </div>
@@ -485,7 +485,7 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
                   {g.articulos.length === 0 ? (
                     <div className="text-[11px] text-zinc-500 italic py-1">Sin brochas, motas, guantes, lentes, cuchillas ni aparatos despachados a esta obra.</div>
                   ) : (
-                    <table className="w-full text-[11px]">
+                    <div className="overflow-x-auto"><table className="w-full min-w-[520px] md:min-w-0 text-[11px]">
                       <thead><tr className="text-[9px] uppercase tracking-wider text-zinc-600">
                         <th className="text-left font-bold py-1">Artículo</th>
                         <th className="text-right font-bold py-1 px-2">Cantidad</th>
@@ -512,7 +512,7 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
                         <td /><td />
                         <td className="py-1 text-right tabular-nums font-black text-white">{formatRD(g.real)}</td>
                       </tr></tfoot>
-                    </table>
+                    </table></div>
                   )}
                 </div>
               )}
@@ -545,7 +545,7 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
       {/* Consolidado */}
       <div className="bg-gradient-to-br from-zinc-900 to-zinc-950 border border-zinc-800 p-4">
         <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2">Consolidado</div>
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto"><table className="w-full min-w-[420px] md:min-w-0 text-sm">
           <thead><tr className="text-[10px] uppercase tracking-wider text-zinc-500">
             <th className="text-left py-1" />
             <th className="text-right py-1">Presupuesto</th>
@@ -578,7 +578,7 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
               <td className={`text-right tabular-nums text-[11px] font-bold ${semColor}`}>{(t.margenPctProyectado || 0).toFixed(1)}%</td>
             </tr>
           </tbody>
-        </table>
+        </table></div>
       </div>
 
       {rent?.salidasOdooNoMatch?.length > 0 && (

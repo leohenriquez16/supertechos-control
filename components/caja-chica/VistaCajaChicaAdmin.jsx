@@ -799,7 +799,7 @@ export default function VistaCajaChicaAdmin({ usuario, data, onVolver, onIrAProv
                   <div className="text-right shrink-0">
                     <div className={`${dx.compacto ? 'text-sm' : 'text-base'} font-black leading-tight ${p.saldo >= 0 ? 'text-green-400' : 'text-red-400'}`}>RD${formatNum(p.saldo, 0)}</div>
                     {p.montoPendiente > 0 && (
-                      <div className="text-[9px] text-orange-300 leading-tight">disp. RD${formatNum(p.saldoProyectado, 0)}</div>
+                      <div className="text-[11px] text-orange-300 leading-tight whitespace-nowrap tabular-nums">disp. RD${formatNum(p.saldoProyectado, 0)}</div>
                     )}
                   </div>
                   {/* v8.17.13: botón PDF directo (click síncrono → no se bloquea por popup blocker) */}

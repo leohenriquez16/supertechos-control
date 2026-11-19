@@ -22,7 +22,9 @@ const ESTADOS_OC = {
   rechazada:        { label: 'Rechazada', color: 'bg-red-600/20 text-red-400' },
 };
 const TIPOS = {
-  aumento: 'Aumento de volumen', nueva_area: 'Área nueva', etapa: 'Etapa adicional', otro: 'Otro cambio',
+  aumento: 'Aumento de volumen', nueva_area: 'Área nueva', etapa: 'Etapa adicional',
+  disminucion: 'Disminución de volumen', // v8.77.0: área terminada con menos m² (m² negativos)
+  otro: 'Otro cambio',
 };
 
 const lineaVacia = () => ({ areaId: '', nombreArea: '', m2: '', precioM2: '', monto: 0 });
@@ -72,7 +74,8 @@ export default function TabCambios({ usuario, proyecto, data, esAdmin, onRecarga
 
   const guardarOC = async () => {
     const lineas = form.lineas
-      .filter(l => (Number(l.m2) || 0) > 0 && (l.areaId || (l.nombreArea || '').trim()))
+      // v8.77.0: m² negativos = rebaja (solo sobre un área existente)
+      .filter(l => { const m = Number(l.m2) || 0; return (m > 0 && (l.areaId || (l.nombreArea || '').trim())) || (m < 0 && l.areaId); })
       .map(l => ({
         areaId: l.areaId || null,
         nombreArea: l.areaId ? (areas.find(a => a.id === l.areaId)?.nombre || l.nombreArea) : l.nombreArea.trim(),
@@ -106,11 +109,13 @@ export default function TabCambios({ usuario, proyecto, data, esAdmin, onRecarga
       <p style="margin:2px 0"><b>Proyecto:</b> ${proyecto.cliente || proyecto.nombre || ''} ${proyecto.referenciaOdoo ? '· Ref. ' + proyecto.referenciaOdoo : ''}</p>
       <p style="margin:2px 0 12px"><b>Tipo:</b> ${TIPOS[oc.tipo] || oc.tipo}${oc.motivo ? ' — ' + oc.motivo : ''}</p>
       <table style="border-collapse:collapse;width:100%;font-size:14px">
-        <tr style="background:#f3f3f3"><th style="border:1px solid #ccc;padding:6px;text-align:left">Área</th><th style="border:1px solid #ccc;padding:6px;text-align:right">m² adicionales</th><th style="border:1px solid #ccc;padding:6px;text-align:right">Precio/m²</th><th style="border:1px solid #ccc;padding:6px;text-align:right">Monto</th></tr>
-        ${(oc.lineas || []).map(l => `<tr><td style="border:1px solid #ccc;padding:6px">${l.nombreArea}</td><td style="border:1px solid #ccc;padding:6px;text-align:right">${l.m2}</td><td style="border:1px solid #ccc;padding:6px;text-align:right">RD$ ${Number(l.precioM2).toLocaleString()}</td><td style="border:1px solid #ccc;padding:6px;text-align:right">RD$ ${Number(l.monto).toLocaleString()}</td></tr>`).join('')}
-        <tr><td colspan="3" style="border:1px solid #ccc;padding:6px;text-align:right"><b>Total adicional (sin ITBIS)</b></td><td style="border:1px solid #ccc;padding:6px;text-align:right"><b>RD$ ${Number(oc.montoTotal).toLocaleString()}</b></td></tr>
+        <tr style="background:#f3f3f3"><th style="border:1px solid #ccc;padding:6px;text-align:left">Área</th><th style="border:1px solid #ccc;padding:6px;text-align:right">${oc.montoTotal < 0 ? 'm² de menos' : 'm² adicionales'}</th><th style="border:1px solid #ccc;padding:6px;text-align:right">Precio/m²</th><th style="border:1px solid #ccc;padding:6px;text-align:right">Monto</th></tr>
+        ${(oc.lineas || []).map(l => `<tr><td style="border:1px solid #ccc;padding:6px">${l.nombreArea}</td><td style="border:1px solid #ccc;padding:6px;text-align:right">${Math.abs(l.m2)}</td><td style="border:1px solid #ccc;padding:6px;text-align:right">RD$ ${Number(l.precioM2).toLocaleString()}</td><td style="border:1px solid #ccc;padding:6px;text-align:right">RD$ ${Math.abs(Number(l.monto)).toLocaleString()}</td></tr>`).join('')}
+        <tr><td colspan="3" style="border:1px solid #ccc;padding:6px;text-align:right"><b>${oc.montoTotal < 0 ? 'Total a descontar (sin ITBIS)' : 'Total adicional (sin ITBIS)'}</b></td><td style="border:1px solid #ccc;padding:6px;text-align:right"><b>RD$ ${Math.abs(Number(oc.montoTotal)).toLocaleString()}</b></td></tr>
       </table>
-      <p style="font-size:13px;margin-top:14px">Agradecemos confirmar su aprobación respondiendo este correo para proceder con los trabajos adicionales descritos. Este monto se suma al valor de la cotización original.</p>
+      <p style="font-size:13px;margin-top:14px">${oc.montoTotal < 0
+        ? 'Al terminar los trabajos, el área ejecutada resultó menor que la cotizada. Este monto se descuenta del valor de la cotización original. Agradecemos confirmar respondiendo este correo.'
+        : 'Agradecemos confirmar su aprobación respondiendo este correo para proceder con los trabajos adicionales descritos. Este monto se suma al valor de la cotización original.'}</p>
       <p style="font-size:13px;color:#666">LH Super Techos, SRL</p>
     </div>`;
 
@@ -183,7 +188,7 @@ export default function TabCambios({ usuario, proyecto, data, esAdmin, onRecarga
       try {
         await db.crearTarea({
           id: 't_' + Date.now() + Math.random(), proyectoId: proyecto.id, tipo: 'ajustar_cotizacion_odoo',
-          titulo: `Ajustar cotización en Odoo: +${formatRD(oc.montoTotal)} (OC-${oc.numero} · ${proyecto.referenciaOdoo || proyecto.cliente})`,
+          titulo: `Ajustar cotización en Odoo: ${oc.montoTotal < 0 ? '' : '+'}${formatRD(oc.montoTotal)} (OC-${oc.numero} · ${proyecto.referenciaOdoo || proyecto.cliente})`,
           descripcion: `Orden de cambio aprobada por ${oc.aprobadaPorCliente} (${oc.aprobadaVia}). Crear la SUB-COTIZACIÓN en Odoo eligiendo la cuenta analítica del proyecto original${proyecto.analiticaOdooNombre ? ` ("${proyecto.analiticaOdooNombre}")` : ` (la que empieza con ${proyecto.referenciaOdoo || 'la referencia original'})`} — la sub-cot tendrá su propio número, pero sirve a esa analítica. Líneas: ${oc.lineas.map(l => `${l.nombreArea} +${l.m2} m² @ RD$${l.precioM2}`).join('; ')}.`,
           asignadaAId: lily?.id || null, asignadaANombre: lily?.nombre || null,
         });

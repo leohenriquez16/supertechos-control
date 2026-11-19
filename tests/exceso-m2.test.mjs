@@ -1,7 +1,7 @@
 // tests de lib/helpers/excesoM2.js (v8.77: metros ejecutados de más vs contratado)
 import {
   excesoDeArea, excesoDeProyecto, duplicadosDeReportes, reporteParecido, lineasOcDesdeExceso,
-  congelarM2Cotizado, puedeGestionarOC, precioM2Area, TOLERANCIA_EXCESO, ventaOcPosteriores,
+  congelarM2Cotizado, puedeGestionarOC, precioM2Area, TOLERANCIA_EXCESO, ventaOcPosteriores, lineasOcDesdeFaltante,
 } from '../lib/helpers/excesoM2.js';
 let ok = 0, ko = 0;
 const t = (n, c) => { if (c) ok++; else { ko++; console.error('FALLA:', n); } };
@@ -108,6 +108,43 @@ t('venta OC posterior', ventaOcPosteriores([
   { proyectoId: 'p1', estado: 'enviada', montoTotal: 7000 },
   { proyectoId: 'p2', estado: 'aplicada', aplicadaAt: '2026-12-01T00:00:00Z', montoTotal: 9000 },
 ], 'p1', { createdAt: '2026-11-01T00:00:00Z' }) === 30000);
+
+// --- metros de menos ---
+{
+  const reps = [R('lona', 130), R('top', 130)];
+  let x = excesoDeArea({ area, sistema: sis, reportes: reps });
+  t('obra en curso con menos: ok', x.estado === 'ok' && x.m2Faltante === 0);
+  x = excesoDeArea({ area, sistema: sis, reportes: reps, terminada: true });
+  t('terminada con 20 menos', x.estado === 'de_menos' && cerca(x.m2MenosSinOc, 20) && cerca(x.rdMenosSinOc, 20000));
+  x = excesoDeArea({ area, sistema: sis, reportes: [R('lona', 145), R('top', 145)], terminada: true });
+  t('3.3% de menos = tolerancia', x.estado === 'ok' && x.rdMenosSinOc === 0);
+  const ocR = { proyectoId: 'p1', estado: 'enviada', lineas: [{ areaId: 'a1', m2: -20 }] };
+  x = excesoDeArea({ area, sistema: sis, reportes: reps, terminada: true, ordenesCambio: [ocR] });
+  t('rebaja en trámite', x.estado === 'de_menos_oc' && x.m2MenosSinOc === 0 && cerca(x.rdMenosConOc, 20000));
+  const ocRA = { ...ocR, estado: 'aplicada', aplicadaAt: '2026-11-25T00:00:00Z' };
+  x = excesoDeArea({ area: { ...area, m2: 130, m2Cotizado: 150 }, sistema: sis, reportes: reps, terminada: true, ordenesCambio: [ocRA] });
+  t('rebaja aplicada: ok y sin ajuste', x.estado === 'ok' && x.ajusteManual === 0);
+  t('rebaja no cuenta como exceso', x.m2SinOc === 0);
+  const pr = { id: 'p1', sistema: 's1', estado: 'finalizado_no_entregado', areas: [area] };
+  const ex = excesoDeProyecto({ proyecto: pr, sistemas: { s1: sis }, reportes: reps });
+  t('obra finalizada → de menos', ex.hayMenos && cerca(ex.rdMenosSinOc, 20000) && ex.pideAccion);
+  const exF = excesoDeProyecto({ proyecto: { ...pr, estado: 'facturado' }, sistemas: { s1: sis }, reportes: reps });
+  t('facturada no se marca', !exF.hayMenos);
+  const exA = excesoDeProyecto({ proyecto: { ...pr, estado: 'en_ejecucion' }, sistemas: { s1: sis }, reportes: reps, estadosArea: [{ proyectoId: 'p1', areaId: 'a1', estado: 'completada' }] });
+  t('área completada → de menos', exA.hayMenos);
+  const lr = lineasOcDesdeFaltante(ex);
+  t('líneas de rebaja negativas', lr.length === 1 && lr[0].m2 === -20 && lr[0].monto === -20000);
+}
+// --- 2da revisión ---
+t('área de OC: tolerancia sobre lo contratado', excesoDeArea({ area: { id: 'a1', m2: 100, origenOc: 'x', m2Cotizado: 0, sistemaId: 's1' }, sistema: sis,
+  reportes: [R('lona', 103), R('top', 103)], ordenesCambio: [{ proyectoId: 'p1', estado: 'aplicada', aplicadaAt: '2026-11-25T00:00:00Z', lineas: [{ areaId: 'a1', m2: 100 }] }] }).estado === 'tolerancia');
+{
+  const x = excesoDeArea({ area: { id: 'a1', m2: 0, sistemaId: 's1' }, sistema: sis, reportes: [R('lona', 50)] });
+  t('sin m2: sin monto', x.estado === 'sin_m2' && x.rdSinOc === 0);
+  t('sin m2 pide acción', excesoDeProyecto({ proyecto: { id: 'p1', areas: [{ id: 'a1', m2: 0, sistemaId: 's1' }] }, sistemas: { s1: sis }, reportes: [R('lona', 50)] }).pideAccion);
+}
+t('clon conserva foto de venta', ventaOcPosteriores([{ proyectoId: 'p1', estado: 'aplicada', aplicadaAt: '2026-11-26T00:00:00Z', montoTotal: 100000 }], 'p1',
+  { createdAt: '2026-11-30T00:00:00Z', venta: { fotoAt: '2026-10-01T00:00:00Z' } }) === 100000);
 
 // --- precio propio del área ---
 t('precio del área', precioM2Area({ precioVentaM2: 1200 }, sis) === 1200);

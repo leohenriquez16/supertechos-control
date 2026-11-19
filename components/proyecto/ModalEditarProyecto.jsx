@@ -215,12 +215,19 @@ export default function ModalEditarProyecto({ proyecto, data, usuario, onCerrar,
       const lista = subidas.map(x => `• ${x.aNew.nombre || 'Área'}: ${x.antes} → ${x.despues} m²`).join('\n');
       const esCorreccion = confirm(`Estas áreas ya tienen avances reportados:\n${lista}\n\n¿Es una CORRECCIÓN de la medida (lo cotizado ya era así)?\n\nAceptar = sí, es una corrección.\nCancelar = no, son metros adicionales del cliente.`);
       if (!esCorreccion) {
-        alert('Los metros adicionales se hacen con una Orden de Cambio (pestaña Cambios del proyecto), para que se le cobren al cliente. No se guardó el cambio de m².');
+        alert('Los metros adicionales se hacen con una Orden de Cambio (pestaña Cambios del proyecto), para que se le cobren al cliente.\n\nNo se guardó nada: vuelve esas áreas a sus m² anteriores y guarda de nuevo.');
         return;
       }
-      // corrección: lo cotizado pasa a ser la medida corregida (no queda marca de "subido a mano")
-      const ids = new Set(subidas.map(x => x.aNew.id));
-      areasGuardar = (form.areas || []).map(a => ids.has(a.id) ? { ...a, m2Cotizado: Number(a.m2) || 0 } : a);
+      // corrección: lo cotizado se mueve lo mismo que la medida (así no queda marca de "subido
+      // a mano" y se respetan las órdenes de cambio ya aplicadas al área)
+      const porId = {}; subidas.forEach(x => { porId[x.aNew.id] = x; });
+      areasGuardar = (form.areas || []).map(a => {
+        const x = porId[a.id];
+        if (!x) return a;
+        const aOld = (proyecto.areas || []).find(o => o.id === a.id);
+        const baseOld = aOld?.m2Cotizado != null && aOld.m2Cotizado !== '' ? Number(aOld.m2Cotizado) : x.antes;
+        return { ...a, m2Cotizado: Math.round((baseOld + (x.despues - x.antes)) * 100) / 100 };
+      });
     }
     setGuardando(true);
     // v8.77.0: constancia de cada cambio de m² de un área

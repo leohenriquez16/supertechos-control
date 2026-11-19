@@ -110,7 +110,7 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
         movimientosCajaChica: movimientos, estadoPago: null,
         mdoPagadoRd: mdoPagadaPorProyecto[proy.id] ?? null, config: data.config || {},
         salidasOdoo: salidasPorRef && numRef(proy.referenciaOdoo) ? (salidasPorRef[numRef(proy.referenciaOdoo)] || { productos: [] }) : null,
-        ordenesCambio,
+        ordenesCambio, estadosArea: data.estadosArea || [],
       });
       return { proyecto: proy, ppto, rent };
     }).sort((a, b) => (a.rent?.totales.margenPctProyectado ?? 999) - (b.rent?.totales.margenPctProyectado ?? 999));
@@ -130,6 +130,7 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
       margen: venta - proy, margenPct: venta > 0 ? ((venta - proy) / venta) * 100 : 0,
       porCobrarExceso: s(t => t.ventaPorCobrarExceso || 0),
       sinOcExceso: s(t => t.excesoSinOcRd || 0),
+      deMenos: s(t => t.ventaDeMenos || 0),
       obrasConExceso: conPpto.filter(f => (f.rent.totales.ventaPorCobrarExceso || 0) > 0).length,
     };
   }, [filas]);
@@ -169,7 +170,7 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
           ['Venta s/ITBIS', formatRD(tot.venta), ''],
           ['Costo proyectado', formatRD(tot.costoProyectado), `real ${formatRD(tot.costoReal)}`],
           ['Margen proyectado', formatRD(tot.margen), `${tot.margenPct.toFixed(1)}%`],
-          ['Venta por metros de más', formatRD(tot.porCobrarExceso), tot.obrasConExceso ? `en ${tot.obrasConExceso} obra${tot.obrasConExceso === 1 ? '' : 's'}${tot.sinOcExceso > 0 ? ` · ${formatRD(tot.sinOcExceso)} sin orden de cambio` : ' · todo en orden de cambio'}` : 'ninguna obra pasa lo cotizado', tot.porCobrarExceso > 0],
+          ['Metros de más / de menos', formatRD(tot.porCobrarExceso), tot.obrasConExceso ? `en ${tot.obrasConExceso} obra${tot.obrasConExceso === 1 ? '' : 's'}${tot.sinOcExceso > 0 ? ` · ${formatRD(tot.sinOcExceso)} sin orden de cambio` : ' · todo en orden de cambio'}${tot.deMenos > 0 ? ` · −${formatRD(tot.deMenos)} de menos` : ''}` : (tot.deMenos > 0 ? `−${formatRD(tot.deMenos)} de menos en áreas terminadas` : 'ninguna obra pasa lo cotizado'), tot.porCobrarExceso > 0 || tot.deMenos > 0],
         ].map(([l, v, s, alerta]) => (
           <div key={l} className={`bg-zinc-900 border rounded-card p-4 ${alerta ? 'border-orange-700/60' : 'border-zinc-800'}`}>
             <div className={`text-[10px] uppercase tracking-widest font-bold ${alerta ? 'text-orange-400' : 'text-zinc-500'}`}>{l}</div>
@@ -235,6 +236,9 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
                         {formatRD(t.ventaSinItbisRd)}
                         {t.ventaPorCobrarExceso > 0 && (
                           <div className="text-[10px] font-bold text-orange-400" title="Metros ejecutados por encima de lo cotizado, al mismo precio por m²">+{formatRD(t.ventaPorCobrarExceso)} por metros de más</div>
+                        )}
+                        {t.ventaDeMenos > 0 && (
+                          <div className="text-[10px] font-bold text-sky-400" title="Áreas terminadas con menos m² que lo cotizado, al mismo precio por m²">−{formatRD(t.ventaDeMenos)} por metros de menos</div>
                         )}
                       </td>
                       <td className="text-right tabular-nums px-3 py-2.5 text-zinc-400">{formatRD(t.costoPpto)}</td>

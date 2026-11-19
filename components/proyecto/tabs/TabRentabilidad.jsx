@@ -129,7 +129,7 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
       reportes: data.reportes, envios: data.envios || [],
       movimientosCajaChica: movimientos, estadoPago, salidasOdoo,
       mdoPagadoRd: estadoPago?.montoPagado ?? null, config: data.config || {},
-      ordenesCambio,
+      ordenesCambio, estadosArea: data.estadosArea || [],
     });
   }, [sel, proyecto, data.sistemas, data.reportes, data.envios, movimientos, estadoPago, data.config, salidasOdoo, ordenesCambio]);
 
@@ -184,6 +184,9 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
     const maxV = versiones.reduce((m, p) => Math.max(m, p.version || 1), 0);
     const clon = {
       ...JSON.parse(JSON.stringify(base)),
+      // v8.77.0: la venta es la misma foto que la versión base → conservar su fecha para no
+      // perder las órdenes de cambio aplicadas después de esa foto
+      venta: { ...(base.venta || {}), fotoAt: base.venta?.fotoAt || base.createdAt || null },
       id: `ppto_${Date.now()}`, version: maxV + 1, estado: 'borrador',
       creadoPorId: usuario?.id || null, aprobadoPorId: null, aprobadoAt: null,
     };

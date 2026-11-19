@@ -11,6 +11,7 @@ import { ArrowLeft, Loader2, RefreshCw, Ship, AlertTriangle, X, Save, Search } f
 import * as db from '../../lib/db';
 import { toast } from '../../lib/toast';
 import TablaDatos from '../common/TablaDatos';
+import ImportacionTramites from './ImportacionTramites';
 
 const ESTADOS = {
   produccion: { label: 'En producción', cls: 'bg-zinc-700 text-zinc-200' },
@@ -53,7 +54,7 @@ function Pill({ estado }) {
   return <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap ${e.cls}`}>{e.label}</span>;
 }
 
-function Ficha({ imp, onCerrar, onGuardado }) {
+function Ficha({ imp, usuario, onCerrar, onGuardado, onCambio }) {
   const [f, setF] = useState({ bl: imp.bl || '', contenedor: imp.contenedor || '', naviera: imp.naviera || '', facturaComercial: imp.facturaComercial || '', proforma: imp.proforma || '', notas: imp.notas || '' });
   const [guardando, setGuardando] = useState(false);
   const eventos = imp.tracking?.eventos || [];
@@ -73,7 +74,7 @@ function Ficha({ imp, onCerrar, onGuardado }) {
   );
   return (
     <div className="fixed inset-0 z-50 bg-black/70 flex items-start justify-center p-4 overflow-y-auto" onClick={onCerrar}>
-      <div className="bg-zinc-900 border border-zinc-800 rounded-card w-full max-w-4xl my-6" onClick={e => e.stopPropagation()}>
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card w-full max-w-5xl my-6" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-3 border-b border-zinc-800">
           <div>
             <div className="text-white font-bold">{imp.oc} · {imp.proveedor} <span className="ml-2"><Pill estado={imp.estado} /></span></div>
@@ -115,6 +116,7 @@ function Ficha({ imp, onCerrar, onGuardado }) {
             {campo('proforma', 'Proforma', '')}
           </div>
         </div>
+        <ImportacionTramites imp={imp} usuario={usuario} onCambio={onCambio} />
         <div className="px-5 pb-4">
           <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Productos</div>
           <div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr className="text-zinc-500 text-left"><th className="py-1">Producto</th><th className="text-right">Cantidad</th><th className="text-right">Recibido</th><th className="text-right">Precio</th><th className="text-right">Total</th></tr></thead>
@@ -163,7 +165,7 @@ function Ficha({ imp, onCerrar, onGuardado }) {
   );
 }
 
-export default function VistaImportaciones({ onVolver }) {
+export default function VistaImportaciones({ usuario, onVolver }) {
   const [items, setItems] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [ficha, setFicha] = useState(null);
@@ -248,7 +250,7 @@ export default function VistaImportaciones({ onVolver }) {
       )}
       <p className="text-[11px] text-zinc-500">Se actualiza solo cada 15 min desde Odoo (OC, pagos, factura, recepción) y desde la naviera (tracking, una vez al día). Clic en una fila para ver el detalle y capturar contenedor/BL.</p>
 
-      {ficha && <Ficha imp={ficha} onCerrar={() => setFicha(null)} onGuardado={() => { setFicha(null); cargar(); }} />}
+      {ficha && <Ficha imp={ficha} usuario={usuario} onCambio={cargar} onCerrar={() => setFicha(null)} onGuardado={() => { setFicha(null); cargar(); }} />}
     </div>
   );
 }

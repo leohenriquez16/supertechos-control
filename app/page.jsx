@@ -1075,7 +1075,7 @@ export default function App() {
         {(esAdmin || tieneRol(usuario, 'almacen') || tieneRol(usuario, 'facturas')) && vista === 'almacen' && <VistaAlmacen usuario={usuario} data={data} onVolver={esAdmin ? volverAtras : undefined} />}
         {/* v8.67.0: Compras */}
         {(esAdmin || tieneRol(usuario, 'almacen') || tieneRol(usuario, 'facturas')) && vista === 'compras' && <VistaCompras usuario={usuario} data={data} onVolver={esAdmin ? volverAtras : undefined} />}
-        {(esAdmin || tieneRol(usuario, 'almacen') || tieneRol(usuario, 'facturas')) && vista === 'importaciones' && <VistaImportaciones onVolver={esAdmin ? volverAtras : undefined} />}
+        {(esAdmin || tieneRol(usuario, 'almacen') || tieneRol(usuario, 'facturas')) && vista === 'importaciones' && <VistaImportaciones usuario={usuario} onVolver={esAdmin ? volverAtras : undefined} />}
         {vista === 'miVehiculo' && <MiVehiculo usuario={usuario} data={data} onRecargar={recargar} />}
         {(esAdmin || tieneRol(usuario, 'almacen')) && vista === 'rutas' && <VistaRutas usuario={usuario} data={data} onVolver={esAdmin ? volverAtras : undefined} />}
         {esAdmin && vista === 'planObras' && <PlanObras usuario={usuario} data={data} onVolver={volverAtras} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('cronograma'); }} onRecargar={recargar} />}

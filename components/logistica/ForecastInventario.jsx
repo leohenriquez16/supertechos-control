@@ -52,15 +52,17 @@ export default function ForecastInventario({ importaciones }) {
   const [prods, setProds] = useState(null);
   const [meses, setMeses] = useState(6);
   const [abierto, setAbierto] = useState(null);
-  useEffect(() => { db.listarInventarioProductos().then(setProds); }, []);
+  const [demanda, setDemanda] = useState([]);
+  useEffect(() => { db.listarInventarioProductos().then(setProds); db.listarInventarioDemanda().then(setDemanda); }, []);
 
   const llegadas = useMemo(() => llegadasPorProducto(importaciones), [importaciones]);
   const filas = useMemo(() => (prods || []).map(p => {
     const c = consumoMensual(p.mensual, meses);
     const ll = llegadas[p.odooProductId] || [];
-    const r = proyectar({ stock: p.stock, comprometido: p.comprometido, consumoMes: c, llegadas: ll });
-    return { p, c, ll, r };
-  }).filter(f => f.p.stock > 0 || f.c > 0 || f.ll.length)
+    const dem = demanda.filter(d => d.odooProductId === p.odooProductId && d.pendiente > 0);
+    const r = proyectar({ stock: p.stock, comprometido: p.comprometido, consumoMes: c, llegadas: ll, demandas: dem });
+    return { p, c, ll, r, dem };
+  }).filter(f => f.p.stock > 0 || f.c > 0 || f.ll.length || f.dem.length)
     .sort((a, b) => (a.r.agota || '9999').localeCompare(b.r.agota || '9999')), [prods, meses, llegadas]);
 
   if (!prods) return <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-zinc-500" /></div>;
@@ -70,7 +72,7 @@ export default function ForecastInventario({ importaciones }) {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-zinc-400">Existencia y salidas de Odoo · llegadas de las cargas abiertas (en su fecha estimada) · consumo = promedio de los últimos meses completos.</p>
+        <p className="text-xs text-zinc-400">Existencia y salidas de Odoo · llegadas de las cargas abiertas · obras aprobadas: lo que requieren (presupuesto o m² del sistema) menos lo que ya salió · cada semana sale lo mayor entre el promedio y las obras.</p>
         <div className="flex items-center gap-1 text-xs">
           <span className="text-zinc-500 mr-1">Consumo promedio de</span>
           {[3, 6, 12].map(n => (
@@ -88,6 +90,7 @@ export default function ForecastInventario({ importaciones }) {
               <th className="px-2.5 py-2 text-right">Existencia</th>
               <th className="px-2.5 py-2 text-right">Comprometido</th>
               <th className="px-2.5 py-2 text-right">Consumo / mes</th>
+              <th className="px-2.5 py-2 text-right">Obras aprobadas</th>
               <th className="px-2.5 py-2 text-right">Cobertura</th>
               <th className="px-2.5 py-2 text-left">En camino</th>
               <th className="px-2.5 py-2 text-left">Se acaba</th>
@@ -95,7 +98,7 @@ export default function ForecastInventario({ importaciones }) {
             </tr>
           </thead>
           <tbody>
-            {filas.map(({ p, c, ll, r }) => {
+            {filas.map(({ p, c, ll, r, dem }) => {
               const enCamino = ll.reduce((s, l) => s + l.cantidad, 0);
               const abiertoEste = abierto === p.odooProductId;
               return (
@@ -106,6 +109,7 @@ export default function ForecastInventario({ importaciones }) {
                     <td className="px-2.5 py-2 text-right tabular-nums text-white">{num(p.stock)}</td>
                     <td className="px-2.5 py-2 text-right tabular-nums text-zinc-400">{p.comprometido ? num(p.comprometido) : '—'}</td>
                     <td className="px-2.5 py-2 text-right tabular-nums">{num(c)}</td>
+                    <td className="px-2.5 py-2 text-right tabular-nums">{dem.length ? <>{num(r.pendienteObras)} <span className="text-zinc-500">· {dem.length} obra{dem.length > 1 ? 's' : ''}</span></> : '—'}</td>
                     <td className="px-2.5 py-2 text-right tabular-nums">{r.coberturaSemanas == null ? '—' : `${num(r.coberturaSemanas, 1)} sem`}</td>
                     <td className="px-2.5 py-2 text-zinc-300">{enCamino ? <>{num(enCamino)} <span className="text-zinc-500">· próx. {fecha(r.proxima?.fecha)}</span></> : '—'}</td>
                     <td className="px-2.5 py-2 whitespace-nowrap">{c > 0 ? fecha(r.agota) : <span className="text-zinc-500">sin consumo</span>}</td>
@@ -120,10 +124,10 @@ export default function ForecastInventario({ importaciones }) {
                     </td>
                   </tr>
                   {abiertoEste && (
-                    <tr className="bg-zinc-950/50"><td colSpan={9} className="px-4 py-3">
+                    <tr className="bg-zinc-950/50"><td colSpan={10} className="px-4 py-3">
                       <div className="grid lg:grid-cols-[1fr_260px] gap-4">
                         <div>
-                          <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Saldo proyectado (26 semanas) · consumo {num(r.semanal, 1)}/semana</div>
+                          <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Saldo proyectado (26 semanas) · cada semana sale lo mayor entre el consumo promedio ({num(r.semanal, 1)}/sem) y lo que piden las obras aprobadas</div>
                           <Grafico prod={p} r={r} llegadas={ll} />
                         </div>
                         <div className="space-y-3">
@@ -133,6 +137,15 @@ export default function ForecastInventario({ importaciones }) {
                               <div key={m} className="flex justify-between"><span className="text-zinc-400">{MES[Number(m.slice(5)) - 1]} {m.slice(2, 4)}</span><span className="tabular-nums">{num(v)}</span></div>
                             ))}
                             {!Object.keys(p.mensual).length && <div className="text-zinc-500">Sin salidas registradas.</div>}
+                          </div>
+                          <div>
+                            <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Obras aprobadas (falta por sacar)</div>
+                            {dem.map(d => (
+                              <div key={d.id} className="flex justify-between gap-2" title={`${d.fuente === 'presupuesto' ? 'Presupuesto aprobado' : `Sistema: ${num(d.m2)} m²`} · requiere ${num(d.requerido, 1)}, salió ${num(d.salido, 1)} · ${fecha(d.desde)} → ${fecha(d.hasta)}`}>
+                                <span className="text-zinc-400 truncate">{d.referencia} · {d.proyecto}</span><span className="tabular-nums shrink-0">{num(d.pendiente, 1)}</span>
+                              </div>
+                            ))}
+                            {!dem.length && <div className="text-zinc-500">Ninguna obra aprobada lo usa.</div>}
                           </div>
                           <div>
                             <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Llegadas</div>
@@ -154,7 +167,7 @@ export default function ForecastInventario({ importaciones }) {
                 </React.Fragment>
               );
             })}
-            {!filas.length && <tr><td colSpan={9} className="px-3 py-6 text-center text-zinc-500">Sin productos.</td></tr>}
+            {!filas.length && <tr><td colSpan={10} className="px-3 py-6 text-center text-zinc-500">Sin productos.</td></tr>}
           </tbody>
         </table>
       </div>

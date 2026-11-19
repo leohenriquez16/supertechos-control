@@ -60,6 +60,7 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
   // en una sola consulta para todo el portafolio. null = cargando / no disponible.
   const [salidasPorRef, setSalidasPorRef] = useState(null);
   const [errorOdoo, setErrorOdoo] = useState(false);
+  const [cobrosPorRef, setCobrosPorRef] = useState(null); // v8.83.0: facturado/cobrado de Odoo
   // v8.82.1: clasificación por estado del proyecto (antes: solo un toggle "en ejecución")
   const [estadosSel, setEstadosSel] = useState(() => new Set(['en_ejecucion', 'parado', 'planificado', 'aprobado']));
   // v8.46.1: obras escondidas del portafolio (en lo que ponen su presupuesto al día).
@@ -112,6 +113,11 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
       .then(r => r.json())
       .then(j => { if (cancel) return; if (j?.porReferencia) setSalidasPorRef(j.porReferencia); else setErrorOdoo(true); })
       .catch(() => { if (!cancel) setErrorOdoo(true); });
+    // v8.83.0: facturado y cobrado (facturas por origen + anticipos por referencia)
+    fetch(`/api/odoo/cobros?refs=${encodeURIComponent(refsPortafolio.join(','))}`)
+      .then(r => r.json())
+      .then(j => { if (!cancel && j?.porReferencia) setCobrosPorRef(j.porReferencia); })
+      .catch(() => {});
     return () => { cancel = true; };
   }, [refsPortafolio.join(',')]);
 
@@ -140,9 +146,21 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
         salidasOdoo: salidasPorRef && numRef(proy.referenciaOdoo) ? (salidasDeObra(salidasPorRef, proy, numRef) || { productos: [] }) : null,
         ordenesCambio, estadosArea: data.estadosArea || [],
       });
-      return { proyecto: proy, ppto, rent, huecos: huecosPresupuesto(rent) };
+      // v8.83.0 (1) desviación al avance: costo real vs lo que debería llevar gastado (ppto × avance)
+      const tt = rent.totales;
+      const av = tt.avanceGlobalPct != null ? tt.avanceGlobalPct / 100 : null;
+      const esperado = av != null && av > 0 && tt.costoPpto > 0 ? tt.costoPpto * av : null;
+      const desv = esperado != null ? { esperado, dif: tt.costoReal - esperado, pct: (tt.costoReal / esperado) * 100 } : null;
+      // (2) caja: cobrado (s/ITBIS) vs costo real
+      let caja = null;
+      if (cobrosPorRef) {
+        const nums = [...new Set(refsDeObra(proy).map(numRef).filter(Boolean))];
+        caja = nums.reduce((a, n) => { const c = cobrosPorRef[n]; if (c) { a.facturado += c.facturadoSinItbis; a.cobrado += c.cobradoSinItbis; a.anticipos += c.anticipos; } return a; }, { facturado: 0, cobrado: 0, anticipos: 0 });
+        caja.neto = caja.cobrado - tt.costoReal;
+      }
+      return { proyecto: proy, ppto, rent, huecos: huecosPresupuesto(rent), desv, caja };
     }).sort((a, b) => ((ORDEN_RENT[a.proyecto.estado] ?? 99) - (ORDEN_RENT[b.proyecto.estado] ?? 99)) || ((a.rent?.totales.margenPctProyectado ?? 999) - (b.rent?.totales.margenPctProyectado ?? 999)));
-  }, [pptos, detalles, movimientos, data, estadosSel, ocultos, verOcultos, salidasPorRef, ordenesCambio]);
+  }, [pptos, detalles, movimientos, data, estadosSel, cobrosPorRef, ocultos, verOcultos, salidasPorRef, ordenesCambio]);
 
   const ubicPorId = useMemo(() => {
     const m = {}; ubicaciones.forEach(u => { m[u.id] = u; }); return m;
@@ -220,23 +238,25 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
         <div className="flex justify-center py-12"><Loader2 className="w-5 h-5 animate-spin text-red-500" /></div>
       ) : (
         <div className="bg-zinc-950/50 border border-zinc-800 overflow-x-auto">
-          <table className="w-full text-xs md:text-sm min-w-[980px]">
+          <table className="w-full text-xs md:text-sm min-w-[1240px]">
             <thead><tr className="text-[10px] uppercase tracking-wider text-zinc-500 border-b border-zinc-800">
               <th className="text-left px-4 py-2.5">Obra</th>
               <th className="text-right px-3 py-2.5">Avance</th>
               <th className="text-right px-3 py-2.5">Venta s/ITBIS</th>
               <th className="text-right px-3 py-2.5">Costo ppto</th>
               <th className="text-right px-3 py-2.5">Costo real</th>
+              <th className="text-right px-3 py-2.5" title="Costo real contra lo que debería llevar gastado según el avance (presupuesto × % avance)">Desv. al avance</th>
               <th className="text-right px-3 py-2.5">Proyección</th>
               <th className="text-right px-3 py-2.5">Margen proy.</th>
               <th className="text-right px-4 py-2.5">%</th>
+              <th className="text-right px-3 py-2.5" title="Cobrado en Odoo (s/ITBIS, facturas + anticipos) menos costo real. Negativo = estás financiando la obra">Caja (cobrado − costo)</th>
               <th className="w-9" />
             </tr></thead>
             <tbody>
-              {filas.map(({ proyecto, ppto, rent, huecos }, idx) => {
+              {filas.map(({ proyecto, ppto, rent, huecos, desv, caja }, idx) => {
                 const nuevoGrupo = idx === 0 || filas[idx - 1].proyecto.estado !== proyecto.estado;
                 const grupo = nuevoGrupo ? filas.filter(f => f.proyecto.estado === proyecto.estado) : null;
-                const gs = grupo ? grupo.filter(f => f.rent).reduce((a, f) => ({ v: a.v + f.rent.totales.ventaSinItbisRd, c: a.c + f.rent.totales.costoProyectado, r: a.r + f.rent.totales.costoReal, inc: a.inc + (f.huecos?.length ? 1 : 0) }), { v: 0, c: 0, r: 0, inc: 0 }) : null;
+                const gs = grupo ? grupo.filter(f => f.rent).reduce((a, f) => ({ v: a.v + f.rent.totales.ventaSinItbisRd, c: a.c + f.rent.totales.costoProyectado, r: a.r + f.rent.totales.costoReal, inc: a.inc + (f.huecos?.length ? 1 : 0), caja: a.caja + (f.caja?.neto || 0), d: a.d + (f.desv?.dif || 0) }), { v: 0, c: 0, r: 0, inc: 0, caja: 0, d: 0 }) : null;
                 const t = rent?.totales;
                 const sem = rent ? (SEM[rent.semaforo] || SEM.ambar) : null;
                 return (<React.Fragment key={proyecto.id}>
@@ -249,9 +269,11 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
                       <td className="text-right tabular-nums px-3 py-2 text-[11px] font-bold text-zinc-300">{formatRD(gs.v)}</td>
                       <td />
                       <td className="text-right tabular-nums px-3 py-2 text-[11px] font-bold text-zinc-400">{formatRD(gs.r)}</td>
+                      <td className={`text-right tabular-nums px-3 py-2 text-[11px] font-bold ${gs.d > 0 ? 'text-red-400' : 'text-zinc-400'}`}>{gs.d > 0 ? '+' : ''}{formatRD(gs.d)}</td>
                       <td className="text-right tabular-nums px-3 py-2 text-[11px] font-bold text-zinc-300">{formatRD(gs.c)}</td>
                       <td className="text-right tabular-nums px-3 py-2 text-[11px] font-black text-zinc-200">{formatRD(gs.v - gs.c)}</td>
                       <td className="text-right tabular-nums px-4 py-2 text-[11px] font-black text-zinc-200">{gs.v > 0 ? `${(((gs.v - gs.c) / gs.v) * 100).toFixed(1)}%` : '—'}</td>
+                      <td className={`text-right tabular-nums px-3 py-2 text-[11px] font-black ${cobrosPorRef ? (gs.caja < 0 ? 'text-red-400' : 'text-green-400') : 'text-zinc-600'}`}>{cobrosPorRef ? formatRD(gs.caja) : '…'}</td>
                       <td />
                     </tr>
                   )}
@@ -281,7 +303,7 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
                       })()}
                     </td>
                     {!ppto ? (
-                      <td colSpan={7} className="px-3 py-2.5 text-right">
+                      <td colSpan={9} className="px-3 py-2.5 text-right">
                         <span className="text-[9px] uppercase tracking-wider bg-zinc-800 border border-zinc-700 text-zinc-400 px-2 py-0.5">sin presupuesto → generar en la ficha</span>
                       </td>
                     ) : (<>
@@ -297,6 +319,12 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
                       </td>
                       <td className="text-right tabular-nums px-3 py-2.5 text-zinc-400">{formatRD(t.costoPpto)}</td>
                       <td className="text-right tabular-nums px-3 py-2.5 text-zinc-400">{formatRD(t.costoReal)}</td>
+                      <td className="text-right tabular-nums px-3 py-2.5 whitespace-nowrap">
+                        {desv ? (<>
+                          <span className={`font-bold ${desv.pct > 110 ? 'text-red-400' : desv.pct > 100 ? 'text-amber-400' : 'text-green-400'}`}>{desv.dif > 0 ? '+' : ''}{formatRD(desv.dif)}</span>
+                          <div className="text-[10px] text-zinc-500">{desv.pct.toFixed(0)}% de lo esperado</div>
+                        </>) : <span className="text-zinc-600">—</span>}
+                      </td>
                       <td className="text-right tabular-nums px-3 py-2.5 text-zinc-300">{formatRD(t.costoProyectado)}</td>
                       <td className={`text-right tabular-nums px-3 py-2.5 font-bold ${sem.txt}`}>{formatRD(t.margenProyectado)}</td>
                       <td className={`text-right tabular-nums px-4 py-2.5 font-black ${huecos?.length ? 'text-zinc-500' : sem.txt}`}>
@@ -304,6 +332,13 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
                         {huecos?.length > 0 && (
                           <div className="text-[10px] font-bold text-amber-400 whitespace-nowrap" title={'Presupuesto incompleto — el margen sale inflado:\n' + huecos.join('\n')}>⚠ incompleto</div>
                         )}
+                      </td>
+                      <td className="text-right tabular-nums px-3 py-2.5 whitespace-nowrap">
+                        {!caja ? <span className="text-zinc-600">{cobrosPorRef ? '—' : '…'}</span> : (<>
+                          <span className={`font-bold ${caja.neto < 0 ? 'text-red-400' : 'text-green-400'}`}>{formatRD(caja.neto)}</span>
+                          <div className="text-[10px] text-zinc-500" title="Sin ITBIS">cobrado {formatRD(caja.cobrado)} · fact. {formatRD(caja.facturado)}</div>
+                          {caja.anticipos > 0 && <div className="text-[10px] text-sky-400">incl. anticipos {formatRD(caja.anticipos)}</div>}
+                        </>)}
                       </td>
                     </>)}
                     <td className="px-2 py-2.5 text-right">
@@ -318,7 +353,7 @@ export default function VistaRentabilidad({ usuario, data, onVolver, onVerProyec
                 </React.Fragment>);
               })}
               {filas.length === 0 && (
-                <tr><td colSpan={9} className="px-3 py-6 text-center text-zinc-500 italic">No hay obras en los estados seleccionados.</td></tr>
+                <tr><td colSpan={11} className="px-3 py-6 text-center text-zinc-500 italic">No hay obras en los estados seleccionados.</td></tr>
               )}
             </tbody>
             <tfoot>

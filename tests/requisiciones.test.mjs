@@ -67,19 +67,19 @@ t('día RD de fecha simple', diaRD('2026-11-18') === '2026-11-18');
 // --- salidasDePedido ---
 const resp = g;
 const p142 = { codigo: 'REQ-0142', createdAt: '2026-11-11T13:00:00Z' };
-const r1 = salidasDePedido(p142, resp, { referencia: 'ST-C5867' });
+const r1 = salidasDePedido(p142, resp, { referencia: 'ST-C5867', porCotizacion: true });
 t('amarre exacto por código', r1.via === 'codigo' && !r1.aproximado && eq(r1.salidas.map(s => s.name), ['AL/OUT/2']) && r1.salidas[0].porCotizacion === false);
 const p160 = { numero: 160, createdAt: '2026-11-11T13:00:00Z' };
-const r2 = salidasDePedido(p160, resp, { referencia: 'ST-C5867' });
+const r2 = salidasDePedido(p160, resp, { referencia: 'ST-C5867', porCotizacion: true });
 // AL/OUT/1 es anterior al pedido; AL/OUT/2 y /5 traen el código de OTRO pedido → ninguna
 t('por cotización excluye anteriores y las de otro REQ', r2.via === null && r2.salidas.length === 0);
 const s6 = { name: 'AL/OUT/6', origin: 'ST 5867', state: 'done', fecha: '2026-11-11T20:00:00Z', productos: [] };
 const resp2 = agruparSalidasPorPedido([s1, s2, s6], ['ST-C5867'], ['REQ-0142']);
-const r3 = salidasDePedido(p160, resp2, { referencia: 'ST-C5867' });
+const r3 = salidasDePedido(p160, resp2, { referencia: 'ST-C5867', porCotizacion: true });
 t('por cotización aproximado (mismo día, más tarde, cuenta)', r3.via === 'cotizacion' && r3.aproximado && eq(r3.salidas.map(s => s.name), ['AL/OUT/6']) && r3.salidas[0].porCotizacion === true);
 const r4 = salidasDePedido({ codigo: 'REQ-0142', createdAt: '2026-11-11T13:00:00Z', referencia: 'ST-C5867' }, resp2);
 t('referencia desde el pedido', r4.via === 'codigo');
-const r5 = salidasDePedido({ codigo: 'REQ-0142', createdAt: '2026-11-13T13:00:00Z' }, resp2, { referencia: 'ST-C5867' });
+const r5 = salidasDePedido({ codigo: 'REQ-0142', createdAt: '2026-11-13T13:00:00Z' }, resp2, { referencia: 'ST-C5867', porCotizacion: true });
 t('nunca salidas anteriores al pedido, ni por código', r5.via === null);
 t('pedido sin datos', salidasDePedido(null, resp).via === null && salidasDePedido(p142, null).via === null);
 const r6 = salidasDePedido({ codigo: 'REQ-0999', createdAt: '2026-11-01T13:00:00Z' }, resp2, {});
@@ -113,21 +113,24 @@ const ys = yaSalioPorMaterial(
 );
 t('ya salió: cada producto a un solo material', ys.m1 === 10 && ys.m2 === undefined && ys.m3 === undefined);
 
+// --- v8.80.0: por defecto SOLO código REQ exacto (sin opts.porCotizacion no hay amarre por cotización) ---
+t('sin porCotizacion no amarra por cotización', salidasDePedido(p160, resp2, { referencia: 'ST-C5867' }).via === null);
+t('por código sigue igual sin porCotizacion', salidasDePedido(p142, resp, { referencia: 'ST-C5867' }).via === 'codigo');
 // --- revisión: amarre por hora, no por día ---
 const pTarde = { numero: 170, createdAt: '2026-11-11T19:00:00Z' }; // 15:00 RD
 const sManana = { name: 'AL/OUT/7', origin: 'ST 5867', state: 'done', fecha: '2026-11-11T13:00:00Z', productos: [] }; // 9:00 RD
-const rT = salidasDePedido(pTarde, agruparSalidasPorPedido([sManana], ['ST-C5867'], []), { referencia: 'ST-C5867' });
+const rT = salidasDePedido(pTarde, agruparSalidasPorPedido([sManana], ['ST-C5867'], []), { referencia: 'ST-C5867', porCotizacion: true });
 t('salida de esa misma mañana NO cuenta para un pedido de la tarde', rT.via === null);
 const sMargen = { name: 'AL/OUT/8', origin: 'ST 5867', state: 'done', fecha: '2026-11-11T18:55:00Z', productos: [] };
-t('margen de 10 minutos', salidasDePedido(pTarde, agruparSalidasPorPedido([sMargen], ['ST-C5867'], []), { referencia: 'ST-C5867' }).via === 'cotizacion');
+t('margen de 10 minutos', salidasDePedido(pTarde, agruparSalidasPorPedido([sMargen], ['ST-C5867'], []), { referencia: 'ST-C5867', porCotizacion: true }).via === 'cotizacion');
 // --- revisión: salidas hechas se fechan por date_done ---
 const sVieja = { name: 'AL/OUT/9', origin: 'ST-C5867', state: 'done', fecha: '2026-10-01T13:00:00Z', fechaHecha: '2026-11-12T13:00:00Z', productos: [] };
 t('fecha de salida hecha = date_done', fechaDeSalida(sVieja) === '2026-11-12T13:00:00Z');
 t('fecha de salida abierta = creación', fechaDeSalida({ ...sVieja, state: 'assigned' }) === '2026-10-01T13:00:00Z');
 t('creada antes pero validada después del pedido → se amarra',
-  salidasDePedido(pTarde, agruparSalidasPorPedido([sVieja], ['ST-C5867'], []), { referencia: 'ST-C5867' }).via === 'cotizacion');
+  salidasDePedido(pTarde, agruparSalidasPorPedido([sVieja], ['ST-C5867'], []), { referencia: 'ST-C5867', porCotizacion: true }).via === 'cotizacion');
 t('abierta creada antes del pedido → no',
-  salidasDePedido(pTarde, agruparSalidasPorPedido([{ ...sVieja, state: 'assigned', fechaHecha: null }], ['ST-C5867'], []), { referencia: 'ST-C5867' }).via === null);
+  salidasDePedido(pTarde, agruparSalidasPorPedido([{ ...sVieja, state: 'assigned', fechaHecha: null }], ['ST-C5867'], []), { referencia: 'ST-C5867', porCotizacion: true }).via === null);
 // --- revisión: REQ.142 / REQ #142 / REQ:142 ---
 t('REQ.142', origenMencionaCodigo('ST 5867 REQ.142', 'REQ-0142') && origenMencionaCodigo('REQ #142', 'REQ-0142') && origenMencionaCodigo('REQ:0142', 'REQ-0142'));
 t('códigos con punto y #', eq(codigosEnOrigen('REQ.142 y REQ #150'), ['REQ-0142', 'REQ-0150']));

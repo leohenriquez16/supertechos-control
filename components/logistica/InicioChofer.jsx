@@ -118,8 +118,12 @@ export default function InicioChofer({ usuario, data, embebido = false, onViajes
     try {
       await db.actualizarViaje(v.id, { estado: 'en_curso', horaInicio: new Date().toISOString() });
       // las requisiciones montadas pasan a "en ruta" — la obra lo ve al instante
-      for (const p of v.paradas.filter(x => x.requisicionId && !esCancelada(x) && !esHecha(x))) {
-        try { await db.actualizarRequisicion(p.requisicionId, { estado: 'en_ruta' }); } catch (e) { /* no bloquear */ }
+      // v8.80.0: y queda registrada su SALIDA con quien maneja (si el almacén no la marcó antes)
+      for (const p of v.paradas.filter(x => x.requisicionId && !esCancelada(x) && !esHecha(x) && x.tipo !== 'recogida')) {
+        try {
+          await db.registrarSalidaRequisicion(p.requisicionId, { llevadoPorId: v.choferId || usuario?.id || null, llevadoPorNombre: v.choferNombre || usuario?.nombre || null, porId: usuario?.id || null, porNombre: usuario?.nombre || null, origen: 'chofer' });
+          await db.actualizarRequisicion(p.requisicionId, { estado: 'en_ruta' });
+        } catch (e) { /* no bloquear */ }
       }
       await cargar({ silencioso: true });
     } catch (e) { alert('No se pudo iniciar: ' + (e?.message || e)); }

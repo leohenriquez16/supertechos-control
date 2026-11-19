@@ -130,8 +130,8 @@ const reqB = [
 const respB = { porReferencia: { ST5867: [sal('AL/OUT/2', 'ST 5867', 'done', '2026-11-10T18:00:00Z', [primP(4)], '2026-11-10T19:00:00Z')] }, porCodigo: {} };
 const pB = pedidoPorRenglon(bs, reqB, pedidosConSalida(reqB, respB, 'ST-C5867', bs));
 t('por producto: la lona sigue en ya pedido', pB.cantidades['s1|membrana'] === 20);
-t('por producto: el primer sale de ya pedido', !pB.cantidades['s1|primer'] && pB.salidos['s1|primer'][0].cantidad === 4 && pB.salidos['s1|primer'][0].via === 'cotizacion');
-t('por producto: la lona lleva aviso de duda', avisoDudaOdoo(pB.detalle['s1|membrana']).includes('no traen este material'));
+// v8.80.0: ya no se amarra por cotización (solo REQ exacto) → la salida "ST 5867" no descuenta nada
+t('v8.80 sin REQ: el primer sigue en ya pedido', pB.cantidades['s1|primer'] === 4 && !pB.salidos['s1|primer']);
 
 // Caso 3: salida parcial → solo se descuenta lo que salió (mínimo).
 const reqC = [{ id: 'C', codigo: 'REQ-0160', estado: 'lista', createdAt: '2026-11-10T14:00:00Z',
@@ -150,7 +150,7 @@ const reqD = [
 ];
 const respD = { porReferencia: { ST5867: [sal('AL/OUT/4', 'ST 5867', 'done', '2026-11-10T14:00:00Z', [lonaP(10)], '2026-11-10T14:00:00Z')] }, porCodigo: {} };
 const pD = pedidoPorRenglon(bs, reqD, pedidosConSalida(reqD, respD, 'ST-C5867', bs));
-t('una salida no cubre dos pedidos', pD.cantidades['s1|membrana'] === 10 && pD.salidos['s1|membrana'].length === 1 && pD.salidos['s1|membrana'][0].reqId === 'D1');
+t('v8.80 sin REQ: ninguno se descuenta', pD.cantidades['s1|membrana'] === 20 && !pD.salidos['s1|membrana']);
 
 // Caso 5: salida en otra unidad (galones) no cubre cubetas.
 const reqE = [{ id: 'E', codigo: 'REQ-0170', estado: 'lista', createdAt: '2026-11-10T14:00:00Z', items: [{ descripcion: 'Primer', cantidad: 5, materialId: 'primer', sistemaId: 's1' }] }];

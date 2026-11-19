@@ -35,6 +35,7 @@ import ListaParadas from './rutas/ListaParadas';
 import FormParadaAvanzada from './rutas/FormParadaAvanzada';
 import ModalLugares from './rutas/ModalLugares';
 import useSalidasPedidos from './useSalidasPedidos'; // v8.76: salida AL/OUT de Odoo de cada pedido
+import { personasConductor } from '../../lib/helpers/salidasAlmacen'; // v8.80.0: cualquier persona maneja
 
 // v8.45.0: parseCoords vive en lib/helpers/geo (compartido); re-export por compatibilidad.
 export { parseCoords } from '../../lib/helpers/geo';
@@ -104,11 +105,9 @@ export default function VistaRutas({ usuario, data, onVolver }) {
   // Locaciones de clientes para el buscador (una sola vez; no cambian en el día).
   useEffect(() => { db.listarUbicacionesCliente().then(setUbicaciones).catch(() => setUbicaciones([])); }, []);
 
-  // v8.50.0: cuenta como chofer quien tenga el rol o sea RESPONSABLE de un vehículo activo.
-  const choferes = useMemo(() => {
-    const respIds = new Set((data.vehiculos || []).filter(v => v.activo !== false && v.responsableId).map(v => v.responsableId));
-    return (data.personal || []).filter(p => tieneRol(p, 'chofer') || respIds.has(p.id));
-  }, [data.personal, data.vehiculos]);
+  // v8.80.0: puede manejar CUALQUIER persona activa (más de la mitad de los viajes los hace un
+  // supervisor o un maestro). Primero choferes y responsables de vehículo, luego el resto.
+  const choferes = useMemo(() => personasConductor(data.personal || [], data.vehiculos || []), [data.personal, data.vehiculos]);
 
   const viajesActivos = useMemo(() => filtrarViajes(viajes, 'activos'), [viajes]);
   const viajesLista = useMemo(() => filtro === 'viejos' ? viajesViejosSinCerrar(historial, hoyRD())
@@ -310,7 +309,7 @@ export default function VistaRutas({ usuario, data, onVolver }) {
     if (!confirm('¿Quitar esta parada de la ruta?')) return;
     try {
       await db.eliminarParada(parada.id);
-      if (parada.requisicionId) await db.actualizarRequisicion(parada.requisicionId, { estado: 'lista' });
+      if (parada.requisicionId) await db.devolverRequisicionALista(parada.requisicionId); // v8.80.0: no si ya salió
       // v8.40.0: el retiro vuelve a "sin planificar" — no se pierde el recordatorio
       if (parada.diligenciaId) await db.actualizarDiligencia(parada.diligenciaId, { estado: 'sin_planificar' });
       await recargar({ silencioso: true });
@@ -362,7 +361,7 @@ export default function VistaRutas({ usuario, data, onVolver }) {
     try {
       const plan = planCancelacionViaje(v);
       for (const id of plan.paradasACancelar) await db.actualizarParada(id, { estado: PARADA_CANCELADA });
-      for (const id of plan.requisicionesADevolver) await db.actualizarRequisicion(id, { estado: 'lista' });
+      for (const id of plan.requisicionesADevolver) await db.devolverRequisicionALista(id); // v8.80.0: no si ya salió
       for (const id of plan.diligenciasADevolver) await db.actualizarDiligencia(id, { estado: 'sin_planificar' });
       await db.actualizarViaje(v.id, { estado: VIAJE_CANCELADO, notas: notaCancelacion(v.notas, { motivo, nombre: usuario?.nombre, fechaISO: new Date().toISOString() }) });
       await recargar({ silencioso: true });

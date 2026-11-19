@@ -53,17 +53,19 @@ const resp = {
 const vB = salidaDePedidoVista(pedidos[1], resp, prjST);
 t('exacta por código', vB.estado === 'exacta' && eq(vB.nombres, ['AL/OUT/01700']) && vB.hecha);
 const vA = salidaDePedidoVista(pedidos[0], resp, prjST);
-t('por cotización desde la fecha del pedido', vA.estado === 'por_cotizacion' && eq(vA.nombres, ['AL/OUT/01710']) && !vA.hecha);
+// v8.80.0: ya no se amarra por cotización → sin salida con su REQ
+t('v8.80: sin REQ en el origen = sin salida', vA.estado === 'sin_salida');
 t('por cotización no usa la de otro REQ ni las viejas', !vA.nombres.includes('AL/OUT/01700') && !vA.nombres.includes('AL/OUT/01600'));
 const vC = salidaDePedidoVista(pedidos[2], resp, prjPG);
-t('sin salida', vC.estado === 'sin_salida' && vC.salidas.length === 0);
+t('v8.80: pedido sin código = sin datos', vC.estado === 'sin_datos' && vC.salidas.length === 0);
 t('sin datos para buscar', salidaDePedidoVista(pedidos[3], resp, prjSinRef).estado === 'sin_datos');
 t('sin respuesta + cargando', salidaDePedidoVista(pedidos[0], null, prjST, { cargando: true }).estado === 'cargando');
 t('sin respuesta (Odoo caído)', salidaDePedidoVista(pedidos[0], null, prjST).estado === 'sin_datos');
 const pNuevo = { id: 'n', proyectoId: 'p9', codigo: 'REQ-0999', createdAt: '2026-11-12T12:00:00Z' };
 t('pedido que la respuesta no buscó → cargando, no "sin salida"', salidaDePedidoVista(pNuevo, resp, { referenciaOdoo: 'ST-C9999' }, { cargando: true }).estado === 'cargando');
-const vOrden = salidaDePedidoVista({ id: 'x', proyectoId: 'p1', codigo: null, createdAt: '2026-11-01T12:00:00Z' },
-  { porReferencia: { ST5867: [sal('AL/OUT/2', 'ST 5867', '2026-11-09T12:00:00Z'), sal('AL/OUT/1', 'ST 5867', '2026-11-02T12:00:00Z')] }, porCodigo: {} }, prjST);
+const vOrden = salidaDePedidoVista({ id: 'x', proyectoId: 'p1', codigo: 'REQ-0300', createdAt: '2026-11-01T12:00:00Z' },
+  { porReferencia: {}, porCodigo: { 'REQ-0300': [sal('AL/OUT/2', 'REQ-0300', '2026-11-09T12:00:00Z'), sal('AL/OUT/1', 'REQ-0300', '2026-11-02T12:00:00Z')] } }, prjST);
+t('v8.80: sin código = sin datos', salidaDePedidoVista({ id: 'y', proyectoId: 'p1', codigo: null }, resp, prjST).estado === 'sin_datos');
 t('salidas en orden de fecha', eq(vOrden.nombres, ['AL/OUT/1', 'AL/OUT/2']));
 t('canceladas no cuentan', salidaDePedidoVista({ id: 'y', proyectoId: 'p1', codigo: 'REQ-0001', createdAt: '2026-11-01T12:00:00Z' },
   { porReferencia: { ST5867: [] }, porCodigo: { 'REQ-0001': [sal('AL/OUT/9', 'REQ-0001', '2026-11-02T12:00:00Z', 'cancel')] } }, prjST).estado === 'sin_salida');

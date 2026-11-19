@@ -57,7 +57,9 @@ export default function CabeceraRuta({ viaje: v, choferes, vehiculos, totalM, on
                 <select value={v.choferId || ''} onChange={e => { const c = choferes.find(x => x.id === e.target.value); onEditar({ choferId: e.target.value || null, choferNombre: c?.nombre || '' }); }} className={campo}>
                   <option value="">Sin chofer</option>
                   {v.choferId && !choferes.some(c => c.id === v.choferId) && <option value={v.choferId}>{v.choferNombre}</option>}
-                  {choferes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                  {[...new Set(choferes.map(c => c.grupo || 'Choferes'))].map(g => (
+                    <optgroup key={g} label={g}>{choferes.filter(c => (c.grupo || 'Choferes') === g).map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}</optgroup>
+                  ))}
                 </select>
               </label>
             </>

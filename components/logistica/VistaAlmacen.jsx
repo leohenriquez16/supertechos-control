@@ -20,6 +20,10 @@ import ModalConfirmarRecepcion from './ModalConfirmarRecepcion'; // v8.49.4
 import useSalidasPedidos from './useSalidasPedidos';
 import SalidaOdooChip from './SalidaOdooChip';
 import { salidaDePedidoVista, textoOrigenOdoo } from '../../lib/helpers/porMontar';
+// v8.80.0: avance automático al marcar renglones, "Salió" (quién lo lleva) y tiempos
+import ModalSalio from './ModalSalio';
+import { estadoTrasMarcarItem, puedeMarcarSalio, tiemposPedidos, textoHoras } from '../../lib/helpers/salidasAlmacen';
+const DESDE_TIEMPOS = '2026-11-19'; // desde la limpieza de pedidos viejos
 
 // "sin salida en Odoo" solo es alerta cuando el pedido ya debería tener salida (listo o
 // después). En Nuevas y Preparando es lo normal: se muestra en gris.
@@ -120,9 +124,21 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
     catch (e) { alert('Error: ' + (e?.message || e)); }
     setProcesando(null);
   };
+  // v8.80.0: al marcar renglones el pedido avanza solo (pendiente → preparando → LISTA cuando
+  // está todo). Antes había que tocar "Marcar LISTA" y casi nunca se tocaba.
   const toggleItem = async (r, it) => {
-    try { await db.marcarItemRequisicion(it.id, !it.despachado); await recargar(); }
+    try {
+      await db.marcarItemRequisicion(it.id, !it.despachado);
+      const nuevo = estadoTrasMarcarItem(r, it.id, !it.despachado);
+      if (nuevo) await db.actualizarRequisicion(r.id, { estado: nuevo });
+      await recargar();
+    }
     catch (e) { alert('Error: ' + (e?.message || e)); }
+  };
+  const [salioDe, setSalioDe] = useState(null); // v8.80.0: pedido en el modal "Salió"
+  const marcarEntregado = async (r) => {
+    if (!confirm(`¿Marcar ${r.codigo || 'el pedido'} como ENTREGADO en la obra?`)) return;
+    await avanzar(r, 'entregada');
   };
   // v8.39.0: renglón sin stock → flujo de compras (solicitado → cotizado → esperando → comprado).
   const marcarCompra = async (it, estado) => {
@@ -181,6 +197,30 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
     [reqs, entregadas7]);
   const salidasOdoo = useSalidasPedidos(pedidosConSalida, proyectoDe);
   const vistaSalida = (r) => r.tipo === 'compra' ? null : salidaDePedidoVista(r, salidasOdoo.resp, proyectoDe(r), { cargando: salidasOdoo.cargando });
+  // v8.80.0: si la salida AL/OUT con el código REQ EXACTO ya está HECHA en Odoo y el pedido no
+  // tiene salida registrada, se registra sola (origen 'odoo'). Solo con el código exacto: nunca
+  // por cotización. Una sola vez por pedido en esta pantalla.
+  const autoSalidaHecha = useRef(new Set());
+  useEffect(() => {
+    if (!puedeCrear || !salidasOdoo.resp || salidasOdoo.cargando) return;
+    const candidatos = reqs.filter(r => r.tipo !== 'compra' && r.modoEntrega !== 'retiro' && !r.salidaAt
+      && ['pendiente', 'preparando', 'lista', 'en_ruta'].includes(r.estado) && !autoSalidaHecha.current.has(r.id));
+    const hacer = candidatos.map(r => ({ r, v: vistaSalida(r) })).filter(x => x.v?.estado === 'exacta' && x.v.hecha);
+    if (!hacer.length) return;
+    (async () => {
+      let alguno = false;
+      for (const { r, v } of hacer) {
+        autoSalidaHecha.current.add(r.id);
+        const hecha = (v.salidas || []).find(s => s.state === 'done') || v.salidas[0];
+        try {
+          alguno = (await db.registrarSalidaRequisicion(r.id, { origen: 'odoo', porNombre: 'Odoo', odooPickingId: Number(hecha?.id) || undefined, odooPickingName: hecha?.name || undefined })) || alguno;
+        } catch (e) { console.warn('Salida desde Odoo:', e?.message); }
+      }
+      if (alguno) await recargar();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [salidasOdoo.resp, salidasOdoo.cargando, reqs]);
+  const tiempos = useMemo(() => tiemposPedidos(reqs, { desde: DESDE_TIEMPOS }), [reqs]);
   const [copiado, setCopiado] = useState(null);
   const copiarOrigen = async (r, texto) => {
     try { await navigator.clipboard.writeText(texto); setCopiado(r.id); setTimeout(() => setCopiado(c => (c === r.id ? null : c)), 2000); }
@@ -289,6 +329,25 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
             {generandoOC === r.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : '🤖'} Leer cotización con IA y crear OC en Odoo (borrador)
           </button>
         )}
+        {/* v8.80.0: SALIÓ — quién lo lleva (cualquier persona, con o sin ruta) */}
+        {r.salidaAt && (
+          <div className="mt-2 text-[11px] text-emerald-300 bg-emerald-950/30 border border-emerald-900/50 rounded-card px-2 py-1.5 flex items-center gap-2 flex-wrap">
+            <span>🚚 Salió {formatFechaCorta(String(r.salidaAt).slice(0, 10))}{r.llevadoPorNombre ? <> · lo lleva <b>{r.llevadoPorNombre}</b></> : null}{r.salidaOrigen === 'odoo' ? ' · según Odoo' : r.salidaPorNombre ? ` · registró ${r.salidaPorNombre}` : ''}</span>
+            {r.salidaFotoUrl && <a href={r.salidaFotoUrl} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">📷 foto</a>}
+          </div>
+        )}
+        {puedeCrear && puedeMarcarSalio(r) && (
+          <button onClick={() => setSalioDe(r)}
+            className="mt-2 w-full bg-emerald-700 hover:bg-emerald-600 text-white text-[10px] font-black uppercase py-2 rounded-card">
+            🚚 Salió · ¿quién lo lleva?
+          </button>
+        )}
+        {puedeCrear && col.estado === 'en_ruta' && (
+          <button onClick={() => marcarEntregado(r)} disabled={procesando === r.id}
+            className="mt-1.5 w-full border border-green-700 text-green-300 hover:bg-green-900/30 disabled:opacity-50 text-[10px] font-black uppercase py-2 rounded-card">
+            ✓ Entregado en la obra
+          </button>
+        )}
         {col.estado === 'lista' && (
           r.modoEntrega === 'retiro' ? (
             <button onClick={() => setRetiroDe(r)}
@@ -296,7 +355,7 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
               🙋 Registrar retiro (firma del que retira)
             </button>
           ) : (
-            <div className="text-[10px] text-purple-400 mt-1.5">Esperando que Rutas la monte en un viaje o envío pagado.</div>
+            <div className="text-[10px] text-purple-400 mt-1.5">Rutas la monta en un viaje, o toca «Salió» si se la lleva un supervisor o maestro.</div>
           )
         )}
       </div>
@@ -381,6 +440,31 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
           </div>
         )}
 
+        {/* v8.80.0: tiempos de cada paso (pedidos desde la limpieza del 19-nov) */}
+        {tiempos.pedidos > 0 && (
+          <div className="bg-zinc-950/60 border border-zinc-800/70 rounded-card p-3">
+            <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2">⏱ Cuánto tarda cada paso · {tiempos.pedidos} pedido{tiempos.pedidos === 1 ? '' : 's'} desde el 19-nov</div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+              {[
+                ['Pedido → listo', tiempos.horasHastaListo, tiempos.nListo],
+                ['Listo → salió', tiempos.horasHastaSalida, tiempos.nSalida],
+                ['Salió → entregado', tiempos.horasHastaEntrega, tiempos.nEntrega],
+              ].map(([l, h, n]) => (
+                <div key={l} className="bg-zinc-900 border border-zinc-800 rounded-card px-2.5 py-2">
+                  <div className="text-[10px] text-zinc-500">{l}</div>
+                  <div className="text-lg font-black tabular-nums">{textoHoras(h)}</div>
+                  <div className="text-[10px] text-zinc-600">mediana · {n} pedido{n === 1 ? '' : 's'}</div>
+                </div>
+              ))}
+              <div className="bg-zinc-900 border border-zinc-800 rounded-card px-2.5 py-2">
+                <div className="text-[10px] text-zinc-500">Abiertos ahora</div>
+                <div className="text-lg font-black tabular-nums">{tiempos.abiertos}</div>
+                <div className="text-[10px] text-zinc-600">{tiempos.salidasPorOdoo} salida{tiempos.salidasPorOdoo === 1 ? '' : 's'} por Odoo (REQ) · {tiempos.recepcionConfirmada} confirmada{tiempos.recepcionConfirmada === 1 ? '' : 's'} por la obra</div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ===== Móvil / iPad vertical: tarjetas completas apiladas (igual que siempre) ===== */}
         <div className="lg:hidden space-y-4">
           {COLS.map(col => {
@@ -424,6 +508,7 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
                           {r.codigo && <div className="text-sm font-black tabular-nums leading-tight">{r.codigo}</div>}
                           <div className="text-xs font-bold truncate">{r.urgente && '🔥 '}{r.tipo === 'despacho' && '📦 '}{etiqueta(r)}</div>
                           {r.tipo !== 'compra' && <div className="mt-0.5"><SalidaOdooChip vista={vistaSalida(r)} codigo={r.codigo} error={salidasOdoo.error} alerta={ESTADOS_ALERTA_SALIDA.includes(r.estado)} max={1} /></div>}
+                          {r.salidaAt && <div className="text-[10px] text-emerald-300 truncate mt-0.5">🚚 Salió{r.llevadoPorNombre ? ` · ${r.llevadoPorNombre}` : r.salidaOrigen === 'odoo' ? ' · Odoo' : ''}</div>}
                           <div className="flex items-center justify-between mt-0.5">
                             <span className="text-[10px] text-zinc-500 truncate">{formatFechaCorta((r.createdAt || '').slice(0, 10))} · {r.modoEntrega === 'retiro' ? '🙋' : '🚚'} {r.solicitadoPorNombre || '—'}</span>
                             <span className={`shrink-0 text-[10px] font-bold ml-1.5 ${completo ? 'text-green-400' : 'text-zinc-400'}`}>☑ {despachados}/{r.items.length}</span>
@@ -523,6 +608,10 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
           usuario={usuario} origen="oficina"
           onCerrar={() => setConfirmandoReq(null)}
           onConfirmado={async () => { setConfirmandoReq(null); await recargar(); }} />
+      )}
+      {salioDe && (
+        <ModalSalio pedido={salioDe} etiqueta={etiqueta(salioDe)} usuario={usuario} data={data}
+          onCerrar={() => setSalioDe(null)} onListo={recargar} />
       )}
       {retiroDe && (
         <ModalRegistrarRetiro alisto={retiroDe} etiqueta={etiqueta(retiroDe)}

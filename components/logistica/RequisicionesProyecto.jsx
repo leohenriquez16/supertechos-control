@@ -122,6 +122,16 @@ export default function RequisicionesProyecto({ usuario, proyecto, esAdmin }) {
     setGuardando(false);
   };
 
+  // v8.80.0: material que salió SIN ruta (lo trajo un supervisor/maestro): la obra lo da por
+  // recibido y queda entregado + confirmado en un solo toque.
+  const recibidoEnObra = async (r) => {
+    if (!confirm(`¿Llegó a la obra el material de ${r.codigo || 'este pedido'}${r.llevadoPorNombre ? ` (lo traía ${r.llevadoPorNombre})` : ''}?`)) return;
+    try {
+      await db.actualizarRequisicion(r.id, { estado: 'entregada' });
+      await db.confirmarRecepcionRequisicion(r.id, { porId: usuario?.id || null, porNombre: usuario?.nombre || null, origen: 'obra' });
+      await recargar();
+    } catch (e) { alert('Error: ' + (e?.message || e)); }
+  };
   const cancelar = async (r) => {
     if (!confirm('¿Cancelar esta requisición?')) return;
     try { await db.actualizarRequisicion(r.id, { estado: 'cancelada' }); await recargar(); }
@@ -209,6 +219,16 @@ export default function RequisicionesProyecto({ usuario, proyecto, esAdmin }) {
                 </div>
                 {r.cotizacionUrl && <a href={r.cotizacionUrl} target="_blank" rel="noreferrer" className="text-[10px] text-blue-400 hover:underline mt-1 inline-block">📎 Ver cotización adjunta</a>}
                 {r.notas && <div className="text-[10px] text-zinc-500 mt-1">📝 {r.notas}</div>}
+                {/* v8.80.0: quién lo lleva + recibido en obra */}
+                {r.salidaAt && r.estado !== 'cancelada' && (
+                  <div className="text-[11px] text-emerald-300 mt-1">🚚 Salió del almacén {formatFechaCorta(String(r.salidaAt).slice(0, 10))}{r.llevadoPorNombre ? <> · lo lleva <b>{r.llevadoPorNombre}</b></> : null}</div>
+                )}
+                {r.estado === 'en_ruta' && r.salidaAt && (
+                  <button onClick={() => recibidoEnObra(r)}
+                    className="mt-2 w-full bg-green-700 hover:bg-green-600 text-white text-[10px] font-black uppercase py-2 rounded-card">
+                    ✅ Llegó a la obra
+                  </button>
+                )}
                 {/* v8.49.4: doble confirmación — la obra confirma el recibido contra la firma del chofer */}
                 {r.estado === 'entregada' && !r.recepcionConfirmadaAt && (
                   <button onClick={() => setConfirmandoReq(r)}

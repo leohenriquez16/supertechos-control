@@ -2,6 +2,7 @@
 import {
   referenciaPedido, datosPedido, consultaSalidas, urlSalidasPedidos, salidaDePedidoVista,
   resumenItems, antiguedadPedido, filtrarPorMontar, ordenarPorMontar, textoOrigenOdoo,
+  ESTADO_SALIDA_ODOO, conPrefijo,
 } from '../lib/helpers/porMontar.js';
 let ok = 0, ko = 0;
 const t = (n, c) => { if (c) ok++; else { ko++; console.error('FALLA:', n); } };
@@ -78,14 +79,14 @@ t('resumen ignora renglones en blanco', resumenItems([{ descripcion: '  ' }, { d
 
 // --- antigüedad ---
 const ahora = '2026-11-18T16:00:00Z';
-t('lista hoy', antiguedadPedido({ estado: 'lista', listaAt: '2026-11-18T13:00:00Z', createdAt: '2026-11-01T12:00:00Z' }, ahora).texto === 'lista hoy');
-t('lista ayer', antiguedadPedido({ estado: 'lista', listaAt: '2026-11-17T13:00:00Z' }, ahora).texto === 'lista ayer');
+t('lista hoy', antiguedadPedido({ estado: 'lista', listaAt: '2026-11-18T13:00:00Z', createdAt: '2026-11-01T12:00:00Z' }, ahora).texto === 'listo hoy');
+t('lista ayer', antiguedadPedido({ estado: 'lista', listaAt: '2026-11-17T13:00:00Z' }, ahora).texto === 'listo ayer');
 const a3 = antiguedadPedido({ estado: 'lista', listaAt: '2026-11-15T13:00:00Z' }, ahora);
-t('lista hace 3 días', a3.texto === 'lista hace 3 días' && a3.dias === 3 && !a3.vieja);
+t('lista hace 3 días', a3.texto === 'listo hace 3 días' && a3.dias === 3 && !a3.vieja);
 t('más de 7 días = vieja', antiguedadPedido({ estado: 'lista', listaAt: '2026-11-10T13:00:00Z' }, ahora).vieja === true);
 t('7 días justos no es vieja', antiguedadPedido({ estado: 'lista', listaAt: '2026-11-11T13:00:00Z' }, ahora).vieja === false);
-t('sin lista_at usa la fecha del pedido', antiguedadPedido({ estado: 'lista', createdAt: '2026-11-08T13:00:00Z' }, ahora).texto === 'pedida hace 10 días');
-t('día RD (madrugada UTC)', antiguedadPedido({ estado: 'lista', listaAt: '2026-11-18T02:00:00Z' }, ahora).texto === 'lista ayer');
+t('sin lista_at usa la fecha del pedido', antiguedadPedido({ estado: 'lista', createdAt: '2026-11-08T13:00:00Z' }, ahora).texto === 'pedido hace 10 días');
+t('día RD (madrugada UTC)', antiguedadPedido({ estado: 'lista', listaAt: '2026-11-18T02:00:00Z' }, ahora).texto === 'listo ayer');
 t('sin fecha', antiguedadPedido({}, ahora).texto === '');
 
 // --- filtrar / ordenar ---
@@ -110,6 +111,10 @@ t('origen ST', textoOrigenOdoo({ codigo: 'REQ-0142', proyectoId: 'p1' }, prjST) 
 t('origen PG', textoOrigenOdoo({ codigo: 'REQ-0007', proyectoId: 'p2' }, prjPG) === 'PG 1269 REQ-0007');
 t('origen sin cotización', textoOrigenOdoo({ codigo: 'REQ-0009' }, prjSinRef) === 'REQ-0009');
 t('origen sin código', textoOrigenOdoo({ codigo: null }, prjST) === null);
+
+// --- revisión UX: estados como en Odoo + conPrefijo ---
+t('estados Odoo', ESTADO_SALIDA_ODOO.draft === 'borrador' && ESTADO_SALIDA_ODOO.confirmed === 'en espera' && ESTADO_SALIDA_ODOO.waiting === 'en espera' && ESTADO_SALIDA_ODOO.assigned === 'lista para salir' && ESTADO_SALIDA_ODOO.done === 'hecha');
+t('conPrefijo', conPrefijo('ST-C5867') === 'ST-C5867' && conPrefijo('5867') === null && conPrefijo(null) === null);
 
 console.log(`porMontar: ${ok} ok, ${ko} fallas`);
 if (ko) process.exit(1);

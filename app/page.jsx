@@ -7079,9 +7079,11 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
     materialesCalculados: calcMaterialesGrupo(g, proyecto, reportes, envios),
   }));
 
-  // v8.76: lo que de verdad SALIÓ del almacén según Odoo (salidas hechas por la cotización de
-  // la obra), reconocido por material con el mismo matcher de Rentabilidad. Los envíos manuales
-  // quedan como dato secundario. Sin cotización o con Odoo caído se usan los envíos manuales.
+  // v8.76: lo que SALIÓ del almacén según Odoo (salidas hechas con la cotización exacta de la
+  // obra en el Documento origen), reconocido por material con el mismo matcher de Rentabilidad.
+  // Solo para la oficina (admin): supervisores en el celular siguen como antes, sin consultar Odoo.
+  // Los envíos manuales se siguen viendo (respaldo: compras por caja chica que no pasan por el
+  // almacén) y el Pendiente usa el MAYOR entre lo que salió en Odoo y lo enviado a mano.
   // El helper (con el matcher de Rentabilidad) se carga aparte para no engordar el bundle principal.
   const [salidasOdoo, setSalidasOdoo] = useState({ estado: 'cargando', productos: [] });
   const [helperPedir, setHelperPedir] = useState(null);
@@ -7089,12 +7091,13 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
   useEffect(() => {
     let cancel = false;
     const ref = proyecto.referenciaOdoo;
+    if (!esAdmin) { setSalidasOdoo({ estado: 'no_aplica', productos: [] }); return; }
     if (!ref) { setSalidasOdoo({ estado: 'sin_ref', productos: [] }); return; }
     setSalidasOdoo({ estado: 'cargando', productos: [] });
     (async () => {
       try {
         const [res, mod] = await Promise.all([
-          fetch(`/api/odoo/salidas-almacen?refs=${encodeURIComponent(ref)}`),
+          fetch(`/api/odoo/salidas-almacen?prefijo=1&refs=${encodeURIComponent(ref)}`),
           import('../lib/helpers/pedirAlmacen'),
         ]);
         const json = await res.json();
@@ -7104,7 +7107,7 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
       } catch { if (!cancel) setSalidasOdoo({ estado: 'error', productos: [] }); }
     })();
     return () => { cancel = true; };
-  }, [proyecto.referenciaOdoo]);
+  }, [proyecto.referenciaOdoo, esAdmin]);
   const odooListo = salidasOdoo.estado === 'ok' && !!helperPedir;
   const salioOdoo = {
     disponible: odooListo,
@@ -7246,19 +7249,17 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
   return (
     <div className="space-y-4">
       {/* v8.76: la oficina (admin) pide al almacén desde la lista de materiales de la obra */}
-      {(esAdmin || salioOdoo.estado !== 'ok') && (
+      {esAdmin && (
         <div className="flex flex-wrap items-center gap-3">
           <div className="text-[11px] text-zinc-500 flex-1 min-w-0">
-            {salioOdoo.estado === 'ok' && <>"Salió (Odoo)": salidas de almacén hechas en Odoo para {proyecto.referenciaOdoo}.</>}
+            {salioOdoo.estado === 'ok' && <>"Salió (Odoo)": salidas de almacén hechas en Odoo para {proyecto.referenciaOdoo}. "Enviado" son los envíos registrados a mano; el pendiente usa el mayor de los dos.</>}
             {salioOdoo.estado === 'cargando' && <>Leyendo las salidas de almacén en Odoo…</>}
             {salioOdoo.estado === 'sin_ref' && <>La obra no tiene cotización de Odoo: lo enviado sale de los envíos registrados a mano.</>}
             {salioOdoo.estado === 'error' && <>No se pudo leer Odoo: lo enviado sale de los envíos registrados a mano.</>}
           </div>
-          {esAdmin && (
-            <button onClick={() => setPidiendo(true)} className="bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase px-4 py-2 inline-flex items-center gap-2">
-              <Truck className="w-4 h-4" /> Pedir al almacén
-            </button>
-          )}
+          <button onClick={() => setPidiendo(true)} className="bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase px-4 py-2 inline-flex items-center gap-2">
+            <Truck className="w-4 h-4" /> Pedir al almacén
+          </button>
         </div>
       )}
       {pidiendo && esAdmin && (
@@ -7267,7 +7268,7 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
           onCerrar={() => setPidiendo(false)}
           onEnviado={({ codigo }) => {
             setPidiendo(false);
-            alert(codigo ? `Pedido ${codigo} enviado al almacén ✓` : 'Pedido enviado al almacén ✓');
+            toast.success(codigo ? `Pedido ${codigo} enviado al almacén` : 'Pedido enviado al almacén');
             onIrAPedidos?.();
           }}
         />
@@ -7717,8 +7718,9 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
                   {/* MOBILE — cards (layout original) */}
                   <div className="md:hidden space-y-2">
                     {grupo.materialesCalculados.map(mat => {
-                      // v8.76: "Salió" = Odoo si se pudo leer; si no, los envíos manuales
-                      const salio = salioOdoo.disponible ? (salioOdoo.porClave[`${grupo.sistemaId}|${mat.id}`] || 0) : mat.enviado;
+                      // v8.76: el pendiente usa el mayor entre lo que salió en Odoo y lo enviado a mano
+                      const salioO = salioOdoo.disponible ? (salioOdoo.porClave[`${grupo.sistemaId}|${mat.id}`] || 0) : null;
+                      const salio = Math.max(salioO || 0, mat.enviado || 0);
                       const pctE = mat.requerido > 0 ? (salio / mat.requerido) * 100 : 0;
                       const pctU = mat.requerido > 0 ? (mat.usado / mat.requerido) * 100 : 0;
                       const pendiente = Math.max(0, mat.requerido - salio);
@@ -7739,7 +7741,7 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
                           </div>
                           <div className="grid grid-cols-4 gap-2 mb-2">
                             <div className="text-center"><div className="text-[9px] text-zinc-500 uppercase">Req</div><div className="text-base font-black">{formatNum(mat.requerido)}</div></div>
-                            <div className="text-center border-x border-zinc-800"><div className="text-[9px] text-blue-400 uppercase">{salioOdoo.disponible ? 'Salió (Odoo)' : 'Env'}</div><div className="text-base font-black text-blue-400">{formatNum(salio)}</div>{salioOdoo.disponible && mat.enviado > 0 && <div className="text-[9px] text-zinc-500">manual {formatNum(mat.enviado)}</div>}</div>
+                            <div className="text-center border-x border-zinc-800"><div className="text-[9px] text-blue-400 uppercase">Env</div><div className="text-base font-black text-blue-400">{formatNum(mat.enviado)}</div>{salioO != null && <div className="text-[9px] text-zinc-500">Odoo {formatNum(salioO)}</div>}</div>
                             <div className={`text-center ${pendiente > 0 ? '' : 'opacity-50'}`}><div className="text-[9px] text-orange-400 uppercase">Pend.</div><div className={`text-base font-black ${pendiente > 0 ? 'text-orange-400' : 'text-zinc-600'}`}>{formatNum(pendiente)}</div></div>
                             <div className="text-center border-l border-zinc-800"><div className="text-[9px] text-green-400 uppercase">Usa</div><div className="text-base font-black text-green-400">{formatNum(mat.usado)}</div></div>
                           </div>
@@ -7805,9 +7807,11 @@ function TabMateriales({ proyecto, sistema, materiales, envios, reportes = [], s
 // (verde si todo cubierto, naranja/rojo si hay pendiente), sticky header, sort por columna.
 // Las filas multi-área son expandibles a sub-filas con el detalle por área.
 function TablaMaterialesSistema({ grupo, sort, setSort, expandidos, onToggleArea, salioOdoo = null }) {
-  // v8.76: "Salió (Odoo)" manda; los envíos manuales quedan como dato secundario.
+  // v8.76: "Salió (Odoo)" va en su propia columna junto a "Enviado" (manual, respaldo de lo
+  // comprado por caja chica que no pasa por el almacén). El pendiente usa el mayor de los dos.
   const odoo = !!salioOdoo?.disponible;
-  const salioDe = (m) => (odoo ? (salioOdoo.porClave[`${grupo.sistemaId}|${m.id}`] || 0) : (m.enviado || 0));
+  const odooDe = (m) => (odoo ? (salioOdoo.porClave[`${grupo.sistemaId}|${m.id}`] || 0) : 0);
+  const salioDe = (m) => Math.max(odooDe(m), m.enviado || 0);
   // Sort por columna
   const items = (grupo.materialesCalculados || []).slice().sort((a, b) => {
     const dir = sort.dir === 'asc' ? 1 : -1;
@@ -7817,7 +7821,8 @@ function TablaMaterialesSistema({ grupo, sort, setSort, expandidos, onToggleArea
       switch (sort.key) {
         case 'nombre': return (m.nombre || '').toLowerCase();
         case 'req': return m.requerido || 0;
-        case 'env': return salioDe(m);
+        case 'env': return m.enviado || 0;
+        case 'odoo': return odooDe(m);
         case 'pend': return p;
         case 'usa': return m.usado || 0;
         default: return 0;
@@ -7849,7 +7854,8 @@ function TablaMaterialesSistema({ grupo, sort, setSort, expandidos, onToggleArea
           <th className="w-1" />
           <Th k="nombre">Material</Th>
           <Th k="req" align="right">Requerido</Th>
-          <Th k="env" align="right">{odoo ? 'Salió (Odoo)' : 'Enviado'}</Th>
+          <Th k="env" align="right">Enviado</Th>
+          {odoo && <Th k="odoo" align="right">Salió (Odoo)</Th>}
           <Th k="pend" align="right">Pendiente</Th>
           <Th k="usa" align="right">Usado</Th>
           <th className="py-2 px-2 text-left text-[10px] uppercase tracking-wider text-zinc-500 font-bold w-[180px]">Progreso</th>
@@ -7881,19 +7887,17 @@ function TablaMaterialesSistema({ grupo, sort, setSort, expandidos, onToggleArea
                   <div className="text-[10px] text-zinc-500 uppercase">1 {mat.unidad} = {mat.rinde_m2} m²</div>
                 </td>
                 <td className="py-2 px-2 text-right tabular-nums font-black text-white">{formatNum(mat.requerido)} <span className="text-[10px] text-zinc-500 font-normal">{mat.unidad_plural || mat.unidad}</span></td>
-                <td className="py-2 px-2 text-right tabular-nums font-black text-blue-400">
-                  {formatNum(salio)}
-                  {odoo && mat.enviado > 0 && <div className="text-[9px] text-zinc-500 font-normal" title="Envíos registrados a mano en el ERP">manual {formatNum(mat.enviado)}</div>}
-                </td>
+                <td className="py-2 px-2 text-right tabular-nums font-black text-blue-400">{formatNum(mat.enviado)}</td>
+                {odoo && <td className="py-2 px-2 text-right tabular-nums font-black text-sky-300" title="Salidas de almacén hechas en Odoo con la cotización de la obra">{formatNum(odooDe(mat))}</td>}
                 <td className={`py-2 px-2 text-right tabular-nums font-black ${pendiente > 0 ? 'text-orange-400' : 'text-zinc-600'}`}>{formatNum(pendiente)}</td>
                 <td className="py-2 px-2 text-right tabular-nums font-black text-green-400">{formatNum(mat.usado)}</td>
                 <td className="py-2 px-2">
-                  <div className="relative h-2 bg-zinc-800 overflow-hidden w-full" title={`${pctE.toFixed(0)}% ${odoo ? 'salió' : 'enviado'} · ${pctU.toFixed(0)}% usado`}>
+                  <div className="relative h-2 bg-zinc-800 overflow-hidden w-full" title={`${pctE.toFixed(0)}% enviado · ${pctU.toFixed(0)}% usado`}>
                     <div className="absolute inset-y-0 left-0 bg-blue-600/40" style={{ width: `${Math.min(pctE, 100)}%` }} />
                     <div className="absolute inset-y-0 left-0 bg-green-500" style={{ width: `${Math.min(pctU, 100)}%` }} />
                   </div>
                   <div className="text-[9px] text-zinc-500 mt-0.5 flex justify-between">
-                    <span>{pctE.toFixed(0)}% {odoo ? 'salió' : 'env'}</span>
+                    <span>{pctE.toFixed(0)}% env</span>
                     <span>{pctU.toFixed(0)}% usa</span>
                   </div>
                 </td>
@@ -7912,6 +7916,7 @@ function TablaMaterialesSistema({ grupo, sort, setSort, expandidos, onToggleArea
                   <td className="py-1.5 px-2 pl-6 text-[11px] text-zinc-400">└ {pa.nombre} · {formatNum(pa.m2)} m²</td>
                   <td className="py-1.5 px-2 text-right tabular-nums text-xs text-zinc-300">{formatNum(pa.requerido)}</td>
                   <td className="py-1.5 px-2 text-right tabular-nums text-xs text-blue-400/70">{pa.enviado != null ? formatNum(pa.enviado) : '—'}</td>
+                  {odoo && <td className="py-1.5 px-2 text-right tabular-nums text-xs text-zinc-500">—</td>}
                   <td className="py-1.5 px-2 text-right tabular-nums text-xs text-orange-400/70">{pa.enviado != null ? formatNum(Math.max(0, pa.requerido - pa.enviado)) : '—'}</td>
                   <td className="py-1.5 px-2 text-right tabular-nums text-xs text-green-400/70">{pa.usado != null ? formatNum(pa.usado) : '—'}</td>
                   <td className="py-1.5 px-2 text-[9px] text-zinc-600">—</td>

@@ -43,4 +43,8 @@ ALTER TABLE public.requisiciones
 CREATE UNIQUE INDEX IF NOT EXISTS requisiciones_numero_uidx ON public.requisiciones (numero);
 CREATE INDEX IF NOT EXISTS requisicion_items_material_idx ON public.requisicion_items (material_id) WHERE material_id IS NOT NULL;
 
+-- Sin esto el DEFAULT nextval falla con "permission denied for sequence" y se cae todo
+-- insert en requisiciones (mismo caso que surveys en las migraciones 031 y 035).
+GRANT USAGE, SELECT ON SEQUENCE public.requisiciones_numero_seq TO anon, authenticated, service_role;
+
 NOTIFY pgrst, 'reload schema';

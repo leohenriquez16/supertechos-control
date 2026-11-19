@@ -3,6 +3,7 @@ import {
   codigoRequisicion, numeroDeCodigo, claveCotizacion, origenMencionaCotizacion, origenMencionaCodigo,
   codigosEnOrigen, agruparSalidasPorPedido, fechaOdooAIso, diaRD, salidasDePedido,
   cantidadesSugeridas, yaPedidoPorMaterial, yaSalioPorMaterial,
+  fechaDeSalida, unidadesCompatibles, familiaUnidad, yaSalioDetallado,
 } from '../lib/helpers/requisiciones.js';
 let ok = 0, ko = 0;
 const t = (n, c) => { if (c) ok++; else { ko++; console.error('FALLA:', n); } };
@@ -75,7 +76,7 @@ t('por cotización excluye anteriores y las de otro REQ', r2.via === null && r2.
 const s6 = { name: 'AL/OUT/6', origin: 'ST 5867', state: 'done', fecha: '2026-11-11T20:00:00Z', productos: [] };
 const resp2 = agruparSalidasPorPedido([s1, s2, s6], ['ST-C5867'], ['REQ-0142']);
 const r3 = salidasDePedido(p160, resp2, { referencia: 'ST-C5867' });
-t('por cotización aproximado (mismo día cuenta)', r3.via === 'cotizacion' && r3.aproximado && eq(r3.salidas.map(s => s.name), ['AL/OUT/6']) && r3.salidas[0].porCotizacion === true);
+t('por cotización aproximado (mismo día, más tarde, cuenta)', r3.via === 'cotizacion' && r3.aproximado && eq(r3.salidas.map(s => s.name), ['AL/OUT/6']) && r3.salidas[0].porCotizacion === true);
 const r4 = salidasDePedido({ codigo: 'REQ-0142', createdAt: '2026-11-11T13:00:00Z', referencia: 'ST-C5867' }, resp2);
 t('referencia desde el pedido', r4.via === 'codigo');
 const r5 = salidasDePedido({ codigo: 'REQ-0142', createdAt: '2026-11-13T13:00:00Z' }, resp2, { referencia: 'ST-C5867' });
@@ -111,6 +112,35 @@ const ys = yaSalioPorMaterial(
   [{ producto: 'SIKALASTIC 560 CUBETA', cantidad: 8 }, { producto: 'Sikalastic 560 cubeta', cantidad: 2 }, { producto: 'Tornillos', cantidad: 50 }],
 );
 t('ya salió: cada producto a un solo material', ys.m1 === 10 && ys.m2 === undefined && ys.m3 === undefined);
+
+// --- revisión: amarre por hora, no por día ---
+const pTarde = { numero: 170, createdAt: '2026-11-11T19:00:00Z' }; // 15:00 RD
+const sManana = { name: 'AL/OUT/7', origin: 'ST 5867', state: 'done', fecha: '2026-11-11T13:00:00Z', productos: [] }; // 9:00 RD
+const rT = salidasDePedido(pTarde, agruparSalidasPorPedido([sManana], ['ST-C5867'], []), { referencia: 'ST-C5867' });
+t('salida de esa misma mañana NO cuenta para un pedido de la tarde', rT.via === null);
+const sMargen = { name: 'AL/OUT/8', origin: 'ST 5867', state: 'done', fecha: '2026-11-11T18:55:00Z', productos: [] };
+t('margen de 10 minutos', salidasDePedido(pTarde, agruparSalidasPorPedido([sMargen], ['ST-C5867'], []), { referencia: 'ST-C5867' }).via === 'cotizacion');
+// --- revisión: salidas hechas se fechan por date_done ---
+const sVieja = { name: 'AL/OUT/9', origin: 'ST-C5867', state: 'done', fecha: '2026-10-01T13:00:00Z', fechaHecha: '2026-11-12T13:00:00Z', productos: [] };
+t('fecha de salida hecha = date_done', fechaDeSalida(sVieja) === '2026-11-12T13:00:00Z');
+t('fecha de salida abierta = creación', fechaDeSalida({ ...sVieja, state: 'assigned' }) === '2026-10-01T13:00:00Z');
+t('creada antes pero validada después del pedido → se amarra',
+  salidasDePedido(pTarde, agruparSalidasPorPedido([sVieja], ['ST-C5867'], []), { referencia: 'ST-C5867' }).via === 'cotizacion');
+t('abierta creada antes del pedido → no',
+  salidasDePedido(pTarde, agruparSalidasPorPedido([{ ...sVieja, state: 'assigned', fechaHecha: null }], ['ST-C5867'], []), { referencia: 'ST-C5867' }).via === null);
+// --- revisión: REQ.142 / REQ #142 / REQ:142 ---
+t('REQ.142', origenMencionaCodigo('ST 5867 REQ.142', 'REQ-0142') && origenMencionaCodigo('REQ #142', 'REQ-0142') && origenMencionaCodigo('REQ:0142', 'REQ-0142'));
+t('códigos con punto y #', eq(codigosEnOrigen('REQ.142 y REQ #150'), ['REQ-0142', 'REQ-0150']));
+t('numeroDeCodigo con #', numeroDeCodigo('REQ #142') === 142);
+// --- unidades ---
+t('familia unidad', familiaUnidad('Galón') === 'galon' && familiaUnidad('Unidades') === 'unidad' && familiaUnidad('cubetas') === 'cubeta' && familiaUnidad('cosa rara') === null);
+t('compatibles: unidades con cualquiera', unidadesCompatibles('Unidades', 'cubeta') && unidadesCompatibles('rollo', 'Units'));
+t('compatibles: misma familia', unidadesCompatibles('rollos', 'Rollo') && unidadesCompatibles('gal', 'Galones'));
+t('incompatibles: galón vs cubeta', !unidadesCompatibles('Galón', 'cubetas') && !unidadesCompatibles('kg', 'saco'));
+t('desconocidas se aceptan', unidadesCompatibles('', 'cubeta') && unidadesCompatibles('xyz', 'kg'));
+const yd = yaSalioDetallado([{ id: 'p', nombre: 'Primer asfáltico', unidad: 'cubetas' }],
+  [{ producto: 'PRIMER ASFALTICO', cantidad: 25, unidad: 'Galón' }, { producto: 'PRIMER ASFALTICO 5G', cantidad: 2, unidad: 'Unidades' }]);
+t('detallado: otra unidad aparte', yd.cantidades.p === 2 && yd.detalle.p.length === 1 && yd.otraUnidad.p[0].cantidad === 25);
 
 console.log(`requisiciones: ${ok} ok, ${ko} fallas`);
 if (ko) process.exit(1);

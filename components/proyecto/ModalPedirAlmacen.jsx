@@ -14,12 +14,17 @@ import * as db from '../../lib/db';
 import { formatNum } from '../../lib/helpers/formato';
 import { fetchConSesion } from '../../lib/fetchConSesion';
 import {
-  baseDesdePresupuesto, baseDesdeSistema, salioPorRenglon, pedidosConSalida, pedidoPorRenglon,
-  armarRenglones, avisoYaPedido, avisoYaSalio, itemsParaRequisicion, desdePedidosAbiertos,
+  baseDesdePresupuesto, baseDesdeSistema, salioDetallePorRenglon, pedidosConSalida, pedidoPorRenglon,
+  armarRenglones, avisoYaPedido, avisoYaSalio, avisoDudaOdoo, avisoOtraUnidad, detalleSalioTexto,
+  itemsParaRequisicion, desdePedidosAbiertos,
 } from '../../lib/helpers/pedirAlmacen';
 import { ESTADOS_PEDIDO_ABIERTO } from '../../lib/helpers/requisiciones';
+import { conPrefijo } from '../../lib/helpers/porMontar';
 
 const libreVacio = () => ({ descripcion: '', cantidad: '', unidad: '' });
+const hoyRD = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo' }).format(new Date());
+// Unidad junto al número: 1 rollo / 20 rollos
+const uDe = (r, n) => (Math.round((Number(n) || 0) * 100) / 100 === 1 ? r.unidad : (r.unidadPlural || r.unidad)) || '';
 
 // salidasOdoo: { estado: 'cargando' | 'ok' | 'error' | 'sin_ref', productos: [{ producto, cantidad }] }
 export default function ModalPedirAlmacen({ usuario, proyecto, sistemas, grupos, salidasOdoo, onCerrar, onEnviado }) {
@@ -60,7 +65,8 @@ export default function ModalPedirAlmacen({ usuario, proyecto, sistemas, grupos,
   const abiertos = useMemo(() => reqs.filter(r => ESTADOS_PEDIDO_ABIERTO.includes(r.estado)), [reqs]);
   useEffect(() => {
     let cancel = false;
-    const ref = proyecto.referenciaOdoo;
+    // Solo una cotización con prefijo ST/PG: un número suelto amarraría salidas de otra empresa.
+    const ref = conPrefijo(proyecto.referenciaOdoo);
     const codigos = abiertos.map(r => r.codigo).filter(Boolean);
     if (!abiertos.length || (!ref && !codigos.length)) { setRespPedidos(null); setEstadoPedidosOdoo('nada'); return; }
     setEstadoPedidosOdoo('cargando');
@@ -86,8 +92,10 @@ export default function ModalPedirAlmacen({ usuario, proyecto, sistemas, grupos,
   const base = useMemo(() => (usaPresupuesto ? basePpto : baseDesdeSistema(grupos)), [usaPresupuesto, basePpto, grupos]);
 
   const odooOk = salidasOdoo?.estado === 'ok';
-  const salio = useMemo(() => (odooOk ? salioPorRenglon(base, salidasOdoo.productos || []) : {}), [odooOk, base, salidasOdoo]);
-  const conSalida = useMemo(() => pedidosConSalida(reqs, respPedidos, proyecto.referenciaOdoo), [reqs, respPedidos, proyecto.referenciaOdoo]);
+  const salioDet = useMemo(() => (odooOk ? salioDetallePorRenglon(base, salidasOdoo.productos || []) : { cantidades: {}, detalle: {}, otraUnidad: {} }), [odooOk, base, salidasOdoo]);
+  const salio = salioDet.cantidades;
+  const referencia = conPrefijo(proyecto.referenciaOdoo);
+  const conSalida = useMemo(() => pedidosConSalida(reqs, respPedidos, referencia, base), [reqs, respPedidos, referencia, base]);
   const ped = useMemo(() => pedidoPorRenglon(base, reqs, conSalida), [base, reqs, conSalida]);
   const renglones = useMemo(() => armarRenglones({ base, salio, pedido: ped.cantidades })
     .map(r => ({ ...r, ...(edits[r.clave] || {}) })), [base, salio, ped, edits]);
@@ -107,9 +115,13 @@ export default function ModalPedirAlmacen({ usuario, proyecto, sistemas, grupos,
   const setLibre = (i, campo, v) => setLibres(ls => ls.map((l, n) => (n === i ? { ...l, [campo]: v } : l)));
 
   const items = itemsParaRequisicion(renglones, libres);
+  // Mientras Odoo carga, "Ya salió" y "Ya pedido" no son reales: no se deja enviar.
+  const leyendoOdoo = salidasOdoo?.estado === 'cargando' || estadoPedidosOdoo === 'cargando';
+  const marcados = renglones.filter(r => r.marcado && Number(r.pedir) > 0).length;
   const ocultosMarcados = renglones.filter(r => r.marcado && Number(r.pedir) > 0 && sistemaFiltro && r.sistemaId !== sistemaFiltro).length;
 
   const enviar = async () => {
+    if (leyendoOdoo) return;
     if (!items.length) { setError('Marca al menos un material con cantidad, o agrega un renglón libre.'); return; }
     setEnviando(true); setError('');
     try {
@@ -132,8 +144,8 @@ export default function ModalPedirAlmacen({ usuario, proyecto, sistemas, grupos,
 
   const th = 'py-2 px-2 text-[10px] uppercase tracking-wider text-zinc-500 font-bold';
   const fuente = usaPresupuesto
-    ? `Según presupuesto v${presupuesto?.version || 1}`
-    : 'Según el sistema (m² ÷ rendimiento)';
+    ? `"Requiere" según el presupuesto aprobado (versión ${presupuesto?.version || 1}).`
+    : '"Requiere" calculado por el sistema: m² de la obra ÷ lo que rinde cada material (la obra no tiene presupuesto aprobado).';
 
   return (
     <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
@@ -145,6 +157,7 @@ export default function ModalPedirAlmacen({ usuario, proyecto, sistemas, grupos,
             <div className="text-[11px] tracking-widest uppercase text-zinc-500 font-bold">Pedir al almacén</div>
             <div className="font-black text-lg text-white truncate">{proyecto.nombre}{proyecto.referenciaOdoo ? <span className="text-zinc-500 font-normal text-sm"> · {proyecto.referenciaOdoo}</span> : null}</div>
             {!cargando && <div className="text-xs text-zinc-400 mt-0.5">{fuente}</div>}
+            {!cargando && <div className="text-xs text-zinc-500 mt-0.5">Pedir ahora = Requiere − Ya salió − Ya pedido, redondeado hacia arriba. Puedes cambiarlo.</div>}
           </div>
           <button onClick={onCerrar} disabled={enviando} className="text-zinc-500 hover:text-white p-1" aria-label="Cerrar"><X className="w-5 h-5" /></button>
         </div>
@@ -155,6 +168,9 @@ export default function ModalPedirAlmacen({ usuario, proyecto, sistemas, grupos,
           <>
             {/* Avisos de fuentes */}
             <div className="px-5 pt-3 space-y-2">
+              {leyendoOdoo && (
+                <div className="text-xs bg-zinc-900 border border-zinc-800 text-zinc-300 p-2 inline-flex items-center gap-2"><Loader2 className="w-3 h-3 animate-spin" /> Leyendo Odoo… espera a que cargue "Ya salió" y "Ya pedido" antes de enviar.</div>
+              )}
               {salidasOdoo?.estado === 'sin_ref' && (
                 <div className="text-xs bg-yellow-900/20 border border-yellow-700 text-yellow-300 p-2">La obra no tiene cotización de Odoo: no se puede saber qué ya salió del almacén. "Ya salió" queda en 0.</div>
               )}
@@ -183,7 +199,7 @@ export default function ModalPedirAlmacen({ usuario, proyecto, sistemas, grupos,
                   </optgroup>}
                 </select>
                 {filtro.startsWith('a:') && <span className="text-zinc-500">(se muestran los materiales del sistema de esa área, para toda la obra)</span>}
-                <span className="ml-auto text-zinc-500">{renglones.filter(r => r.marcado).length} marcados</span>
+                <span className="ml-auto text-zinc-500">{marcados} {marcados === 1 ? 'marcado' : 'marcados'}</span>
               </div>
             )}
 
@@ -203,8 +219,12 @@ export default function ModalPedirAlmacen({ usuario, proyecto, sistemas, grupos,
                   </thead>
                   <tbody>
                     {visibles.map(r => {
-                      const avisoP = avisoYaPedido(ped.detalle[r.clave], r.unidad);
-                      const avisoS = avisoYaSalio(ped.salidos[r.clave]);
+                      const avisoP = avisoYaPedido(ped.detalle[r.clave], r.unidad, r.unidadPlural);
+                      const avisoD = avisoDudaOdoo(ped.detalle[r.clave]);
+                      const avisoS = avisoYaSalio(ped.salidos[r.clave], r.unidad, r.unidadPlural);
+                      const avisoU = avisoOtraUnidad(salioDet.otraUnidad[r.clave], r.unidadPlural || r.unidad);
+                      const tituloSalio = odooOk ? detalleSalioTexto(salioDet.detalle[r.clave], salioDet.otraUnidad[r.clave]) : undefined;
+                      const tituloPedido = (ped.detalle[r.clave] || []).map(d => `• ${d.etiqueta}: ${formatNum(d.cantidad)} ${uDe(r, d.cantidad)}`).join('\n') || undefined;
                       return (
                         <tr key={r.clave} className={`border-b border-zinc-800 align-top ${r.marcado ? '' : 'opacity-60'}`}>
                           <td className="py-2 px-2">
@@ -212,16 +232,18 @@ export default function ModalPedirAlmacen({ usuario, proyecto, sistemas, grupos,
                           </td>
                           <td className="py-2 px-2">
                             <div className="font-bold text-white">{r.nombre}</div>
-                            <div className="text-[10px] text-zinc-500 uppercase">{r.sistemaNombre}{r.unidad ? ` · ${r.unidad}` : ''}</div>
+                            <div className="text-[10px] text-zinc-500 uppercase">{r.sistemaNombre}</div>
                             {avisoP && <div className="text-[11px] text-amber-400 mt-1 flex items-start gap-1"><AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />{avisoP}</div>}
+                            {avisoD && <div className="text-[11px] text-amber-400 mt-1">{avisoD}</div>}
+                            {avisoU && <div className="text-[11px] text-amber-400 mt-1 flex items-start gap-1"><AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />{avisoU}</div>}
                             {avisoS && <div className="text-[11px] text-zinc-400 mt-1">{avisoS}</div>}
                           </td>
-                          <td className="py-2 px-2 text-right tabular-nums font-bold text-white">{formatNum(r.requerido)}</td>
-                          <td className="py-2 px-2 text-right tabular-nums text-blue-400">
-                            {salidasOdoo?.estado === 'cargando' ? <Loader2 className="w-3 h-3 animate-spin inline" /> : formatNum(r.yaSalio)}
+                          <td className="py-2 px-2 text-right tabular-nums font-bold text-white whitespace-nowrap">{formatNum(r.requerido)} <span className="text-[10px] text-zinc-500 font-normal">{uDe(r, r.requerido)}</span></td>
+                          <td className="py-2 px-2 text-right tabular-nums text-blue-400 whitespace-nowrap" title={tituloSalio}>
+                            {salidasOdoo?.estado === 'cargando' ? <Loader2 className="w-3 h-3 animate-spin inline" /> : <span className={tituloSalio ? 'underline decoration-dotted cursor-help' : ''}>{formatNum(r.yaSalio)} <span className="text-[10px] text-zinc-500">{uDe(r, r.yaSalio)}</span></span>}
                           </td>
-                          <td className={`py-2 px-2 text-right tabular-nums ${r.yaPedido > 0 ? 'text-amber-400' : 'text-zinc-600'}`}>
-                            {estadoPedidosOdoo === 'cargando' ? <Loader2 className="w-3 h-3 animate-spin inline" /> : formatNum(r.yaPedido)}
+                          <td className={`py-2 px-2 text-right tabular-nums whitespace-nowrap ${r.yaPedido > 0 ? 'text-amber-400' : 'text-zinc-500'}`} title={tituloPedido}>
+                            {estadoPedidosOdoo === 'cargando' ? <Loader2 className="w-3 h-3 animate-spin inline" /> : <>{formatNum(r.yaPedido)} <span className="text-[10px] text-zinc-500">{uDe(r, r.yaPedido)}</span></>}
                           </td>
                           <td className="py-2 px-2 text-right">
                             <input
@@ -265,7 +287,7 @@ export default function ModalPedirAlmacen({ usuario, proyecto, sistemas, grupos,
                 </label>
                 <label className="text-xs text-zinc-400">
                   <div className="mb-1">¿Para cuándo se necesita?</div>
-                  <input type="date" value={fechaNecesaria} onChange={e => setFechaNecesaria(e.target.value)} className="bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-white" />
+                  <input type="date" min={hoyRD()} value={fechaNecesaria} onChange={e => setFechaNecesaria(e.target.value)} className="bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-white" />
                 </label>
                 <label className="text-xs text-zinc-400">
                   <div className="mb-1">Nota para el almacén</div>
@@ -275,11 +297,11 @@ export default function ModalPedirAlmacen({ usuario, proyecto, sistemas, grupos,
               {error && <div className="text-xs bg-red-900/20 border border-red-700 text-red-300 p-2">{error}</div>}
               <div className="flex items-center gap-3">
                 <div className="text-xs text-zinc-500 flex-1">
-                  Se enviarán {items.length} renglón{items.length !== 1 ? 'es' : ''} al almacén
+                  Se {items.length === 1 ? 'enviará' : 'enviarán'} {items.length} {items.length === 1 ? 'renglón' : 'renglones'} al almacén
                   {ocultosMarcados > 0 ? ` (${ocultosMarcados} no se ven por el filtro)` : ''}.
                 </div>
                 <button onClick={onCerrar} disabled={enviando} className="px-4 py-2 bg-zinc-800 text-zinc-300 text-xs font-bold uppercase">Cancelar</button>
-                <button onClick={enviar} disabled={enviando || !items.length} className="px-5 py-2 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-xs font-black uppercase inline-flex items-center gap-2">
+                <button onClick={enviar} disabled={enviando || leyendoOdoo || !items.length} title={leyendoOdoo ? 'Leyendo Odoo…' : undefined} className="px-5 py-2 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-xs font-black uppercase inline-flex items-center gap-2">
                   {enviando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Truck className="w-4 h-4" />} Enviar al almacén
                 </button>
               </div>

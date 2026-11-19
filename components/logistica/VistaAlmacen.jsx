@@ -21,6 +21,10 @@ import useSalidasPedidos from './useSalidasPedidos';
 import SalidaOdooChip from './SalidaOdooChip';
 import { salidaDePedidoVista, textoOrigenOdoo } from '../../lib/helpers/porMontar';
 
+// "sin salida en Odoo" solo es alerta cuando el pedido ya debería tener salida (listo o
+// después). En Nuevas y Preparando es lo normal: se muestra en gris.
+const ESTADOS_ALERTA_SALIDA = ['lista', 'en_ruta', 'entregada'];
+
 const COLS = [
   { estado: 'pendiente', titulo: '📥 Nuevas', siguiente: 'preparando', btn: 'Empezar a preparar' },
   { estado: 'preparando', titulo: '🔧 Preparando', siguiente: 'lista', btn: 'Marcar LISTA para envío' },
@@ -180,7 +184,7 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
   const [copiado, setCopiado] = useState(null);
   const copiarOrigen = async (r, texto) => {
     try { await navigator.clipboard.writeText(texto); setCopiado(r.id); setTimeout(() => setCopiado(c => (c === r.id ? null : c)), 2000); }
-    catch { window.prompt('Copia este texto para el Origen en Odoo:', texto); }
+    catch { window.prompt('Copia este texto para el Documento origen en Odoo:', texto); }
   };
 
   // La tarjeta completa de siempre — se usa inline en móvil y como panel en desktop.
@@ -252,7 +256,7 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
           )
         )}
         {r.notas && <div className="text-[10px] text-zinc-500 mt-1">📝 {r.notas}</div>}
-        {/* v8.76: ¿ya está registrada la salida en Odoo? + qué poner en el Origen */}
+        {/* v8.76: ¿ya está registrada la salida en Odoo? + qué poner en el Documento origen */}
         {r.tipo !== 'compra' && (() => {
           const vista = vistaSalida(r);
           const origen = textoOrigenOdoo(r, proyectoDe(r));
@@ -260,11 +264,11 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
             <div className="mt-2 border-t border-zinc-800 pt-2 space-y-1">
               <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
                 <span className="text-zinc-400 font-bold">Salida en Odoo:</span>
-                <SalidaOdooChip vista={vista} codigo={r.codigo} error={salidasOdoo.error} detalle />
+                <SalidaOdooChip vista={vista} codigo={r.codigo} error={salidasOdoo.error} detalle alerta={ESTADOS_ALERTA_SALIDA.includes(r.estado)} />
               </div>
               {origen && vista?.estado !== 'exacta' && (
                 <div className="flex items-center gap-1.5 flex-wrap text-[11px] text-zinc-400">
-                  <span>Pon <b className="text-zinc-200">{r.codigo}</b> en el Origen de la salida en Odoo:</span>
+                  <span>Pon <b className="text-zinc-200">{r.codigo}</b> en el Documento origen de la salida en Odoo:</span>
                   <code className="bg-zinc-950 border border-zinc-700 rounded-card px-1.5 py-0.5 text-zinc-200">{origen}</code>
                   <button onClick={() => copiarOrigen(r, origen)} className="text-[10px] font-bold text-amber-400 hover:text-amber-300">{copiado === r.id ? '✓ Copiado' : 'Copiar'}</button>
                 </div>
@@ -310,7 +314,9 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
           <div>
             <h1 className="text-2xl font-black flex items-center gap-2"><Package className="w-6 h-6 text-amber-400" /> Almacén</h1>
             <div className="text-[11px] text-zinc-500">Pedidos de obra y despachos/ventas · se alistan aquí, no en el WhatsApp</div>
-            <div className="text-[11px] text-amber-400/90 mt-0.5">Al hacer la salida en Odoo, pon el número del pedido (REQ-xxxx) en el Origen, junto a la cotización. Ej.: «ST 5867 REQ-0142».</div>
+            {reqs.some(r => r.codigo) && (
+              <div className="text-[11px] text-amber-400/90 mt-0.5">Al hacer la salida en Odoo, pon el número del pedido (REQ-xxxx) en el Documento origen, junto a la cotización. Ej.: «ST 5867 REQ-0142».</div>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -417,7 +423,7 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
                           className={`w-full text-left px-2.5 py-2 rounded-card border bg-zinc-900 ${selId === r.id ? 'border-amber-500 bg-zinc-800/70' : r.urgente ? 'border-red-800/70 hover:border-red-700' : 'border-zinc-800 hover:border-zinc-600'}`}>
                           {r.codigo && <div className="text-sm font-black tabular-nums leading-tight">{r.codigo}</div>}
                           <div className="text-xs font-bold truncate">{r.urgente && '🔥 '}{r.tipo === 'despacho' && '📦 '}{etiqueta(r)}</div>
-                          {r.tipo !== 'compra' && <div className="mt-0.5"><SalidaOdooChip vista={vistaSalida(r)} codigo={r.codigo} error={salidasOdoo.error} /></div>}
+                          {r.tipo !== 'compra' && <div className="mt-0.5"><SalidaOdooChip vista={vistaSalida(r)} codigo={r.codigo} error={salidasOdoo.error} alerta={ESTADOS_ALERTA_SALIDA.includes(r.estado)} max={1} /></div>}
                           <div className="flex items-center justify-between mt-0.5">
                             <span className="text-[10px] text-zinc-500 truncate">{formatFechaCorta((r.createdAt || '').slice(0, 10))} · {r.modoEntrega === 'retiro' ? '🙋' : '🚚'} {r.solicitadoPorNombre || '—'}</span>
                             <span className={`shrink-0 text-[10px] font-bold ml-1.5 ${completo ? 'text-green-400' : 'text-zinc-400'}`}>☑ {despachados}/{r.items.length}</span>
@@ -442,7 +448,7 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
                     className={`w-full text-left px-2.5 py-2 rounded-card border bg-zinc-900 ${selId === r.id ? 'border-amber-500 bg-zinc-800/70' : 'border-zinc-800 hover:border-zinc-600'}`}>
                     {r.codigo && <div className="text-sm font-black tabular-nums leading-tight">{r.codigo}</div>}
                     <div className="text-xs font-bold truncate text-green-300">{r.tipo === 'despacho' && '📦 '}{etiqueta(r)}</div>
-                    {r.tipo !== 'compra' && <div className="mt-0.5"><SalidaOdooChip vista={vistaSalida(r)} codigo={r.codigo} error={salidasOdoo.error} /></div>}
+                    {r.tipo !== 'compra' && <div className="mt-0.5"><SalidaOdooChip vista={vistaSalida(r)} codigo={r.codigo} error={salidasOdoo.error} alerta={ESTADOS_ALERTA_SALIDA.includes(r.estado)} max={1} /></div>}
                     <div className="flex items-center justify-between mt-0.5">
                       <span className="text-[10px] text-zinc-500 truncate">✓ {formatFechaCorta(((r.entregadaAt || r.retiradaAt || '')).slice(0, 10))} · {r.modoEntrega === 'retiro' ? '🙋' : '🚚'}</span>
                       <span className={`shrink-0 text-[9px] font-bold ml-1 ${r.recepcionConfirmadaAt ? 'text-green-400' : 'text-amber-400'}`}>{r.recepcionConfirmadaAt ? '✅ conf.' : '⏳ sin conf.'}</span>

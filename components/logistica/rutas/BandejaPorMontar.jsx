@@ -23,6 +23,7 @@ export default function BandejaPorMontar({ listas, diligencias, enAlmacen, nombr
   const [buscar, setBuscar] = useState('');
   const [orden, setOrden] = useState('viejo');
   const [amplia, setAmplia] = useState(false);
+  const [soloSinSalida, setSoloSinSalida] = useState(false);
   useEffect(() => { setOrden(leerOrden()); }, []);
   useEffect(() => {
     if (!amplia) return;
@@ -42,7 +43,8 @@ export default function BandejaPorMontar({ listas, diligencias, enAlmacen, nombr
       items: resumenItems(r.items), edad: antiguedadPedido(r),
     };
   }), [listas, salidas, proyectoDe]);
-  const visibles = useMemo(() => ordenarPorMontar(filtrarPorMontar(filas, buscar), orden), [filas, buscar, orden]);
+  const visibles = useMemo(() => ordenarPorMontar(filtrarPorMontar(filas, buscar), orden)
+    .filter(f => !soloSinSalida || f.salida.estado === 'sin_salida'), [filas, buscar, orden, soloSinSalida]);
   const dilVisibles = useMemo(() => {
     const w = buscar.trim().toLowerCase();
     if (!w) return diligencias;
@@ -76,20 +78,22 @@ export default function BandejaPorMontar({ listas, diligencias, enAlmacen, nombr
     </div>
   );
 
+  // Las "filas" son funciones que se LLAMAN ({FilaAngosta({ f })}), no componentes: así no se
+  // vuelven a montar en cada render (el title no parpadea y el botón no pierde el foco).
   // Fila angosta (columna izquierda de Rutas): todo en bloque, nada cortado salvo los artículos (con title).
   const FilaAngosta = ({ f }) => {
     const r = f.pedido;
     return (
       <div className={`bg-zinc-950 border rounded-card px-2.5 py-2 space-y-1 ${r.urgente ? 'border-red-800/70' : 'border-zinc-800'}`}>
         <div className="flex items-center gap-1.5 flex-wrap">
-          <Codigo r={r} /><Urgente r={r} />
-          <span className="ml-auto"><Edad edad={f.edad} /></span>
+          {Codigo({ r })}{Urgente({ r })}
+          <span className="ml-auto">{Edad({ edad: f.edad })}</span>
         </div>
-        <div><SalidaOdooChip vista={f.salida} codigo={r.codigo} error={salidas?.error} /></div>
-        <ObraCliente f={f} />
+        <div><SalidaOdooChip vista={f.salida} codigo={r.codigo} error={salidas?.error} max={1} /></div>
+        {ObraCliente({ f })}
         <div className="flex items-center gap-2">
           <div className="min-w-0 flex-1 text-[11px] text-zinc-500 truncate" title={f.items.completo}>{f.items.corto}</div>
-          <BotonAgregar id={r.id} proyectoId={r.proyectoId} onClick={() => onMontarRequisicion(r)} />
+          {BotonAgregar({ id: r.id, proyectoId: r.proyectoId, onClick: () => onMontarRequisicion(r) })}
         </div>
       </div>
     );
@@ -101,13 +105,13 @@ export default function BandejaPorMontar({ listas, diligencias, enAlmacen, nombr
     return (
       <div className={`bg-zinc-900 border rounded-card px-3 py-2.5 grid grid-cols-[120px_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] gap-3 items-start ${r.urgente ? 'border-red-800/70' : 'border-zinc-800'}`}>
         <div className="space-y-1">
-          <Codigo r={r} />
-          <div className="flex flex-col items-start gap-1"><Urgente r={r} /><Edad edad={f.edad} /></div>
+          {Codigo({ r })}
+          <div className="flex flex-col items-start gap-1">{Urgente({ r })}{Edad({ edad: f.edad })}</div>
         </div>
-        <ObraCliente f={f} />
+        {ObraCliente({ f })}
         <div className="text-[11px] text-zinc-400 whitespace-pre-line" title={f.items.completo}>{f.items.completo || 'Sin artículos'}</div>
         <div><SalidaOdooChip vista={f.salida} codigo={r.codigo} error={salidas?.error} detalle /></div>
-        <BotonAgregar id={r.id} proyectoId={r.proyectoId} onClick={() => onMontarRequisicion(r)} />
+        {BotonAgregar({ id: r.id, proyectoId: r.proyectoId, onClick: () => onMontarRequisicion(r) })}
       </div>
     );
   };
@@ -118,9 +122,9 @@ export default function BandejaPorMontar({ listas, diligencias, enAlmacen, nombr
       <div className="min-w-0 flex-1">
         <div className="text-xs font-bold leading-snug break-words">♻ Retiro de sobrante · {nombreObra(d.proyectoId)}</div>
         <div className="text-[11px] text-zinc-500 truncate" title={d.descripcion || ''}>{(d.descripcion || '').split('\n').join(' · ')}</div>
-        <div className="text-[10px] text-zinc-600">{formatFechaCorta((d.createdAt || '').slice(0, 10))}{d.creadoPorNombre ? ` · ${d.creadoPorNombre}` : ''}</div>
+        <div className="text-[10px] text-zinc-500">{formatFechaCorta((d.createdAt || '').slice(0, 10))}{d.creadoPorNombre ? ` · ${d.creadoPorNombre}` : ''}</div>
       </div>
-      <BotonAgregar id={d.id} proyectoId={d.proyectoId} onClick={() => onMontarDiligencia(d)} />
+      {BotonAgregar({ id: d.id, proyectoId: d.proyectoId, onClick: () => onMontarDiligencia(d) })}
     </div>
   );
 
@@ -164,19 +168,23 @@ export default function BandejaPorMontar({ listas, diligencias, enAlmacen, nombr
       {destino && total > 0 && <div className="text-[11px] text-zinc-500">Se agrega a la ruta de <b className="text-zinc-300">{destino}</b></div>}
       {total === 0 && <div className="text-xs text-zinc-500">Nada esperando camión.</div>}
       {total > 0 && !destino && <div className="text-[11px] text-amber-300/90">Abre o crea una ruta (arriba) para montar esto.</div>}
-      {sinSalida > 0 && <div className="text-[11px] text-amber-400">{sinSalida} pedido{sinSalida === 1 ? '' : 's'} sin salida en Odoo todavía.</div>}
-      <AvisoOdoo />
+      {(sinSalida > 0 || soloSinSalida) && (
+        <button onClick={() => setSoloSinSalida(v => !v)} className="text-[11px] text-amber-400 text-left hover:underline" title={soloSinSalida ? 'Ver todos los pedidos' : 'Ver solo esos pedidos'}>
+          {soloSinSalida ? 'Viendo solo los pedidos sin salida en Odoo · ver todos' : `${sinSalida} ${sinSalida === 1 ? 'pedido' : 'pedidos'} sin salida en Odoo todavía · ver solo ${sinSalida === 1 ? 'ese' : 'esos'}`}
+        </button>
+      )}
+      {AvisoOdoo()}
       {herramientas(false)}
       {nadaQueVer && <div className="text-xs text-zinc-500">Nada coincide con «{buscar}».</div>}
 
-      {visibles.map(f => <FilaAngosta key={f.pedido.id} f={f} />)}
-      {dilVisibles.map(d => <FilaRetiro key={d.id} d={d} />)}
+      {visibles.map(f => <React.Fragment key={f.pedido.id}>{FilaAngosta({ f })}</React.Fragment>)}
+      {dilVisibles.map(d => <React.Fragment key={d.id}>{FilaRetiro({ d })}</React.Fragment>)}
 
       {enAlmacen.length > 0 && (
         <div className="border-t border-zinc-800 pt-2">
           <button onClick={() => setVerAlmacen(!verAlmacen)} className="w-full flex items-center justify-between text-left">
             <span className="text-[11px] font-bold text-amber-400">Preparándose en almacén: {enAlmacen.length}</span>
-            <span className="text-zinc-600 text-xs">{verAlmacen ? '▲' : '▼'}</span>
+            <span className="text-zinc-500 text-xs">{verAlmacen ? '▲' : '▼'}</span>
           </button>
           {verAlmacen && (
             <div className="mt-1.5 space-y-1">
@@ -202,7 +210,7 @@ export default function BandejaPorMontar({ listas, diligencias, enAlmacen, nombr
               </div>
               <button onClick={() => setAmplia(false)} className="text-zinc-500 hover:text-white" title="Cerrar (Esc)"><X className="w-5 h-5" /></button>
             </div>
-            <AvisoOdoo />
+            {AvisoOdoo()}
             {herramientas(true)}
             {visibles.length > 0 && (
               <div className="grid grid-cols-[120px_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] gap-3 px-3 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
@@ -210,13 +218,13 @@ export default function BandejaPorMontar({ listas, diligencias, enAlmacen, nombr
               </div>
             )}
             <div className="space-y-1.5">
-              {visibles.map(f => <FilaAncha key={f.pedido.id} f={f} />)}
+              {visibles.map(f => <React.Fragment key={f.pedido.id}>{FilaAncha({ f })}</React.Fragment>)}
             </div>
             {nadaQueVer && <div className="text-xs text-zinc-500">Nada coincide con «{buscar}».</div>}
             {dilVisibles.length > 0 && (
               <div className="space-y-1.5">
                 <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-500 pt-2">Retiros de sobrante</div>
-                {dilVisibles.map(d => <FilaRetiro key={d.id} d={d} />)}
+                {dilVisibles.map(d => <React.Fragment key={d.id}>{FilaRetiro({ d })}</React.Fragment>)}
               </div>
             )}
           </div>

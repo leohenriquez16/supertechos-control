@@ -117,14 +117,14 @@ export default function ModalImportarOdoo({ usuario, sistemas, proyectos = [], o
       }
 
       // Buscar o crear el cliente local a partir del partner de Odoo
-      let clienteIdLocal = null;
+      let clienteIdLocal = null, contactoIdLocal = null; // v8.85.0
       if (cot.clienteId) {
         try {
           const res = await fetch(`/api/odoo/partner?id=${cot.clienteId}`);
           const data = await res.json();
           if (data.ok && data.partner) {
-            const { id } = await db.findOrCreateClienteDesdeOdoo(data.partner);
-            clienteIdLocal = id;
+            const { id, contactoId } = await db.findOrCreateClienteDesdeOdoo(data.partner);
+            clienteIdLocal = id; contactoIdLocal = contactoId || null;
           }
         } catch (errCliente) {
           console.warn('No se pudo resolver cliente desde Odoo:', errCliente);
@@ -217,7 +217,7 @@ export default function ModalImportarOdoo({ usuario, sistemas, proyectos = [], o
           : new Date().toISOString().split('T')[0],
         // Datos del cliente
         clienteId: clienteIdLocal,
-        contactoPrincipalId: null,
+        contactoPrincipalId: contactoIdLocal,
         contactoClienteNombre: '',
         contactoClienteTelefono: '',
         contactoClienteEmail: '',

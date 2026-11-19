@@ -1125,6 +1125,13 @@ export default function App() {
         {(esAdmin || tieneRol(usuario, 'supervisor')) && vista === 'reclamaciones' && <ModuloReclamaciones data={data} usuario={usuario} onVolver={() => setVista(esAdmin ? 'dashboard' : 'misProyectos')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {esAdmin && vista === 'nuevoProyecto' && <NuevoProyecto personal={data.personal} sistemas={data.sistemas} clientes={data.clientes || []} contactos={data.contactos || []} proyectos={data.proyectos || []} onCancelar={() => setVista('dashboard')} onCrear={(proy) => withSync(async () => {
           // v8.9.10: Si no hay clienteId pero hay nombre o RNC, matchear o crear
+          // v8.85.0: "Empresa, Persona" → la empresa es el cliente y la persona su contacto
+          let personaDelNombre = null;
+          if (!proy.clienteId && proy.cliente) {
+            const { partirNombreClienteContacto } = await import('../lib/helpers/clienteMatch.js');
+            const pt = partirNombreClienteContacto(proy.cliente);
+            if (pt.persona) { proy.cliente = pt.empresa; personaDelNombre = pt.persona; if (!proy.contactoClienteNombre) proy.contactoClienteNombre = pt.persona; }
+          }
           if (!proy.clienteId && (proy.cliente || proy.rncCliente)) {
             // v8.75.2: busca en la base (no en la lista en memoria, que no se refresca entre
             // obras creadas seguidas) por RNC y nombre normalizado ("ALAMSA SRL" = "ALAMSA").
@@ -1135,6 +1142,11 @@ export default function App() {
               proy.clienteId = existente.id;
               // Si el cliente existente tiene contacto principal, usarlo
               const contactoPrinc = (data.contactos || []).find(ct => ct.clienteId === existente.id && ct.esPrincipal);
+              if (personaDelNombre || proy.contactoClienteNombre) {
+                // v8.85.0: la persona de la cotización queda como contacto del cliente existente
+                const cid = await db.asegurarContactoCliente(existente.id, { nombre: personaDelNombre || proy.contactoClienteNombre, telefono: proy.contactoClienteTelefono || null, email: proy.contactoClienteEmail || null });
+                if (cid && !proy.contactoPrincipalId) proy.contactoPrincipalId = cid;
+              }
               if (contactoPrinc && !proy.contactoPrincipalId) {
                 proy.contactoPrincipalId = contactoPrinc.id;
               }

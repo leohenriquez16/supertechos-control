@@ -79,7 +79,7 @@ export default function FichaCliente({
   const [copiado, setCopiado] = useState(false);
   const [tab, setTab] = useState('obras');
   const [odoo, setOdoo] = useState(null); // { encontrado, cotizaciones, facturas } | { error }
-  const [gps, setGps] = useState([]);
+  const [gpsVisitas, setGpsVisitas] = useState([]);
   const [vehiculos, setVehiculos] = useState([]);
   const [viajes, setViajes] = useState([]);
 
@@ -98,12 +98,12 @@ export default function FichaCliente({
   useEffect(() => {
     let cancel = false;
     Promise.all([
-      db.listarGpsResumen({}).catch(() => []),
+      db.listarGpsVisitas({ proyectoIds: proyectos.map(p => p.id) }).catch(() => []),
       db.listarVehiculos({}).catch(() => []),
       db.listarViajes({}).catch(() => []),
-    ]).then(([g, v, vj]) => { if (!cancel) { setGps(g || []); setVehiculos(v || []); setViajes(vj || []); } });
+    ]).then(([g, v, vj]) => { if (!cancel) { setGpsVisitas(g || []); setVehiculos(v || []); setViajes(vj || []); } });
     return () => { cancel = true; };
-  }, [cliente.id]);
+  }, [cliente.id, proyectos.length]);
 
   useEffect(() => {
     let cancel = false;
@@ -144,25 +144,20 @@ export default function FichaCliente({
   const esPersona = cliente.tipo === 'persona';
 
   // ---- Visitas ----
-  const nrm = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-  const nombresCliente = useMemo(() => [
-    cliente.nombre, ...proyectos.map(p => p.referenciaProyecto), ...proyectos.map(p => p.nombre), ...ubicaciones.map(u => u.nombre),
-  ].map(nrm).filter(n => n.length >= 6), [cliente.nombre, proyectos, ubicaciones]);
-  const esDelCliente = (lugar) => {
-    const l = nrm(lugar); if (l.length < 4) return false;
-    return nombresCliente.some(n => n === l || (l.length >= 8 && n.includes(l)) || l.includes(n));
-  };
   const vehPorId = useMemo(() => Object.fromEntries(vehiculos.map(v => [v.id, v])), [vehiculos]);
   const nombreVeh = (id, fallback) => { const v = vehPorId[id]; return v ? [v.marca, v.modelo, v.placa].filter(Boolean).join(' ') : (fallback || '—'); };
   const idsProy = new Set(proyectos.map(p => p.id));
   const proyPorId = Object.fromEntries(proyectos.map(p => [p.id, p]));
   const visitas = useMemo(() => {
     const out = [];
-    gps.forEach(r => (r.obras || []).forEach(o => {
-      if (!esDelCliente(o.nombre)) return;
-      out.push({ id: `g_${r.id}_${o.nombre}`, fuente: 'GPS', fecha: r.periodo, vehiculo: nombreVeh(r.vehiculoId, r.deviceName),
-        lugar: o.nombre, detalle: `${(Number(o.s || 0) / 3600).toFixed(1)} h en sitio en el mes`, horas: Number(o.s || 0) / 3600 });
-    }));
+    gpsVisitas.forEach(g => {
+      const pr = proyPorId[g.proyectoId];
+      const h = g.segundos / 3600, ht = g.segundosTotal / 3600;
+      out.push({ id: `g_${g.id}`, fuente: 'GPS', fecha: g.fecha, vehiculo: nombreVeh(g.vehiculoId, g.deviceName),
+        lugar: pr?.referenciaProyecto || pr?.nombre || g.proyectoId,
+        detalle: `${g.llegada || '?'}–${g.salida || '?'} · ${h.toFixed(1)} h en sitio${ht - h > 0.25 ? ` (+${(ht - h).toFixed(1)} h fuera de horario)` : ''}${g.paradas > 1 ? ` · ${g.paradas} paradas` : ''}`,
+        horas: h });
+    });
     viajes.forEach(v => (v.paradas || []).forEach(pa => {
       if (!pa.proyectoId || !idsProy.has(pa.proyectoId)) return;
       const pr = proyPorId[pa.proyectoId];
@@ -171,7 +166,7 @@ export default function FichaCliente({
         detalle: [pa.tipo, pa.descripcion, v.choferNombre && `chofer ${v.choferNombre}`, pa.recibidoPorNombre && `recibió ${pa.recibidoPorNombre}`, pa.estado].filter(Boolean).join(' · '), horas: 0 });
     }));
     return out;
-  }, [gps, viajes, vehiculos, nombresCliente, proyectos]);
+  }, [gpsVisitas, viajes, vehiculos, proyectos]);
   const horasGps = visitas.reduce((a, v) => a + v.horas, 0);
   const vehDistintos = new Set(visitas.map(v => v.vehiculo)).size;
 
@@ -385,7 +380,7 @@ export default function FichaCliente({
                     { key: 'lugar', label: 'Lugar / Obra', sortValue: v => v.lugar, render: v => <span className="text-zinc-300">{v.lugar}</span>, className: 'min-w-[160px]' },
                     { key: 'det', label: 'Detalle', sortValue: v => v.horas || 0, render: v => <span className="text-zinc-400">{v.detalle}</span>, className: 'min-w-[200px]' },
                   ]} />
-                <div className="text-[10px] text-zinc-500 px-1">GPS: tiempo mensual de cada vehículo dentro de las geocercas que coinciden con el cliente, sus obras o sus ubicaciones. Logística: paradas de viajes en las obras del cliente.</div>
+                <div className="text-[10px] text-zinc-500 px-1">GPS: cada día que un vehículo se detuvo en una obra del cliente (llegada, salida y horas en horario laboral, lun–sáb 6:00–19:00), desde jul-2026. Logística: paradas de viajes en las obras del cliente.</div>
               </div>
             </Tarjeta>
           )}

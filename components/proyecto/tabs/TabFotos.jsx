@@ -7,6 +7,7 @@ import { comprimirImagen } from '../../../lib/imports';
 import { formatFechaLarga } from '../../../lib/helpers/formato';
 import Campo from '../../common/Campo';
 import Input from '../../common/Input';
+import FotosLevantamientoObra from '../FotosLevantamientoObra'; // v8.86.0
 
 // Helper local (también está en page.jsx)
 const tieneRol = (p, r) => p?.roles?.includes(r);
@@ -282,6 +283,7 @@ export default function TabFotos({ usuario, proyecto }) {
 
   return (
     <div className="space-y-4">
+      <FotosLevantamientoObra proyecto={proyecto} />
       {/* v8.27.78: reporte fotográfico PDF del proyecto (≤3MB, listo para WhatsApp/correo) */}
       {fotos.length > 0 && (
         <div className="space-y-2">

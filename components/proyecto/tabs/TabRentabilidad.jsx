@@ -7,7 +7,7 @@
 // La MDO real sale de calcEstadoPagoProyecto (salda el TODO del viejo TabCosto).
 // Si la obra tiene cuenta analítica de Odoo, muestra las compras facturadas como referencia.
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, ChevronDown, Plus, RefreshCw, CheckCircle2, Trash2, AlertTriangle, TrendingUp } from 'lucide-react';
 import * as db from '../../../lib/db';
 import { formatRD, formatNum } from '../../../lib/helpers/formato';
@@ -61,10 +61,11 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
   const [salidasOdoo, setSalidasOdoo] = useState(null);  // { pickings, productos } | null
   const [ordenesCambio, setOrdenesCambio] = useState([]); // v8.77.0: para el exceso de m²
 
+  const autoGenRef = useRef(false);
   const cargar = async () => {
     setLoading(true);
     try {
-      const [pptos, det, aj, ct, jrn, cd, movs, ocs] = await Promise.all([
+      let [pptos, det, aj, ct, jrn, cd, movs, ocs] = await Promise.all([
         db.listarPresupuestosObra(proyecto.id).catch(() => []),
         db.listarTodosDetalles({ proyectoId: proyecto.id }),
         db.listarAjustes({ proyectoId: proyecto.id }),
@@ -74,6 +75,18 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
         db.listarMovimientosCajaChica({ proyectoId: proyecto.id }).catch(() => []),
         db.listarOrdenesCambio(proyecto.id).catch(() => []),
       ]);
+      // v8.82.0: la obra abre con presupuesto — si no tiene, se genera y guarda solo
+      // desde los costos por sistema (lona, cementicio, silicona… ya tienen su desglose).
+      if (!pptos.length && !autoGenRef.current) {
+        autoGenRef.current = true;
+        try {
+          const nuevo = generarPresupuestoDesdeProyecto({ proyecto, sistemas: data.sistemas, config: data.config, usuarioId: usuario?.id, version: 1 });
+          setWarnings(nuevo.warnings || []);
+          const { warnings: _w, ...fila } = nuevo;
+          await db.crearPresupuestoObra(fila);
+          pptos = await db.listarPresupuestosObra(proyecto.id);
+        } catch (e) { console.error('auto-presupuesto:', e); }
+      }
       setVersiones(pptos);
       const vigente = pptos.find(p => p.estado === 'aprobado') || pptos[0] || null;
       setSel(vigente ? JSON.parse(JSON.stringify(vigente)) : null);
@@ -260,7 +273,7 @@ export default function TabRentabilidad({ proyecto, data, usuario, esAdmin }) {
   if (!sel) return (
     <div className="bg-zinc-900 border border-zinc-800 p-6 text-center space-y-3">
       <div className="text-sm text-zinc-400">Esta obra aún no tiene presupuesto de costos.</div>
-      <div className="text-[11px] text-zinc-500">Se genera desde los costos por sistema + los precios de MDO cuadrados con el maestro, y lo ajustas antes de aprobar.</div>
+      <div className="text-[11px] text-zinc-500">No se pudo generar solo (revisa que la obra tenga sistema y áreas con m²). Puedes generarlo a mano.</div>
       {esAdmin && (
         <button onClick={generar} className="inline-flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold px-4 py-2">
           <Plus className="w-4 h-4" /> Generar presupuesto

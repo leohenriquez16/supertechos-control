@@ -309,7 +309,8 @@ export default function VistaRutas({ usuario, data, onVolver }) {
     if (!confirm('¿Quitar esta parada de la ruta?')) return;
     try {
       await db.eliminarParada(parada.id);
-      if (parada.requisicionId) await db.devolverRequisicionALista(parada.requisicionId); // v8.80.0: no si ya salió
+      // v8.80.0: no se devuelve a Lista si ya salió (el material no está en el almacén)
+      if (parada.requisicionId && !(await db.devolverRequisicionALista(parada.requisicionId)) && parada.tipo !== 'recogida') toast.info('El pedido ya tenía la salida registrada: se quedó En ruta. Si el material volvió al almacén, deshaz la salida en Almacén.');
       // v8.40.0: el retiro vuelve a "sin planificar" — no se pierde el recordatorio
       if (parada.diligenciaId) await db.actualizarDiligencia(parada.diligenciaId, { estado: 'sin_planificar' });
       await recargar({ silencioso: true });
@@ -361,7 +362,9 @@ export default function VistaRutas({ usuario, data, onVolver }) {
     try {
       const plan = planCancelacionViaje(v);
       for (const id of plan.paradasACancelar) await db.actualizarParada(id, { estado: PARADA_CANCELADA });
-      for (const id of plan.requisicionesADevolver) await db.devolverRequisicionALista(id); // v8.80.0: no si ya salió
+      let sinDevolver = 0;
+      for (const id of plan.requisicionesADevolver) { if (!(await db.devolverRequisicionALista(id))) sinDevolver++; } // v8.80.0: no si ya salió
+      if (sinDevolver) toast.info(`${sinDevolver} pedido${sinDevolver === 1 ? '' : 's'} ya tenía${sinDevolver === 1 ? '' : 'n'} la salida registrada y se quedó En ruta. Si el material volvió, deshaz la salida en Almacén.`);
       for (const id of plan.diligenciasADevolver) await db.actualizarDiligencia(id, { estado: 'sin_planificar' });
       await db.actualizarViaje(v.id, { estado: VIAJE_CANCELADO, notas: notaCancelacion(v.notas, { motivo, nombre: usuario?.nombre, fechaISO: new Date().toISOString() }) });
       await recargar({ silencioso: true });

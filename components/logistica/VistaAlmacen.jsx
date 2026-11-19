@@ -96,9 +96,16 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
   const puedeCrear = ['admin', 'almacen'].some(rr => usuario?.roles?.includes(rr));
   const [compraAbierta, setCompraAbierta] = useState(false); // v8.50.0: solicitud de compra interna
 
+  // v8.80.0: pedidos que van en una parada pendiente de una ruta viva (los entrega el chofer)
+  const [enParadaViva, setEnParadaViva] = useState(new Set());
   const recargar = async () => {
     setLoading(true);
-    try { setReqs(await db.listarRequisiciones({})); }
+    try {
+      const lista = await db.listarRequisiciones({});
+      setReqs(lista);
+      const ids = lista.filter(r => ['lista', 'en_ruta'].includes(r.estado)).map(r => r.id);
+      db.requisicionesConParadaViva(ids).then(setEnParadaViva).catch(() => {});
+    }
     catch (e) { console.warn('Almacén:', e?.message); }
     setLoading(false);
   };
@@ -126,20 +133,37 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
   };
   // v8.80.0: al marcar renglones el pedido avanza solo (pendiente → preparando → LISTA cuando
   // está todo). Antes había que tocar "Marcar LISTA" y casi nunca se tocaba.
+  // El estado nuevo se calcula con los renglones FRESCOS de la base (si se marcan dos rápido o
+  // hay dos personas, no se queda en Preparando con todo marcado). Mientras guarda, los
+  // renglones de ese pedido quedan bloqueados.
   const toggleItem = async (r, it) => {
+    if (procesando === r.id) return;
+    setProcesando(r.id);
     try {
       await db.marcarItemRequisicion(it.id, !it.despachado);
-      const nuevo = estadoTrasMarcarItem(r, it.id, !it.despachado);
+      const [fresco] = await db.listarRequisiciones({ ids: [r.id] });
+      let nuevo = fresco ? estadoTrasMarcarItem(fresco, null, null) : null;
+      // no se devuelve a Preparando un pedido que ya va montado en una ruta
+      if (nuevo === 'preparando' && fresco?.estado === 'lista' && enParadaViva.has(r.id)) nuevo = null;
       if (nuevo) await db.actualizarRequisicion(r.id, { estado: nuevo });
       await recargar();
     }
     catch (e) { alert('Error: ' + (e?.message || e)); }
+    setProcesando(null);
   };
   const [salioDe, setSalioDe] = useState(null); // v8.80.0: pedido en el modal "Salió"
   const marcarEntregado = async (r) => {
     if (!confirm(`¿Marcar ${r.codigo || 'el pedido'} como ENTREGADO en la obra?`)) return;
     await avanzar(r, 'entregada');
   };
+  const deshacerSalida = async (r) => {
+    if (!confirm(`¿Deshacer la salida de ${r.codigo || 'este pedido'}? Vuelve a «Listas» como si no hubiera salido.`)) return;
+    setProcesando(r.id);
+    try { if (!(await db.deshacerSalidaRequisicion(r.id))) alert('No se pudo: el pedido ya no está En ruta.'); await recargar(); }
+    catch (e) { alert('Error: ' + (e?.message || e)); }
+    setProcesando(null);
+  };
+  const esAdminAlm = (usuario?.roles || []).includes('admin');
   // v8.39.0: renglón sin stock → flujo de compras (solicitado → cotizado → esperando → comprado).
   const marcarCompra = async (it, estado) => {
     try {
@@ -203,9 +227,11 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
   const autoSalidaHecha = useRef(new Set());
   useEffect(() => {
     if (!puedeCrear || !salidasOdoo.resp || salidasOdoo.cargando) return;
+    // Solo pedidos LISTOS que no van montados en una ruta (esos los registra el chofer al
+    // arrancar) y solo si TODAS sus salidas con el REQ están hechas (sin backorder abierto).
     const candidatos = reqs.filter(r => r.tipo !== 'compra' && r.modoEntrega !== 'retiro' && !r.salidaAt
-      && ['pendiente', 'preparando', 'lista', 'en_ruta'].includes(r.estado) && !autoSalidaHecha.current.has(r.id));
-    const hacer = candidatos.map(r => ({ r, v: vistaSalida(r) })).filter(x => x.v?.estado === 'exacta' && x.v.hecha);
+      && r.estado === 'lista' && !enParadaViva.has(r.id) && !autoSalidaHecha.current.has(r.id));
+    const hacer = candidatos.map(r => ({ r, v: vistaSalida(r) })).filter(x => x.v?.estado === 'exacta' && x.v.todasHechas);
     if (!hacer.length) return;
     (async () => {
       let alguno = false;
@@ -213,13 +239,13 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
         autoSalidaHecha.current.add(r.id);
         const hecha = (v.salidas || []).find(s => s.state === 'done') || v.salidas[0];
         try {
-          alguno = (await db.registrarSalidaRequisicion(r.id, { origen: 'odoo', porNombre: 'Odoo', odooPickingId: Number(hecha?.id) || undefined, odooPickingName: hecha?.name || undefined })) || alguno;
+          alguno = (await db.registrarSalidaRequisicion(r.id, { origen: 'odoo', porNombre: 'Odoo', odooPickingId: Number(hecha?.id) || undefined, odooPickingName: hecha?.name || undefined, salidaAt: v.fechaHecha || null, estadosDesde: ['lista'] })) || alguno;
         } catch (e) { console.warn('Salida desde Odoo:', e?.message); }
       }
       if (alguno) await recargar();
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [salidasOdoo.resp, salidasOdoo.cargando, reqs]);
+  }, [salidasOdoo.resp, salidasOdoo.cargando, reqs, enParadaViva]);
   const tiempos = useMemo(() => tiemposPedidos(reqs, { desde: DESDE_TIEMPOS }), [reqs]);
   const [copiado, setCopiado] = useState(null);
   const copiarOrigen = async (r, texto) => {
@@ -250,7 +276,7 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
           {r.items.map(it => (
             <div key={it.id} className="flex items-center gap-2 text-xs py-0.5 flex-wrap">
               <label className="flex items-center gap-2 cursor-pointer min-w-0 flex-1">
-                <input type="checkbox" checked={it.despachado} disabled={col.estado === 'en_ruta'} onChange={() => toggleItem(r, it)} className="w-4 h-4 accent-green-500 shrink-0" />
+                <input type="checkbox" checked={it.despachado} disabled={col.estado === 'en_ruta' || procesando === r.id} onChange={() => toggleItem(r, it)} className="w-4 h-4 accent-green-500 shrink-0" />
                 <span className={it.despachado ? 'line-through text-zinc-500' : 'text-zinc-200'}>
                   {it.descripcion}{it.cantidad != null && it.cantidad !== '' ? ` — ${it.cantidad} ${it.unidad || ''}` : ''}
                 </span>
@@ -342,10 +368,20 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
             🚚 Salió · ¿quién lo lleva?
           </button>
         )}
-        {puedeCrear && col.estado === 'en_ruta' && (
+        {/* "Entregado" solo si salió SIN ruta: si va en una parada viva, la entrega el chofer */}
+        {col.estado === 'en_ruta' && enParadaViva.has(r.id) && (
+          <div className="text-[10px] text-cyan-400 mt-1.5">Va en una ruta: el chofer lo marca entregado al llegar.</div>
+        )}
+        {puedeCrear && col.estado === 'en_ruta' && r.salidaAt && !enParadaViva.has(r.id) && (
           <button onClick={() => marcarEntregado(r)} disabled={procesando === r.id}
             className="mt-1.5 w-full border border-green-700 text-green-300 hover:bg-green-900/30 disabled:opacity-50 text-[10px] font-black uppercase py-2 rounded-card">
             ✓ Entregado en la obra
+          </button>
+        )}
+        {puedeCrear && col.estado === 'en_ruta' && r.salidaAt && (
+          <button onClick={() => deshacerSalida(r)} disabled={procesando === r.id}
+            className="mt-1 w-full text-[10px] font-bold text-zinc-500 hover:text-zinc-300 py-1">
+            Deshacer salida
           </button>
         )}
         {col.estado === 'lista' && (
@@ -441,7 +477,8 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
         )}
 
         {/* v8.80.0: tiempos de cada paso (pedidos desde la limpieza del 19-nov) */}
-        {tiempos.pedidos > 0 && (
+        {/* solo la oficina (el almacén va directo a su cola) */}
+        {esAdminAlm && tiempos.pedidos > 0 && (
           <div className="bg-zinc-950/60 border border-zinc-800/70 rounded-card p-3">
             <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2">⏱ Cuánto tarda cada paso · {tiempos.pedidos} pedido{tiempos.pedidos === 1 ? '' : 's'} desde el 19-nov</div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
@@ -452,7 +489,7 @@ export default function VistaAlmacen({ usuario, data, onVolver }) {
               ].map(([l, h, n]) => (
                 <div key={l} className="bg-zinc-900 border border-zinc-800 rounded-card px-2.5 py-2">
                   <div className="text-[10px] text-zinc-500">{l}</div>
-                  <div className="text-lg font-black tabular-nums">{textoHoras(h)}</div>
+                  <div className="text-lg font-black tabular-nums">{n >= 3 ? textoHoras(h) : <span className="text-sm text-zinc-500">pocos datos</span>}</div>
                   <div className="text-[10px] text-zinc-600">mediana · {n} pedido{n === 1 ? '' : 's'}</div>
                 </div>
               ))}

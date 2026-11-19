@@ -157,6 +157,9 @@ const reqE = [{ id: 'E', codigo: 'REQ-0170', estado: 'lista', createdAt: '2026-1
 const respE = { porReferencia: {}, porCodigo: { 'REQ-0170': [sal('AL/OUT/5', 'REQ-0170', 'done', '2026-11-11T14:00:00Z', [{ producto: 'PRIMER ASFALTICO', cantidad: 25, unidad: 'Galón' }])] } };
 t('otra unidad no cubre', pedidoPorRenglon(bs, reqE, pedidosConSalida(reqE, respE, null, bs)).cantidades['s1|primer'] === 5);
 
+// v8.80.0: pedido que ya salió del almacén no cuenta como "ya pedido"
+t('v8.80: salió no cuenta en ya pedido', !pedidoPorRenglon(bs, [{ ...reqD[0], estado: 'en_ruta', salidaAt: '2026-11-20T10:00:00Z' }], {}).cantidades['s1|membrana']);
+
 // Respaldos
 const ped = pedidoPorRenglon(bs, reqs, {});
 t('pedido: suma abiertos', ped.cantidades['s1|membrana'] === 28 && ped.cantidades['s1|primer'] === 3);

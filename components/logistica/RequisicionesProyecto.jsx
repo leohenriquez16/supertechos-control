@@ -60,6 +60,7 @@ export default function RequisicionesProyecto({ usuario, proyecto, esAdmin }) {
   const [sobranteFoto, setSobranteFoto] = useState(null);
   const [guardandoSobrante, setGuardandoSobrante] = useState(false);
   const [confirmandoReq, setConfirmandoReq] = useState(null); // v8.49.4: doble confirmación de recepción
+  const [enParadaViva, setEnParadaViva] = useState(new Set()); // v8.80.0: los que entrega el chofer
 
   const recargar = async () => {
     setLoading(true);
@@ -69,6 +70,8 @@ export default function RequisicionesProyecto({ usuario, proyecto, esAdmin }) {
         db.listarDiligencias({ proyectoId: proyecto.id }).catch(() => []),
       ]);
       setReqs(rs); setSobrantes(dils);
+      const enRuta = rs.filter(r => r.estado === 'en_ruta').map(r => r.id);
+      if (enRuta.length) db.requisicionesConParadaViva(enRuta).then(setEnParadaViva).catch(() => {});
     }
     catch (e) { console.warn('Requisiciones:', e?.message); }
     setLoading(false);
@@ -223,7 +226,7 @@ export default function RequisicionesProyecto({ usuario, proyecto, esAdmin }) {
                 {r.salidaAt && r.estado !== 'cancelada' && (
                   <div className="text-[11px] text-emerald-300 mt-1">🚚 Salió del almacén {formatFechaCorta(String(r.salidaAt).slice(0, 10))}{r.llevadoPorNombre ? <> · lo lleva <b>{r.llevadoPorNombre}</b></> : null}</div>
                 )}
-                {r.estado === 'en_ruta' && r.salidaAt && (
+                {r.estado === 'en_ruta' && r.salidaAt && !enParadaViva.has(r.id) && (
                   <button onClick={() => recibidoEnObra(r)}
                     className="mt-2 w-full bg-green-700 hover:bg-green-600 text-white text-[10px] font-black uppercase py-2 rounded-card">
                     ✅ Llegó a la obra

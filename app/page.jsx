@@ -1379,6 +1379,8 @@ export default function App() {
             })}
           />
         )}
+        {/* v8.80.0: cualquiera puede manejar una ruta (maestros incluidos): la ve aquí si tiene viajes */}
+        {!esAdmin && vista === 'misProyectos' && !tieneRol(usuario, 'supervisor') && !tieneRol(usuario, 'chofer') && <TarjetaRutaHoy usuario={usuario} data={data} envoltura="px-4 pt-4 md:px-6 md:pt-6 max-w-2xl mx-auto" />}
         {!esAdmin && vista === 'misProyectos' && <MisProyectos usuario={usuario} data={data} onIrAReportar={(p) => { setProyectoActivo(p); setVista('reportar'); }} onVerDetalle={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {/* v8.29.0: el CHOFER (sin otros roles operativos) ve su ruta del día; el de ALMACÉN ve su cola */}
         {!esAdmin && vista === 'inicio' && tieneRol(usuario, 'chofer') && !tieneRol(usuario, 'supervisor') && !tieneRol(usuario, 'maestro') && <div className="p-4 md:p-6 max-w-2xl mx-auto"><InicioChofer usuario={usuario} data={data} /></div>}

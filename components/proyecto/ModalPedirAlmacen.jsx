@@ -66,15 +66,14 @@ export default function ModalPedirAlmacen({ usuario, proyecto, sistemas, grupos,
   useEffect(() => {
     let cancel = false;
     // Solo una cotización con prefijo ST/PG: un número suelto amarraría salidas de otra empresa.
-    const ref = conPrefijo(proyecto.referenciaOdoo);
+    // v8.80.0: solo por código REQ (ya no por cotización)
     const codigos = abiertos.map(r => r.codigo).filter(Boolean);
-    if (!abiertos.length || (!ref && !codigos.length)) { setRespPedidos(null); setEstadoPedidosOdoo('nada'); return; }
+    if (!abiertos.length || !codigos.length) { setRespPedidos(null); setEstadoPedidosOdoo('nada'); return; }
     setEstadoPedidosOdoo('cargando');
     (async () => {
       try {
         const qs = new URLSearchParams();
-        if (ref) qs.set('refs', ref);
-        if (codigos.length) qs.set('codigos', codigos.join(','));
+        qs.set('codigos', codigos.join(','));
         const desde = desdePedidosAbiertos(abiertos);
         if (desde) qs.set('desde', desde);
         const res = await fetchConSesion(`/api/odoo/salidas-pedidos?${qs.toString()}`);

@@ -26,13 +26,16 @@ export default function ModalSalio({ pedido, etiqueta, usuario, data, onCerrar, 
     if (!p) { alert('Elige quién lo lleva.'); return; }
     setGuardando(true);
     try {
-      let fotoUrl = null;
-      if (foto?.blob) fotoUrl = await db.subirFotoSalida(foto.blob, pedido.id);
       const ok = await db.registrarSalidaRequisicion(pedido.id, {
         llevadoPorId: p.id, llevadoPorNombre: p.nombre, porId: usuario?.id || null, porNombre: usuario?.nombre || null,
-        fotoUrl, origen: (usuario?.roles || []).includes('almacen') ? 'almacen' : 'oficina',
+        origen: (usuario?.roles || []).includes('almacen') ? 'almacen' : 'oficina', estadosDesde: ['lista', 'en_ruta'],
       });
       if (!ok) alert('Este pedido ya tenía la salida registrada (o cambió de estado). Se recarga la lista.');
+      // la foto se sube DESPUÉS de registrar (si no se registró, no queda una foto suelta)
+      if (ok && foto?.blob) {
+        try { await db.actualizarFotoSalida(pedido.id, await db.subirFotoSalida(foto.blob, pedido.id)); }
+        catch (e) { alert('La salida quedó registrada, pero la foto no se pudo subir: ' + (e?.message || e)); }
+      }
       await onListo?.();
       onCerrar();
     } catch (e) { alert('No se pudo registrar la salida: ' + (e?.message || e)); }
@@ -40,7 +43,7 @@ export default function ModalSalio({ pedido, etiqueta, usuario, data, onCerrar, 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 p-0 sm:p-4" onClick={onCerrar}>
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 p-0 sm:p-4" onClick={() => { if (!guardando && !quien && !foto) onCerrar(); }}>
       <div className="w-full sm:max-w-md bg-zinc-950 border border-zinc-800 rounded-t-card sm:rounded-card p-4 space-y-3" onClick={e => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
@@ -48,7 +51,7 @@ export default function ModalSalio({ pedido, etiqueta, usuario, data, onCerrar, 
             <div className="text-lg font-black leading-tight">{pedido.codigo || 'Pedido'}</div>
             <div className="text-xs text-zinc-400 truncate">{etiqueta}</div>
           </div>
-          <button onClick={onCerrar} className="text-zinc-500 hover:text-white shrink-0"><X className="w-5 h-5" /></button>
+          <button onClick={() => { if (!guardando) onCerrar(); }} className="text-zinc-500 hover:text-white shrink-0"><X className="w-5 h-5" /></button>
         </div>
 
         <label className="block">
@@ -72,7 +75,7 @@ export default function ModalSalio({ pedido, etiqueta, usuario, data, onCerrar, 
           ) : (
             <label className="mt-1 flex items-center justify-center gap-2 border border-dashed border-zinc-700 rounded-card py-3 text-sm text-zinc-400 cursor-pointer hover:border-zinc-500">
               <Camera className="w-4 h-4" /> Tomar o elegir foto
-              <input type="file" accept="image/*" capture="environment" className="hidden" onChange={e => elegirFoto(e.target.files?.[0])} />
+              <input type="file" accept="image/*" className="hidden" onChange={e => elegirFoto(e.target.files?.[0])} />
             </label>
           )}
         </div>

@@ -34,11 +34,11 @@ const pedidos = [
   { id: 'd', proyectoId: 'p3', codigo: null, createdAt: '2026-01-01T12:00:00Z' }, // sin nada: no cuenta para "desde"
 ];
 const q = consultaSalidas(pedidos, proyectoDe);
-t('consulta refs', eq(q.refs, ['PG-C1269', 'ST-C5867']));
+t('v8.80: consulta sin refs (solo REQ)', eq(q.refs, []));
 t('consulta códigos', eq(q.codigos, ['REQ-0142', 'REQ-0150']));
 t('consulta desde = el más viejo (día RD)', q.desde === '2026-11-02');
 t('consulta vacía', consultaSalidas([{ id: 'd', proyectoId: 'p3' }], proyectoDe) === null && consultaSalidas([], proyectoDe) === null);
-t('url', urlSalidasPedidos(q) === '/api/odoo/salidas-pedidos?refs=PG-C1269%2CST-C5867&codigos=REQ-0142%2CREQ-0150&desde=2026-11-02');
+t('url', urlSalidasPedidos(q) === '/api/odoo/salidas-pedidos?codigos=REQ-0142%2CREQ-0150&desde=2026-11-02');
 t('url null', urlSalidasPedidos(null) === null);
 
 // --- amarre para pintar ---

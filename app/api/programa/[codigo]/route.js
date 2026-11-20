@@ -8,7 +8,8 @@
 
 import { armarPortal, aplicarAccionCliente } from '../../../../lib/server/portalPrograma';
 import { autenticarPortal as autenticar } from '../../../../lib/server/portalAuth';
-import { amarrarLocaciones } from '../../../../lib/helpers/programaSites';
+import { sincronizarLocaciones, LUZ_VERDE_POR_ODOO } from '../../../../lib/helpers/programaSites';
+import { cotizacionesProgramaOdoo } from '../../../../lib/odoo';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,7 +43,10 @@ async function sincronizar(db, programa, filas) {
       cotizacionRef: l.cotizacion_ref, cotizacionMonto: l.cotizacion_monto, cotizacionAprobada: l.cotizacion_aprobada, luzVerde: l.luz_verde,
       fechaVisita: l.fecha_visita, cotizadoAt: l.cotizado_at,
     }));
-    const cambios = amarrarLocaciones(locs, levantamientos, obras);
+    // v8.88.0: también la cotización de Odoo por código de antena (sin levantamiento en el ERP)
+    let cotizaciones = [];
+    try { cotizaciones = await cotizacionesProgramaOdoo(cliente, { timeoutMs: 4000 }); } catch (e) { console.warn('portal cotizaciones Odoo:', e?.message); }
+    const cambios = sincronizarLocaciones(locs, levantamientos, obras, cotizaciones);
     const mapa = {
       levantamientoId: 'levantamiento_id', levantadoAt: 'levantado_at', cotizacionRef: 'cotizacion_ref',
       cotizacionMonto: 'cotizacion_monto', cotizacionAprobada: 'cotizacion_aprobada', proyectoId: 'proyecto_id',
@@ -52,7 +56,8 @@ async function sincronizar(db, programa, filas) {
     for (const { id, campos } of cambios) {
       const u = { updated_at: new Date().toISOString() };
       Object.entries(campos).forEach(([k, v]) => { if (mapa[k] && v !== undefined) u[mapa[k]] = v; });
-      if (campos.luzVerde) u.luz_verde_at = new Date().toISOString();
+      if (campos.luzVerde) u.luz_verde_at = (campos.luzVerdePor === LUZ_VERDE_POR_ODOO && campos.cotizadoAt) || new Date().toISOString();
+      u.etapa_desde = (campos.cotizacionRef && campos.cotizadoAt && !campos.proyectoId && !campos.levantamientoId) ? campos.cotizadoAt : new Date().toISOString();
       await db.from('programa_locaciones').update(u).eq('id', id);
     }
     return cambios.length > 0;

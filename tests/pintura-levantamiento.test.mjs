@@ -1,5 +1,5 @@
 import { plantillaPinturaV2, calcFilaSuperficie, totalesSuperficies, filasPorDefecto, avisosFila, filaIncompleta, leerNumero, resumenVisitaPintura, resumenSuperficies, labelPintura, textoNoPinta, textoTotales, textoMedidaArea, pendientesVisita, areasVigentes, CATALOGO_AREAS, SUPERFICIES, PINTURAS, ESTADOS_JARDINES, ESTADOS_TECHO, MOTIVOS_PENDIENTE } from '../lib/pinturaCatalogo.js';
-import { visitaAlAbrir, estadoSitioAlCerrar, proyectoCompleto, esErrorDeRed, crearCambiosPendientes, claveArea, agruparPendientes, aplicarRespaldo, igualJson, grossDeArea } from '../lib/helpers/cicloLevantamiento.js';
+import { visitaAlAbrir, visitaDeEstaPlantilla, estadoSitioAlCerrar, proyectoCompleto, esErrorDeRed, crearCambiosPendientes, claveArea, agruparPendientes, aplicarRespaldo, igualJson, grossDeArea } from '../lib/helpers/cicloLevantamiento.js';
 import { calcularCompletitud, showIfOk } from '../lib/helpers/completitudSurvey.js';
 import { readFileSync } from 'fs';
 let ok = 0, ko = 0;
@@ -90,7 +90,7 @@ const conExtra = { sections: [{ id: 'g', fields: [{ id: 'ver', label: 'Ver', typ
 t('sección extra oculta no exige', calcularCompletitud(conExtra, { ver: false }, []).faltantes.length === 0);
 t('sección extra visible sí exige', calcularCompletitud(conExtra, { ver: true }, []).faltantes.length === 1);
 {
-  const sqlM = readFileSync(new URL('../migrations/148_surveys_paint_v2.sql', import.meta.url), 'utf8');
+  const sqlM = readFileSync(new URL('../migrations/149_surveys_paint_v2.sql', import.meta.url), 'utf8');
   const ejecutable = sqlM.split('\n').filter(l => !l.trim().startsWith('--')).join('\n');
   t('la migración inserta la plantilla inactiva', /::jsonb,\s*\n\s*FALSE\s*\n\)/.test(ejecutable));
   t('la migración no cambia is_active al actualizar', !/DO UPDATE[\s\S]*is_active/.test(ejecutable));
@@ -150,10 +150,10 @@ t('sección extra visible sí exige', calcularCompletitud(conExtra, { ver: true 
   t('show_if: !=, includes, comillas y expresión inválida', showIfOk('a != b', { a: 'c' }) && !showIfOk('a != b', { a: 'b' }) && showIfOk('r includes x', { r: ['x'] }) && !showIfOk('r includes x', { r: [] }) && showIfOk('a == "x y"', { a: 'x y' }) && showIfOk('no es una expresión', {}) === true);
   const conMin = { sections: [{ id: 'g', fields: [{ id: 'f', label: 'F', type: 'photos', min: 3 }] }, { id: 'b', type: 'repeating_block', title: 'B', fields: [{ id: 'x', label: 'X', type: 'text', required: true, show_if: 'ver == true' }] }] };
   t('plantilla vieja: mínimo de fotos y show_if por área', calcularCompletitud(conMin, { f: [1, 2] }, [{ block_id: 'b', data: {} }]).faltantes.length === 1 && calcularCompletitud(conMin, { f: [1, 2, 3] }, [{ block_id: 'b', data: { ver: true } }]).faltantes.length === 1);
-  // la plantilla que usa el formulario es la copia que la migración 148 inserta en la base, no esta función
-  const sql = readFileSync(new URL('../migrations/148_surveys_paint_v2.sql', import.meta.url), 'utf8');
+  // la plantilla que usa el formulario es la copia que la migración 149 inserta en la base, no esta función
+  const sql = readFileSync(new URL('../migrations/149_surveys_paint_v2.sql', import.meta.url), 'utf8');
   const enSql = /^\s*'(.*)'::jsonb,\s*$/m.exec(sql);
-  t('la migración 148 trae exactamente plantillaPinturaV2()', !!enSql && enSql[1].replace(/''/g, "'") === JSON.stringify(tpl));
+  t('la migración 149 trae exactamente plantillaPinturaV2()', !!enSql && enSql[1].replace(/''/g, "'") === JSON.stringify(tpl));
 }
 
 // --- casos propuestos en la segunda revisión (cada uno mata una rotura real que la suite no veía)
@@ -200,8 +200,8 @@ t('el catálogo usa los mismos ids que los bloques', Object.keys(CATALOGO_AREAS)
 // --- al cerrar (por sitio): estado de la oficina y del proyecto
 {
   const p1 = [{ parte: 'Techo / vista aérea', clave: 'techo', motivo: 'Lluvia o mal tiempo' }];
-  t('finalizada sin pendientes: completada', estadoSitioAlCerrar({ forzar: false, pendientes: [] }) === 'completed');
-  t('con algo pendiente o cerrada sin completar: en proceso', estadoSitioAlCerrar({ forzar: false, pendientes: p1 }) === 'in_progress' && estadoSitioAlCerrar({ forzar: true, pendientes: [] }) === 'in_progress');
+  t('finalizada: completada, aunque tenga jardines o techo pendientes (siguen visibles)', estadoSitioAlCerrar({ forzar: false, pendientes: [] }) === 'completed' && estadoSitioAlCerrar({ forzar: false, pendientes: p1 }) === 'completed');
+  t('cerrada sin completar: en proceso', estadoSitioAlCerrar({ forzar: true, pendientes: [] }) === 'in_progress');
   const sit = [{ id: 's1', survey_status: 'completed' }, { id: 's2', survey_status: 'pending' }, { id: 's3', survey_status: 'validated' }];
   t('una oficina de varias no finaliza el proyecto', proyectoCompleto(sit, 's1', 'completed') === false);
   t('la última oficina completa sí lo finaliza', proyectoCompleto(sit, 's2', 'completed') === true);
@@ -263,6 +263,20 @@ t('dato rechazado: el servidor trae código', !esErrorDeRed({ message: 'numeric 
   t('jardín: su área', textoMedidaArea({ block_id: 'jardines', data: { area_m2: '35.55' } }) === '35.55 m²');
   t('sin medidas u otra plantilla: nada (se usa lo de siempre)', textoMedidaArea({ block_id: 'exteriores', data: { superficies: [] } }) === null && textoMedidaArea({ block_id: 'roof_sections', data: { largo: 3 } }) === null);
   t('totales vacíos dan texto vacío', textoTotales({ m2: 0, ml: 0, und: 0 }) === '' && textoTotales(null) === '');
+}
+
+// --- segunda ronda: visita de otro formulario y casos que la suite no detectaba
+{
+  t('visita con áreas de otro formulario no se sigue', visitaDeEstaPlantilla([{ block_id: 'exteriores' }, { block_id: 'exterior' }], tpl) === false);
+  t('visita de esta plantilla (o sin áreas) sí se sigue', visitaDeEstaPlantilla([{ block_id: 'exteriores' }, { block_id: 'jardines' }], tpl) && visitaDeEstaPlantilla([], tpl));
+  const srv = [{ id: 'a1', name: 'Fachada', data: { k: 1, fotos: [{ id: 'f' }] }, gross_area_m2: '12.00' }];
+  const r = aplicarRespaldo({ generalServidor: {}, areasServidor: srv, respaldo: { areas: [{ id: 'a1', name: 'Fachada', data: { k: 2 }, gross_area_m2: 30 }] }, pendientes: ['area:a1:datos'] });
+  t('respaldo pendiente: se recuperan sus m², se unen los datos y se conserva lo que solo está en el servidor', r.areas[0].gross_area_m2 === 30 && r.areas[0].data.k === 2 && r.areas[0].data.fotos.length === 1 && JSON.stringify(r.areasDistintas) === JSON.stringify([{ id: 'a1', nombre: false, datos: true }]));
+  const g = aplicarRespaldo({ generalServidor: {}, areasServidor: srv, respaldo: { areas: [{ id: 'a1', name: 'Fachada', data: { k: 1, fotos: [{ id: 'f' }] }, gross_area_m2: 40 }] } });
+  t('mismos datos con m² distintos: queda pendiente', g.areasDistintas.length === 1 && g.areasDistintas[0].datos === true);
+  t('respuesta de red sin código (ej. 502 en HTML) cuenta como sin señal', esErrorDeRed({ message: '<html>502 Bad Gateway</html>' }) === true && esErrorDeRed({ message: 'x', code: '23502' }) === false && esErrorDeRed({ message: 'TypeError: Failed to fetch', code: 'X' }) === true);
+  const c = crearCambiosPendientes(); c.marcar('general'); c.confirmar('general', undefined);
+  t('confirmar sin sello no borra el pendiente', c.hay());
 }
 
 console.log(`pintura-levantamiento: ${ok} ok, ${ko} fallas`);

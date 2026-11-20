@@ -13,7 +13,7 @@ import { EXTRAER_OC_PROMPT, parsearRespuestaIA, validarOC } from '../../lib/help
 import { buscarRecuadroProveedor, estamparFirmaYSello, blancoATransparente } from '../../lib/helpers/estamparOC';
 import * as db from '../../lib/db';
 import { formatRD } from '../../lib/helpers/formato';
-import { ETAPAS, ETAPA, COLOR_ETAPA, TIPOS_DOCUMENTO, turnoDe, textoCoordinacion } from '../../lib/helpers/programaSites';
+import { ETAPAS, ETAPA, COLOR_ETAPA, TIPOS_DOCUMENTO, turnoDe, textoCoordinacion, ETAPA_PINTURA } from '../../lib/helpers/programaSites';
 
 const fmtF = (f) => { if (!f) return ''; try { return new Date(String(f).length === 10 ? f + 'T12:00:00' : f).toLocaleDateString('es-DO', { day: 'numeric', month: 'short', year: 'numeric' }); } catch { return ''; } };
 const etiquetaTipo = Object.fromEntries(TIPOS_DOCUMENTO.map(t => [t.id, t.label]));
@@ -181,10 +181,30 @@ export default function FichaLocacion({ locacion: l, usuario, onCerrar, onCambio
               <div><span className="text-zinc-500">Cotización:</span> {l.cotizacionRef ? `${l.cotizacionRef}${l.cotizacionMonto ? ` · ${formatRD(l.cotizacionMonto)}` : ''}${l.cotizacionAprobada ? ' · aprobada' : ' · por aprobar'}` : 'pendiente'}</div>
               <div><span className="text-zinc-500">Aprobación del personal:</span> {l.personalAprobadoAt ? <span className="text-green-400">aprobado el {new Date(l.personalAprobadoAt).toLocaleDateString('es-DO')}{l.personalAprobadoPor ? ` · ${l.personalAprobadoPor}` : ''}</span> : <span className="text-red-400">pendiente del cliente</span>}</div>
               <div><span className="text-zinc-500">Supervisor del cliente:</span> {l.supervisorClienteNombre ? `${l.supervisorClienteNombre}${l.supervisorClienteTelefono ? ` · ${l.supervisorClienteTelefono}` : ''}` : 'sin asignar'}</div>
+              {/* v8.90.0: pintura interior (Recubre), con su propia etapa */}
+              <div>
+                <span className="text-zinc-500">Pintura interior:</span>{' '}
+                {l.etapaPintura
+                  ? <><span className="font-bold" style={{ color: ETAPA_PINTURA[l.etapaPintura]?.color }}>{ETAPA_PINTURA[l.etapaPintura]?.label}</span>
+                    {l.cotizacionPinturaRef ? ` · ${l.cotizacionPinturaRef}${l.cotizacionPinturaMonto ? ` · ${formatRD(l.cotizacionPinturaMonto)}` : ''}` : ''}
+                    {l.pinturaDesde ? <span className="text-zinc-500"> · desde el {fmtF(l.pinturaDesde)}</span> : null}</>
+                  : <span className="text-zinc-500">no lleva / sin cotizar</span>}
+                {!l.proyectoPinturaId && (
+                  <button onClick={async () => {
+                    const v = !l.pinturaAprobada;
+                    if (!confirm(v ? `¿La OC de ${l.nombre} trae la pintura interior (resane, imprimador, pintura)?\n\nQueda aprobada.` : `¿Quitar la aprobación de la pintura de ${l.nombre}?`)) return;
+                    try { await db.actualizarLocacionPrograma(l.id, { pinturaAprobada: v, pinturaAprobadaAt: v ? new Date().toISOString() : null, etapaDesde: l.etapaDesde || undefined }); await onCambio?.(); }
+                    catch (e) { alert('Error: ' + (e.message || e)); }
+                  }} className="ml-2 text-[10px] underline text-zinc-400 hover:text-white">
+                    {l.pinturaAprobada ? 'quitar aprobación' : 'marcar aprobada (viene en la OC)'}
+                  </button>
+                )}
+              </div>
               <div><span className="text-zinc-500">Tipo de trabajo:</span> {l.tipoTrabajo === 'pintura' ? 'Pintura' : l.tipoTrabajo === 'ambos' ? 'Techo y pintura' : 'Impermeabilización'}</div>
               <div className="flex gap-3 flex-wrap pt-1">
                 {l.lat && l.lng && <a href={`https://www.google.com/maps?q=${l.lat},${l.lng}`} target="_blank" rel="noreferrer" className="underline text-zinc-400 hover:text-white inline-flex items-center gap-1"><ExternalLink className="w-3 h-3" /> Mapa</a>}
                 {l.proyectoId && onAbrirProyecto && <button onClick={() => onAbrirProyecto(l.proyectoId)} className="underline text-zinc-400 hover:text-white">Ver la obra</button>}
+                {l.proyectoPinturaId && onAbrirProyecto && <button onClick={() => onAbrirProyecto(l.proyectoPinturaId)} className="underline text-zinc-400 hover:text-white">Ver la obra de pintura</button>}
               </div>
             </div>
 

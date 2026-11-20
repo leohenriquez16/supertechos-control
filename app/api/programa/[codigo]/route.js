@@ -8,7 +8,7 @@
 
 import { armarPortal, aplicarAccionCliente } from '../../../../lib/server/portalPrograma';
 import { autenticarPortal as autenticar } from '../../../../lib/server/portalAuth';
-import { sincronizarLocaciones, LUZ_VERDE_POR_ODOO } from '../../../../lib/helpers/programaSites';
+import { sincronizarLocaciones, LUZ_VERDE_POR_ODOO, soloCamposPintura } from '../../../../lib/helpers/programaSites';
 import { cotizacionesProgramaOdoo } from '../../../../lib/odoo';
 
 export const dynamic = 'force-dynamic';
@@ -42,6 +42,7 @@ async function sincronizar(db, programa, filas) {
       levantamientoId: l.levantamiento_id, levantadoAt: l.levantado_at, proyectoId: l.proyecto_id,
       cotizacionRef: l.cotizacion_ref, cotizacionMonto: l.cotizacion_monto, cotizacionAprobada: l.cotizacion_aprobada, luzVerde: l.luz_verde,
       fechaVisita: l.fecha_visita, cotizadoAt: l.cotizado_at,
+      proyectoPinturaId: l.proyecto_pintura_id, cotizacionPinturaRef: l.cotizacion_pintura_ref, cotizacionPinturaMonto: l.cotizacion_pintura_monto,
     }));
     // v8.88.0: también la cotización de Odoo por código de antena (sin levantamiento en el ERP)
     let cotizaciones = [];
@@ -52,12 +53,14 @@ async function sincronizar(db, programa, filas) {
       cotizacionMonto: 'cotizacion_monto', cotizacionAprobada: 'cotizacion_aprobada', proyectoId: 'proyecto_id',
       luzVerde: 'luz_verde', luzVerdePor: 'luz_verde_por', fechaVisita: 'fecha_visita', horaVisita: 'hora_visita',
       cotizadoAt: 'cotizado_at',
+      proyectoPinturaId: 'proyecto_pintura_id', cotizacionPinturaRef: 'cotizacion_pintura_ref', cotizacionPinturaMonto: 'cotizacion_pintura_monto',
     };
     for (const { id, campos } of cambios) {
       const u = { updated_at: new Date().toISOString() };
       Object.entries(campos).forEach(([k, v]) => { if (mapa[k] && v !== undefined) u[mapa[k]] = v; });
       if (campos.luzVerde) u.luz_verde_at = (campos.luzVerdePor === LUZ_VERDE_POR_ODOO && campos.cotizadoAt) || new Date().toISOString();
-      u.etapa_desde = (campos.cotizacionRef && campos.cotizadoAt && !campos.proyectoId && !campos.levantamientoId) ? campos.cotizadoAt : new Date().toISOString();
+      // v8.90.0: amarrar la pintura (interna, no se muestra en el portal) no mueve la etapa principal
+      if (!soloCamposPintura(campos)) u.etapa_desde = (campos.cotizacionRef && campos.cotizadoAt && !campos.proyectoId && !campos.levantamientoId) ? campos.cotizadoAt : new Date().toISOString();
       await db.from('programa_locaciones').update(u).eq('id', id);
     }
     return cambios.length > 0;

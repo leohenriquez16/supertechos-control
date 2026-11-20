@@ -2,7 +2,7 @@
 // Ejecutar desde la raíz:  node tests/programa-sites.test.mjs
 
 import assert from 'node:assert/strict';
-import { etapaDeLocacion, resumenPrograma, pendientesDelCliente, agruparPorZona, distanciaKm, ETAPAS, amarrarLocaciones, normalizarRefOdoo, textoCoordinacion, fechasPorEtapa, enEtapaDesde, amarrarCotizacionesOdoo, sincronizarLocaciones, LUZ_VERDE_POR_ODOO, amarrarPinturaOdoo, etapaPintura, esObraDePintura, soloCamposPintura, estadoRecepcion, montoSinItbisDe, sumaMontos, programacionObra, etapaTablero } from '../lib/helpers/programaSites.js';
+import { etapaDeLocacion, resumenPrograma, pendientesDelCliente, agruparPorZona, distanciaKm, ETAPAS, amarrarLocaciones, normalizarRefOdoo, textoCoordinacion, fechasPorEtapa, enEtapaDesde, amarrarCotizacionesOdoo, sincronizarLocaciones, LUZ_VERDE_POR_ODOO, amarrarPinturaOdoo, etapaPintura, esObraDePintura, soloCamposPintura, estadoRecepcion, montoSinItbisDe, sumaMontos, programacionObra, etapaTablero, candadoDesdeTexto, estadoAcceso, cuadrillaPuedeAbrir, usuarioQuePide } from '../lib/helpers/programaSites.js';
 
 let ok = 0; const fallos = [];
 const caso = (n, fn) => { try { fn(); ok++; } catch (e) { fallos.push(`${n}: ${e.message}`); } };
@@ -423,6 +423,33 @@ caso('tablero: abre aprobado y entregado según la obra', () => {
   assert.equal(etapaTablero({ etapa: 'entregado', obra: { estado: 'finalizado_recibido_conforme' } }, hoy), 'recibido');
   assert.equal(etapaTablero({ etapa: 'entregado', obra: { estado: 'facturado' } }, hoy), 'facturado');
   assert.equal(etapaTablero({ etapa: 'entregado', obra: { estado: 'cobrado' } }, hoy), 'cobrado');
+});
+
+// --- v8.93.0: candados y accesos -------------------------------------------------------
+caso('candado: el texto de Sites se traduce al tipo', () => {
+  assert.equal(candadoDesdeTexto('BEST (LLAVE FÍSICA)'), 'best');
+  assert.equal(candadoDesdeTexto('Candado Teleporte (Bluetooth)'), 'teleporte');
+  assert.equal(candadoDesdeTexto('BLUETOOTH'), 'teleporte');
+  assert.equal(candadoDesdeTexto('DOS CANDADOS YALE Y 1 CANDADO BLUETOOTH'), 'yale_bluetooth');
+  assert.equal(candadoDesdeTexto('NFC'), 'nfc');
+  assert.equal(candadoDesdeTexto('Candado Multilock'), 'multilock');
+  assert.equal(candadoDesdeTexto('Llave fisica acceso con propietarios'), 'best');
+  assert.equal(candadoDesdeTexto(''), null);
+  assert.equal(usuarioQuePide('yale_bluetooth'), 'teleporte');
+  assert.equal(usuarioQuePide('best'), null);
+});
+caso('acceso: falta / pedido / asignado solo en sitios por arrancar o en obra', () => {
+  assert.equal(estadoAcceso({ etapaTablero: 'cotizado' }), null);
+  assert.equal(estadoAcceso({ etapaTablero: 'programado' }), 'falta');
+  assert.equal(estadoAcceso({ etapaTablero: 'programado', accesoPedidoAt: 'x' }), 'pedido');
+  assert.equal(estadoAcceso({ etapaTablero: 'en_ejecucion', accesoPedidoAt: 'x', accesoAsignadoAt: 'y' }), 'asignado');
+});
+caso('acceso: la cuadrilla necesita alguien con usuario para candado Bluetooth', () => {
+  const llaves = [{ personaId: 'p1', tipo: 'teleporte' }];
+  assert.equal(cuadrillaPuedeAbrir('best', ['p2'], llaves), null);
+  assert.equal(cuadrillaPuedeAbrir('teleporte', ['p2'], llaves).ok, false);
+  assert.deepEqual(cuadrillaPuedeAbrir('teleporte', ['p2', 'p1'], llaves).conUsuario, ['p1']);
+  assert.equal(cuadrillaPuedeAbrir('iloq', ['p1'], llaves).ok, false);
 });
 
 console.log(`\n${ok} pasadas, ${fallos.length} fallidas`);

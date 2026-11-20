@@ -2,7 +2,7 @@
 // Ejecutar desde la raíz:  node tests/programa-sites.test.mjs
 
 import assert from 'node:assert/strict';
-import { etapaDeLocacion, resumenPrograma, pendientesDelCliente, agruparPorZona, distanciaKm, ETAPAS, amarrarLocaciones, normalizarRefOdoo, textoCoordinacion, fechasPorEtapa, enEtapaDesde, amarrarCotizacionesOdoo, sincronizarLocaciones, LUZ_VERDE_POR_ODOO } from '../lib/helpers/programaSites.js';
+import { etapaDeLocacion, resumenPrograma, pendientesDelCliente, agruparPorZona, distanciaKm, ETAPAS, amarrarLocaciones, normalizarRefOdoo, textoCoordinacion, fechasPorEtapa, enEtapaDesde, amarrarCotizacionesOdoo, sincronizarLocaciones, LUZ_VERDE_POR_ODOO, amarrarPinturaOdoo, etapaPintura, esObraDePintura, soloCamposPintura } from '../lib/helpers/programaSites.js';
 
 let ok = 0; const fallos = [];
 const caso = (n, fn) => { try { fn(); ok++; } catch (e) { fallos.push(`${n}: ${e.message}`); } };
@@ -330,6 +330,58 @@ caso('sincronizar: el levantamiento del ERP manda sobre Odoo', () => {
 });
 caso('sincronizar: sin cotizaciones de Odoo se comporta como antes', () => {
   assert.deepEqual(sincronizarLocaciones([bavaro], [], [], []), amarrarLocaciones([bavaro], [], []));
+});
+
+// --- v8.90.0: pintura interior (Recubre) ---------------------------------------------
+const brisal = { id: 'pl_05', codigoUt: 'DO-01-SD-00180-11', nombre: 'EL BRISAL II', lat: 18.5, lng: -69.8 };
+const obraAntena = { id: 'oA', nombre: 'Antena EL BRISAL II - DO-01-SD-00180-11', referenciaOdoo: 'ST-C5906', valorCotizacion: 145975.68 };
+const obraPint = { id: 'oP', nombre: 'Techo EL BRISAL II DO-01-SD-00180-11- Resane y Pintura', referenciaOdoo: 'ST-C5905', valorCotizacion: 24500 };
+caso('pintura: se reconoce la obra de pintura por el nombre', () => {
+  assert.equal(esObraDePintura(obraPint), true);
+  assert.equal(esObraDePintura({ nombre: 'Servicio de Pintura San Geronimo' }), true);
+  assert.equal(esObraDePintura(obraAntena), false);
+});
+caso('pintura: la obra de pintura NO se amarra como obra principal', () => {
+  const [c] = amarrarLocaciones([brisal], [], [obraPint]);
+  assert.equal(c.campos.proyectoId, undefined);
+  assert.equal(c.campos.proyectoPinturaId, 'oP');
+  assert.equal(c.campos.cotizacionPinturaRef, 'ST-C5905');
+});
+caso('pintura: antena y pintura se amarran cada una en su campo', () => {
+  const [c] = amarrarLocaciones([brisal], [], [obraPint, obraAntena]);
+  assert.equal(c.campos.proyectoId, 'oA');
+  assert.equal(c.campos.proyectoPinturaId, 'oP');
+});
+caso('pintura: no pisa un amarre de pintura existente', () => {
+  assert.equal(amarrarLocaciones([{ ...brisal, proyectoId: 'oA', proyectoPinturaId: 'x' }], [], [obraPint, obraAntena]).length, 0);
+});
+caso('pintura: la cotización «Techo …» de Odoo va a la pintura, no a la principal', () => {
+  const q = { nombre: 'ST-C5947', estado: 'sent', fecha: '2026-10-14T17:52:25Z', texto: 'Techo PAYA II BANI - DO-04-PA-01265-10 - Resane y Pintura', montoSinItbis: 26161 };
+  const paya = { id: 'pl_71', codigoUt: 'DO-04-PA-01265-10', nombre: 'PAYA II', cotizacionRef: 'ST-C5944', cotizacionAprobada: true };
+  assert.equal(amarrarCotizacionesOdoo([paya], [q]).length, 0);
+  const [c] = amarrarPinturaOdoo([paya], [q]);
+  assert.equal(c.campos.cotizacionPinturaRef, 'ST-C5947');
+  assert.equal(c.campos.cotizacionPinturaMonto, 26161);
+  assert.equal(soloCamposPintura(c.campos), true);
+});
+caso('pintura: con obra de pintura no se toca la cotización', () => {
+  const q = { nombre: 'ST-C6000', estado: 'sent', fecha: '2026-11-01', texto: 'Techo X DO-01-SD-00180-11 - Resane y Pintura' };
+  assert.equal(amarrarPinturaOdoo([{ ...brisal, proyectoPinturaId: 'oP', cotizacionPinturaRef: 'ST-C5905' }], [q]).length, 0);
+});
+caso('pintura: etapas — espera el techo, lista para Recubre, trabajando, entregada', () => {
+  assert.equal(etapaPintura({}, {}), null);
+  assert.equal(etapaPintura({ cotizacionPinturaRef: 'ST-C5947' }, {}), 'cotizado');
+  assert.equal(etapaPintura({ proyectoPinturaId: 'oP' }, { obraPintura: { estado: 'aprobado' }, etapaTecho: 'en_ejecucion' }), 'espera_techo');
+  assert.equal(etapaPintura({ proyectoPinturaId: 'oP' }, { obraPintura: { estado: 'aprobado' }, etapaTecho: 'terminado' }), 'lista');
+  assert.equal(etapaPintura({ proyectoPinturaId: 'oP' }, { obraPintura: { estado: 'en_ejecucion' }, etapaTecho: 'por_programar' }), 'en_ejecucion');
+  assert.equal(etapaPintura({ proyectoPinturaId: 'oP' }, { obraPintura: { estado: 'facturado' } }), 'entregado');
+  // aprobada por la OC, sin obra de pintura todavía
+  assert.equal(etapaPintura({ cotizacionPinturaRef: 'ST-C6015', pinturaAprobada: true }, { etapaTecho: 'por_programar' }), 'espera_techo');
+  assert.equal(etapaPintura({ pinturaAprobada: true }, { etapaTecho: 'entregado' }), 'lista');
+});
+caso('pintura: soloCamposPintura distingue cambios mixtos', () => {
+  assert.equal(soloCamposPintura({ proyectoPinturaId: 'x', proyectoId: 'y' }), false);
+  assert.equal(soloCamposPintura({}), false);
 });
 
 console.log(`\n${ok} pasadas, ${fallos.length} fallidas`);

@@ -11,10 +11,10 @@
 
 import React, { useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { ArrowLeft, Check, Clock, MapPin, Loader2, RefreshCw, Route, LayoutGrid, Search, Lock, Ruler, FileText, CalendarDays, Wrench, ClipboardCheck, CheckCircle2, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Check, Clock, MapPin, Loader2, RefreshCw, Route, LayoutGrid, Search, Lock, Ruler, FileText, CalendarDays, Wrench, ClipboardCheck, CheckCircle2, ShieldCheck, PaintRoller } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatRD } from '../../lib/helpers/formato';
-import { ETAPAS, ETAPA, FASES, COLOR_ETAPA, turnoDe, resumenPrograma, pendientesDelCliente, agruparPorZona, textoCoordinacion } from '../../lib/helpers/programaSites';
+import { ETAPAS, ETAPA, FASES, COLOR_ETAPA, turnoDe, resumenPrograma, pendientesDelCliente, agruparPorZona, textoCoordinacion, ETAPAS_PINTURA, ETAPA_PINTURA } from '../../lib/helpers/programaSites';
 import FichaLocacion from './FichaLocacion';
 
 // v8.59.0: un icono por etapa, para distinguirlas sin leer el texto.
@@ -41,7 +41,7 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
   const filtradas = useMemo(() => {
     const q = buscar.trim().toLowerCase();
     if (!q) return locaciones;
-    return locaciones.filter(l => `${l.nombre} ${l.codigoUt || ''} ${l.direccion || ''} ${l.cotizacionRef || ''}`.toLowerCase().includes(q));
+    return locaciones.filter(l => `${l.nombre} ${l.codigoUt || ''} ${l.direccion || ''} ${l.cotizacionRef || ''} ${l.cotizacionPinturaRef || ''}`.toLowerCase().includes(q));
   }, [locaciones, buscar]);
 
   const resumen = useMemo(() => resumenPrograma(locaciones, { fechaMeta: programa?.fechaMeta }), [locaciones, programa]);
@@ -83,6 +83,14 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
     filtradas.forEach(l => { (g[l.etapa] = g[l.etapa] || []).push(l); });
     return g;
   }, [filtradas]);
+
+  // v8.90.0: pintura interior (Recubre), con su propio tablero
+  const porEtapaPintura = useMemo(() => {
+    const g = Object.fromEntries(ETAPAS_PINTURA.map(e => [e.id, []]));
+    filtradas.forEach(l => { if (l.etapaPintura) (g[l.etapaPintura] = g[l.etapaPintura] || []).push(l); });
+    return g;
+  }, [filtradas]);
+  const conPintura = useMemo(() => locaciones.filter(l => l.etapaPintura).length, [locaciones]);
 
   return (
     <div className="space-y-4">
@@ -155,7 +163,7 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
       )}
 
       <div className="flex gap-2 flex-wrap items-center">
-        {[['tablero', 'Tablero', LayoutGrid], ['mapa', 'Mapa', MapPin], ['zonas', 'Por zona', Route]].map(([id, label, Icon]) => (
+        {[['tablero', 'Tablero', LayoutGrid], ['pintura', `Pintura · Recubre (${conPintura})`, PaintRoller], ['mapa', 'Mapa', MapPin], ['zonas', 'Por zona', Route]].map(([id, label, Icon]) => (
           <button key={id} onClick={() => setTab(id)}
             className={`px-3 py-1.5 text-[11px] font-bold uppercase rounded-card flex items-center gap-1.5 ${tab === id ? 'bg-red-600 text-white' : 'bg-zinc-900 border border-zinc-800 text-zinc-400'}`}>
             <Icon className="w-3.5 h-3.5" /> {label}
@@ -197,6 +205,11 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
                             {l.etapaDesde && <div className="text-[10px] text-zinc-400">desde {new Date(l.etapaDesde).toLocaleDateString('es-DO', { day: 'numeric', month: 'short' })}{l.diasEnEtapa != null ? ` · ${l.diasEnEtapa} d` : ''}</div>}
                             {['por_programar', 'en_ejecucion'].includes(e.id) && !l.personalAprobadoAt && <div className="text-[10px] text-red-400 font-bold">Falta aprobación del personal</div>}
                             {e.id === 'por_levantar' && l.fechaVisita && <div className="text-[10px] text-amber-400">Visita: {textoCoordinacion(l.fechaVisita, l.horaVisita)}</div>}
+                            {l.etapaPintura && (
+                              <div className="text-[10px] font-bold flex items-center gap-1" style={{ color: ETAPA_PINTURA[l.etapaPintura]?.color }}>
+                                <PaintRoller className="w-3 h-3" /> Pintura: {ETAPA_PINTURA[l.etapaPintura]?.label}
+                              </div>
+                            )}
                           </button>
                           {l.cotizacionRef && (
                             <div className="text-[10px] text-zinc-400 mt-0.5">
@@ -248,6 +261,50 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
               })}
             </div>
           ))}
+        </div>
+      )}
+
+      {tab === 'pintura' && (
+        <div className="space-y-2">
+          <div className="text-[11px] text-zinc-500">
+            Pintura interior de cada sitio (resane y pintura, la hace Recubre). Va después del techo: «Lista para Recubre» son las que ya tienen el techo terminado.
+            {locaciones.length - conPintura > 0 && <> {locaciones.length - conPintura} locaciones no tienen pintura cotizada.</>}
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            {ETAPAS_PINTURA.map(e => {
+              const lista = porEtapaPintura[e.id] || [];
+              return (
+                <div key={e.id} className="bg-zinc-900 rounded-card p-2.5 space-y-2" style={{ border: `1px solid ${e.color}55`, borderTop: `3px solid ${e.color}` }}>
+                  <div className="flex items-start gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[12px] font-black leading-tight" style={{ color: e.color }}>{e.label}</div>
+                      <div className="text-[10px] text-zinc-500 leading-snug">{e.detalle}</div>
+                    </div>
+                    <span className="text-sm font-black text-zinc-200">{lista.length}</span>
+                  </div>
+                  <div className="space-y-1.5 max-h-[420px] overflow-y-auto">
+                    {lista.map(l => (
+                      <div key={l.id} className="bg-zinc-950 border border-zinc-800 hover:border-zinc-600 rounded-card p-2">
+                        <button onClick={() => setFicha(l)} className="text-left w-full">
+                          <div className="text-[11px] font-bold text-zinc-100 truncate hover:underline">{l.nombre}</div>
+                          <div className="text-[10px] text-zinc-500 truncate">{l.codigoUt}</div>
+                          {l.pinturaDesde && <div className="text-[10px] text-zinc-400">desde {new Date(l.pinturaDesde).toLocaleDateString('es-DO', { day: 'numeric', month: 'short' })}</div>}
+                          <div className="text-[10px] mt-0.5" style={{ color: COLOR_ETAPA[l.etapa] }}>Techo: {ETAPA[l.etapa]?.label}</div>
+                        </button>
+                        {l.cotizacionPinturaRef && (
+                          <div className="text-[10px] text-zinc-400 mt-0.5">{l.cotizacionPinturaRef}{l.cotizacionPinturaMonto ? ` · ${formatRD(l.cotizacionPinturaMonto)}` : ''}</div>
+                        )}
+                        {l.proyectoPinturaId && onAbrirProyecto && (
+                          <button onClick={() => onAbrirProyecto(l.proyectoPinturaId)} className="text-[10px] underline text-zinc-400 hover:text-white mt-1">ver obra de pintura</button>
+                        )}
+                      </div>
+                    ))}
+                    {lista.length === 0 && <div className="text-[10px] text-zinc-700 py-1 text-center">—</div>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 

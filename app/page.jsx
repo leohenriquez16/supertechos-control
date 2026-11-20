@@ -11,9 +11,10 @@ import PreciosAjustadosObra from '../components/proyecto/PreciosAjustadosObra';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic'; // v8.55.0: carga perezosa de vistas
 import { createPortal } from 'react-dom';
-import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed, Building2, Star, MessageCircle, Send, Search, Filter, CloudRain, Calculator, Receipt, Car, Award, Gauge, Route, ShoppingCart, ShieldCheck, Ship } from 'lucide-react';
+import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed, Building2, Star, MessageCircle, Send, Search, Filter, CloudRain, Calculator, Receipt, Car, Award, Gauge, Route, ShoppingCart, ShieldCheck, Ship, Wrench, MoreHorizontal } from 'lucide-react';
 import * as db from '../lib/db';
 import { completitudPersona } from '../lib/helpers/personas';
+import TablaPersonal from '../components/personal/TablaPersonal';
 import { leerArchivo, parseMateriales, parseSistemas, descargarPlantilla, comprimirImagen } from '../lib/imports';
 import { obtenerUbicacion, distanciaMetros, formatDistancia, abrirEnMapa } from '../lib/geo';
 import { extraerCoordenadasDeGoogleMapsLink, expandirYExtraer, esLinkCortoMaps } from '../lib/geoutils';
@@ -608,6 +609,8 @@ export default function App() {
   const ultimaNav = React.useRef(null);
   const [syncing, setSyncing] = useState(false);
   const [perfilViendo, setPerfilViendo] = useState(null);
+  const [accionPersonal, setAccionPersonal] = useState(null); // v8.89.0: acción pedida desde el Empleado 360
+  const [miPerfilEditando, setMiPerfilEditando] = useState(false); // v8.89.0: Mi perfil abre la ficha 360 propia
   useEffect(() => {
     if (!usuario || typeof window === 'undefined') return;
     if (usuario.pinTemporal || !usuario.onboardingCompletado) return;
@@ -1114,10 +1117,12 @@ export default function App() {
         {vista === 'vehiculos' && (esAdmin || tieneRol(usuario, 'facturas') || tieneRol(usuario, 'almacen') || usuario.facturasHabilitada) && <VistaVehiculos usuario={usuario} data={data} onRecargar={recargar} />}
         {/* v8.26.0: Contabilidad — reportes DGII (606/607/608) + resumen ITBIS/IT-1 */}
         {vista === 'contabilidad' && tieneRol(usuario, 'owner') && <VistaContabilidad usuario={usuario} onVolver={() => setVista('dashboard')} />}
-        {vista === 'miPerfil' && <MiPerfil usuario={usuario} persona={usuario} soloLectura={false} onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }} onGuardar={(campos) => withSync(() => db.guardarPerfil(usuario.id, campos))} />}
+        {vista === 'miPerfil' && !miPerfilEditando && <FichaEmpleado propio persona={(data.personal || []).find(x => x.id === usuario.id) || usuario} usuario={usuario} data={data} onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }} onEditar={() => setMiPerfilEditando(true)} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
+        {vista === 'miPerfil' && miPerfilEditando && <MiPerfil usuario={usuario} persona={usuario} soloLectura={false} onVolver={() => setMiPerfilEditando(false)} onGuardar={(campos) => withSync(() => db.guardarPerfil(usuario.id, campos))} />}
         {vista === 'programas' && <PantallaProgramas usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onAbrirProyecto={async (pid) => { const proy = data.proyectos.find(x => x.id === pid); if (proy) { setProyectoActivo(proy); setVista('proyecto'); setTab('avance'); } }} />}
-        {esAdmin && vista === 'personal' && <GestionPersonal usuario={usuario} personal={data.personal} data={data} onVolver={() => setVista('dashboard')} onActualizar={(p) => withSync(() => db.reemplazarPersonal(p))} onRecargar={recargar} onAbrirPerfil={(p) => { setPerfilViendo(p); setVista('perfilPersona'); }} onAbrir360={(p) => { setPerfilViendo(p); setVista('empleado360'); }} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
-        {esAdmin && vista === 'empleado360' && perfilViendo && <FichaEmpleado persona={(data.personal || []).find(x => x.id === perfilViendo.id) || perfilViendo} usuario={usuario} data={data} onVolver={() => setVista('personal')} onEditar={() => setVista('perfilPersona')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
+        {esAdmin && vista === 'personal' && <GestionPersonal usuario={usuario} personal={data.personal} data={data} onVolver={() => setVista('dashboard')} onActualizar={(p) => withSync(() => db.reemplazarPersonal(p))} onRecargar={recargar} onAbrirPerfil={(p) => { setPerfilViendo(p); setVista('perfilPersona'); }} onAbrir360={(p) => { setPerfilViendo(p); setVista('empleado360'); }} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} accionInicial={accionPersonal} onAccionConsumida={() => setAccionPersonal(null)} />}
+        {esAdmin && vista === 'empleado360' && perfilViendo && <FichaEmpleado persona={(data.personal || []).find(x => x.id === perfilViendo.id) || perfilViendo} usuario={usuario} data={data} onVolver={() => setVista('personal')} onEditar={() => setVista('perfilPersona')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }}
+          acciones={[['editar', 'Editar datos básicos', Edit2], ['experiencia', 'Experiencia', TrendingUp], ['capacidades', 'Capacidades', Wrench], ['menu', 'Más acciones', MoreHorizontal]].map(([tipo, label, icon]) => ({ label, icon, onClick: () => { setAccionPersonal({ tipo, id: perfilViendo.id }); setVista('personal'); } }))} />}
         {vista === 'perfilPersona' && perfilViendo && <MiPerfil usuario={usuario} persona={perfilViendo} soloLectura={false} onVolver={() => setVista('personal')} onGuardar={(campos) => withSync(async () => { await db.guardarPerfil(perfilViendo.id, campos); const d = await db.loadAllData(); const actualizada = d.personal.find(p => p.id === perfilViendo.id); if (actualizada) setPerfilViendo(actualizada); })} />}
         {esAdmin && vista === 'sistemas' && <GestionSistemas sistemas={data.sistemas} config={data.config} dataGlobal={data} onVolver={() => setVista('dashboard')} onActualizarSistemas={(s) => withSync(() => db.guardarSistemas(s))} onActualizarConfig={(c) => withSync(() => db.guardarConfig(c))} />}
         {esAdmin && vista === 'clientes' && <GestionClientes clientes={data.clientes || []} contactos={data.contactos || []} proyectos={data.proyectos || []} usuario={usuario} onVolver={() => setVista('dashboard')} onRecargar={recargar} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
@@ -3445,7 +3450,7 @@ function EditorSistema({ sistema, setSistema, onGuardar, onCancelar, categorias 
 // ============================================================
 // GESTIÓN PERSONAL (con admin como rol seleccionable)
 // ============================================================
-function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar, onAbrirPerfil, onAbrir360, data, onVerProyecto }) {
+function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar, onAbrirPerfil, onAbrir360, data, onVerProyecto, accionInicial, onAccionConsumida }) {
   const [editando, setEditando] = useState(null);
   const [form, setForm] = useState(null);
   const [experienciaDe, setExperienciaDe] = useState(null); // v8.9.19
@@ -3456,6 +3461,18 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
   const [modalInvitar, setModalInvitar] = useState(false); // v8.14: invitar maestro al app
   const [activando, setActivando] = useState(null); // v8.14.1: persona existente a activar para app
   const [detalleDe, setDetalleDe] = useState(null); // v8.19.74: ficha de la persona con todas las acciones adentro
+  // v8.89.0: acciones pedidas desde el Empleado 360 (editar, experiencia, capacidades, más acciones)
+  useEffect(() => {
+    if (!accionInicial) return;
+    const p = personal.find(x => x.id === accionInicial.id);
+    if (p) {
+      if (accionInicial.tipo === 'editar') { setEditando(p.id); setForm({ ...p, roles: [...(p.roles || [])] }); }
+      else if (accionInicial.tipo === 'experiencia') setExperienciaDe(p);
+      else if (accionInicial.tipo === 'capacidades') setCapacidadesDe(p);
+      else setDetalleDe(p);
+    }
+    onAccionConsumida?.();
+  }, [accionInicial]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const guardar = async () => {
     if (!form.nombre) return;
@@ -3517,31 +3534,6 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
       </div>
       {modalInvitar && <ModalInvitarMaestro usuario={usuario} personal={personal} onCerrar={() => setModalInvitar(false)} onInvitado={() => { onRecargar?.(); }} />}
       {activando && <ModalInvitarMaestro usuario={usuario} personaExistente={activando} onCerrar={() => setActivando(null)} onInvitado={() => { onRecargar?.(); }} />}
-
-      {/* v8.17.2: Buscador por nombre / PIN / teléfono */}
-      <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2 flex items-center gap-2 text-xs">
-        <span className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold">🔍 Buscar:</span>
-        <input
-          type="text"
-          value={busqueda}
-          onChange={e => setBusqueda(e.target.value)}
-          placeholder="Nombre o teléfono…"
-          className="flex-1 bg-zinc-900 border border-zinc-800 rounded-card px-2 py-1 text-xs text-white outline-none focus:border-red-500"
-        />
-        {busqueda && <button onClick={() => setBusqueda('')} className="text-zinc-500 hover:text-white px-2"><X className="w-3 h-3" /></button>}
-      </div>
-
-      {/* v8.49.0: filtros de activos e incompletas */}
-      <div className="flex items-center gap-2 flex-wrap -mt-2">
-        <button onClick={() => setSoloActivos(v => !v)}
-          className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1.5 rounded-card border ${soloActivos ? 'bg-green-600/20 border-green-600 text-green-300' : 'bg-zinc-950 border-zinc-800 text-zinc-500'}`}>
-          {soloActivos ? '✓ Solo activos' : 'Todos (incl. inactivos)'}
-        </button>
-        <button onClick={() => setSoloIncompletas(v => !v)}
-          className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1.5 rounded-card border ${soloIncompletas ? 'bg-amber-600/20 border-amber-600 text-amber-300' : 'bg-zinc-950 border-zinc-800 text-zinc-500'}`}>
-          {soloIncompletas ? '⚠ Fichas incompletas' : 'Completas + incompletas'}
-        </button>
-      </div>
 
       {editando && form && (
         <div className="bg-zinc-900 border-2 border-red-600 p-4 space-y-3">
@@ -3707,75 +3699,9 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
         </div>
       )}
 
-      {['admin', 'supervisor', 'maestro', 'ayudante', 'facturas', 'otros'].map(rol => {
-        const grupo = personal.filter(p => {
-          // v8.49.0: filtros activos / incompletas
-          if (soloActivos && p.activo === false) return false;
-          if (soloIncompletas && completitudPersona(p).pct >= 100) return false;
-          // v8.17.2: búsqueda por nombre o teléfono.
-          // v8.17.89: ya no se incluye el PIN en el haystack — el front no
-          // recibe PINs (son hash bcrypt server-side).
-          if (busqueda) {
-            const q = busqueda.toLowerCase().trim();
-            const haystack = `${p.nombre || ''} ${p.telefono || ''} ${p.whatsapp || ''}`.toLowerCase();
-            if (!haystack.includes(q)) return false;
-          }
-          if (rol === 'admin') return tieneRol(p, 'admin');
-          if (rol === 'supervisor') return tieneRol(p, 'supervisor') && !tieneRol(p, 'admin');
-          if (rol === 'maestro') return tieneRol(p, 'maestro') && !tieneRol(p, 'supervisor') && !tieneRol(p, 'admin');
-          if (rol === 'ayudante') return tieneRol(p, 'ayudante');
-          // v8.27.38: rol dedicado de captura de facturas (Lily) — antes no tenía grupo
-          // y la persona no aparecía en la lista aunque estuviera creada.
-          if (rol === 'facturas') return tieneRol(p, 'facturas');
-          // v8.27.38: catch-all — cualquiera con un rol no listado (o sin rol) igual se ve.
-          if (rol === 'otros') return !['admin', 'supervisor', 'maestro', 'ayudante', 'facturas'].some(r => tieneRol(p, r));
-          return false;
-        });
-        if (grupo.length === 0) return null;
-        const titulos = { admin: 'Administradores', supervisor: 'Supervisores', maestro: 'Maestros', ayudante: 'Ayudantes', facturas: 'Facturas', otros: 'Otros' };
-        return (
-          <div key={rol}>
-            <div className="text-[11px] tracking-widest uppercase text-zinc-400 font-bold mb-2">{titulos[rol]} ({grupo.length})</div>
-            <div className="space-y-1">
-              {grupo.map(p => {
-                const maestro = p.maestroId ? getPersona(personal, p.maestroId) : null;
-                const ayudantes = tieneRol(p, 'maestro') ? getAyudantesDeMaestro(personal, p.id) : [];
-                return (
-                  <div key={p.id} onClick={() => setDetalleDe(p)} className="bg-zinc-900 border border-zinc-800 rounded-card p-3 flex items-center gap-3 cursor-pointer hover:border-red-600 transition-colors">
-                    {p.foto2x2 ? <img src={p.foto2x2} alt="" className="w-10 h-10 object-cover rounded-sm flex-shrink-0 border border-zinc-700" /> : <UserCircle className="w-10 h-10 text-zinc-500 flex-shrink-0" />}
-                    <div className="flex-1 min-w-0">
-                      <div className="font-bold text-sm flex items-center gap-2">
-                        <span className={`truncate ${p.activo === false ? 'text-zinc-500' : ''}`}>{p.nombre}</span>
-                        {/* v8.49.0: completitud + inactivo */}
-                        {p.activo === false && <span className="text-[9px] bg-zinc-800 border border-zinc-700 text-zinc-400 px-1.5 py-0.5 tracking-wider uppercase font-bold flex-shrink-0">Inactivo</span>}
-                        {(() => { const c = completitudPersona(p); if (c.pct >= 100) return null; const cl = c.pct >= 60 ? 'bg-amber-900/40 border-amber-700 text-amber-300' : 'bg-red-900/40 border-red-700 text-red-300'; return <span className={`text-[9px] border px-1.5 py-0.5 tracking-wider uppercase font-bold flex-shrink-0 ${cl}`} title={'Faltan: ' + c.faltan.join(', ')}>{c.pct}%</span>; })()}
-                        {/* Anuncios (quedan afuera): pendiente de activación al app */}
-                        {p.tienePin && !p.cedulaNumero && !tieneRol(p, 'admin') && !p.pinTemporal && (
-                          <span className="text-[9px] bg-yellow-900/50 border border-yellow-700 text-yellow-300 px-1.5 py-0.5 tracking-wider uppercase font-bold flex-shrink-0" title="Aún no ha completado el onboarding del app">⚠ Sin app</span>
-                        )}
-                        {p.pinTemporal && (
-                          <span className="text-[9px] bg-blue-900/50 border border-blue-700 text-blue-300 px-1.5 py-0.5 tracking-wider uppercase font-bold flex-shrink-0" title="Invitación pendiente de cambio de PIN">📨 Invitado</span>
-                        )}
-                        {docsPendientes(p).length > 0 && (
-                          <span className="text-[9px] bg-orange-900/50 border border-orange-700 text-orange-300 px-1.5 py-0.5 tracking-wider uppercase font-bold flex-shrink-0" title={'Faltan documentos: ' + docsPendientes(p).join(', ')}>⚠ Docs</span>
-                        )}
-                      </div>
-                      <div className="text-[10px] text-zinc-500">{rolLabel(p)}{p.tienePin && ' · 🔐 Con login'}{maestro && ` · Con ${maestro.nombre}`}{ayudantes.length > 0 && ` · ${ayudantes.length} ayudante${ayudantes.length > 1 ? 's' : ''}`}{p.telefono && ` · ${p.telefono}`}</div>
-                    </div>
-                    {/* Anuncio (queda afuera): activar/reinvitar al app */}
-                    {p.tienePin && !p.cedulaNumero && !tieneRol(p, 'admin') && (
-                      <button onClick={(e) => { e.stopPropagation(); setActivando(p); }} className="bg-green-700 hover:bg-green-600 text-white px-2 py-1.5 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider rounded-card flex-shrink-0" title="Activar para el app y generar credenciales para WhatsApp">
-                        <Send className="w-3 h-3" /> {p.pinTemporal ? 'Reinvitar' : 'Activar'}
-                      </button>
-                    )}
-                    <ChevronRight className="w-4 h-4 text-zinc-600 flex-shrink-0" />
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
+      {/* v8.89.0: Personal como base de datos; la fila abre el Empleado 360 */}
+      <TablaPersonal personal={personal} proyectos={data?.proyectos || []} verMontos={tieneRol(usuario, 'owner') || tieneRol(usuario, 'nomina')}
+        docsPendientes={docsPendientes} onAbrir={(p) => onAbrir360 ? onAbrir360(p) : setDetalleDe(p)} onActivar={setActivando} />
 
       {/* v8.19.74: Ficha de la persona — todas las acciones adentro */}
       {detalleDe && (() => {

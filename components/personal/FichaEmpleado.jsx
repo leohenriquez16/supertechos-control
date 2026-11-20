@@ -8,6 +8,7 @@ import { ArrowLeft, Briefcase, Calendar, Wallet, AlertTriangle, ShieldCheck, Use
 import { supabase } from '../../lib/supabase';
 import { fetchConSesion } from '../../lib/fetchConSesion';
 import { completitudPersona } from '../../lib/helpers/personas';
+import FamiliaEmpleado from './FamiliaEmpleado';
 
 const rd = (n) => 'RD$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fecha = (f) => f ? new Date(String(f).slice(0, 10) + 'T00:00:00').toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
@@ -32,9 +33,11 @@ function Kpi({ icon: Icon, titulo, valor, sub, alerta }) {
   );
 }
 
-export default function FichaEmpleado({ persona, usuario, data, onVolver, onEditar, onVerProyecto }) {
+// v8.89.0: `propio` = el empleado viendo su propia ficha (ve sus pagos; no ve acciones de admin).
+// `acciones` = botones de admin (editar, documentos, experiencia…) que antes estaban en el menú.
+export default function FichaEmpleado({ persona, usuario, data, onVolver, onEditar, onVerProyecto, propio = false, acciones = [] }) {
   const roles = usuario?.roles || [];
-  const verMontos = roles.includes('owner') || roles.includes('nomina');
+  const verMontos = propio || roles.includes('owner') || roles.includes('nomina');
   const [tab, setTab] = useState('obras');
   const [erp, setErp] = useState(null);
   const [odoo, setOdoo] = useState(null);
@@ -105,7 +108,7 @@ export default function FichaEmpleado({ persona, usuario, data, onVolver, onEdit
 
   return (
     <div className="space-y-4">
-      <button onClick={onVolver} className="flex items-center gap-2 text-sm text-zinc-400 hover:text-white"><ArrowLeft className="w-4 h-4" /> Volver a personal</button>
+      <button onClick={onVolver} className="flex items-center gap-2 text-sm text-zinc-400 hover:text-white"><ArrowLeft className="w-4 h-4" /> {propio ? 'Volver' : 'Volver a personal'}</button>
 
       <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-start gap-3 min-w-0">
@@ -125,8 +128,9 @@ export default function FichaEmpleado({ persona, usuario, data, onVolver, onEdit
             </div>
           </div>
         </div>
-        <div className="flex gap-2">
-          {onEditar && <button onClick={onEditar} className="flex items-center gap-1.5 bg-zinc-800 hover:bg-zinc-700 text-sm font-bold px-3 py-2 rounded-card"><Pencil className="w-4 h-4" /> Editar ficha</button>}
+        <div className="flex flex-wrap gap-2">
+          {onEditar && <button onClick={onEditar} className="flex items-center gap-1.5 bg-zinc-800 hover:bg-zinc-700 text-sm font-bold px-3 py-2 rounded-card"><Pencil className="w-4 h-4" /> {propio ? 'Actualizar mis datos' : 'Perfil y documentos'}</button>}
+          {acciones.map(a => <button key={a.label} onClick={a.onClick} className="flex items-center gap-1.5 bg-zinc-800 hover:bg-zinc-700 text-sm font-bold px-3 py-2 rounded-card">{a.icon ? <a.icon className="w-4 h-4" /> : null} {a.label}</button>)}
         </div>
       </div>
 
@@ -139,6 +143,8 @@ export default function FichaEmpleado({ persona, usuario, data, onVolver, onEdit
         <Kpi icon={Wallet} titulo="Caja chica" valor={erp?.caja ? rd(erp.caja.saldo) : '—'} sub={erp?.caja?.pendientes ? `${erp.caja.pendientes} por liquidar` : ''} alerta={!!erp?.caja?.pendientes} />
         <Kpi icon={ShieldCheck} titulo="Credenciales" valor={erp ? erp.credenciales.filter(c => c.activa !== false).length : '…'} sub={credVencen.length ? `${credVencen.length} vencen en 30 días` : 'al día'} alerta={credVencen.length > 0} />
       </div>
+
+      <FamiliaEmpleado personaId={persona.id} />
 
       <div className="grid lg:grid-cols-[1fr_340px] gap-4 items-start">
         <div className="min-w-0 space-y-3">
@@ -196,9 +202,13 @@ export default function FichaEmpleado({ persona, usuario, data, onVolver, onEdit
         <div className="space-y-3">
           <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 text-sm space-y-1.5">
             <div className="text-[10px] uppercase tracking-widest font-bold text-zinc-500 mb-1">Datos personales</div>
-            {[['Cédula', persona.cedulaNumero || odoo?.cedula], ['Teléfono', persona.telefono || odoo?.telefono], ['Correo', persona.email || odoo?.email], ['Nacimiento', fecha(persona.fechaNacimiento || odoo?.nacimiento)],
-              ['Emergencia', persona.contactoEmergenciaNombre ? `${persona.contactoEmergenciaNombre}${persona.contactoEmergenciaTelefono ? ' · ' + persona.contactoEmergenciaTelefono : ''}` : odoo?.emergencia],
-              ['Banco', persona.banco ? `${persona.banco}${persona.bancoNumeroCuenta ? ' ····' + String(persona.bancoNumeroCuenta).slice(-4) : ''}` : null]]
+            {[['Cédula', persona.cedulaNumero || odoo?.cedula], ['Nacimiento', (() => { const f = persona.fechaNacimiento || odoo?.nacimiento; if (!f) return null; const d = new Date(String(f).slice(0, 10) + 'T00:00:00'), h = new Date(); let a = h.getFullYear() - d.getFullYear(); if (h < new Date(h.getFullYear(), d.getMonth(), d.getDate())) a--; return `${fecha(f)} (${a} años)`; })()],
+              ['Tipo de sangre', persona.tipoSangre], ['Teléfono', persona.telefono || odoo?.telefono], ['WhatsApp', persona.whatsapp], ['Correo', persona.email || odoo?.email], ['Dirección', persona.direccion],
+              ['Emergencia', persona.contactoEmergenciaNombre ? `${persona.contactoEmergenciaNombre}${persona.contactoEmergenciaRelacion ? ' (' + persona.contactoEmergenciaRelacion + ')' : ''}${persona.contactoEmergenciaTelefono ? ' · ' + persona.contactoEmergenciaTelefono : ''}` : odoo?.emergencia],
+              ['Puesto', persona.puesto || odoo?.puesto], ['Departamento', persona.departamento || odoo?.departamento], ['Ingreso', persona.fechaIngreso ? fecha(persona.fechaIngreso) : null], ['Recomendado por', persona.recomendadoPor],
+              ['Licencia', persona.licenciaCategoria ? `${persona.licenciaCategoria}${persona.licenciaVence ? ' · vence ' + fecha(persona.licenciaVence) : ''}` : null],
+              ...(verMontos ? [['Modo de pago', persona.modoPago ? `${persona.modoPago}${persona.tarifaM2 ? ' · RD$' + persona.tarifaM2 + '/m²' : ''}${persona.tarifaDia ? ' · RD$' + persona.tarifaDia + '/día' : ''}` : null]] : []),
+              ['Banco', persona.banco ? `${persona.banco}${persona.bancoTipoCuenta ? ' ' + persona.bancoTipoCuenta : ''}${persona.bancoNumeroCuenta ? ' ····' + String(persona.bancoNumeroCuenta).slice(-4) : ''}` : null]]
               .map(([k, v]) => <div key={k} className="flex justify-between gap-3"><span className="text-zinc-500">{k}</span><span className="text-zinc-200 text-right break-words min-w-0">{v && v !== '—' ? v : '—'}</span></div>)}
             {comp.pct < 100 && <div className="text-[11px] text-amber-400 pt-1">Falta: {comp.faltan.join(', ')}</div>}
           </div>

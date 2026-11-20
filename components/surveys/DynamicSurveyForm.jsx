@@ -18,9 +18,12 @@
 
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { Loader2, X, Save, Check, Plus, Copy, Trash2, ChevronDown, ChevronUp, Zap, Sun, Moon } from 'lucide-react';
-import { obtenerTemplateSurvey, crearVisita, obtenerVisitaAbiertaDeSite, actualizarVisita, cerrarVisita, listarAreasDeVisita, crearArea, actualizarArea, eliminarArea, calcularCompletitud, setCompletitudProyecto, finalizarLevantamientoSurvey, familiaDeServiceLine, tiposDeFamilia, familiaPorKey } from '../../lib/surveys';
+import { obtenerTemplateSurvey, crearVisita, obtenerVisitaAbiertaDeSite, listarVisitasDeSite, listarSitesProyectoSurvey, marcarEstadoSitioSurvey, actualizarVisita, cerrarVisita, listarAreasDeVisita, crearArea, actualizarArea, eliminarArea, calcularCompletitud, setCompletitudProyecto, finalizarLevantamientoSurvey, showIfOk, familiaDeServiceLine, tiposDeFamilia, familiaPorKey } from '../../lib/surveys';
+import { filasPorDefecto, MOTIVOS_NO_PINTA, textoNoPinta, resumenVisitaPintura, labelPintura, pendientesVisita } from '../../lib/pinturaCatalogo';
+import { visitaAlAbrir, visitaDeEstaPlantilla, estadoSitioAlCerrar, proyectoCompleto, esErrorDeRed, crearCambiosPendientes, claveArea, agruparPendientes, aplicarRespaldo, grossDeArea } from '../../lib/helpers/cicloLevantamiento';
 import { obtenerUbicacion, distanciaMetros } from '../../lib/geo';
 import SurveyFieldRenderer from './SurveyFieldRenderer';
+import { fotosSubiendo } from './PhotoCapture';
 
 // v8.19.6: detecta si un campo es "de medida" (visible cuando un área es
 // marcada como 'similar a otra'). Reglas:
@@ -43,7 +46,27 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
   const [template, setTemplate] = useState(null);
   const [visit, setVisit] = useState(null);
   const [areas, setAreas] = useState([]); // localmente: areas con sus drafts
+  // v8.94.0: última versión de `areas` sin esperar al render (varios campos pueden reportar a la vez).
+  const areasRef = useRef(areas);
+  areasRef.current = areas;
   const [generalData, setGeneralData] = useState({});
+  // Los guardados de datos generales parten de generalRef (lo último real), no del cierre del render:
+  // una foto que termina de subir ya no pisa lo que el técnico llenó mientras tanto.
+  const generalRef = useRef(generalData);
+  generalRef.current = generalData;
+  // v8.94.0: visita ya cerrada que se sigue (plantillas por sitio): { pendientes, cerradaEl } o null.
+  const [seguida, setSeguida] = useState(null);
+  // v8.94.0: cambios de este equipo que el servidor aún no confirmó (se suben antes de cerrar).
+  const cambiosRef = useRef(null);
+  if (!cambiosRef.current) cambiosRef.current = crearCambiosPendientes();
+  // Las claves sin confirmar también se guardan en el equipo (survey_pend_<visita>): al reabrir, del respaldo solo
+  // se recupera eso, y un respaldo viejo ya confirmado no pisa lo que otro equipo editó después.
+  const recordarPendientes = (vid) => { try { if (vid) localStorage.setItem('survey_pend_' + vid, JSON.stringify(cambiosRef.current.lista().map(x => x.clave))); } catch (e) {} };
+  const marcarCambio = (vid, clave) => { const s = cambiosRef.current.marcar(clave); recordarPendientes(vid); return s; };
+  const confirmarCambio = (vid, clave, s) => { cambiosRef.current.confirmar(clave, s); recordarPendientes(vid); };
+  // Las subidas de pendientes (al abrir, al volver la señal y al cerrar) van en fila: el cierre espera a la anterior.
+  const colaSubidaRef = useRef(Promise.resolve());
+  const [intento, setIntento] = useState(0); // «Reintentar» en la pantalla de error vuelve a cargar
   const [errorMsg, setErrorMsg] = useState(null);
   const [guardando, setGuardando] = useState(false);
   // v8.25.30: estado de guardado para el indicador + respaldo local (A+B).
@@ -69,19 +92,18 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
   }, []);
 
   // v8.25.30: al volver la conexión, re-sincroniza al servidor lo que quedó guardado en el equipo.
+  // v8.94.0: sube solo lo que quedó pendiente (antes re-subía todo, pisando lo que otro equipo hubiera editado).
   useEffect(() => {
     const onOnline = async () => {
-      if (!visit) return;
+      if (!visit || !cambiosRef.current.hay()) return;
       setEstadoGuardado('guardando');
-      try {
-        await actualizarVisita(visit.id, { general_data: generalData });
-        for (const a of areas) { try { await actualizarArea(a.id, { data: a.data, gross_area_m2: a.gross_area_m2 }); } catch (e) {} }
-        setEstadoGuardado('guardado');
-      } catch (e) { setEstadoGuardado('local'); }
+      try { await subirPendientes(visit.id); setEstadoGuardado('guardado'); }
+      catch (e) { setEstadoGuardado('local'); }
     };
     window.addEventListener('online', onOnline);
     return () => window.removeEventListener('online', onOnline);
-  }, [visit, generalData, areas]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visit]);
 
   // 1. Cargar template + crear/recuperar visita
   useEffect(() => {
@@ -96,42 +118,51 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
 
         // v8.24.7: reusar la visita ABIERTA del sitio si existe (evita acumular visitas
         // vacías al reabrir el formulario). Si no hay, se crea una nueva.
+        // v8.94.0: plantillas «por sitio» (una oficina = un levantamiento): si la oficina ya tiene una visita
+        // cerrada, se sigue ESA (completar lo pendiente o corregir) en vez de crear otra en blanco.
+        // Las lecturas que fallan ya no se toman como «no hay nada»: van a la pantalla de error con «Reintentar»
+        // y no se crea ni se escribe nada.
         const authUserId = (usuario && usuario.authUserId) || await obtenerAuthUserIdActual();
-        let v = await obtenerVisitaAbiertaDeSite(site.id);
+        const porSitio = !!t.schema?.cierre_por_sitio;
+        const abierta = await obtenerVisitaAbiertaDeSite(site.id);
+        const ultima = (!abierta && porSitio) ? ((await listarVisitasDeSite(site.id, { estricto: true }))[0] || null) : null;
+        const decision = visitaAlAbrir({ abierta, ultima, porSitio });
+        let v = decision.visita;
+        let accion = decision.accion;
         let areasExistentes = [];
-        if (v) {
-          try { areasExistentes = await listarAreasDeVisita(v.id); } catch {}
-        } else {
-          v = await crearVisita({ siteId: site.id, surveyorAuthUserId: authUserId || null });
-        }
+        if (v) areasExistentes = await listarAreasDeVisita(v.id, { estricto: true });
+        // v8.94.0: una visita hecha con OTRO formulario (tiene áreas de bloques que esta plantilla no tiene) no se
+        // sigue: se empieza una nueva y la anterior queda intacta.
+        if (accion === 'seguir' && !visitaDeEstaPlantilla(areasExistentes, t.schema)) { v = null; accion = 'crear'; areasExistentes = []; }
+        if (!v) v = await crearVisita({ siteId: site.id, surveyorAuthUserId: authUserId || null });
         if (cancelado) return;
         setVisit(v);
+        setSeguida(accion === 'seguir' ? { pendientes: pendientesVisita(v.general_data), cerradaEl: v.checkout_at || null } : null);
         // v8.25.30: recuperar respaldo local si existe (lo que no alcanzó a guardarse por
         // batería/cierre/sin señal). El draft local es siempre >= servidor, así que prevalece.
-        let gdInicial = v.general_data || {};
-        let areasIniciales = areasExistentes;
-        let huboDraft = false;
-        try {
-          const raw = localStorage.getItem('survey_draft_' + v.id);
-          if (raw) {
-            const d = JSON.parse(raw);
-            gdInicial = { ...gdInicial, ...(d.general_data || {}) };
-            const draftAreas = d.areas || [];
-            areasIniciales = areasExistentes.map(a => {
-              const da = draftAreas.find(x => x.id === a.id);
-              return da ? { ...a, name: da.name || a.name, data: { ...(a.data || {}), ...(da.data || {}) }, gross_area_m2: da.gross_area_m2 ?? a.gross_area_m2 } : a;
-            });
-            huboDraft = true;
-          }
-        } catch (e) {}
+        let respaldo = null, pendLocal = null;
+        try { const raw = localStorage.getItem('survey_draft_' + v.id); if (raw) respaldo = JSON.parse(raw); } catch (e) {}
+        try { const rawP = localStorage.getItem('survey_pend_' + v.id); if (rawP) { const arr = JSON.parse(rawP); if (Array.isArray(arr)) pendLocal = arr; } } catch (e) {}
+        // v8.94.0: lo pendiente guardado en el equipo + lo que este formulario aún tiene sin confirmar (tras «Reintentar»).
+        const enMemoria = cambiosRef.current.lista().map(x => x.clave);
+        const pendUnion = pendLocal ? [...new Set([...pendLocal, ...enMemoria])] : null;
+        const rec = aplicarRespaldo({ generalServidor: v.general_data, areasServidor: areasExistentes, respaldo, pendientes: pendUnion });
+        const gdInicial = rec.general;
+        const areasIniciales = rec.areas;
+        generalRef.current = gdInicial;
+        areasRef.current = areasIniciales;
         setGeneralData(gdInicial);
         setAreas(areasIniciales);
         setErrorMsg(null);
-        // Re-sincronizar al servidor lo recuperado del respaldo (best-effort).
-        if (huboDraft) {
+        // v8.94.0: lo del respaldo que difiere del servidor queda pendiente y se sube ya (best-effort);
+        // si no sube, se reintenta al volver la señal y, sí o sí, antes de cerrar.
+        const cambios = cambiosRef.current;
+        if (rec.generalDistinto) cambios.marcar('general');
+        for (const d of rec.areasDistintas) { if (d.datos) cambios.marcar(claveArea(d.id, 'datos')); if (d.nombre) cambios.marcar(claveArea(d.id, 'nombre')); }
+        recordarPendientes(v.id);
+        if (cambios.hay()) {
           (async () => {
-            try { await actualizarVisita(v.id, { general_data: gdInicial }); } catch (e) {}
-            for (const a of areasIniciales) { try { await actualizarArea(a.id, { data: a.data, gross_area_m2: a.gross_area_m2 }); } catch (e) {} }
+            try { await subirPendientes(v.id); } catch (e) { if (!cancelado) setEstadoGuardado('local'); }
           })();
         }
 
@@ -143,7 +174,8 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
           const u = await obtenerUbicacion();
           if (cancelado) return;
           if (!u || u.lat == null) { setGps({ estado: 'error' }); return; }
-          try { await actualizarVisita(v.id, { checkin_latitude: u.lat, checkin_longitude: u.lng }); } catch {}
+          // v8.94.0: una visita ya cerrada que se sigue conserva su check-in (el GPS de quien la abre ahora puede ser la oficina).
+          if (accion !== 'seguir') { try { await actualizarVisita(v.id, { checkin_latitude: u.lat, checkin_longitude: u.lng }); } catch {} }
           const slat = site?.latitude != null ? Number(site.latitude) : null;
           const slng = site?.longitude != null ? Number(site.longitude) : null;
           if (slat == null || slng == null) { setGps({ estado: 'sin_referencia', lat: u.lat, lng: u.lng }); return; }
@@ -157,19 +189,41 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
       }
     })();
     return () => { cancelado = true; };
-  }, [proyecto.template_id, site.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proyecto.template_id, site.id, intento]);
 
   const secciones = template?.schema?.sections || [];
   const secGeneral = secciones.find(s => s.type !== 'repeating_block') || secciones[0];
   // v8.19.53: la foto de fachada se pide en el check-in (no dentro de la sección general).
   const fotoFachadaField = (secGeneral?.fields || []).find(f => f.id === 'foto_frontal');
   const fachadaLista = Array.isArray(generalData.foto_frontal) && generalData.foto_frontal.length > 0;
+  // v8.94.0: fachada obligatoria sin opción de diferir ni de cerrar sin ella (plantillas que lo pidan).
+  const fachadaDura = !!fotoFachadaField?.obligatoria_dura;
   const bloquesRepetibles = secciones.filter(s => s.type === 'repeating_block');
+  // v8.94.0: el cuerpo del formulario son los bloques repetibles y, solo si la plantilla las marca `extra`,
+  // secciones fijas adicionales (ej. Jardines, Techo) que guardan en los datos generales. Se pintan en el
+  // orden de la plantilla; una sección o bloque con `show_if` se oculta si la condición no se cumple.
+  // Plantillas sin `extra` ni `show_if` se ven exactamente igual que antes.
+  const cuerpo = secciones.filter(s => s !== secGeneral && (s.type === 'repeating_block' || s.extra) && showIfOk(s.show_if, generalData));
+  const pendientes = useMemo(() => pendientesVisita(generalData), [generalData]);
+  // Bloques condicionados por un campo de esta sección que quedaron ocultos teniendo áreas cargadas
+  // (ej. jardines medidos y luego marcados «Pendiente»): se conservan, pero se avisa que no se incluyen.
+  const avisoOcultos = (sec) => {
+    const ids = new Set((sec.fields || []).map(f => f.id));
+    const ocultos = bloquesRepetibles.filter(b => b.show_if && ids.has((/^\s*([\w.-]+)/.exec(b.show_if) || [])[1]) && !showIfOk(b.show_if, generalData) && areas.some(a => a.block_id === b.id));
+    if (!ocultos.length) return null;
+    return (
+      <div className="rounded-card border border-amber-700/50 bg-amber-900/15 px-3 py-2 text-xs text-amber-200">
+        {ocultos.map(b => { const n = areas.filter(a => a.block_id === b.id).length; return <div key={b.id}>Hay {n} {n === 1 ? 'registro cargado' : 'registros cargados'} en «{b.title}». Se conservan, pero no se incluyen mientras esta respuesta no cambie.</div>; })}
+      </div>
+    );
+  };
 
   // v8.20.5: tipo de techo/piso POR ÁREA. La familia sale del service_line del
   // levantamiento; los tipos son los service_line de esa familia.
   const familiaKey = familiaDeServiceLine(template?.service_line || proyecto?.service_line);
-  const tiposArea = familiaKey ? tiposDeFamilia(familiaKey) : [];
+  // v8.94.0: plantillas con `sin_tipo_area` (pintura) no piden tipo por área: la pintura va por superficie.
+  const tiposArea = (familiaKey && !template?.schema?.sin_tipo_area) ? tiposDeFamilia(familiaKey) : [];
   const tipoLabel = familiaPorKey(familiaKey)?.tipoLabel || 'Tipo';
 
   // v8.19.81: [Fase 2] completitud en vivo (campos obligatorios + mínimos de fotos).
@@ -185,24 +239,29 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
       }));
     } catch (e) {}
   };
-  const borrarDraft = () => { if (visit) { try { localStorage.removeItem('survey_draft_' + visit.id); } catch (e) {} } };
+  const borrarDraft = () => { if (visit) { try { localStorage.removeItem('survey_draft_' + visit.id); localStorage.removeItem('survey_pend_' + visit.id); } catch (e) {} } };
 
   // Guardado de general_data (al cambiar)
   const guardarGeneralData = useCallback(async (nuevo) => {
     if (!visit) return;
+    generalRef.current = nuevo;
     setGeneralData(nuevo);
-    escribirDraft(nuevo, areas);       // respaldo local primero (nunca falla)
+    const sello = marcarCambio(visit.id, 'general');
+    escribirDraft(nuevo, areasRef.current);       // respaldo local primero (nunca falla)
     setGuardando(true);
     setEstadoGuardado('guardando');
     try {
       await actualizarVisita(visit.id, { general_data: nuevo });
+      confirmarCambio(visit.id, 'general', sello);
       setEstadoGuardado('guardado');
     } catch (e) {
       setEstadoGuardado('local');      // quedó a salvo en el equipo; se re-sincroniza al volver la señal
     } finally {
       setGuardando(false);
     }
-  }, [visit, areas]);
+  }, [visit]);
+  // Cambia UN campo general partiendo de lo último guardado (no de una copia del render en que empezó).
+  const guardarCampoGeneral = useCallback((id, valor) => guardarGeneralData({ ...generalRef.current, [id]: valor }), [guardarGeneralData]);
 
   // Agregar nueva área a un bloque repetible. El nombre queda vacío
   // para que el levantador lo escriba (ej. "Fachada norte", "Cubierta principal").
@@ -219,6 +278,10 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
       dataInicial._tipo = prev.data._tipo;
       if (prev.data._tipo === 'other' && prev.data._tipo_otro) dataInicial._tipo_otro = prev.data._tipo_otro;
     }
+    // v8.94.0: campos marcados `heredar` (ej. el nivel en pintura) se copian del área anterior.
+    for (const f of (bloque.fields || [])) {
+      if (f.heredar && prev?.data?.[f.id] != null && prev.data[f.id] !== '') dataInicial[f.id] = prev.data[f.id];
+    }
     try {
       const a = await crearArea({
         visitId: visit.id,
@@ -229,7 +292,8 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
       });
       setAreas(prev => [...prev, a]);
     } catch (e) {
-      setErrorMsg(e?.message || String(e));
+      // v8.94.0: fallo no fatal (antes tumbaba todo el formulario).
+      alert('No se pudo agregar el área' + (typeof navigator !== 'undefined' && navigator.onLine === false ? ' porque no hay conexión' : '') + '. Lo ya capturado está guardado; intenta de nuevo.');
     }
   };
 
@@ -246,17 +310,22 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
       }
       return;
     }
-    const area = areas.find(a => a.id === areaId);
+    // v8.94.0: partir de areasRef (no del cierre) para que dos cambios seguidos no se pisen.
+    const base = areasRef.current;
+    const area = base.find(a => a.id === areaId);
     const data = { ...((area && area.data) || {}), [campo]: valor };
     // v8.24.15: calcular el m² del área desde las tablas de medidas y guardarlo en
     // la columna gross_area_m2 (antes solo quedaba en data → el resumen mostraba 0).
     const gross = calcularGrossArea(area, data);
-    const nuevasAreas = areas.map(a => (a.id === areaId ? { ...a, data, gross_area_m2: gross } : a));
+    const nuevasAreas = base.map(a => (a.id === areaId ? { ...a, data, gross_area_m2: gross } : a));
+    areasRef.current = nuevasAreas;
     setAreas(nuevasAreas);
-    escribirDraft(generalData, nuevasAreas);   // respaldo local primero (nunca falla)
+    const sello = marcarCambio(visit?.id, claveArea(areaId, 'datos'));
+    escribirDraft(generalRef.current, nuevasAreas);   // respaldo local primero (nunca falla)
     setEstadoGuardado('guardando');
     try {
       await actualizarArea(areaId, gross != null ? { data, gross_area_m2: gross } : { data });
+      confirmarCambio(visit?.id, claveArea(areaId, 'datos'), sello);
       setEstadoGuardado('guardado');
     } catch (e) {
       console.warn('No se pudo guardar campo de area:', e?.message);
@@ -265,25 +334,23 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
   };
 
   // Suma el área (m²) de todas las tablas de medidas del bloque del área.
-  const calcularGrossArea = (area, data) => {
-    const block = (template?.schema?.sections || []).find(s => s.id === area?.block_id);
-    if (!block) return area?.gross_area_m2 ?? null;
-    const measFields = (block.fields || []).filter(f => f.type === 'measurement_table');
-    if (!measFields.length) return area?.gross_area_m2 ?? null;
-    let tot = 0;
-    for (const f of measFields) {
-      const filas = Array.isArray(data[f.id]) ? data[f.id] : [];
-      for (const r of filas) tot += Number(r.area_m2) || 0;
-    }
-    return Number(tot.toFixed(2));
-  };
+  // v8.94.0: la regla vive en lib/helpers/cicloLevantamiento.js (grossDeArea) para poder probarla.
+  const calcularGrossArea = (area, data) => grossDeArea((template?.schema?.sections || []).find(s => s.id === area?.block_id), area, data);
 
   const renombrarArea = async (areaId, nuevoNombre) => {
-    setAreas(prev => prev.map(a => a.id === areaId ? { ...a, name: nuevoNombre } : a));
+    // v8.94.0: el nombre también va al respaldo local y queda pendiente hasta que el servidor lo confirme
+    // (antes, al reabrir, el respaldo devolvía el nombre viejo y el cierre lo subía encima del corregido).
+    const nuevas = areasRef.current.map(a => a.id === areaId ? { ...a, name: nuevoNombre } : a);
+    areasRef.current = nuevas;
+    setAreas(nuevas);
+    const sello = marcarCambio(visit?.id, claveArea(areaId, 'nombre'));
+    escribirDraft(generalRef.current, nuevas);
     try {
       await actualizarArea(areaId, { name: nuevoNombre });
+      confirmarCambio(visit?.id, claveArea(areaId, 'nombre'), sello);
     } catch (e) {
       console.warn('No se pudo renombrar:', e?.message);
+      setEstadoGuardado('local');
     }
   };
 
@@ -291,14 +358,60 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
     if (!confirm('¿Eliminar esta área? Esta acción no se puede deshacer.')) return;
     try {
       await eliminarArea(areaId);
+      cambiosRef.current.olvidar('area:' + areaId);
+      recordarPendientes(visit?.id);
       setAreas(prev => prev.filter(a => a.id !== areaId));
     } catch (e) {
       setErrorMsg(e?.message || String(e));
     }
   };
 
-  const cerrarVisitaCompleta = async (forzar = false) => {
+  // v8.94.0: resumen por tipo de pintura que el técnico confirma antes de cerrar (plantillas con resumen_pintura).
+  const [verResumen, setVerResumen] = useState(false);
+  const resumenPintura = useMemo(() => template?.schema?.resumen_pintura ? resumenVisitaPintura(areas) : null, [template, areas]);
+
+  // v8.94.0: sube lo que este equipo cambió y el servidor no ha confirmado (datos generales y, por área, sus
+  // datos y/o su nombre). Lanza el primer error, con el nombre del área si fue un área.
+  const subirPendientes = (visitId) => {
+    const turno = colaSubidaRef.current.catch(() => {}).then(() => subirPendientesAhora(visitId));
+    colaSubidaRef.current = turno;
+    return turno;
+  };
+  const subirPendientesAhora = async (visitId) => {
+    try { await subirLoPendiente(visitId); } finally { recordarPendientes(visitId); }
+  };
+  const subirLoPendiente = async (visitId) => {
+    const c = cambiosRef.current;
+    const p = agruparPendientes(c.lista());
+    if (p.general) {
+      await actualizarVisita(visitId, { general_data: generalRef.current });
+      c.confirmar('general', p.general);
+    }
+    for (let i = 0; i < p.areas.length; i += 6) {
+      await Promise.all(p.areas.slice(i, i + 6).map(async (x) => {
+        const a = areasRef.current.find(y => y.id === x.id);
+        if (!a) { c.olvidar('area:' + x.id); return; }
+        const cuerpo = {};
+        if (x.nombre) cuerpo.name = a.name || '';
+        if (x.datos) { cuerpo.data = a.data || {}; if (a.gross_area_m2 != null) cuerpo.gross_area_m2 = a.gross_area_m2; }
+        try { await actualizarArea(a.id, cuerpo); }
+        catch (e) { if (e && typeof e === 'object') e.areaNombre = a.name || `Área #${a.area_number}`; throw e; }
+        if (x.nombre) c.confirmar(claveArea(a.id, 'nombre'), x.nombre);
+        if (x.datos) c.confirmar(claveArea(a.id, 'datos'), x.datos);
+      }));
+    }
+  };
+
+  const cerrarVisitaCompleta = async (forzar = false, confirmado = false) => {
     if (!visit) return;
+    // v8.94.0: con una foto a medio subir no se cierra (se perdería sin aviso).
+    if (fotosSubiendo() > 0) { alert('Espera: hay una foto subiendo. Cierra cuando termine para no perderla.'); return; }
+    // v8.94.0: requisitos duros — ni siquiera "Cerrar sin completar" los salta.
+    const duros = completitud.faltantes.filter(f => f.duro);
+    if (duros.length > 0) {
+      alert(`No se puede cerrar la visita sin:\n\n${duros.map(f => `• ${f.label}`).join('\n')}\n\nPuedes usar "Pausar" para guardar y volver luego.`);
+      return;
+    }
     // v8.19.81: [Fase 2] regla maestra — no cerrar si falta lo obligatorio.
     if (!forzar && completitud.faltantes.length > 0) {
       const lista = completitud.faltantes.slice(0, 12).map(f => `• ${f.label}`).join('\n');
@@ -306,15 +419,50 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
       alert(`Faltan ${completitud.faltantes.length} requisito(s) (${completitud.pct}% completo). No se puede cerrar:\n\n${lista}${extra}`);
       return;
     }
-    if (!confirm(forzar ? `El levantamiento está al ${completitud.pct}%. ¿Cerrar sin finalizar (queda pendiente)?` : '¿Finalizar el levantamiento? Quedará como REALIZADO y no podrás editar esta visita desde aquí.')) return;
+    if (!forzar && resumenPintura && !confirmado) { setVerResumen(true); return; }
+    if (!confirmado && !confirm(forzar ? `El levantamiento está al ${completitud.pct}%. ¿Cerrar sin finalizar (queda pendiente)?` : '¿Finalizar el levantamiento? Quedará como REALIZADO y no podrás editar esta visita desde aquí.')) return;
+    setVerResumen(false);
     setCerrando(true);
     try {
+      // v8.94.0: antes de cerrar se sube lo que haya quedado pendiente y se espera el resultado. Si algo no sube,
+      // la visita no se cierra y el respaldo local no se borra: un guardado que falló en silencio no se pierde.
+      try {
+        await subirPendientes(visit.id);
+      } catch (e) {
+        setEstadoGuardado('local');
+        alert(esErrorDeRed(e)
+          ? 'No se pudo subir todo lo capturado (revisa la señal). La visita NO se cerró y tus datos siguen guardados en este equipo. Busca señal y vuelve a intentarlo.'
+          : `El sistema no aceptó ${e?.areaNombre ? `el área «${e.areaNombre}»` : 'los datos generales'}: ${e?.message || e}\n\nRevisa ese dato (por ejemplo, una medida demasiado grande) y vuelve a intentarlo. La visita NO se cerró y tus datos siguen guardados en este equipo.`);
+        return;
+      }
       await cerrarVisita(visit.id);
       try { await setCompletitudProyecto(proyecto?.id, completitud.pct); } catch {}
       // v8.24.18: si se cierra completo (no forzado), el levantamiento pasa a "Realizado".
-      if (!forzar) { try { await finalizarLevantamientoSurvey(proyecto?.id); } catch {} }
+      let resultado = forzar ? 'cerrado' : 'finalizado';
+      let estadoSitio = null;
+      if (template?.schema?.cierre_por_sitio) {
+        // v8.94.0: plantillas «por sitio» (pintura de sucursales): se marca ESTA oficina (completada, o en proceso
+        // si se cerró sin completar o quedó algo pendiente) y el proyecto pasa a Realizado solo cuando TODAS sus
+        // oficinas están completas. Si alguna lectura falla, no se finaliza nada (se decide en el próximo cierre).
+        const nuevoEstado = estadoSitioAlCerrar({ forzar, pendientes });
+        let proyectoFinalizado = false;
+        let fallo = null;
+        try { await marcarEstadoSitioSurvey(site.id, nuevoEstado); estadoSitio = nuevoEstado; }
+        catch (e) { fallo = 'el estado de la oficina'; }
+        if (estadoSitio) {
+          try {
+            const sitios = await listarSitesProyectoSurvey(proyecto?.id, { estricto: true });
+            if (proyectoCompleto(sitios, site.id, estadoSitio)) proyectoFinalizado = await finalizarLevantamientoSurvey(proyecto?.id);
+          } catch (e) { fallo = 'el estado del proyecto'; }
+        }
+        // La visita ya quedó cerrada y guardada; solo falta el estado: se avisa para volver a finalizar con señal.
+        if (fallo) alert(`La visita quedó cerrada y guardada, pero no se pudo actualizar ${fallo} (revisa la señal). Vuelve a abrir la oficina y toca «Finalizar» otra vez.`);
+        resultado = proyectoFinalizado ? 'finalizado' : 'oficina_cerrada';
+      } else if (!forzar) {
+        try { await finalizarLevantamientoSurvey(proyecto?.id); } catch {}
+      }
       borrarDraft(); // v8.25.30: ya quedó en el servidor; limpiamos el respaldo local
-      onCompletado?.(forzar ? 'cerrado' : 'finalizado');
+      onCompletado?.(resultado, { estadoSitio });
     } catch (e) {
       setErrorMsg(e?.message || String(e));
     } finally {
@@ -325,6 +473,15 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
   // v8.25.8: no cerrar mientras hay un guardado en vuelo (evita perder cambios).
   const cerrarSeguro = () => {
     if (guardando || cerrando) { alert('Espera un segundo: guardando tus cambios…'); return; }
+    // v8.94.0: una foto a medio subir se perdería sin aviso al salir.
+    if (fotosSubiendo() > 0) { alert('Espera: hay una foto subiendo. Sal cuando termine para no perderla.'); return; }
+    // v8.94.0: si se siguió una oficina ya cerrada y al salir quedó incompleta, deja de contar como completada
+    // (si no, el cierre de otra oficina podría pasar el proyecto a Realizado con esta a medias).
+    if (seguida && template?.schema?.cierre_por_sitio && completitud.faltantes.length > 0) {
+      marcarEstadoSitioSurvey(site.id, 'in_progress').catch(() => {});
+      onCerrar?.({ estadoSitio: 'in_progress' });
+      return;
+    }
     onCerrar?.();
   };
 
@@ -344,10 +501,29 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
       <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4" onClick={onCerrar}>
         <div className="bg-zinc-900 border-2 border-red-700 p-6 max-w-md" onClick={e => e.stopPropagation()}>
           <div className="text-red-400 font-bold mb-2">No se pudo iniciar el levantamiento</div>
-          <div className="text-sm text-zinc-300 mb-4">{errorMsg}</div>
-          <button onClick={onCerrar} className="bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 text-sm font-bold">
-            Cerrar
-          </button>
+          <div className="text-sm text-zinc-300 mb-1">{errorMsg}</div>
+          <div className="text-[12px] text-zinc-500 mb-4">Revisa la señal y vuelve a intentarlo. Lo ya capturado sigue guardado.</div>
+          <div className="flex gap-2">
+            {/* v8.94.0: reintentar la carga sin salir */}
+            <button onClick={() => { setLoading(true); setErrorMsg(null); setIntento(n => n + 1); }} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 text-sm font-bold">
+              Reintentar
+            </button>
+            <button onClick={onCerrar} className="bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 text-sm font-bold">
+              Cerrar
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // v8.94.0: nunca pintar el formulario sin plantilla o sin visita (ej. justo al tocar «Reintentar»).
+  if (!template || !visit) {
+    return (
+      <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4">
+        <div className="bg-zinc-900 border-2 border-zinc-800 p-6 flex items-center gap-3">
+          <Loader2 className="w-5 h-5 animate-spin text-red-500" />
+          <span className="text-sm text-zinc-300">Iniciando levantamiento...</span>
         </div>
       </div>
     );
@@ -365,11 +541,65 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
         .modo-campo input::placeholder, .modo-campo textarea::placeholder { color:#71717a !important; }
         .modo-campo .border-2 { border-color:#a1a1aa !important; }
       `}</style>
+      {verResumen && resumenPintura && (
+        <div className="fixed inset-0 bg-black/85 z-[70] flex items-center justify-center p-3" onClick={() => setVerResumen(false)}>
+          <div className="bg-zinc-900 border-2 border-red-700 rounded-card w-full max-w-xl max-h-[90vh] overflow-y-auto p-5" onClick={e => e.stopPropagation()}>
+            <div className="text-[11px] uppercase tracking-widest text-zinc-400 font-bold">Antes de cerrar · revisa el resumen</div>
+            <div className="font-black text-lg text-white mt-0.5 mb-3">{site.name}</div>
+            <table className="w-full text-sm tabular-nums">
+              <thead>
+                <tr className="text-[11px] uppercase tracking-wider text-zinc-400">
+                  <th className="text-left font-bold py-1.5">Tipo de pintura</th><th className="text-right font-bold">m²</th><th className="text-right font-bold">ml</th><th className="text-right font-bold">und</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(resumenPintura.totales.porPintura).map(([p, v]) => (
+                  <tr key={p} className={`border-t border-zinc-800 ${p === 'por_definir' ? 'text-amber-400' : 'text-zinc-100'}`}>
+                    <td className="py-2 pr-2">{labelPintura(p)}</td>
+                    <td className="text-right">{v.m2 ? v.m2.toFixed(2) : '—'}</td>
+                    <td className="text-right">{v.ml ? v.ml.toFixed(2) : '—'}</td>
+                    <td className="text-right">{v.und || '—'}</td>
+                  </tr>
+                ))}
+                <tr className="border-t-2 border-zinc-600 font-black text-white">
+                  <td className="py-2">Total</td>
+                  <td className="text-right text-red-400">{resumenPintura.totales.m2.toFixed(2)}</td>
+                  <td className="text-right">{resumenPintura.totales.ml.toFixed(2)}</td>
+                  <td className="text-right">{resumenPintura.totales.und}</td>
+                </tr>
+              </tbody>
+            </table>
+            {pendientes.length > 0 && (
+              <div className="mt-4 rounded-card border border-amber-700/60 bg-amber-900/15 px-3 py-2">
+                <div className="text-[11px] uppercase tracking-wider text-amber-300 font-bold mb-1">Queda pendiente para otra visita</div>
+                <ul className="text-sm text-amber-100 space-y-0.5">
+                  {pendientes.map(x => <li key={x.clave}>• {x.parte}: {x.motivo}</li>)}
+                </ul>
+              </div>
+            )}
+            {resumenPintura.noPinta.length > 0 && (
+              <div className="mt-4">
+                <div className="text-[11px] uppercase tracking-wider text-zinc-400 font-bold mb-1">Áreas que no se pintan ({resumenPintura.noPinta.length})</div>
+                <ul className="text-sm text-zinc-300 space-y-0.5">
+                  {resumenPintura.noPinta.map((n, i) => <li key={i}>• {n.nombre}: {n.texto.replace(/^No se pinta — /, '')}</li>)}
+                </ul>
+              </div>
+            )}
+            {resumenPintura.totales.porPintura.por_definir && (
+              <div className="mt-3 text-xs font-bold text-amber-400">Hay superficies con pintura "Por definir".</div>
+            )}
+            <div className="mt-5 flex gap-2">
+              <button type="button" onClick={() => setVerResumen(false)} className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white text-sm font-bold uppercase py-3.5 rounded-card">Volver a revisar</button>
+              <button type="button" disabled={cerrando} onClick={() => cerrarVisitaCompleta(false, true)} className="flex-1 bg-red-600 hover:bg-red-700 text-white text-sm font-bold uppercase py-3.5 rounded-card disabled:opacity-50">Confirmar y cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
       {brillo < 100 && (
         <div className="tema-original fixed inset-0 bg-black pointer-events-none" style={{ opacity: ((100 - brillo) / 100) * 0.8, zIndex: 55 }} />
       )}
       <div className="min-h-full p-2 sm:p-4">
-        <div className={`bg-zinc-950 border-2 ${modoCampo ? 'border-zinc-400' : 'border-zinc-800'} max-w-3xl mx-auto`}>
+        <div className={`bg-zinc-950 border-2 ${modoCampo ? 'border-zinc-400' : 'border-zinc-800'} ${template?.schema?.layout === 'wide' ? 'max-w-5xl' : 'max-w-3xl'} mx-auto`}>
           {/* Header sticky */}
           <div className="sticky top-0 bg-zinc-950 border-b-2 border-red-600 px-4 py-3 flex items-center justify-between z-10">
             <div className="min-w-0">
@@ -431,13 +661,22 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
             </div>
           )}
 
+          {seguida && (
+            <div className="mx-4 mt-3 rounded-card border border-amber-700/60 bg-amber-900/15 px-3 py-2 text-xs text-amber-200">
+              <b>Sigues el levantamiento de esta oficina{seguida.cerradaEl ? ` (cerrado el ${new Date(seguida.cerradaEl).toLocaleDateString('es-DO', { dateStyle: 'medium' })})` : ''}.</b>{' '}
+              {seguida.pendientes.length > 0
+                ? <>Quedó pendiente: {seguida.pendientes.map(x => `${x.parte} (${x.motivo})`).join(' · ')}. Lo ya capturado sigue aquí; completa lo que falta y vuelve a finalizar.</>
+                : <>Lo ya capturado sigue aquí y los cambios se guardan solos. Si corriges algo, vuelve a finalizar para dejar la oficina al día.</>}
+            </div>
+          )}
+
           {/* v8.19.53: check-in — foto de la fachada de una vez, con opción de diferir */}
           {fotoFachadaField && (
             fachadaLista ? (
               <div className="mx-4 mt-3 rounded-card border border-green-700/50 bg-green-900/15 px-3 py-2 text-xs text-green-300 flex items-center gap-2">
                 <Check className="w-3.5 h-3.5" /> Foto de la fachada capturada.
               </div>
-            ) : fachadaDiferida ? (
+            ) : (fachadaDiferida && !fachadaDura) ? (
               <div className="mx-4 mt-3 rounded-card border border-amber-700/50 bg-amber-900/15 px-3 py-2 text-xs text-amber-200 flex items-center justify-between gap-2">
                 <span>⚠ Foto de fachada pendiente — recuerda subirla.</span>
                 <button onClick={() => setFachadaDiferida(false)} className="text-[10px] underline hover:text-white">Tomar ahora</button>
@@ -445,14 +684,14 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
             ) : (
               <div className="mx-4 mt-3 rounded-card border-2 border-red-600 bg-red-900/10 p-3">
                 <div className="flex items-center justify-between mb-1">
-                  <div className="text-[11px] font-bold uppercase tracking-wider text-red-400">Check-in · Foto de la fachada</div>
-                  <button onClick={() => setFachadaDiferida(true)} className="text-[10px] text-zinc-400 hover:text-white underline">Subir más tarde</button>
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-red-400">{fachadaDura ? `Obligatoria · ${fotoFachadaField.label}` : 'Check-in · Foto de la fachada'}</div>
+                  {!fachadaDura && <button onClick={() => setFachadaDiferida(true)} className="text-[10px] text-zinc-400 hover:text-white underline">Subir más tarde</button>}
                 </div>
-                <div className="text-[11px] text-zinc-400 mb-2">Toma una foto del frente del edificio/local al llegar.</div>
+                <div className={fachadaDura ? 'text-sm text-zinc-300 mb-2' : 'text-[11px] text-zinc-400 mb-2'}>{fotoFachadaField.ayuda || 'Toma una foto del frente del edificio/local al llegar.'}</div>
                 <SurveyFieldRenderer
                   field={{ ...fotoFachadaField, label: '' }}
                   value={generalData.foto_frontal}
-                  onChange={(v) => guardarGeneralData({ ...generalData, foto_frontal: v })}
+                  onChange={(v) => guardarCampoGeneral('foto_frontal', v)}
                   allValues={generalData}
                   context={{ visitId: visit?.id, areaId: null }}
                 />
@@ -465,7 +704,7 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
             <SeccionGeneral
               seccion={secGeneral}
               values={generalData}
-              onChange={guardarGeneralData}
+              onCampo={guardarCampoGeneral}
               visitId={visit?.id}
               excluirIds={fotoFachadaField ? ['foto_frontal'] : []}
               areas={areas}
@@ -474,8 +713,8 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
             />
           )}
 
-          {/* Bloques repetibles */}
-          {bloquesRepetibles.map(b => (
+          {/* Cuerpo: bloques repetibles y secciones fijas adicionales, en el orden de la plantilla */}
+          {cuerpo.map(b => (b.type === 'repeating_block' ? (
             <BloqueRepetible
               key={b.id}
               bloque={b}
@@ -491,7 +730,19 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
               siteLat={site?.latitude != null ? Number(site.latitude) : null}
               siteLng={site?.longitude != null ? Number(site.longitude) : null}
             />
-          ))}
+          ) : (
+            <SeccionGeneral
+              key={b.id}
+              seccion={b}
+              values={generalData}
+              onCampo={guardarCampoGeneral}
+              aviso={avisoOcultos(b)}
+              visitId={visit?.id}
+              areas={areas}
+              siteLat={site?.latitude != null ? Number(site.latitude) : null}
+              siteLng={site?.longitude != null ? Number(site.longitude) : null}
+            />
+          )))}
 
           {/* v8.25.8: Finalizar levantamiento inline — al final de las secciones, para
               cuando no hay más secciones que agregar (sin tener que buscar el footer). */}
@@ -547,10 +798,8 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
 // ============================================================
 // Sección general (no repetible)
 // ============================================================
-function SeccionGeneral({ seccion, values, onChange, visitId, excluirIds = [], areas = [], siteLat = null, siteLng = null }) {
-  const setField = (id, val) => {
-    onChange({ ...values, [id]: val });
-  };
+function SeccionGeneral({ seccion, values, onCampo, visitId, excluirIds = [], areas = [], siteLat = null, siteLng = null, aviso = null }) {
+  const setField = (id, val) => onCampo(id, val);
   const campos = (seccion.fields || []).filter(f => !excluirIds.includes(f.id));
   return (
     <div className="border-b border-zinc-800">
@@ -568,6 +817,7 @@ function SeccionGeneral({ seccion, values, onChange, visitId, excluirIds = [], a
             context={{ visitId, areaId: null, areas, siteLat, siteLng }}
           />
         ))}
+        {aviso}
       </div>
     </div>
   );
@@ -630,6 +880,7 @@ function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, suppor
   const [verDetalles, setVerDetalles] = useState(false); // v8.24.2: acordeón "Más detalles"
   const nombreInputRef = useRef(null);
   const esSimilar = !!area.similar_to_area_id;
+  const noPinta = !!(bloque.permite_no_pinta && area.data?._no_pinta);
   const sinNombre = !(area.name && area.name.trim());
   const areaOrigen = esSimilar
     ? areasAnteriores.find(a => a.id === area.similar_to_area_id)
@@ -653,6 +904,17 @@ function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, suppor
          'roof': 'Ej: Cubierta principal, Techo área parqueo…',
          'floor': 'Ej: Piso planta baja, Almacén nave A…',
        }[bloque.id] || `Ej: ${bloque.block_label || 'Nombre'} 1, ${bloque.block_label || 'Nombre'} 2…`);
+
+  // v8.94.0: al elegir un área del catálogo se precargan sus superficies (si aún no hay ninguna).
+  const elegirPreset = (p) => {
+    const fSup = (bloque.fields || []).find(f => f.type === 'surfaces_table');
+    const yaTiene = fSup && Array.isArray(area.data?.[fSup.id]) && area.data[fSup.id].length > 0;
+    if (fSup && bloque.catalogo && !yaTiene) {
+      const filas = filasPorDefecto(bloque.id, p);
+      if (filas.length) onCambioCampo(fSup.id, filas);
+    }
+    onRenombrar(p);
+  };
 
   const toggleSimilar = () => {
     if (esSimilar) {
@@ -694,6 +956,11 @@ function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, suppor
             {tipoActualLabel}
           </span>
         )}
+        {area.data?._no_pinta && (
+          <span className="text-[9px] uppercase tracking-wider font-bold text-zinc-300 bg-zinc-800 px-1.5 py-0.5 border border-zinc-600 flex-shrink-0">
+            No se pinta
+          </span>
+        )}
         {esSimilar && (
           <span className="text-[9px] uppercase tracking-wider font-bold text-amber-400 bg-amber-900/40 px-1.5 py-0.5 border border-amber-700/50 flex-shrink-0">
             ⚡ Igual a {areaOrigen?.name || '#?'}
@@ -712,7 +979,7 @@ function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, suppor
           <div className="text-[10px] text-amber-400">Escribe un nombre o elige uno rápido:</div>
           <div className="flex flex-wrap gap-2">
             {(bloque.name_presets?.length ? [...bloque.name_presets, `Sección ${area.area_number}`] : [`Sección ${area.area_number}`]).map(p => (
-              <button key={p} type="button" onClick={() => onRenombrar(p)} className="px-4 py-2.5 rounded-card text-sm font-bold border-2 border-zinc-700 bg-zinc-900 text-zinc-200 hover:border-red-600">{p}</button>
+              <button key={p} type="button" onClick={() => elegirPreset(p)} className="px-4 py-2.5 rounded-card text-sm font-bold border-2 border-zinc-700 bg-zinc-900 text-zinc-200 hover:border-red-600">{p}</button>
             ))}
           </div>
         </div>
@@ -720,6 +987,40 @@ function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, suppor
 
       {!colapsado && (
         <div className="px-4 py-3 space-y-3">
+          {/* v8.94.0: "No se pinta" — el área se registra (para que conste que se vio) pero no suma.
+              Pide motivo; no exige superficies ni fotos. */}
+          {bloque.permite_no_pinta && (
+            <div className={`border-2 rounded-card p-3 ${noPinta ? 'border-zinc-500 bg-zinc-800/60' : 'border-zinc-800 bg-zinc-900/50'}`}>
+              <button type="button" onClick={() => onCambioCampo('_no_pinta', !noPinta)}
+                className={`px-4 py-2.5 rounded-card text-sm font-bold border-2 ${noPinta ? 'border-zinc-300 bg-zinc-700 text-white' : 'border-zinc-700 bg-zinc-900 text-zinc-300 hover:border-zinc-400'}`}>
+                {noPinta ? <><Check className="w-3.5 h-3.5 inline mr-1 -mt-0.5" />No se pinta (tocar para deshacer)</> : 'Esta área no se pinta'}
+              </button>
+              {noPinta && (
+                <div className="mt-3">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-300 mb-1.5">Motivo <span className="text-red-500">*</span></div>
+                  <div className="flex flex-wrap gap-2">
+                    {MOTIVOS_NO_PINTA.map(m => {
+                      const activo = area.data?._no_pinta_motivo === m.value;
+                      return (
+                        <button key={m.value} type="button" onClick={() => onCambioCampo('_no_pinta_motivo', m.value)}
+                          className={`px-4 py-2.5 rounded-card text-sm font-bold border-2 ${activo ? 'border-red-600 bg-red-900/30 text-white' : 'border-zinc-700 bg-zinc-900 text-zinc-300 hover:border-red-600'}`}>
+                          {m.label}{activo && <Check className="w-3.5 h-3.5 inline ml-1 -mt-0.5 text-red-400" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {area.data?._no_pinta_motivo === 'otro' && (
+                    <input autoFocus value={area.data?._no_pinta_otro || ''} onChange={e => onCambioCampo('_no_pinta_otro', e.target.value)}
+                      placeholder="¿Por qué no se pinta?"
+                      className="mt-2 w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-2.5 text-sm text-white" />
+                  )}
+                  {!area.data?._no_pinta_motivo && <div className="text-[10px] text-amber-400 mt-1.5">Elige el motivo.</div>}
+                </div>
+              )}
+            </div>
+          )}
+
+          {!noPinta && <>
           {/* v8.20.5: tipo de techo/piso de ESTA área (por área). Se hereda del área
               anterior al agregar, pero es editable aquí. */}
           {tiposArea.length > 1 && (
@@ -848,6 +1149,7 @@ function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, suppor
               </>
             );
           })()}
+          </>}
 
           {/* v8.23.1/8.23.5: guardar y colapsar el área; o guardar y agregar otra (datos ya autoguardados) */}
           {/* v8.25.27: separado de "Más detalles" para no presionarlo por error */}

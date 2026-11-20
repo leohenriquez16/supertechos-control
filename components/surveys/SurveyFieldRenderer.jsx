@@ -20,10 +20,11 @@
 //   - allValues: objeto con todos los valores del bloque/sección (para show_if y computed)
 
 import React, { useState, useRef } from 'react';
-import { Star, Camera, Plus, Trash2, Calculator, X, Mic, Square, MapPin } from 'lucide-react';
+import { Star, Camera, Plus, Trash2, Calculator, X, Mic, Square, MapPin, AlertTriangle } from 'lucide-react';
 import PhotoCapture from './PhotoCapture';
 import MapaPickerModal from '../common/MapaPickerModal';
 import MapaPoligonoModal from '../common/MapaPoligonoModal';
+import { SUPERFICIES, PINTURAS, calcFilaSuperficie, filaDeSuperficie, totalesSuperficies, labelPintura, avisosFila, filaIncompleta } from '../../lib/pinturaCatalogo';
 
 // v8.25.28: ¿una opción es "Otro/Otros/Otra/Otras"? (para unificarla con el botón "Otro…").
 const esOpcionOtro = (v) => ['otro', 'otros', 'otra', 'otras'].includes(String(v || '').trim().toLowerCase());
@@ -317,6 +318,10 @@ export default function SurveyFieldRenderer({ field, value, onChange, allValues 
     case 'ductos_table':
       return <DuctosTableField field={field} value={value} onChange={onChange} />;
 
+    // v8.94.0: superficies a pintar (una fila por superficie, con su pintura).
+    case 'surfaces_table':
+      return <SurfacesTableField field={field} value={value} onChange={onChange} />;
+
     case 'openings_table':
       return <OpeningsTableField field={field} value={value} onChange={onChange} />;
 
@@ -592,6 +597,156 @@ function DuctosTableField({ field, value, onChange }) {
             <div className="p-3 border-t border-zinc-800 flex justify-end">
               <button type="button" onClick={() => setAbierto(false)} className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold uppercase px-4 py-2 rounded-card">Listo</button>
             </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// SurfacesTable (v8.94.0) — levantamiento de PINTURA. Una fila por superficie del área
+// (paredes, techo, columnas, hierros…). Cada superficie trae su unidad y su pintura
+// por defecto; el total se calcula solo. Controles grandes para iPad.
+// Fila: { id, superficie, ud, largo_m, alto_m, cantidad, vanos_m2, pintura, total, area_m2 }
+// ============================================================
+function SurfacesTableField({ field, value, onChange }) {
+  const filas = Array.isArray(value) ? value : [];
+  const sups = field.superficies?.length ? field.superficies : SUPERFICIES;
+  const pints = field.pinturas?.length ? field.pinturas : PINTURAS;
+  const setFila = (idx, cambio) => {
+    const n = [...filas];
+    n[idx] = calcFilaSuperficie({ ...n[idx], ...cambio });
+    onChange(n);
+  };
+  const cambiarSuperficie = (idx, supId) => {
+    const s = sups.find(x => x.value === supId);
+    setFila(idx, { superficie: supId, ud: s?.ud || 'M2', pintura: s?.pintura || 'por_definir' });
+  };
+  const agregar = (supId) => onChange([...filas, filaDeSuperficie(supId)]);
+  const quitar = (idx) => onChange(filas.filter((_, i) => i !== idx));
+  const t = totalesSuperficies(filas);
+  const esTecho = (id) => id === 'techo' || id === 'techo_ext';
+  const sel = 'w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-base font-bold text-white rounded-card';
+  // v8.94.0: teclado numérico, acepta coma decimal y "Siguiente" salta a la próxima casilla
+  // (también a la siguiente superficie), para medir sin tocar la pantalla entre medida y medida.
+  const saltar = (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const todos = Array.from(document.querySelectorAll('input[data-sup-num]'));
+    const i = todos.indexOf(e.currentTarget);
+    if (i >= 0 && todos[i + 1]) { todos[i + 1].focus(); todos[i + 1].select?.(); } else e.currentTarget.blur();
+  };
+  const numero = (idx, key, etiqueta) => (
+    <label className="block min-w-0">
+      <span className="block text-[11px] uppercase tracking-wider text-zinc-400 font-bold mb-1 truncate">{etiqueta}</span>
+      <input
+        type="text" inputMode="decimal" enterKeyHint="next" autoComplete="off" data-sup-num=""
+        value={filas[idx][key] ?? ''}
+        onKeyDown={saltar}
+        onFocus={e => e.target.select()}
+        onChange={e => {
+          const t = e.target.value.replace(',', '.').replace(/[^0-9.]/g, '');
+          setFila(idx, { [key]: t === '' ? null : t });
+        }}
+        onBlur={e => {
+          const t = filas[idx][key];
+          if (t != null && t !== '' && Number.isFinite(Number(t))) setFila(idx, { [key]: Number(t) });
+        }}
+        className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-2 py-3 text-lg font-bold text-center tabular-nums text-white rounded-card"
+      />
+    </label>
+  );
+  const udTxt = (ud) => ud === 'M2' ? 'm²' : ud === 'ML' ? 'ml' : 'und';
+
+  return (
+    <div>
+      <div className="flex items-center gap-1 mb-2">
+        <span className="text-[11px] uppercase tracking-wider text-zinc-400 font-bold">{field.label}</span>
+        {field.required && <span className="text-red-500 text-[11px]">*</span>}
+      </div>
+      <div className="space-y-2.5">
+        {filas.map((f, idx) => (
+          <div key={f.id || idx} className="border-2 border-zinc-800 bg-zinc-900/50 rounded-card p-3">
+            <div className="flex items-end gap-2">
+              <label className="block flex-1 min-w-0">
+                <span className="block text-[11px] uppercase tracking-wider text-zinc-400 font-bold mb-1">Superficie</span>
+                <select value={f.superficie || ''} onChange={e => cambiarSuperficie(idx, e.target.value)} className={sel}>
+                  {!f.superficie && <option value="">Elegir…</option>}
+                  {sups.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                </select>
+              </label>
+              <label className="block flex-1 min-w-0">
+                <span className="block text-[11px] uppercase tracking-wider text-zinc-400 font-bold mb-1">Tipo de pintura</span>
+                <select value={f.pintura || ''} onChange={e => setFila(idx, { pintura: e.target.value })} className={sel}>
+                  {pints.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                </select>
+              </label>
+              <button type="button" onClick={() => quitar(idx)} aria-label="Quitar superficie"
+                className="shrink-0 w-12 h-[50px] flex items-center justify-center rounded-card border-2 border-zinc-800 text-zinc-400 hover:text-red-500 hover:border-red-600">
+                <Trash2 className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mt-2.5 items-end">
+              {f.ud === 'UND' ? (
+                numero(idx, 'cantidad', 'Cantidad (und)')
+              ) : f.ud === 'ML' ? (
+                <>{numero(idx, 'largo_m', 'Largo (m)')}{numero(idx, 'cantidad', 'Cant. (veces)')}</>
+              ) : (
+                <>
+                  {numero(idx, 'largo_m', esTecho(f.superficie) ? 'Largo (m)' : 'Perímetro / largo (m)')}
+                  {numero(idx, 'alto_m', esTecho(f.superficie) ? 'Ancho (m)' : 'Altura (m)')}
+                  {numero(idx, 'cantidad', 'Cant. (veces)')}
+                  {numero(idx, 'vanos_m2', 'Vanos a descontar (m²)')}
+                </>
+              )}
+              <div className={`min-w-0 ${f.ud === 'M2' ? '' : 'sm:col-start-5'}`}>
+                <span className="block text-[11px] uppercase tracking-wider text-red-400 font-bold mb-1">Total</span>
+                <div className="bg-zinc-950 border-2 border-red-900/60 rounded-card px-2 py-3 text-lg font-black text-center tabular-nums text-red-400">
+                  {f.total != null ? `${Number(f.total).toFixed(2)} ${udTxt(f.ud)}` : '—'}
+                </div>
+              </div>
+            </div>
+            {(() => {
+              const av = avisosFila(f);
+              if (filaIncompleta(f)) av.unshift('Medida a medias: falta un dato para calcular el total.');
+              return av.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  {av.map((m, k) => (
+                    <div key={k} className="flex items-start gap-1.5 text-xs font-bold text-amber-400 bg-amber-950/40 border border-amber-800/60 rounded-card px-2 py-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {m}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-2 mt-2.5">
+        {(filas.length === 0 ? sups.slice(0, 4) : []).map(s => (
+          <button key={s.value} type="button" onClick={() => agregar(s.value)}
+            className="px-4 py-3 rounded-card text-sm font-bold border-2 border-zinc-700 bg-zinc-900 text-zinc-200 hover:border-red-600 flex items-center gap-1">
+            <Plus className="w-4 h-4" /> {s.label}
+          </button>
+        ))}
+        <button type="button" onClick={() => agregar(sups[0].value)}
+          className="px-4 py-3 rounded-card text-sm font-bold border-2 border-red-700 text-red-400 hover:bg-red-900/20 flex items-center gap-1">
+          <Plus className="w-4 h-4" /> {filas.length === 0 ? 'Otra superficie' : 'Agregar superficie'}
+        </button>
+      </div>
+      {(t.m2 > 0 || t.ml > 0 || t.und > 0) && (
+        <div className="mt-2.5 bg-zinc-900 border border-zinc-800 rounded-card px-3 py-2.5">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm font-black text-white">
+            <span className="text-[11px] uppercase tracking-wider text-zinc-400 font-bold">Total del área</span>
+            {t.m2 > 0 && <span className="text-red-400 tabular-nums">{t.m2.toFixed(2)} m²</span>}
+            {t.ml > 0 && <span className="tabular-nums">{t.ml.toFixed(2)} ml</span>}
+            {t.und > 0 && <span className="tabular-nums">{t.und} und</span>}
+          </div>
+          <div className="mt-1 text-xs text-zinc-400 space-y-0.5">
+            {Object.entries(t.porPintura).map(([p, v]) => (
+              <div key={p}>{labelPintura(p)}: {[v.m2 > 0 && `${v.m2.toFixed(2)} m²`, v.ml > 0 && `${v.ml.toFixed(2)} ml`, v.und > 0 && `${v.und} und`].filter(Boolean).join(' · ')}</div>
+            ))}
           </div>
         </div>
       )}

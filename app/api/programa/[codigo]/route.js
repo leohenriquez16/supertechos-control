@@ -19,9 +19,14 @@ async function sincronizar(db, programa, filas) {
   try {
     const cliente = programa.cliente_nombre;
     if (!cliente) return false;
-    const { data: proysSurvey } = await db.schema('surveys').from('projects')
+    const { data: proysSurveyTodos } = await db.schema('surveys').from('projects')
       .select('id, realizado_at, cotizado_at, fecha_visita_programada, hora_visita').ilike('client_name', `%${cliente}%`);
-    const ids = (proysSurvey || []).map(p => p.id);
+    // v8.95.0 (E10): un proyecto-campaña (es_campana) no se amarra a las locaciones del programa.
+    // Consulta aparte: si la migración 152 no está, da error → no se filtra nada.
+    const { data: campRows, error: campErr } = await db.schema('surveys').from('projects').select('id').eq('es_campana', true);
+    const campIds = new Set(campErr ? [] : (campRows || []).map(p => p.id));
+    const proysSurvey = (proysSurveyTodos || []).filter(p => !campIds.has(p.id));
+    const ids = proysSurvey.map(p => p.id);
     let levantamientos = [];
     if (ids.length) {
       const { data: sites } = await db.schema('surveys').from('sites')

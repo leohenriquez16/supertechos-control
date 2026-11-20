@@ -18,7 +18,7 @@
 
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { Loader2, X, Save, Check, Plus, Copy, Trash2, ChevronDown, ChevronUp, Zap, Sun, Moon } from 'lucide-react';
-import { obtenerTemplateSurvey, crearVisita, obtenerVisitaAbiertaDeSite, listarVisitasDeSite, listarSitesProyectoSurvey, marcarEstadoSitioSurvey, actualizarVisita, cerrarVisita, listarAreasDeVisita, crearArea, actualizarArea, eliminarArea, calcularCompletitud, setCompletitudProyecto, finalizarLevantamientoSurvey, showIfOk, familiaDeServiceLine, tiposDeFamilia, familiaPorKey } from '../../lib/surveys';
+import { obtenerTemplateSurvey, crearVisita, obtenerVisitaAbiertaDeSite, listarVisitasDeSite, listarSitesProyectoSurvey, marcarEstadoSitioSurvey, cerrarOficinaCampana, actualizarVisita, cerrarVisita, listarAreasDeVisita, crearArea, actualizarArea, eliminarArea, calcularCompletitud, setCompletitudProyecto, finalizarLevantamientoSurvey, showIfOk, familiaDeServiceLine, tiposDeFamilia, familiaPorKey } from '../../lib/surveys';
 import { filasPorDefecto, MOTIVOS_NO_PINTA, textoNoPinta, resumenVisitaPintura, labelPintura, pendientesVisita } from '../../lib/pinturaCatalogo';
 import { visitaAlAbrir, visitaDeEstaPlantilla, estadoSitioAlCerrar, proyectoCompleto, esErrorDeRed, crearCambiosPendientes, claveArea, agruparPendientes, aplicarRespaldo, grossDeArea } from '../../lib/helpers/cicloLevantamiento';
 import { obtenerUbicacion, distanciaMetros } from '../../lib/geo';
@@ -436,11 +436,20 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
         return;
       }
       await cerrarVisita(visit.id);
-      try { await setCompletitudProyecto(proyecto?.id, completitud.pct); } catch {}
+      // v8.95.0: en una campaña (proyecto.es_campana) el proyecto no se toca: ni completitud ni «Realizado».
+      const campana = !!proyecto?.es_campana;
+      if (!campana) { try { await setCompletitudProyecto(proyecto?.id, completitud.pct); } catch {} }
       // v8.24.18: si se cierra completo (no forzado), el levantamiento pasa a "Realizado".
       let resultado = forzar ? 'cerrado' : 'finalizado';
       let estadoSitio = null;
-      if (template?.schema?.cierre_por_sitio) {
+      if (campana) {
+        // v8.95.0: campaña (es_campana) → solo cambia ESTA oficina (y se limpian devolución y «no pude»).
+        // No se leen las demás oficinas ni se llama finalizarLevantamientoSurvey: el proyecto nunca pasa a Realizado.
+        const nuevoEstado = estadoSitioAlCerrar({ forzar, pendientes });
+        try { await cerrarOficinaCampana(site.id, nuevoEstado); estadoSitio = nuevoEstado; }
+        catch (e) { alert('La visita quedó cerrada y guardada, pero no se pudo actualizar el estado de la oficina (revisa la señal). Vuelve a abrir la oficina y toca «Finalizar» otra vez.'); }
+        resultado = 'oficina_cerrada';
+      } else if (template?.schema?.cierre_por_sitio) {
         // v8.94.0: plantillas «por sitio» (pintura de sucursales): se marca ESTA oficina (completada, o en proceso
         // si se cerró sin completar o quedó algo pendiente) y el proyecto pasa a Realizado solo cuando TODAS sus
         // oficinas están completas. Si alguna lectura falla, no se finaliza nada (se decide en el próximo cierre).

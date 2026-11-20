@@ -12,10 +12,14 @@ const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.
 
 export async function GET() {
   try {
-    const { data: sites } = await supabase.schema('surveys').from('sites')
+    const { data: sitesTodos } = await supabase.schema('surveys').from('sites')
       .select('project_id, referencia_odoo').not('referencia_odoo', 'is', null);
+    // v8.95.0: fuera las oficinas de los proyectos-campaña (es_campana). Consulta aparte; si la columna no existe → no se filtra.
+    const { data: campRows, error: campErr } = await supabase.schema('surveys').from('projects').select('id').eq('es_campana', true);
+    const campIds = new Set(campErr ? [] : (campRows || []).map((p) => p.id));
+    const sites = (sitesTodos || []).filter((s) => !campIds.has(s.project_id));
     const refsPorProy = {};
-    (sites || []).forEach((s) => { const r = (s.referencia_odoo || '').trim(); if (r) (refsPorProy[s.project_id] = refsPorProy[s.project_id] || []).push(r); });
+    sites.forEach((s) => { const r = (s.referencia_odoo || '').trim(); if (r) (refsPorProy[s.project_id] = refsPorProy[s.project_id] || []).push(r); });
     const todasRefs = [...new Set(Object.values(refsPorProy).flat())];
     if (!todasRefs.length) return Response.json({ ok: true, estados: {} });
 

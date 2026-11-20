@@ -126,6 +126,7 @@ import RachaCard from '../components/reportes/RachaCard'; // v8.30.4
 // v8.19.1: Módulo Levantamientos (surveys)
 const ModuloSurveys = cargarVista(() => import('../components/surveys/ModuloSurveys'), CargandoVista);
 const TorreControl = cargarVista(() => import('../components/surveys/TorreControl'), CargandoVista); // v8.52.0
+const PantallaCoordinacion = cargarVista(() => import('../components/coordinacion/PantallaCoordinacion'), CargandoVista); // v8.95.0
 const ModuloSolicitudes = cargarVista(() => import('../components/solicitudes/ModuloSolicitudes'), CargandoVista);
 const VistaGarantias = cargarVista(() => import('../components/garantias/VistaGarantias'), CargandoVista);
 const ModuloReclamaciones = cargarVista(() => import('../components/reclamaciones/ModuloReclamaciones'), CargandoVista);
@@ -449,6 +450,7 @@ const vistaPermitida = (v, u, data) => {
     case 'notificaciones': case 'garantias':
       return admin;
     case 'produccion': case 'carga': case 'contabilidad': return r('owner');
+    case 'coordinacion': return admin || r('owner'); // v8.95.0: Coordinación de levantamientos por campaña
     case 'rentabilidad': return r('owner') || r('rentabilidad');
     case 'almacen': case 'compras': case 'importaciones': return admin || r('almacen') || r('facturas');
     case 'rutas': return admin || r('almacen');
@@ -878,6 +880,7 @@ export default function App() {
       { id: 'surveys', label: 'Levantamientos', icon: MapPin, vista: 'surveys' },
       { id: 'torreControl', label: 'Torre de Control', icon: Gauge, vista: 'torreControl' }, // v8.52.0
       { id: 'programas', label: 'Programas', icon: Route, vista: 'programas' }, // v8.58.0: campañas multi-sitio (Sites 2026)
+      { id: 'coordinacion', label: 'Coordinación', icon: Navigation, vista: 'coordinacion' }, // v8.95.0: levantamientos por campaña
       { id: 'solicitudes', label: 'Solicitudes', icon: FileText, vista: 'solicitudes', badge: solicitudesNuevas },
       { id: 'citas', label: 'Citas', icon: Calendar, vista: 'citas' },
       // v8.49.0: Clientes y Ubicaciones son CRM (datos maestros comerciales)
@@ -1100,6 +1103,8 @@ export default function App() {
         {vista === 'miCajaChica' && (tieneRol(usuario, 'maestro') || tieneRol(usuario, 'supervisor')) && usuario.cajaChicaHabilitada && <VistaMiCajaChica usuario={usuario} data={data} onVolver={() => setVista('misProyectos')} />}
         {vista === 'surveys' && (esAdmin || tieneRol(usuario, 'supervisor')) && <ModuloSurveys usuario={usuario} data={data} onRecargar={recargar} />}
         {vista === 'torreControl' && (esAdmin || tieneRol(usuario, 'supervisor')) && <TorreControl data={data} onVolver={() => setVista('dashboard')} />}
+        {/* v8.95.0: Coordinación de levantamientos por campaña (Edwin y Leo) */}
+        {vista === 'coordinacion' && (esAdmin || tieneRol(usuario, 'owner')) && <PantallaCoordinacion usuario={usuario} data={data} onRecargar={recargar} onVolver={() => setVista('dashboard')} />}
         {vista === 'solicitudes' && (esAdmin || tieneRol(usuario, 'supervisor')) && <ModuloSolicitudes usuario={usuario} onRecargar={recargar} />}
         {/* v8.27.0: Gotera — disponible para TODOS los usuarios (reportar); owner/admin ven el kanban completo */}
         {vista === 'gotera' && <ModuloGotera usuario={usuario} data={data} onVolver={() => setVista(esAdmin ? 'dashboard' : 'misProyectos')} />}

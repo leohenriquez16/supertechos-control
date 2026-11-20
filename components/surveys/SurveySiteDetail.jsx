@@ -26,6 +26,7 @@ import Lightbox from '../common/Lightbox';
 import MapaLeaflet from '../common/MapaLeaflet';
 import { registrarEvento as chatterEventoSurvey, registrarComunicacion } from '../../lib/chatter';
 import ModalUbicacionSite from './ModalUbicacionSite'; // v8.45.1: asignar/corregir ubicación desde el detalle
+import { puedeAbrirOficina, estadoOficina, ESTADO_OFICINA, FRANJAS, labelNoPudo, diaCorto } from '../../lib/helpers/coordinacion'; // v8.95.0
 
 export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, data, onVolver, onVerEdificaciones }) {
   // v8.25.38: site en estado local para reflejar ediciones (datos del cliente/dirección).
@@ -35,6 +36,10 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
   const [editarDatos, setEditarDatos] = useState(false);
   const [formAbierto, setFormAbierto] = useState(false);
   const [satelitalAbierta, setSatelitalAbierta] = useState(false); // v8.19.86
+  // v8.95.0: modo campaña (proyecto.es_campana, ej. pintura de oficinas): la ficha es de UNA oficina dentro de un
+  // proyecto con cientos. Se ocultan los controles que cambian el proyecto entero (etapa, levantador, tipo, cita,
+  // escalera, eliminar) y se muestra la coordinación propia de la oficina (técnico, día, franja, devolución, «no pude»).
+  const campana = !!proyecto?.es_campana;
 
   // v8.19.91: eliminación con autorización del OWNER DEL APP (rol 'owner').
   const esAdmin = (usuario?.roles || []).includes('admin');
@@ -217,6 +222,10 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
 
   // v8.25.34: ¿ya realizado? + fecha de realización (para mostrar quién/cuándo en vez de la cita).
   const esRealizado = statusProy === 'survey_completed' || etapaProy === 'Realizado';
+  // v8.95.0: en campaña el botón no depende de la etapa del proyecto: lo ve el técnico de la oficina (o admin/owner)
+  // mientras la oficina no esté validada.
+  const mostrarCTA = campana ? (puedeAbrirOficina(site, usuario) && site.survey_status !== 'validated') : etapaProy === 'Agendado';
+  const estOficina = campana ? estadoOficina(site) : null;
   const [realizadoFecha, setRealizadoFecha] = useState(null);
   useEffect(() => {
     if (!esRealizado) { setRealizadoFecha(null); return; }
@@ -233,7 +242,7 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
 
   const status = SITE_STATUS[site.survey_status] || SITE_STATUS.pending;
   const hasGeo = site.latitude != null && site.longitude != null;
-  const tieneInfoFaltante = site.survey_status === 'missing_info';
+  const tieneInfoFaltante = site.survey_status === 'missing_info' && !(campana && estOficina === 'devuelta'); // v8.95.0: la devuelta lleva su propio aviso
   // v8.27.6: nombre del cliente — del cliente vinculado (site.cliente_id) o del
   // proyecto del levantamiento (client_name). La localidad es site.name.
   const clienteVinculado = site.cliente_id ? (data?.clientes || []).find(c => c.id === site.cliente_id) : null;
@@ -345,7 +354,7 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
         </div>
 
         {/* v8.26.13: cambio rápido de etapa arriba (admin/owner) — píldoras clicables */}
-        {(esAdmin || esOwner) && (
+        {(esAdmin || esOwner) && !campana && (
           <div className="pt-3 border-t border-zinc-800">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold flex items-center gap-1">
@@ -400,24 +409,47 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
         </div>
       )}
 
-      {/* CTA: iniciar levantamiento — solo en etapa "Agendado" (no si ya está realizado u otra etapa) */}
-      {etapaProy === 'Agendado' && (
+      {/* v8.95.0: campaña — devolución de la revisión y «no pude levantar» de esta oficina */}
+      {campana && estOficina === 'devuelta' && site.devuelto_nota && (
+        <div className="bg-red-900/20 border border-red-700 text-red-300 p-3 rounded-card text-sm flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <div>
+            <div className="font-bold mb-0.5">Devuelta para corregir{site.devuelto_por ? ` · ${site.devuelto_por}` : ''}</div>
+            <div className="text-[13px] whitespace-pre-wrap">{site.devuelto_nota}</div>
+          </div>
+        </div>
+      )}
+      {campana && estOficina === 'no_pudo' && (
+        <div className="bg-amber-900/20 border border-amber-700 text-amber-300 p-3 rounded-card text-sm flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <div>
+            <div className="font-bold mb-0.5">No se pudo levantar: {labelNoPudo(site.no_pudo_motivo) || 'sin motivo'}</div>
+            {site.no_pudo_nota && <div className="text-[12px] opacity-90 whitespace-pre-wrap">{site.no_pudo_nota}</div>}
+            {site.no_pudo_at && <div className="text-[11px] opacity-70 mt-0.5">{new Date(site.no_pudo_at).toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short' })}</div>}
+          </div>
+        </div>
+      )}
+
+      {/* CTA: iniciar levantamiento — solo en etapa "Agendado" (no si ya está realizado u otra etapa).
+          v8.95.0: en campaña, según la oficina (ver mostrarCTA). */}
+      {mostrarCTA && (
         <button
           onClick={() => setFormAbierto(true)}
           className="w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-wider py-4 rounded-card flex items-center justify-center gap-2"
         >
           <Play className="w-4 h-4" />
-          {porSitio && ultimaVisita ? 'Seguir levantamiento de esta oficina' : 'Iniciar levantamiento'}
+          {campana && estOficina === 'devuelta' ? 'Corregir levantamiento de esta oficina'
+            : porSitio && ultimaVisita ? 'Seguir levantamiento de esta oficina' : 'Iniciar levantamiento'}
         </button>
       )}
-      {etapaProy === 'Agendado' && porSitio && ultimaVisita && (
+      {mostrarCTA && porSitio && ultimaVisita && (
         <div className="-mt-1 text-[11px] text-zinc-500 text-center">
           Ya tiene un levantamiento{ultimaVisita.checkout_at ? ` cerrado el ${new Date(ultimaVisita.checkout_at).toLocaleDateString('es-DO', { dateStyle: 'medium' })}` : ' en curso'}: se abre ese mismo para completar lo pendiente o corregir.
         </div>
       )}
 
       {/* v8.24.18: el estado "Realizado" se marca al finalizar DENTRO del modal de captura */}
-      {esRealizado && (
+      {esRealizado && !campana && (
         <div className="bg-green-900/20 border border-green-700 rounded-card px-3 py-2.5 space-y-2">
           <div className="flex items-center justify-between gap-2">
             <span className="text-sm font-bold text-green-300 flex items-center gap-1.5"><Check className="w-4 h-4" /> Levantamiento realizado</span>
@@ -437,7 +469,7 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
         </div>
         <QuickActions site={site} proyecto={proyecto} surveyorNombre={usuario?.nombre}
           onWhatsApp={() => { try { registrarComunicacion('levantamiento', proyecto?.id, { canal: 'whatsapp', direccion: 'saliente', cuerpo: `Se abrió WhatsApp para contactar sobre ${site?.name || 'el levantamiento'}.`, autor: usuario }); } catch { /* noop */ } }}
-          levantador={(data?.personal || []).find(p => p.id === asignadoId) || null}
+          levantador={(data?.personal || []).find(p => p.id === (campana ? site.asignado_a_id : asignadoId)) || null}
           cita={cita}
           onAvisoVisita={setAvisoVisita} />
       </div>
@@ -505,8 +537,34 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
         </div>
       </div>
 
+      {/* v8.95.0: campaña — coordinación de ESTA oficina (columnas propias: técnico, día y franja) */}
+      {campana && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-2">
+          <div className="flex items-center gap-2">
+            <div className="text-[11px] tracking-widest uppercase text-zinc-500 font-bold flex items-center gap-1">
+              <Calendar className="w-3 h-3 text-red-500" /> Coordinación de la oficina
+            </div>
+            {ESTADO_OFICINA[estOficina] && (
+              <span className="ml-auto text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-card"
+                style={{ backgroundColor: ESTADO_OFICINA[estOficina].color + '22', color: ESTADO_OFICINA[estOficina].color, border: `1px solid ${ESTADO_OFICINA[estOficina].color}66` }}>
+                {ESTADO_OFICINA[estOficina].label}
+              </span>
+            )}
+          </div>
+          <Field label="Técnico" value={site.asignado_a_nombre || (site.asignado_a_id ? '—' : 'Sin asignar')} />
+          <Field label="Día" value={site.visita_fecha ? `${diaCorto(site.visita_fecha)} · ${site.visita_fecha}` : 'Sin programar'} />
+          <Field label="Franja" value={FRANJAS[site.visita_franja] || null} />
+          {site.visita_fecha && (
+            <Field label="Cita" value={site.cita_confirmada ? `✓ Confirmada${site.cita_confirmada_por ? ` · ${site.cita_confirmada_por}` : ''}` : '⏳ Por confirmar con la oficina'} />
+          )}
+          {site.validado_at && (
+            <Field label="Validada" value={`${new Date(site.validado_at).toLocaleDateString('es-DO', { dateStyle: 'medium' })}${site.validado_por ? ` · ${site.validado_por}` : ''}`} />
+          )}
+        </div>
+      )}
+
       {/* Scheduled / asignación */}
-      {(site.scheduled_at || site.assigned_to) && (
+      {!campana && (site.scheduled_at || site.assigned_to) && (
         <div className="bg-zinc-900 border border-zinc-800 rounded-card p-4 space-y-2">
           <div className="text-[10px] tracking-widest uppercase text-zinc-500 font-bold flex items-center gap-1">
             <Calendar className="w-3 h-3" /> Coordinación
@@ -535,7 +593,7 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
       {/* v8.26.13: admin/owner cambian la etapa con las píldoras de arriba; aquí solo
           se muestra para el supervisor (lectura). */}
-      {!(esAdmin || esOwner) && (
+      {!(esAdmin || esOwner) && !campana && (
       <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
         <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1.5 flex items-center gap-1">
           <Layers className="w-3.5 h-3.5 text-red-500" /> Etapa
@@ -544,6 +602,8 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
         <div className="text-sm font-bold text-zinc-200">{etapaProy}</div>
       </div>
       )}
+      {/* v8.95.0: en campaña el tipo y el formulario de captura son del proyecto entero: no se cambian desde una oficina */}
+      {!campana && (
       <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
         <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1.5 flex items-center gap-1">
           <Layers className="w-3.5 h-3.5 text-red-500" /> Tipo de levantamiento
@@ -583,6 +643,9 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
             : `Actual: ${SERVICE_LINES[tipoServiceLine]?.label || tipoServiceLine}. El formulario de captura corresponde a este tipo.`}
         </div>
       </div>
+      )}
+      {/* v8.95.0: en campaña el técnico es de cada oficina (Coordinación), no del proyecto */}
+      {!campana && (
       <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
         <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1.5 flex items-center gap-1">
           <ClipboardList className="w-3.5 h-3.5 text-red-500" /> Levantador asignado
@@ -600,6 +663,9 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
           </select>
         )}
       </div>
+      )}
+      {/* v8.95.0: la escalera se guarda en el proyecto: en campaña cambiaría todas las oficinas, se oculta */}
+      {!campana && (
       <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
         <div className="text-[10px] tracking-widest uppercase text-zinc-400 font-bold mb-1.5 flex items-center gap-1">
           🪜 ¿Requiere escalera?
@@ -616,9 +682,11 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
         </div>
         {!escalera && <div className="text-[10px] text-zinc-600 mt-1">Sin especificar. Indícalo para que el maestro lleve el equipo correcto.</div>}
       </div>
+      )}
 
       {/* v8.25.34: si ya está realizado, en vez de la Cita se muestra quién lo realizó y cuándo */}
-      {esRealizado ? (
+      {/* v8.95.0: en campaña la cita es de cada oficina (arriba, «Coordinación de la oficina») */}
+      {campana ? null : esRealizado ? (
         <div className="bg-zinc-900 border border-green-800/40 rounded-card p-3">
           <div className="text-[10px] tracking-widest uppercase text-green-500 font-bold mb-1 flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Realizado</div>
           <div className="text-sm"><span className="text-zinc-500">Por: </span><span className="font-bold text-zinc-100">{proyecto?.asignado_a_nombre || '—'}</span></div>
@@ -659,7 +727,7 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
             clienteId: site?.cliente_id || null,
             cliente: proyecto?.client_name || '',
             empresaEjecutora: proyecto?.company === 'prouco' ? 'prouco' : 'super_techos',
-            supervisorId: asignadoId || null,
+            supervisorId: (campana ? site.asignado_a_id : asignadoId) || null,
             supervisorRol: 'Levantamiento',
             contactoClienteNombre: site?.contact_name || '',
             referenciaProyecto: site?.name || proyecto?.client_name || '',
@@ -710,11 +778,13 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
         </div>
       )}
 
-      <SolicitarCalificacion entityType="levantamiento" entityId={proyecto?.id} clienteNombre={proyecto?.client_name || ''} contexto="su levantamiento" usuario={usuario} />
+      {/* v8.95.0: en campaña no se pide calificación desde una oficina (sería al proyecto entero) */}
+      {!campana && <SolicitarCalificacion entityType="levantamiento" entityId={proyecto?.id} clienteNombre={proyecto?.client_name || ''} contexto="su levantamiento" usuario={usuario} />}
       <ChatterPanel entityType="levantamiento" entityId={proyecto?.id} usuario={usuario} anclaFecha={proyecto?.created_at} anclaTitulo="Solicitud recibida" />
 
       {/* v8.22.6: eliminación con autorización del owner — al final, debajo del chatter */}
-      {(esOwner || esAdmin) && (
+      {/* v8.95.0: en campaña no se elimina el proyecto desde una oficina */}
+      {(esOwner || esAdmin) && !campana && (
         <div className="bg-zinc-950 border border-red-900/50 rounded-card p-3 space-y-2">
           <div className="text-[10px] uppercase tracking-widest text-red-400 font-bold flex items-center gap-1"><Trash2 className="w-3 h-3" /> Eliminar levantamiento</div>
           {esOwner ? (
@@ -757,6 +827,8 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
               setEtapaProy(e => (['New', 'Contactado', 'Asignado', 'Agendado'].includes(e) ? 'Realizado' : e));
             }
             if (info?.estadoSitio) setSite(s => ({ ...s, survey_status: info.estadoSitio }));
+            // v8.95.0: en campaña, cerrar la oficina limpia la devolución y el «no pude» (cerrarOficinaCampana)
+            if (campana && info?.estadoSitio) setSite(s => ({ ...s, devuelto_at: null, no_pudo_at: null }));
           }}
         />
       )}

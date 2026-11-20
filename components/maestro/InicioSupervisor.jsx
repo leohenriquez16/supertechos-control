@@ -18,6 +18,9 @@ import ClimaWidget from './ClimaWidget';
 import MiBono from '../bonos/MiBono'; // v8.28.2
 import MisPendientes from '../pendientes/MisPendientes'; // v8.28.3
 import TarjetaRutaHoy from '../logistica/TarjetaRutaHoy'; // rutas-chofer: quien tenga viajes asignados ve su ruta
+import TarjetaMisOficinasHoy from '../coordinacion/TarjetaMisOficinasHoy'; // v8.95.0: oficinas de campaña del técnico
+import DynamicSurveyForm from '../surveys/DynamicSurveyForm'; // v8.95.0: la oficina de campaña se abre directo en el formulario
+import { esCampana } from '../../lib/helpers/coordinacion';
 
 export default function InicioSupervisor({ usuario, data, onIrAReportar, onVerProyecto, onIrAAsignaciones, onIrAProyectos, onIrAVista, onRecargar }) {
   const [levs, setLevs] = useState([]);
@@ -40,6 +43,12 @@ export default function InicioSupervisor({ usuario, data, onIrAReportar, onVerPr
   };
   const cerrarCaptura = () => { setCapturaLev(null); setCapturaSites([]); setCapturaSite(null); };
 
+  // v8.95.0: oficina de campaña abierta desde «Mis oficinas de hoy» ({ proyecto, site }): formulario a pantalla
+  // completa (un toque menos que pasar por la ficha). Al cerrarlo, la tarjeta se recarga cambiando su key.
+  const [formCampana, setFormCampana] = useState(null);
+  const [recargaOficinas, setRecargaOficinas] = useState(0);
+  const cerrarFormCampana = () => { setFormCampana(null); setRecargaOficinas(n => n + 1); };
+
   const cargar = async ({ silent } = {}) => {
     if (silent) setRefrescando(true); else setLoading(true);
     try {
@@ -50,12 +59,13 @@ export default function InicioSupervisor({ usuario, data, onIrAReportar, onVerPr
         if (!dirProj[s.project_id] && (s.address || s.name)) dirProj[s.project_id] = s.address || s.name;
         if (s.latitude != null && s.longitude != null && !coordsProj[s.project_id]) coordsProj[s.project_id] = { lat: Number(s.latitude), lng: Number(s.longitude) };
       }
-      setLevs(sp.filter(p => p.asignado_a_id === usuario.id).map(p => ({ ...p, _dir: dirProj[p.id] || '', _coords: coordsProj[p.id] || null })));
+      // v8.95.0: las campañas (ej. oficinas de Banreservas) van en su propia tarjeta, no en «Citas de hoy».
+      setLevs(sp.filter(p => p.asignado_a_id === usuario.id && !esCampana(p)).map(p => ({ ...p, _dir: dirProj[p.id] || '', _coords: coordsProj[p.id] || null })));
     } catch (e) { console.warn('InicioSupervisor:', e?.message); }
     setLoading(false); setRefrescando(false);
   };
   useEffect(() => { cargar(); /* eslint-disable-next-line */ }, [usuario.id]);
-  const refrescar = async () => { await Promise.all([cargar({ silent: true }), cargarJornadas(), onRecargar?.()]); };
+  const refrescar = async () => { setRecargaOficinas(n => n + 1); await Promise.all([cargar({ silent: true }), cargarJornadas(), onRecargar?.()]); };
 
   const hoyLocal = (() => { const d = new Date(); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; })();
   // "Cualquier día (hora laboral)" siempre disponible; el resto, si su fecha es hoy.
@@ -246,6 +256,19 @@ export default function InicioSupervisor({ usuario, data, onIrAReportar, onVerPr
             </div>
           )}
         </div>
+      )}
+
+      {/* v8.95.0: Mis oficinas de hoy (campañas de levantamiento; solo sale si tiene oficinas asignadas) */}
+      <TarjetaMisOficinasHoy key={recargaOficinas} usuario={usuario} data={data}
+        onAbrirOficina={(proyecto, site) => setFormCampana({ proyecto, site })} />
+      {formCampana && (
+        <DynamicSurveyForm
+          site={formCampana.site}
+          proyecto={formCampana.proyecto}
+          usuario={usuario}
+          onCerrar={cerrarFormCampana}
+          onCompletado={cerrarFormCampana}
+        />
       )}
 
       {/* Citas de hoy */}

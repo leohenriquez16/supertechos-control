@@ -9,7 +9,7 @@
 // Carga internamente las fotos de la visita y sus signed URLs.
 
 import { jsPDF } from 'jspdf';
-import { resumenSuperficies, totalesSuperficies, areaNoPinta, textoNoPinta } from '../../lib/pinturaCatalogo';
+import { resumenSuperficies, totalesSuperficies, areaNoPinta, textoNoPinta, areasVigentes, textoMedidaArea, resumenVisitaPintura, labelPintura, pendientesVisita } from '../../lib/pinturaCatalogo';
 import { listarFotosVisita, getSignedUrlFotoSurvey, SERVICE_LINES, showIfOk } from '../../lib/surveys';
 import { membreteHTML, MEMBRETE_CSS } from '../../lib/membrete';
 
@@ -185,16 +185,28 @@ export async function imprimirLevantamiento({ proyecto, site, visit, areas = [],
     try { url = await getSignedUrlFotoSurvey(f.storage_path, 3600); } catch { url = ''; }
     return { areaId: f.area_id || null, url, caption: f.caption || '', photoType: f.photo_type || '' };
   }));
+  const gd = visit.general_data || {};
+  // v8.91.0: las fotos de un campo de una sección `extra` (ej. techo) van en su sección y solo si el campo aplica;
+  // ya no se mezclan con las panorámicas.
+  const camposFotoExtra = new Set(generalSections.filter(s => s.extra).flatMap(s => (s.fields || []).filter(f => f.type === 'photos').map(f => f.id)));
   const fotosPorArea = {};
   const fotosGenerales = [];
+  const fotosPorCampoExtra = {};
   for (const f of fotosConUrl) {
     if (!f.url) continue;
     if (f.areaId) (fotosPorArea[f.areaId] = fotosPorArea[f.areaId] || []).push(f);
+    else if (camposFotoExtra.has(f.photoType)) (fotosPorCampoExtra[f.photoType] = fotosPorCampoExtra[f.photoType] || []).push(f);
     else fotosGenerales.push(f);
   }
+  const fotosDeSeccion = (sec) => (sec.fields || []).filter(f => f.type === 'photos' && showIfOk(f.show_if, gd)).flatMap(f => fotosPorCampoExtra[f.id] || []);
 
+  // v8.91.0: lo que cuenta (igual que en la ficha): los jardines cargados solo si la visita los marcó levantados.
+  const vigentes = areasVigentes(areas, gd);
   const serviceLabel = SERVICE_LINES[proyecto?.service_line]?.label || proyecto?.service_line || '';
-  const totalM2 = areas.reduce((s, a) => s + (areaNoPinta(a) ? 0 : (Number(a.net_area_m2) || Number(a.gross_area_m2) || 0)), 0);
+  const totalM2 = vigentes.reduce((s, a) => s + (areaNoPinta(a) ? 0 : (Number(a.net_area_m2) || Number(a.gross_area_m2) || 0)), 0);
+  const nFotos = fotosGenerales.length
+    + vigentes.reduce((s, a) => s + ((fotosPorArea[a.id] || []).length), 0)
+    + generalSections.filter(s => s.extra).reduce((s, sec) => s + fotosDeSeccion(sec).length, 0);
 
   // v8.24.8: foto de fachada (check-in) + mapa de la ubicación para el encabezado.
   let fachadaUrl = '';
@@ -228,22 +240,41 @@ export async function imprimirLevantamiento({ proyecto, site, visit, areas = [],
   const htmlGenerales = generalSections.map(sec => {
     // Secciones `extra` (jardines, techo): no se imprimen los campos que el formulario oculta (ej. el motivo de
     // «pendiente» cuando ya se levantó). Las demás secciones se imprimen igual que siempre.
-    const gd = visit.general_data || {};
     const campos = renderCampos(sec.extra ? (sec.fields || []).filter(f => showIfOk(f.show_if, gd)) : sec.fields, gd);
-    if (!campos) return '';
-    return `<section class="bloque"><h2>${esc(sec.title)}</h2>${campos}</section>`;
+    const fotosSec = sec.extra ? fotosDeSeccion(sec) : [];
+    if (!campos && !fotosSec.length) return '';
+    return `<section class="bloque"><h2>${esc(sec.title)}</h2>${campos || ''}${gridFotos(fotosSec)}</section>`;
   }).filter(Boolean).join('');
+
+  // v8.91.0: plantillas de pintura: el mismo resumen por tipo de pintura que el técnico confirmó al cerrar.
+  let htmlResumenPintura = '';
+  if (schema.resumen_pintura) {
+    const r = resumenVisitaPintura(vigentes);
+    const filasR = Object.entries(r.totales.porPintura);
+    const pend = pendientesVisita(gd);
+    const n2 = (v) => (v ? Number(v).toFixed(2) : '—');
+    if (filasR.length || r.noPinta.length || pend.length) {
+      htmlResumenPintura = `<section class="bloque"><h2>Resumen por tipo de pintura</h2>
+        ${filasR.length ? `<table class="tabla-res"><thead><tr><th>Tipo de pintura</th><th>m²</th><th>ml</th><th>und</th></tr></thead><tbody>
+          ${filasR.map(([pp, x]) => `<tr><td>${esc(labelPintura(pp))}</td><td>${n2(x.m2)}</td><td>${n2(x.ml)}</td><td>${x.und || '—'}</td></tr>`).join('')}
+          <tr class="total"><td>Total</td><td>${n2(r.totales.m2)}</td><td>${n2(r.totales.ml)}</td><td>${r.totales.und || '—'}</td></tr>
+        </tbody></table>` : ''}
+        ${r.noPinta.length ? `<div class="muted" style="margin-top:6px">No se pintan: ${r.noPinta.map(nn => esc(`${nn.nombre} (${nn.texto.replace(/^No se pinta — /, '')})`)).join(' · ')}</div>` : ''}
+        ${pend.length ? `<div class="pendiente">Pendiente para otra visita: ${pend.map(x => esc(`${x.parte} (${x.motivo})`)).join(' · ')}</div>` : ''}
+      </section>`;
+    }
+  }
 
   // --- Bloques repetibles (áreas) ---
   const htmlBloques = blocks.map(block => {
-    const filas = areas.filter(a => a.block_id === block.id);
+    const filas = vigentes.filter(a => a.block_id === block.id);
     // Bloque condicionado (ej. Jardines) que no aplica en esta visita: no se imprime, aunque tenga registros viejos.
-    if (block.show_if && !showIfOk(block.show_if, visit.general_data || {})) return '';
+    if (block.show_if && !showIfOk(block.show_if, gd)) return '';
     if (filas.length === 0) {
       return `<section class="bloque"><h2>${esc(block.title)}</h2><div style="color:#999;font-size:11px">Ninguno registrado</div></section>`;
     }
     const items = filas.map((a, i) => {
-      // v8.59.0: área "No se pinta": solo nombre y motivo, sin medidas ni m².
+      // v8.91.0: área "No se pinta": solo nombre y motivo, sin medidas ni m².
       if (block.permite_no_pinta && areaNoPinta(a)) {
         return `
       <div class="area">
@@ -253,7 +284,9 @@ export async function imprimirLevantamiento({ proyecto, site, visit, areas = [],
       </div>`;
       }
       const campos = renderCampos(block.fields, a.data || {});
-      const m2 = a.gross_area_m2 != null ? ` · ${Number(a.gross_area_m2).toFixed(2)} m²` : '';
+      // v8.91.0: superficies (m² · ml · und) o área del jardín; las demás plantillas, sus m² como siempre.
+      const medida = textoMedidaArea(a);
+      const m2 = medida ? ` · ${esc(medida)}` : (a.gross_area_m2 != null ? ` · ${Number(a.gross_area_m2).toFixed(2)} m²` : '');
       return `
       <div class="area">
         <h3>${esc(a.name || (block.block_label || 'Item') + ' ' + (i + 1))}${a.data?.section_surface_type ? ' <span class="chip">' + esc(a.data.section_surface_type) + '</span>' : ''}<span class="m2">${m2}</span></h3>
@@ -310,6 +343,12 @@ export async function imprimirLevantamiento({ proyecto, site, visit, areas = [],
        deformar, y así conserva su proporción original sin recortar nada. */
     .fotos-pano img { width: 100%; height: auto; max-height: 420px; border-radius: 6px; border: 1px solid #ddd; background: #f4f4f5; }
     .fotos-pano figcaption { font-size: 10px; color: #777; margin-top: 3px; text-align: center; }
+    .tabla-res { width: 100%; border-collapse: collapse; font-size: 11px; }
+    .tabla-res th { text-align: right; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #777; border-bottom: 1px solid #ccc; padding: 3px 6px; }
+    .tabla-res th:first-child, .tabla-res td:first-child { text-align: left; }
+    .tabla-res td { text-align: right; padding: 3px 6px; border-bottom: 1px dotted #e5e5e5; font-variant-numeric: tabular-nums; }
+    .tabla-res tr.total td { font-weight: 800; border-top: 2px solid #18181b; border-bottom: none; }
+    .pendiente { margin-top: 6px; color: #b45309; font-weight: 600; font-size: 11px; }
     .footer { margin-top: 20px; padding-top: 8px; border-top: 1px solid #ccc; font-size: 9px; color: #999; text-align: center; }
     ${MEMBRETE_CSS}
     @media print { body { padding: 0; } @page { margin: 14mm; } }
@@ -343,9 +382,11 @@ export async function imprimirLevantamiento({ proyecto, site, visit, areas = [],
 
     <div class="resumen">
       <div class="kpi"><div class="n">${totalM2.toFixed(2)} m²</div><div class="l">Área medida</div></div>
-      <div class="kpi"><div class="n">${areas.length}</div><div class="l">Items capturados</div></div>
-      <div class="kpi"><div class="n">${fotosConUrl.filter(f => f.url).length}</div><div class="l">Fotos</div></div>
+      <div class="kpi"><div class="n">${vigentes.length}</div><div class="l">Items capturados</div></div>
+      <div class="kpi"><div class="n">${nFotos}</div><div class="l">Fotos</div></div>
     </div>
+
+    ${htmlResumenPintura}
 
     ${fotosGenerales.length ? `<section class="bloque"><h2>Fotos panorámicas</h2>${gridFotosPano(fotosGenerales)}</section>` : ''}
     ${htmlGenerales}

@@ -14,6 +14,11 @@ import { Camera, Loader2, Trash2, AlertCircle, Image as ImageIcon } from 'lucide
 import { supabase } from '../../lib/supabase';
 import { subirFotoSurvey, getSignedUrlFotoSurvey } from '../../lib/surveys';
 
+// v8.91.0: fotos subiendo en este momento (en todo el formulario). El formulario no deja pausar ni cerrar
+// mientras haya alguna: al salir, la subida se cortaría y la foto se perdería sin aviso.
+let subidasEnCurso = 0;
+export const fotosSubiendo = () => subidasEnCurso;
+
 export default function PhotoCapture({ visitId, areaId = null, field, value, onChange }) {
   // value = array de objetos { id, storage_path, signedUrl?, caption?, is_critical? }
   const [items, setItems] = useState(Array.isArray(value) ? value : []);
@@ -21,6 +26,9 @@ export default function PhotoCapture({ visitId, areaId = null, field, value, onC
   const [errorMsg, setErrorMsg] = useState(null);
   const [arrastrando, setArrastrando] = useState(false); // v8.25.25: drag&drop desde la computadora
   const inputRef = useRef(null);
+  // v8.91.0: si la tarjeta se cerró mientras subía y la subida falla, el error no tiene dónde mostrarse: se avisa.
+  const montadoRef = useRef(true);
+  useEffect(() => () => { montadoRef.current = false; }, []);
 
   // Cargar fotos existentes asociadas a este field.id si aún no las tenemos
   useEffect(() => {
@@ -66,6 +74,7 @@ export default function PhotoCapture({ visitId, areaId = null, field, value, onC
     }
     setSubiendo(true);
     setErrorMsg(null);
+    subidasEnCurso++;
     try {
       const nuevos = [];
       for (const file of Array.from(files)) {
@@ -83,8 +92,11 @@ export default function PhotoCapture({ visitId, areaId = null, field, value, onC
       setItems(merged);
       onChange?.(merged);
     } catch (e) {
-      setErrorMsg(e?.message || String(e));
+      const msg = e?.message || String(e);
+      if (montadoRef.current) setErrorMsg(`No se pudo subir la foto (${msg}). Vuelve a tomarla.`);
+      else alert(`No se pudo subir una foto de «${field.label || 'Fotos'}» (${msg}). Abre esa área y vuelve a tomarla.`);
     } finally {
+      subidasEnCurso = Math.max(0, subidasEnCurso - 1);
       setSubiendo(false);
       if (inputRef.current) inputRef.current.value = '';
     }

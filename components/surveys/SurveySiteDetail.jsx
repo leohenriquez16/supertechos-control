@@ -10,7 +10,7 @@
 //  - Botón "Iniciar levantamiento" (placeholder — se conecta en PR 3B.4)
 
 import React, { useState, useEffect } from 'react';
-import { totalesSuperficies, filaCompleta, areaNoPinta, textoNoPinta, pendientesVisita, areasVigentes } from '../../lib/pinturaCatalogo';
+import { totalesSuperficies, filaCompleta, areaNoPinta, textoNoPinta, pendientesVisita, areasVigentes, textoMedidaArea, textoTotales, resumenVisitaPintura, labelPintura } from '../../lib/pinturaCatalogo';
 import { ArrowLeft, Building, MapPin, Calendar, Clock, FileText, AlertTriangle, Play, ClipboardList, Layers, ChevronDown, Loader2, Trash2, Check, Image as ImageIcon, X } from 'lucide-react';
 import QuickActions from './QuickActions';
 import DynamicSurveyForm from './DynamicSurveyForm';
@@ -112,9 +112,10 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
     if (!tpl || tpl.id === tipoTemplateId) return;
     // Dos formularios del mismo tipo (ej. Pintura y Pintura de Sucursal): el cambio aplica a todo el levantamiento, se confirma.
     const mismoTipo = tpl.service_line === tipoServiceLine;
-    if (mismoTipo && !confirm(`¿Cambiar el formulario de captura a «${nombreFormulario(tpl)}»?\n\nAplica a todo este levantamiento. Lo ya capturado se conserva, pero se verá con el formulario nuevo.`)) return;
-    setCambiandoTipo(true);
     const tplPrevia = tpls.find(x => x.id === tipoTemplateId);
+    const nPrev = tplPrevia ? `«${nombreFormulario(tplPrevia)}»` : 'el formulario anterior';
+    if (mismoTipo && !confirm(`¿Cambiar el formulario de captura a «${nombreFormulario(tpl)}»?\n\nAplica a todo este levantamiento (todas sus edificaciones). Lo que ya se capturó con ${nPrev} no se borra, pero «${nombreFormulario(tpl)}» no lo muestra ni lo deja editar; vuelve a verse completo si regresas a ${nPrev}. Úsalo en levantamientos que aún no se han medido.`)) return;
+    setCambiandoTipo(true);
     const prevLabel = mismoTipo && tplPrevia ? nombreFormulario(tplPrevia) : (SERVICE_LINES[tipoServiceLine]?.label || 'Sin tipo');
     try {
       await actualizarTipoProyectoSurvey(proyecto.id, tpl.service_line, tpl.id);
@@ -132,6 +133,26 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
   };
   // Proyecto con el tipo actualizado para la captura (DynamicSurveyForm lee template_id).
   const proyectoConTipo = { ...proyecto, service_line: tipoServiceLine, template_id: tipoTemplateId };
+  // v8.91.0: plantillas «por sitio» (una oficina = un levantamiento): si la oficina ya tiene una visita, el botón
+  // dice «Seguir» y el formulario abre ESA (completar lo pendiente o corregir) en vez de crear otra.
+  const [recargaVisitas, setRecargaVisitas] = useState(0); // al cerrar el formulario se recargan las visitas
+  const [tplActual, setTplActual] = useState(null);
+  useEffect(() => {
+    let cancel = false;
+    (async () => {
+      if (!tipoTemplateId) { setTplActual(null); return; }
+      try { const t = await obtenerTemplateSurvey(tipoTemplateId); if (!cancel) setTplActual(t); } catch {}
+    })();
+    return () => { cancel = true; };
+  }, [tipoTemplateId]);
+  const porSitio = !!tplActual?.schema?.cierre_por_sitio;
+  const [ultimaVisita, setUltimaVisita] = useState(null);
+  useEffect(() => {
+    if (!porSitio) { setUltimaVisita(null); return; }
+    let cancel = false;
+    (async () => { try { const vs = await listarVisitasDeSite(site.id); if (!cancel) setUltimaVisita((vs || [])[0] || null); } catch {} })();
+    return () => { cancel = true; };
+  }, [porSitio, site.id, recargaVisitas]);
 
   // v8.24.17: finalizar el levantamiento → "Realizado".
   const [statusProy, setStatusProy] = useState(proyecto?.status || 'planning');
@@ -375,8 +396,13 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
           className="w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-wider py-4 rounded-card flex items-center justify-center gap-2"
         >
           <Play className="w-4 h-4" />
-          Iniciar levantamiento
+          {porSitio && ultimaVisita ? 'Seguir levantamiento de esta oficina' : 'Iniciar levantamiento'}
         </button>
+      )}
+      {etapaProy === 'Agendado' && porSitio && ultimaVisita && (
+        <div className="-mt-1 text-[11px] text-zinc-500 text-center">
+          Ya tiene un levantamiento{ultimaVisita.checkout_at ? ` cerrado el ${new Date(ultimaVisita.checkout_at).toLocaleDateString('es-DO', { dateStyle: 'medium' })}` : ' en curso'}: se abre ese mismo para completar lo pendiente o corregir.
+        </div>
       )}
 
       {/* v8.24.18: el estado "Realizado" se marca al finalizar DENTRO del modal de captura */}
@@ -646,7 +672,7 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
       </button>
       {satelitalAbierta && <SatelitalAreas site={site} proyecto={proyecto} onCerrar={() => setSatelitalAbierta(false)} />}
 
-      <LevantamientosRealizados site={site} proyecto={proyecto} />
+      <LevantamientosRealizados key={recargaVisitas} site={site} proyecto={proyecto} />
 
       <FotosDelLevantamiento site={site} proyecto={proyecto} usuario={usuario} />
 
@@ -709,10 +735,17 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
           site={site}
           proyecto={proyectoConTipo}
           usuario={usuario}
-          onCerrar={() => setFormAbierto(false)}
-          onCompletado={(res) => {
+          onCerrar={() => { setFormAbierto(false); setRecargaVisitas(n => n + 1); }}
+          onCompletado={(res, info) => {
             setFormAbierto(false);
-            if (res === 'finalizado') setStatusProy('survey_completed');
+            setRecargaVisitas(n => n + 1);
+            // v8.91.0: «finalizado» = el PROYECTO pasó a Realizado. Con plantillas por sitio, cerrar una oficina
+            // devuelve «oficina_cerrada»: el proyecto sigue en su etapa y solo cambia el estado de la oficina.
+            if (res === 'finalizado') {
+              setStatusProy('survey_completed');
+              setEtapaProy(e => (['New', 'Contactado', 'Asignado', 'Agendado'].includes(e) ? 'Realizado' : e));
+            }
+            if (info?.estadoSitio) setSite(s => ({ ...s, survey_status: info.estadoSitio }));
           }}
         />
       )}
@@ -1139,6 +1172,33 @@ function LevantamientosRealizados({ site, proyecto }) {
                   </div>
                 )}
 
+                {/* v8.91.0: lo mismo que el técnico confirmó al cerrar: m² / ml / und por tipo de pintura */}
+                {template?.schema?.resumen_pintura && (() => {
+                  const r = resumenVisitaPintura(areas);
+                  const filasP = Object.entries(r.totales.porPintura);
+                  if (!filasP.length && !r.noPinta.length) return null;
+                  return (
+                    <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2.5">
+                      <div className="text-[10px] uppercase tracking-wider text-green-500 font-bold mb-1">Por tipo de pintura</div>
+                      <table className="w-full text-xs tabular-nums">
+                        <tbody>
+                          {filasP.map(([pp, x]) => (
+                            <tr key={pp} className={`border-t border-zinc-800/60 ${pp === 'por_definir' ? 'text-amber-400' : 'text-zinc-200'}`}>
+                              <td className="py-1 pr-2">{labelPintura(pp)}</td>
+                              <td className="py-1 text-right font-bold">{textoTotales(x) || '—'}</td>
+                            </tr>
+                          ))}
+                          <tr className="border-t border-zinc-600 font-black text-white">
+                            <td className="py-1">Total</td>
+                            <td className="py-1 text-right">{textoTotales(r.totales) || '—'}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                      {r.noPinta.length > 0 && <div className="text-[11px] text-zinc-400 mt-1.5">No se pintan: {r.noPinta.map(n => n.nombre).join(', ')}</div>}
+                    </div>
+                  );
+                })()}
+
                 {/* v8.25.32: bloque "Para cotizar" — lo que el cotizador necesita de un vistazo */}
                 {(sistemasProp.length > 0 || cotizar.length > 0) && (
                   <div className="bg-zinc-950 border border-zinc-800 rounded-card p-2.5 space-y-1.5">
@@ -1174,7 +1234,9 @@ function LevantamientosRealizados({ site, proyecto }) {
                               <div className="text-right flex-shrink-0">
                                 {areaNoPinta(a)
                                   ? <div className="text-[11px] font-bold text-zinc-400 max-w-[12rem]">{textoNoPinta(a.data)}</div>
-                                  : <div className="text-lg font-black leading-none">{a.gross_area_m2 != null ? fmtM2(a.gross_area_m2) : '—'}<span className="text-xs font-bold text-zinc-400"> m²</span></div>}
+                                  : textoMedidaArea(a)
+                                    ? <div className="text-sm font-black leading-tight max-w-[14rem]">{textoMedidaArea(a)}</div>
+                                    : <div className="text-lg font-black leading-none">{a.gross_area_m2 != null ? fmtM2(a.gross_area_m2) : '—'}<span className="text-xs font-bold text-zinc-400"> m²</span></div>}
                                 {Number(a.secondary_area_m2) > 0 && <div className="text-[9px] text-zinc-500">+{fmtM2(a.secondary_area_m2)} techo</div>}
                               </div>
                             </div>

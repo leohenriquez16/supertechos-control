@@ -200,7 +200,9 @@ t('el catálogo usa los mismos ids que los bloques', Object.keys(CATALOGO_AREAS)
 // --- al cerrar (por sitio): estado de la oficina y del proyecto
 {
   const p1 = [{ parte: 'Techo / vista aérea', clave: 'techo', motivo: 'Lluvia o mal tiempo' }];
-  t('finalizada: completada, aunque tenga jardines o techo pendientes (siguen visibles)', estadoSitioAlCerrar({ forzar: false, pendientes: [] }) === 'completed' && estadoSitioAlCerrar({ forzar: false, pendientes: p1 }) === 'completed');
+  t('finalizada sin pendientes: completada', estadoSitioAlCerrar({ forzar: false, pendientes: [] }) === 'completed');
+  t('finalizada con jardines o techo pendientes: falta info (no completa)', estadoSitioAlCerrar({ forzar: false, pendientes: p1 }) === 'missing_info' && proyectoCompleto([{ id: 's1' }], 's1', 'missing_info') === false);
+  t('sin techo ni jardín (no aplica / no tiene) no es pendiente: completada', estadoSitioAlCerrar({ forzar: false, pendientes: pendientesVisita({ jardines_estado: 'no_tiene', techo_estado: 'no_aplica' }) }) === 'completed');
   t('cerrada sin completar: en proceso', estadoSitioAlCerrar({ forzar: true, pendientes: [] }) === 'in_progress');
   const sit = [{ id: 's1', survey_status: 'completed' }, { id: 's2', survey_status: 'pending' }, { id: 's3', survey_status: 'validated' }];
   t('una oficina de varias no finaliza el proyecto', proyectoCompleto(sit, 's1', 'completed') === false);

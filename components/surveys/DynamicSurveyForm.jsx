@@ -477,9 +477,10 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
     if (fotosSubiendo() > 0) { alert('Espera: hay una foto subiendo. Sal cuando termine para no perderla.'); return; }
     // v8.94.0: si se siguió una oficina ya cerrada y al salir quedó incompleta, deja de contar como completada
     // (si no, el cierre de otra oficina podría pasar el proyecto a Realizado con esta a medias).
-    if (seguida && template?.schema?.cierre_por_sitio && completitud.faltantes.length > 0) {
-      marcarEstadoSitioSurvey(site.id, 'in_progress').catch(() => {});
-      onCerrar?.({ estadoSitio: 'in_progress' });
+    if (seguida && template?.schema?.cierre_por_sitio && (completitud.faltantes.length > 0 || pendientes.length > 0)) {
+      const est = completitud.faltantes.length > 0 ? 'in_progress' : 'missing_info'; // con pendientes: «Falta info»
+      marcarEstadoSitioSurvey(site.id, est).catch(() => {});
+      onCerrar?.({ estadoSitio: est });
       return;
     }
     onCerrar?.();

@@ -381,10 +381,21 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
         <div className="bg-red-900/20 border border-red-700 text-red-300 p-3 text-sm flex items-start gap-2">
           <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
           <div>
-            <div className="font-bold mb-0.5">Falta información para coordinar</div>
-            <div className="text-[12px] opacity-80">
-              Este sitio se marcó con datos pendientes (dirección, contacto, etc.). Actualízalo antes de programar la visita.
-            </div>
+            {porSitio && ultimaVisita && pendientesVisita(ultimaVisita.general_data).length > 0 ? (
+              <>
+                <div className="font-bold mb-0.5">Faltan datos del levantamiento</div>
+                <div className="text-[12px] opacity-80">
+                  Quedó pendiente: {pendientesVisita(ultimaVisita.general_data).map(x => `${x.parte} (${x.motivo})`).join(' · ')}. Hay que volver a la oficina para completarlo.
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="font-bold mb-0.5">Falta información para coordinar</div>
+                <div className="text-[12px] opacity-80">
+                  Este sitio se marcó con datos pendientes (dirección, contacto, etc.). Actualízalo antes de programar la visita.
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

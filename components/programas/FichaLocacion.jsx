@@ -13,7 +13,7 @@ import { EXTRAER_OC_PROMPT, parsearRespuestaIA, validarOC } from '../../lib/help
 import { buscarRecuadroProveedor, estamparFirmaYSello, blancoATransparente } from '../../lib/helpers/estamparOC';
 import * as db from '../../lib/db';
 import { formatRD } from '../../lib/helpers/formato';
-import { ETAPAS, ETAPA, COLOR_ETAPA, TIPOS_DOCUMENTO, turnoDe, textoCoordinacion, ETAPA_PINTURA, RECEPCION } from '../../lib/helpers/programaSites';
+import { ETAPAS, ETAPA, COLOR_ETAPA, TIPOS_DOCUMENTO, turnoDe, textoCoordinacion, ETAPA_PINTURA, RECEPCION, CANDADOS } from '../../lib/helpers/programaSites';
 
 const fmtF = (f) => { if (!f) return ''; try { return new Date(String(f).length === 10 ? f + 'T12:00:00' : f).toLocaleDateString('es-DO', { day: 'numeric', month: 'short', year: 'numeric' }); } catch { return ''; } };
 const etiquetaTipo = Object.fromEntries(TIPOS_DOCUMENTO.map(t => [t.id, t.label]));
@@ -222,6 +222,29 @@ export default function FichaLocacion({ locacion: l, usuario, onCerrar, onCambio
               {(l.reincidencias || []).length > 0 && (
                 <div><span className="text-zinc-500">Reincidencia:</span> <span className="text-red-400 font-bold">{l.reincidencias.map(r => `${r.codigo || 'reclamación'} (${r.estado}${r.fechaApertura ? `, desde ${fmtF(r.fechaApertura)}` : ''})`).join(' · ')}</span></div>
               )}
+              {/* v8.93.0: candado y acceso */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-zinc-500">Candado:</span>
+                <select id="ficha-candado" value={l.candadoTipo || ''} onChange={async (ev) => {
+                  try { await db.actualizarLocacionPrograma(l.id, { candadoTipo: ev.target.value || null, etapaDesde: l.etapaDesde || undefined }); await onCambio?.(); } catch (e) { alert('Error: ' + (e.message || e)); }
+                }} className="bg-zinc-900 border border-zinc-700 rounded-card px-2 py-0.5 text-[11px] text-white">
+                  <option value="">— sin registrar —</option>
+                  {CANDADOS.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+                </select>
+                <span className="text-[10px] text-zinc-500">No se reemplaza, retira ni modifica (regla de Sites).</span>
+              </div>
+              <div>
+                <span className="text-zinc-500">Acceso:</span>{' '}
+                {l.accesoAsignadoAt ? <span className="text-green-400">llave asignada el {fmtF(l.accesoAsignadoAt)}</span>
+                  : l.accesoPedidoAt ? <span className="text-amber-400">pedido el {fmtF(l.accesoPedidoAt)}</span>
+                  : <span className="text-zinc-500">sin pedir</span>}
+                {(l.accesoPedidoAt || l.accesoAsignadoAt) && (
+                  <button onClick={async () => {
+                    if (!confirm('¿Borrar el estado del acceso (por ejemplo, para pedirlo de nuevo)?')) return;
+                    try { await db.actualizarLocacionPrograma(l.id, { accesoPedidoAt: null, accesoAsignadoAt: null, etapaDesde: l.etapaDesde || undefined }); await onCambio?.(); } catch (e) { alert('Error: ' + (e.message || e)); }
+                  }} className="ml-2 text-[10px] underline text-zinc-500 hover:text-white">reiniciar</button>
+                )}
+              </div>
               <div><span className="text-zinc-500">Tipo de trabajo:</span> {l.tipoTrabajo === 'pintura' ? 'Pintura' : l.tipoTrabajo === 'ambos' ? 'Techo y pintura' : 'Impermeabilización'}</div>
               <div className="flex gap-3 flex-wrap pt-1">
                 {l.lat && l.lng && <a href={`https://www.google.com/maps?q=${l.lat},${l.lng}`} target="_blank" rel="noreferrer" className="underline text-zinc-400 hover:text-white inline-flex items-center gap-1"><ExternalLink className="w-3 h-3" /> Mapa</a>}

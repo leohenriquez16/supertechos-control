@@ -9,7 +9,7 @@
 // Tres vistas: tablero por etapa, mapa y planificador por zona (para mandar la brigada
 // a varias antenas cercanas el mismo día en vez de cruzar la ciudad por una sola).
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { ArrowLeft, Check, Clock, MapPin, Loader2, RefreshCw, Route, LayoutGrid, Search, Lock, Ruler, FileText, CalendarDays, Wrench, ClipboardCheck, CheckCircle2, ShieldCheck, PaintRoller } from 'lucide-react';
 import * as db from '../../lib/db';
@@ -17,6 +17,11 @@ import { formatRD } from '../../lib/helpers/formato';
 import { ETAPAS, ETAPA, FASES, COLOR_ETAPA, turnoDe, resumenPrograma, pendientesDelCliente, agruparPorZona, textoCoordinacion, ETAPAS_PINTURA, ETAPA_PINTURA, RECEPCION, sumaMontos, programacionObra, ETAPAS_TABLERO, FASES_TABLERO, ETAPA_TABLERO, turnoTablero } from '../../lib/helpers/programaSites';
 import FichaLocacion from './FichaLocacion';
 import ModalProgramar from './ModalProgramar';
+import { LineaAcceso, PanelLlaves } from './AccesosPrograma';
+import { CANDADO } from '../../lib/helpers/programaSites';
+// v8.93.0: «Pedir acceso» reutiliza la carta de acceso de la obra (personal + vehículo)
+const ModalCartaAcceso = dynamic(() => import('../proyecto/ModalCartaAcceso'), { ssr: false });
+const fmtLarga = (f) => { try { return new Date(String(f).slice(0, 10) + 'T12:00:00').toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'long' }); } catch { return f; } };
 
 // v8.91.0: monto de una columna (sin ITBIS, de Odoo) y cuántas no tienen monto, para que el total no engañe
 const MontoColumna = ({ lista, campo }) => {
@@ -73,6 +78,17 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
   // v8.91.0: programar en bloque — selección por tipo ('techo' en el tablero, 'pintura' en Recubre)
   const [sel, setSel] = useState({ tipo: 'techo', ids: [] });
   const [programando, setProgramando] = useState(false);
+  // v8.93.0: usuarios de llave (Teleporte / iLoq) y «Pedir acceso»
+  const [llaves, setLlaves] = useState([]);
+  const cargarLlaves = async () => { try { setLlaves(await db.listarLlavesPrograma(programa.id)); } catch (e) { console.warn('llaves:', e?.message); } };
+  useEffect(() => { if (programa?.id) cargarLlaves(); /* eslint-disable-next-line */ }, [programa?.id]);
+  const [accesoDe, setAccesoDe] = useState(null);
+  const marcarAcceso = async (l, campo) => {
+    const txt = campo === 'accesoAsignadoAt' ? `¿Sites ya asignó la llave / creó el acceso de ${l.nombre}?` : `¿Ya se le pidió a Sites el acceso de ${l.nombre}?`;
+    if (!confirm(txt)) return;
+    try { await db.actualizarLocacionPrograma(l.id, { [campo]: new Date().toISOString(), etapaDesde: l.etapaDesde || undefined }); await onRecargar?.(); }
+    catch (e) { alert('Error: ' + (e.message || e)); }
+  };
   const toggleSel = (tipo, id) => setSel(s => {
     const base = s.tipo === tipo ? s.ids : [];
     return { tipo, ids: base.includes(id) ? base.filter(x => x !== id) : [...base, id] };
@@ -206,6 +222,8 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
         <span>Total <b className="text-white text-sm tabular-nums">{formatRD(valor.techo.total + valor.pintura.total)}</b>{valor.techo.sinMonto + valor.pintura.sinMonto ? <span className="text-zinc-500"> ({valor.techo.sinMonto + valor.pintura.sinMonto} sin monto)</span> : null}</span>
       </div>
 
+      {programa?.id && <PanelLlaves programaId={programa.id} llaves={llaves} personal={data.personal || []} onCambio={cargarLlaves} />}
+
       {/* v8.59.0: enlace del portal del cliente */}
       {programa?.codigoPublico && (
         <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 flex items-center gap-2 flex-wrap text-[11px]">
@@ -299,6 +317,7 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
                             {['por_programar', 'programado'].includes(e.id) && <LineaProgramacion obra={l.obra} personal={data.personal} />}
                             {e.id === 'sin_obra' && <div className="text-[10px] text-red-400 font-bold">Sin obra en el ERP</div>}
                             {e.id === 'en_ejecucion' && l.obra?.estado === 'parado' && <div className="text-[10px] text-red-400 font-bold">Obra parada</div>}
+                            <LineaAcceso l={l} obra={l.obra} llaves={llaves} personal={data.personal || []} />
                             {e.id === 'terminado' && l.recepcion && <div className="text-[10px] font-bold" style={{ color: RECEPCION[l.recepcion].color }}>{RECEPCION[l.recepcion].label}</div>}
                             <ChipsCierre l={l} />
                             {l.etapaPintura && (
@@ -321,6 +340,14 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
                                 <ShieldCheck className="w-3 h-3" /> Carta de garantía
                               </button>
                             )}
+                            {l.acceso && l.acceso !== 'asignado' && l.proyectoId && (
+                              <button onClick={() => setAccesoDe(l)}
+                                className="text-[10px] font-bold uppercase px-2 py-1 bg-sky-700 hover:bg-sky-600 text-white rounded-card">
+                                {l.acceso === 'pedido' ? 'Reenviar acceso' : 'Pedir acceso'}
+                              </button>
+                            )}
+                            {l.acceso === 'falta' && <button onClick={() => marcarAcceso(l, 'accesoPedidoAt')} className="text-[10px] underline text-zinc-500 hover:text-white">ya se pidió</button>}
+                            {l.acceso === 'pedido' && <button onClick={() => marcarAcceso(l, 'accesoAsignadoAt')} className="text-[10px] underline text-green-400 hover:text-white">llave asignada</button>}
                             {['recibido', 'facturado', 'cobrado'].includes(e.id) && l.proyectoId && (
                               <button onClick={() => setGarantiaDe(l)} className="text-[10px] underline text-zinc-400 hover:text-white">carta de garantía</button>
                             )}
@@ -440,6 +467,26 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
 
       })()}
 
+
+      {/* v8.93.0: Pedir acceso = carta de acceso de la obra con el texto para Sites */}
+      {accesoDe?.proyectoId && (() => {
+        const obra = (data.proyectos || []).find(p => p.id === accesoDe.proyectoId);
+        if (!obra) { setTimeout(() => { alert('La obra no está cargada en el ERP; recarga la página.'); setAccesoDe(null); }, 0); return null; }
+        const l = accesoDe;
+        const c = l.candadoTipo ? CANDADO[l.candadoTipo]?.label : null;
+        const inicio = l.obra?.inicioProgramado;
+        const msg = [
+          'Buenos días,',
+          '',
+          `Solicitamos el acceso a la localidad ${l.nombre}${l.codigoUt ? ` (${l.codigoUt})` : ''}${inicio ? ` a partir del ${fmtLarga(inicio)}` : ''} para el personal de la carta adjunta.`,
+          c ? `Candado del sitio: ${c}.` : null,
+          'Favor confirmarnos la asignación de la llave o la creación del acceso.',
+        ].filter(x => x !== null).join('\n');
+        return <ModalCartaAcceso proyecto={obra} data={data} usuario={usuario} onCerrar={() => setAccesoDe(null)}
+          asuntoInicial={`Solicitud de acceso — ${l.nombre}${l.codigoUt ? ` — ${l.codigoUt}` : ''}`}
+          mensajeInicial={msg}
+          onEnviado={async () => { try { await db.actualizarLocacionPrograma(l.id, { accesoPedidoAt: new Date().toISOString(), etapaDesde: l.etapaDesde || undefined }); await onRecargar?.(); } catch (e) { console.warn(e); } }} />;
+      })()}
 
       {programando && (
         <ModalProgramar seleccion={seleccionadas} tipo={sel.tipo} personal={data.personal || []} usuario={usuario}

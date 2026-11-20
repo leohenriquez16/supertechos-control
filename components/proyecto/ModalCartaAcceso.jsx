@@ -64,7 +64,8 @@ const formatearFechaLarga = (iso) => {
 
 // v8.74.9: `levantamiento` = carta para la visita de levantamiento (texto adaptado) y
 // `whatsapp` = { url, onClick } para mandar el aviso por WhatsApp desde el mismo modal.
-export default function ModalCartaAcceso({ proyecto, data, usuario, onCerrar, levantamiento = false, whatsapp = null }) {
+// v8.93.0: asuntoInicial / mensajeInicial / onEnviado — para «Pedir acceso» desde el programa de Sites.
+export default function ModalCartaAcceso({ proyecto, data, usuario, onCerrar, levantamiento = false, whatsapp = null, asuntoInicial = '', mensajeInicial = '', onEnviado = null }) {
   // ---- Recipientes y candidatos ----
   const contactosCliente = useMemo(
     () => (data.contactos || []).filter(c => c.clienteId === proyecto.clienteId),
@@ -137,10 +138,11 @@ export default function ModalCartaAcceso({ proyecto, data, usuario, onCerrar, le
   const [asuntoEmail, setAsuntoEmail] = useState('');
   useEffect(() => {
     const ref = proyecto.referenciaProyecto || proyecto.nombre || '';
-    setAsuntoEmail((levantamiento ? `Visita de levantamiento — ${ref}` : `Carta de acceso de personal — ${ref}`).trim());
+    setAsuntoEmail(asuntoInicial || (levantamiento ? `Visita de levantamiento — ${ref}` : `Carta de acceso de personal — ${ref}`).trim());
   }, [proyecto.referenciaProyecto, proyecto.nombre]);
   const [mensajeEmail, setMensajeEmail] = useState('');
   useEffect(() => {
+    if (mensajeInicial) { setMensajeEmail(`${mensajeInicial}\n\nSaludos,\n${firmanteNombre || ''}`); return; }
     setMensajeEmail(
       `Buenos días${contactoPrincipal?.nombre ? ', ' + contactoPrincipal.nombre.split(' ')[0] : ''},\n\n` +
       (levantamiento
@@ -327,6 +329,7 @@ export default function ModalCartaAcceso({ proyecto, data, usuario, onCerrar, le
       } else {
         guardarFirmanteLocal();
         setMensajeOk(`Email enviado a ${destinatariosRaw.join(', ')}.`);
+        try { onEnviado?.({ destinatarios: destinatariosRaw }); } catch (e) { console.warn(e); }
       }
     } catch (e) {
       setMensajeError('Error enviando email: ' + (e.message || e));

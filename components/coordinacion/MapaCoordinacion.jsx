@@ -189,7 +189,9 @@ export default function MapaCoordinacion({
         </button>
         <span className="text-[11px] text-zinc-500 hidden md:inline">En escritorio: Shift + arrastrar para seleccionar varias.</span>
       </div>
-      <div ref={ref} style={{ height: alto, width: '100%', borderRadius: 8, overflow: 'hidden' }} />
+      {/* v8.95.1: isolation aísla las capas de Leaflet (z-index 400-1000): sin esto el mapa tapaba la barra de
+          «Asignar y programar», su ventana y la ficha de la oficina que se abre encima. */}
+      <div ref={ref} style={{ height: alto, width: '100%', borderRadius: 8, overflow: 'hidden', isolation: 'isolate', position: 'relative', zIndex: 0 }} />
       <div className="flex flex-wrap gap-x-3 gap-y-1">
         {leyenda.map((l) => (
           <span key={l.k} className="flex items-center gap-1 text-[11px] text-zinc-400">

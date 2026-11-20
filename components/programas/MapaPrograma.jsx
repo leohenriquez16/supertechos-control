@@ -7,7 +7,7 @@
 import { useEffect, useRef } from 'react';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-import { COLOR_ETAPA, ETAPA } from '../../lib/helpers/programaSites';
+import { ETAPA_TABLERO } from '../../lib/helpers/programaSites';
 
 const pin = (color) => L.divIcon({
   className: '',
@@ -39,10 +39,10 @@ export default function MapaPrograma({ locaciones = [], onSeleccionar, alto = 42
       const lat = Number(l.lat), lng = Number(l.lng);
       if (!lat || !lng) return;
       puntos.push([lat, lng]);
-      const color = COLOR_ETAPA[l.etapa] || '#71717a';
+      const color = ETAPA_TABLERO[l.etapaTablero]?.color || '#71717a'; // v8.92.0: mismo color que la columna
       const m = L.marker([lat, lng], { icon: pin(color) }).addTo(capa);
       m.bindTooltip(
-        `<b>${l.nombre}</b><br>${ETAPA[l.etapa]?.label || ''}${l.cotizacionRef ? `<br>${l.cotizacionRef}` : ''}`,
+        `<b>${l.nombre}</b><br>${ETAPA_TABLERO[l.etapaTablero]?.label || ''}${l.cotizacionRef ? `<br>${l.cotizacionRef}` : ''}`,
         { direction: 'top', offset: [0, -14] },
       );
       if (onSeleccionar) m.on('click', () => onSeleccionar(l));

@@ -14,8 +14,41 @@ import dynamic from 'next/dynamic';
 import { ArrowLeft, Check, Clock, MapPin, Loader2, RefreshCw, Route, LayoutGrid, Search, Lock, Ruler, FileText, CalendarDays, Wrench, ClipboardCheck, CheckCircle2, ShieldCheck, PaintRoller } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatRD } from '../../lib/helpers/formato';
-import { ETAPAS, ETAPA, FASES, COLOR_ETAPA, turnoDe, resumenPrograma, pendientesDelCliente, agruparPorZona, textoCoordinacion, ETAPAS_PINTURA, ETAPA_PINTURA } from '../../lib/helpers/programaSites';
+import { ETAPAS, ETAPA, FASES, COLOR_ETAPA, turnoDe, resumenPrograma, pendientesDelCliente, agruparPorZona, textoCoordinacion, ETAPAS_PINTURA, ETAPA_PINTURA, RECEPCION, sumaMontos, programacionObra } from '../../lib/helpers/programaSites';
 import FichaLocacion from './FichaLocacion';
+import ModalProgramar from './ModalProgramar';
+
+// v8.91.0: monto de una columna (sin ITBIS, de Odoo) y cuántas no tienen monto, para que el total no engañe
+const MontoColumna = ({ lista, campo }) => {
+  if (!lista.length) return null;
+  const { total, sinMonto } = sumaMontos(lista, campo);
+  return (
+    <div className="text-[10px] text-zinc-300 font-bold tabular-nums">
+      {total > 0 ? formatRD(total) : 'RD$ —'}<span className="text-zinc-600 font-normal"> sin ITBIS{sinMonto ? ` · ${sinMonto} sin monto` : ''}</span>
+    </div>
+  );
+};
+const fmtCorta = (f) => { try { return new Date(String(f).slice(0, 10) + 'T12:00:00').toLocaleDateString('es-DO', { day: 'numeric', month: 'short' }); } catch { return f; } };
+/** Programación de la obra (techo o pintura) en una línea. */
+const LineaProgramacion = ({ obra, personal = [] }) => {
+  const pr = programacionObra(obra);
+  if (!pr) return null;
+  const sup = obra?.supervisorId ? (personal.find(p => p.id === obra.supervisorId)?.nombre || '') : '';
+  if (pr.estado === 'sin_programar') return <div className="text-[10px] text-amber-400 font-bold">Sin programar{sup ? ` · ${sup}` : ''}</div>;
+  return (
+    <div className={`text-[10px] font-bold ${pr.estado === 'atrasada' ? 'text-red-400' : 'text-sky-400'}`}>
+      {pr.estado === 'atrasada' ? `Debió arrancar el ${fmtCorta(pr.inicio)} (${pr.diasAtraso} d)` : `Programada ${fmtCorta(pr.inicio)}${pr.fin ? ` – ${fmtCorta(pr.fin)}` : ''}`}
+      {sup ? <span className="text-zinc-400 font-normal"> · {sup}</span> : null}
+    </div>
+  );
+};
+/** Reservas (correcciones pendientes tras la visita de recepción) y reincidencias (filtración en un sitio entregado), con los términos de Sites. */
+const ChipsCierre = ({ l }) => (
+  <>
+    {l.reservasAbiertas && <div className="text-[10px] font-bold text-orange-400" title={l.reservasNota || ''}>Con reservas{l.reservasNota ? `: ${l.reservasNota}` : ''}</div>}
+    {(l.reincidencias || []).length > 0 && <div className="text-[10px] font-bold text-red-400">Reincidencia · {l.reincidencias.map(r => r.codigo || 'reclamación').join(', ')}</div>}
+  </>
+);
 
 // v8.59.0: un icono por etapa, para distinguirlas sin leer el texto.
 const ICONO = { lock: Lock, 'map-pin': MapPin, ruler: Ruler, file: FileText, calendar: CalendarDays, tool: Wrench, clipboard: ClipboardCheck, check: CheckCircle2 };
@@ -37,6 +70,14 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
   const [ficha, setFicha] = useState(null); // v8.59.2: ficha de la sucursal
   const [refrescando, setRefrescando] = useState(false); // v8.69.0
   const [garantiaDe, setGarantiaDe] = useState(null); // v8.71.0: carta de garantía de la locación
+  // v8.91.0: programar en bloque — selección por tipo ('techo' en el tablero, 'pintura' en Recubre)
+  const [sel, setSel] = useState({ tipo: 'techo', ids: [] });
+  const [programando, setProgramando] = useState(false);
+  const toggleSel = (tipo, id) => setSel(s => {
+    const base = s.tipo === tipo ? s.ids : [];
+    return { tipo, ids: base.includes(id) ? base.filter(x => x !== id) : [...base, id] };
+  });
+  const seleccionadas = sel.ids.map(id => locaciones.find(l => l.id === id)).filter(Boolean);
 
   const filtradas = useMemo(() => {
     const q = buscar.trim().toLowerCase();
@@ -91,6 +132,11 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
     return g;
   }, [filtradas]);
   const conPintura = useMemo(() => locaciones.filter(l => l.etapaPintura).length, [locaciones]);
+  // v8.91.0: valor del programa (sin ITBIS, de Odoo)
+  const valor = useMemo(() => ({
+    techo: sumaMontos(locaciones, 'montoSinItbis'),
+    pintura: sumaMontos(locaciones.filter(l => l.etapaPintura), 'pinturaMontoSinItbis'),
+  }), [locaciones]);
 
   return (
     <div className="space-y-4">
@@ -137,6 +183,14 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
         </div>
       </div>
 
+      {/* v8.91.0: valor del programa, techo y pintura, sin ITBIS */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 flex flex-wrap gap-x-6 gap-y-1 items-baseline text-[11px]">
+        <span className="text-zinc-400 font-bold uppercase tracking-widest">Valor del programa · sin ITBIS</span>
+        <span>Techos <b className="text-white text-sm tabular-nums">{formatRD(valor.techo.total)}</b>{valor.techo.sinMonto ? <span className="text-zinc-500"> ({valor.techo.sinMonto} sin monto)</span> : null}</span>
+        <span>Pintura · Recubre <b className="text-white text-sm tabular-nums">{formatRD(valor.pintura.total)}</b>{valor.pintura.sinMonto ? <span className="text-zinc-500"> ({valor.pintura.sinMonto} sin monto)</span> : null}</span>
+        <span>Total <b className="text-white text-sm tabular-nums">{formatRD(valor.techo.total + valor.pintura.total)}</b></span>
+      </div>
+
       {/* v8.59.0: enlace del portal del cliente */}
       {programa?.codigoPublico && (
         <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 flex items-center gap-2 flex-wrap text-[11px]">
@@ -174,6 +228,15 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
           <input value={buscar} onChange={e => setBuscar(e.target.value)} placeholder="Buscar locación, código o cotización…"
             className="w-full bg-zinc-950 border border-zinc-800 focus:border-red-600 outline-none rounded-card pl-7 pr-3 py-1.5 text-xs text-white placeholder-zinc-600" />
         </div>
+        {sel.ids.length > 0 && (
+          <div className="flex items-center gap-2">
+            <button onClick={() => setProgramando(true)}
+              className="px-3 py-1.5 text-[11px] font-bold uppercase rounded-card bg-red-600 hover:bg-red-500 text-white flex items-center gap-1.5">
+              <CalendarDays className="w-3.5 h-3.5" /> Programar {sel.ids.length}{sel.tipo === 'pintura' ? ' (pintura)' : ''}
+            </button>
+            <button onClick={() => setSel({ tipo: sel.tipo, ids: [] })} className="text-[10px] underline text-zinc-500 hover:text-white">quitar selección</button>
+          </div>
+        )}
       </div>
 
       {tab === 'tablero' && (
@@ -196,15 +259,30 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
                       <span className="text-sm font-black text-zinc-200">{lista.length}</span>
                     </div>
                     <div className={`text-[9px] font-bold uppercase tracking-wide ${e.deQuien === 'cliente' ? 'text-amber-400' : e.deQuien === 'nosotros' ? 'text-sky-400' : 'text-zinc-500'}`}>{turnoDe(e.id)}</div>
+                    <MontoColumna lista={lista} campo="montoSinItbis" />
+                    {e.id === 'terminado' && lista.length > 0 && (
+                      <div className="text-[10px] flex gap-3 flex-wrap">
+                        <span style={{ color: RECEPCION.listo.color }}>{lista.filter(l => l.recepcion === 'listo').length} listas techo y pintura</span>
+                        <span style={{ color: RECEPCION.solo_techo.color }}>{lista.filter(l => l.recepcion === 'solo_techo').length} solo techo</span>
+                      </div>
+                    )}
                     <div className="space-y-1.5 max-h-[360px] overflow-y-auto">
-                      {lista.map(l => (
+                      {(e.id === 'terminado' ? [...lista].sort((a, b) => (a.recepcion === 'listo' ? 0 : 1) - (b.recepcion === 'listo' ? 0 : 1)) : lista).map(l => (
                         <div key={l.id} className="bg-zinc-950 border border-zinc-800 hover:border-zinc-600 rounded-card p-2">
+                          {e.id === 'por_programar' && l.proyectoId && (
+                            <label className="float-right ml-1 cursor-pointer" title="Elegir para programar">
+                              <input type="checkbox" className="accent-red-600" checked={sel.tipo === 'techo' && sel.ids.includes(l.id)} onChange={() => toggleSel('techo', l.id)} />
+                            </label>
+                          )}
                           <button onClick={() => setFicha(l)} className="text-left w-full">
                             <div className="text-[11px] font-bold text-zinc-100 truncate hover:underline">{l.nombre}</div>
                             <div className="text-[10px] text-zinc-500 truncate">{l.codigoUt}{l.sector ? ` · ${l.sector}` : ''}</div>
                             {l.etapaDesde && <div className="text-[10px] text-zinc-400">desde {new Date(l.etapaDesde).toLocaleDateString('es-DO', { day: 'numeric', month: 'short' })}{l.diasEnEtapa != null ? ` · ${l.diasEnEtapa} d` : ''}</div>}
                             {['por_programar', 'en_ejecucion'].includes(e.id) && !l.personalAprobadoAt && <div className="text-[10px] text-red-400 font-bold">Falta aprobación del personal</div>}
                             {e.id === 'por_levantar' && l.fechaVisita && <div className="text-[10px] text-amber-400">Visita: {textoCoordinacion(l.fechaVisita, l.horaVisita)}</div>}
+                            {e.id === 'por_programar' && (l.proyectoId ? <LineaProgramacion obra={l.obra} personal={data.personal} /> : <div className="text-[10px] text-red-400 font-bold">Sin obra en el ERP</div>)}
+                            {e.id === 'terminado' && l.recepcion && <div className="text-[10px] font-bold" style={{ color: RECEPCION[l.recepcion].color }}>{RECEPCION[l.recepcion].label}</div>}
+                            <ChipsCierre l={l} />
                             {l.etapaPintura && (
                               <div className="text-[10px] font-bold flex items-center gap-1" style={{ color: ETAPA_PINTURA[l.etapaPintura]?.color }}>
                                 <PaintRoller className="w-3 h-3" /> Pintura: {ETAPA_PINTURA[l.etapaPintura]?.label}
@@ -213,7 +291,7 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
                           </button>
                           {l.cotizacionRef && (
                             <div className="text-[10px] text-zinc-400 mt-0.5">
-                              {l.cotizacionRef}{l.cotizacionMonto ? ` · ${formatRD(l.cotizacionMonto)}` : ''}
+                              {l.cotizacionRef}{l.montoSinItbis ? ` · ${formatRD(l.montoSinItbis)}` : l.cotizacionMonto ? ` · ${formatRD(l.cotizacionMonto)}` : ''}
                             </div>
                           )}
                           <div className="flex items-center gap-2 mt-1.5 flex-wrap">
@@ -282,17 +360,25 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
                     </div>
                     <span className="text-sm font-black text-zinc-200">{lista.length}</span>
                   </div>
+                  <MontoColumna lista={lista} campo="pinturaMontoSinItbis" />
                   <div className="space-y-1.5 max-h-[420px] overflow-y-auto">
                     {lista.map(l => (
                       <div key={l.id} className="bg-zinc-950 border border-zinc-800 hover:border-zinc-600 rounded-card p-2">
+                        {['espera_techo', 'lista'].includes(e.id) && l.proyectoPinturaId && (
+                          <label className="float-right ml-1 cursor-pointer" title="Elegir para programar la pintura">
+                            <input type="checkbox" className="accent-red-600" checked={sel.tipo === 'pintura' && sel.ids.includes(l.id)} onChange={() => toggleSel('pintura', l.id)} />
+                          </label>
+                        )}
                         <button onClick={() => setFicha(l)} className="text-left w-full">
                           <div className="text-[11px] font-bold text-zinc-100 truncate hover:underline">{l.nombre}</div>
                           <div className="text-[10px] text-zinc-500 truncate">{l.codigoUt}</div>
                           {l.pinturaDesde && <div className="text-[10px] text-zinc-400">desde {new Date(l.pinturaDesde).toLocaleDateString('es-DO', { day: 'numeric', month: 'short' })}</div>}
                           <div className="text-[10px] mt-0.5" style={{ color: COLOR_ETAPA[l.etapa] }}>Techo: {ETAPA[l.etapa]?.label}</div>
+                          {['espera_techo', 'lista'].includes(e.id) && (l.proyectoPinturaId ? <LineaProgramacion obra={l.obraPintura} personal={data.personal} /> : <div className="text-[10px] text-amber-400">Sin obra de pintura en el ERP</div>)}
+                          <ChipsCierre l={l} />
                         </button>
                         {l.cotizacionPinturaRef && (
-                          <div className="text-[10px] text-zinc-400 mt-0.5">{l.cotizacionPinturaRef}{l.cotizacionPinturaMonto ? ` · ${formatRD(l.cotizacionPinturaMonto)}` : ''}</div>
+                          <div className="text-[10px] text-zinc-400 mt-0.5">{l.cotizacionPinturaRef}{l.pinturaMontoSinItbis ? ` · ${formatRD(l.pinturaMontoSinItbis)}` : l.cotizacionPinturaMonto ? ` · ${formatRD(l.cotizacionPinturaMonto)}` : ''}</div>
                         )}
                         {l.proyectoPinturaId && onAbrirProyecto && (
                           <button onClick={() => onAbrirProyecto(l.proyectoPinturaId)} className="text-[10px] underline text-zinc-400 hover:text-white mt-1">ver obra de pintura</button>
@@ -333,6 +419,12 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
 
       })()}
 
+
+      {programando && (
+        <ModalProgramar seleccion={seleccionadas} tipo={sel.tipo} personal={data.personal || []} usuario={usuario}
+          onCerrar={() => setProgramando(false)}
+          onListo={async (n) => { setProgramando(false); setSel({ tipo: sel.tipo, ids: [] }); await onRecargar?.(); alert(`${n} obra(s) programada(s).`); }} />
+      )}
 
       {ficha && (
         <FichaLocacion

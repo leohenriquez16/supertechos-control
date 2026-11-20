@@ -2,7 +2,7 @@
 // Ejecutar desde la raíz:  node tests/programa-sites.test.mjs
 
 import assert from 'node:assert/strict';
-import { etapaDeLocacion, resumenPrograma, pendientesDelCliente, agruparPorZona, distanciaKm, ETAPAS, amarrarLocaciones, normalizarRefOdoo, textoCoordinacion, fechasPorEtapa, enEtapaDesde, amarrarCotizacionesOdoo, sincronizarLocaciones, LUZ_VERDE_POR_ODOO, amarrarPinturaOdoo, etapaPintura, esObraDePintura, soloCamposPintura } from '../lib/helpers/programaSites.js';
+import { etapaDeLocacion, resumenPrograma, pendientesDelCliente, agruparPorZona, distanciaKm, ETAPAS, amarrarLocaciones, normalizarRefOdoo, textoCoordinacion, fechasPorEtapa, enEtapaDesde, amarrarCotizacionesOdoo, sincronizarLocaciones, LUZ_VERDE_POR_ODOO, amarrarPinturaOdoo, etapaPintura, esObraDePintura, soloCamposPintura, estadoRecepcion, montoSinItbisDe, sumaMontos, programacionObra } from '../lib/helpers/programaSites.js';
 
 let ok = 0; const fallos = [];
 const caso = (n, fn) => { try { fn(); ok++; } catch (e) { fallos.push(`${n}: ${e.message}`); } };
@@ -382,6 +382,32 @@ caso('pintura: etapas — espera el techo, lista para Recubre, trabajando, entre
 caso('pintura: soloCamposPintura distingue cambios mixtos', () => {
   assert.equal(soloCamposPintura({ proyectoPinturaId: 'x', proyectoId: 'y' }), false);
   assert.equal(soloCamposPintura({}), false);
+});
+
+// --- v8.91.0: recepción, montos, programación -------------------------------------------
+caso('recepción: solo los terminados; listo si la pintura terminó o no lleva', () => {
+  assert.equal(estadoRecepcion({ etapa: 'en_ejecucion' }), null);
+  assert.equal(estadoRecepcion({ etapa: 'terminado' }), 'listo');
+  assert.equal(estadoRecepcion({ etapa: 'terminado', etapaPintura: 'cotizado' }), 'listo');
+  assert.equal(estadoRecepcion({ etapa: 'terminado', etapaPintura: 'terminado' }), 'listo');
+  assert.equal(estadoRecepcion({ etapa: 'terminado', etapaPintura: 'lista' }), 'solo_techo');
+  assert.equal(estadoRecepcion({ etapa: 'terminado', etapaPintura: 'en_ejecucion' }), 'solo_techo');
+});
+caso('montos: sin ITBIS desde Odoo, y cuenta los que no tienen monto', () => {
+  const m = new Map([['ST-C5922', { montoSinItbis: 341000.85 }]]);
+  assert.equal(montoSinItbisDe('ST-C5922', m), 341000.85);
+  assert.equal(montoSinItbisDe('ST5922', m), 341000.85);
+  assert.equal(montoSinItbisDe('ST-C9999', m), null);
+  assert.deepEqual(sumaMontos([{ montoSinItbis: 100 }, { montoSinItbis: null }, { montoSinItbis: 50 }]), { total: 150, sinMonto: 1, n: 3 });
+});
+caso('programación: sin programar, programada, debió arrancar', () => {
+  const hoy = new Date('2026-11-20T15:00:00');
+  assert.equal(programacionObra({ estado: 'aprobado' }, hoy).estado, 'sin_programar');
+  assert.equal(programacionObra({ estado: 'aprobado', inicioProgramado: '2026-11-25' }, hoy).estado, 'programada');
+  const a = programacionObra({ estado: 'aprobado', inicioProgramado: '2026-11-17' }, hoy);
+  assert.equal(a.estado, 'atrasada'); assert.equal(a.diasAtraso, 3);
+  assert.equal(programacionObra({ estado: 'en_ejecucion', inicioProgramado: '2026-11-17' }, hoy).estado, 'programada');
+  assert.equal(programacionObra(null), null);
 });
 
 console.log(`\n${ok} pasadas, ${fallos.length} fallidas`);

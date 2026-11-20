@@ -9,7 +9,8 @@
 // Carga internamente las fotos de la visita y sus signed URLs.
 
 import { jsPDF } from 'jspdf';
-import { listarFotosVisita, getSignedUrlFotoSurvey, SERVICE_LINES } from '../../lib/surveys';
+import { resumenSuperficies, totalesSuperficies, areaNoPinta, textoNoPinta } from '../../lib/pinturaCatalogo';
+import { listarFotosVisita, getSignedUrlFotoSurvey, SERVICE_LINES, showIfOk } from '../../lib/surveys';
 import { membreteHTML, MEMBRETE_CSS } from '../../lib/membrete';
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -111,6 +112,13 @@ function fmtValor(field, valor) {
       }).join(' · ');
       return `${lineas} <b>(Total ${tot.toFixed(2)} m²)</b>`;
     }
+    case 'surfaces_table': {
+      const lineas = resumenSuperficies(valor);
+      if (!lineas.length) return '';
+      const t = totalesSuperficies(valor);
+      const tot = [t.m2 > 0 && `${t.m2.toFixed(2)} m²`, t.ml > 0 && `${t.ml.toFixed(2)} ml`, t.und > 0 && `${t.und} und`].filter(Boolean).join(' · ');
+      return `${lineas.map(esc).join('<br>')}<br><b>(Total ${tot})</b>`;
+    }
     case 'ductos_table': {
       const filas = Array.isArray(valor) ? valor : [];
       if (!filas.length) return '';
@@ -120,6 +128,11 @@ function fmtValor(field, valor) {
     case 'map_point': return valor?.lat != null ? `${Number(valor.lat).toFixed(5)}, ${Number(valor.lng).toFixed(5)}` : '';
     case 'map_polygon': return valor?.areaM2 != null ? `${esc(valor.areaM2)} m² (polígono)` : '';
     case 'photos': case 'fotos_previas': return ''; // imágenes aparte
+    case 'single_select': {
+      // v8.91.0: opciones con valor y etiqueta (ej. estado de jardines/techo): se imprime la etiqueta.
+      const o = (field.options || []).find(x => x && typeof x === 'object' && x.value === valor);
+      return esc(o ? (o.label || o.value) : valor);
+    }
     default: return typeof valor === 'object' ? '' : esc(valor);
   }
 }
@@ -181,7 +194,7 @@ export async function imprimirLevantamiento({ proyecto, site, visit, areas = [],
   }
 
   const serviceLabel = SERVICE_LINES[proyecto?.service_line]?.label || proyecto?.service_line || '';
-  const totalM2 = areas.reduce((s, a) => s + (Number(a.net_area_m2) || Number(a.gross_area_m2) || 0), 0);
+  const totalM2 = areas.reduce((s, a) => s + (areaNoPinta(a) ? 0 : (Number(a.net_area_m2) || Number(a.gross_area_m2) || 0)), 0);
 
   // v8.24.8: foto de fachada (check-in) + mapa de la ubicación para el encabezado.
   let fachadaUrl = '';
@@ -213,7 +226,10 @@ export async function imprimirLevantamiento({ proyecto, site, visit, areas = [],
 
   // --- Secciones generales (visit.general_data) — se omiten si no tienen datos ---
   const htmlGenerales = generalSections.map(sec => {
-    const campos = renderCampos(sec.fields, visit.general_data || {});
+    // Secciones `extra` (jardines, techo): no se imprimen los campos que el formulario oculta (ej. el motivo de
+    // «pendiente» cuando ya se levantó). Las demás secciones se imprimen igual que siempre.
+    const gd = visit.general_data || {};
+    const campos = renderCampos(sec.extra ? (sec.fields || []).filter(f => showIfOk(f.show_if, gd)) : sec.fields, gd);
     if (!campos) return '';
     return `<section class="bloque"><h2>${esc(sec.title)}</h2>${campos}</section>`;
   }).filter(Boolean).join('');
@@ -221,10 +237,21 @@ export async function imprimirLevantamiento({ proyecto, site, visit, areas = [],
   // --- Bloques repetibles (áreas) ---
   const htmlBloques = blocks.map(block => {
     const filas = areas.filter(a => a.block_id === block.id);
+    // Bloque condicionado (ej. Jardines) que no aplica en esta visita: no se imprime, aunque tenga registros viejos.
+    if (block.show_if && !showIfOk(block.show_if, visit.general_data || {})) return '';
     if (filas.length === 0) {
       return `<section class="bloque"><h2>${esc(block.title)}</h2><div style="color:#999;font-size:11px">Ninguno registrado</div></section>`;
     }
     const items = filas.map((a, i) => {
+      // v8.59.0: área "No se pinta": solo nombre y motivo, sin medidas ni m².
+      if (block.permite_no_pinta && areaNoPinta(a)) {
+        return `
+      <div class="area">
+        <h3>${esc(a.name || (block.block_label || 'Item') + ' ' + (i + 1))}</h3>
+        <div class="muted">${esc(textoNoPinta(a.data))}</div>
+        ${gridFotos(fotosPorArea[a.id])}
+      </div>`;
+      }
       const campos = renderCampos(block.fields, a.data || {});
       const m2 = a.gross_area_m2 != null ? ` · ${Number(a.gross_area_m2).toFixed(2)} m²` : '';
       return `

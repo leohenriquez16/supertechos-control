@@ -10,6 +10,7 @@
 //  - Botón "Iniciar levantamiento" (placeholder — se conecta en PR 3B.4)
 
 import React, { useState, useEffect } from 'react';
+import { totalesSuperficies, filaCompleta, areaNoPinta, textoNoPinta, pendientesVisita, areasVigentes } from '../../lib/pinturaCatalogo';
 import { ArrowLeft, Building, MapPin, Calendar, Clock, FileText, AlertTriangle, Play, ClipboardList, Layers, ChevronDown, Loader2, Trash2, Check, Image as ImageIcon, X } from 'lucide-react';
 import QuickActions from './QuickActions';
 import DynamicSurveyForm from './DynamicSurveyForm';
@@ -105,14 +106,20 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
   // Templates específicos de la familia activa (ej. Impermeabilización / Aislamiento Térmico).
   const tplsFamiliaActual = familiaActual ? tpls.filter(t => familiaDeServiceLine(t.service_line) === familiaActual) : [];
   // Aplica un template específico (define el formulario de captura).
+  // Nombre corto de una plantilla («Pintura», «Pintura de Sucursal»): distingue dos formularios del mismo tipo de servicio.
+  const nombreFormulario = (tpl) => String(tpl?.name || '').replace(/^Levantamiento\s+/i, '') || SERVICE_LINES[tpl?.service_line]?.label || tpl?.service_line || '';
   const aplicarTemplate = async (tpl) => {
     if (!tpl || tpl.id === tipoTemplateId) return;
+    // Dos formularios del mismo tipo (ej. Pintura y Pintura de Sucursal): el cambio aplica a todo el levantamiento, se confirma.
+    const mismoTipo = tpl.service_line === tipoServiceLine;
+    if (mismoTipo && !confirm(`¿Cambiar el formulario de captura a «${nombreFormulario(tpl)}»?\n\nAplica a todo este levantamiento. Lo ya capturado se conserva, pero se verá con el formulario nuevo.`)) return;
     setCambiandoTipo(true);
-    const prevLabel = SERVICE_LINES[tipoServiceLine]?.label || 'Sin tipo';
+    const tplPrevia = tpls.find(x => x.id === tipoTemplateId);
+    const prevLabel = mismoTipo && tplPrevia ? nombreFormulario(tplPrevia) : (SERVICE_LINES[tipoServiceLine]?.label || 'Sin tipo');
     try {
       await actualizarTipoProyectoSurvey(proyecto.id, tpl.service_line, tpl.id);
       setTipoServiceLine(tpl.service_line); setTipoTemplateId(tpl.id);
-      const nuevoLabel = SERVICE_LINES[tpl.service_line]?.label || tpl.service_line;
+      const nuevoLabel = mismoTipo ? nombreFormulario(tpl) : (SERVICE_LINES[tpl.service_line]?.label || tpl.service_line);
       try { await chatterEventoSurvey('levantamiento', proyecto.id, `Cambió el tipo: ${prevLabel} → ${nuevoLabel}`, usuario); } catch {}
     } catch (e) { alert('Error: ' + (e.message || e)); }
     setCambiandoTipo(false);
@@ -526,7 +533,7 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
                 return (
                   <button key={t.id} onClick={() => !activo && aplicarTemplate(t)} disabled={cambiandoTipo}
                     className={`px-2.5 py-1.5 rounded-card border text-[11px] font-bold flex items-center gap-1 ${activo ? 'border-red-600 bg-red-900/30 text-white' : 'border-zinc-800 bg-zinc-950 text-zinc-400 hover:border-zinc-700'}`}>
-                    {SERVICE_LINES[t.service_line]?.label || t.service_line}{activo && <Check className="w-3 h-3 text-red-400" />}
+                    {tplsFamiliaActual.filter(x => x.service_line === t.service_line).length > 1 ? nombreFormulario(t) : (SERVICE_LINES[t.service_line]?.label || t.service_line)}{activo && <Check className="w-3 h-3 text-red-400" />}
                   </button>
                 );
               })}
@@ -732,6 +739,7 @@ function fmtCampoApp(field, v) {
     case 'counter': case 'number': return String(v);
     case 'measurement_table': { const f = Array.isArray(v) ? v : []; const t = f.reduce((s, x) => s + (Number(x.area_m2) || 0), 0); return `${f.length} medida(s) · ${t.toFixed(2)} m²`; }
     case 'ductos_table': { const f = Array.isArray(v) ? v : []; const t = f.reduce((s, x) => s + (Number(x.area_m2) || 0), 0); return `${f.length} ducto(s) · ${t.toFixed(2)} m²`; }
+    case 'surfaces_table': { const n = (Array.isArray(v) ? v : []).filter(filaCompleta).length; if (!n) return null; const t = totalesSuperficies(v); return [`${n} superficie(s)`, t.m2 > 0 && `${t.m2.toFixed(2)} m²`, t.ml > 0 && `${t.ml.toFixed(2)} ml`, t.und > 0 && `${t.und} und`].filter(Boolean).join(' · '); }
     case 'photos': case 'fotos_previas': return Array.isArray(v) ? `${v.length} foto(s)` : null;
     case 'map_point': return v?.lat != null ? 'punto marcado' : null;
     case 'map_polygon': return v?.areaM2 != null ? `${v.areaM2} m² (polígono)` : (Array.isArray(v?.vertices) && v.vertices.length ? `${v.vertices.length} pts` : null);
@@ -1081,12 +1089,13 @@ function LevantamientosRealizados({ site, proyecto }) {
         <ClipboardList className="w-3 h-3" /> Levantamiento realizado
       </div>
       {visitas.map(v => {
-        const areas = areasPorVisita[v.id] || [];
+        const areas = areasVigentes(areasPorVisita[v.id] || [], v.general_data); // jardines cargados solo cuentan si se marcaron levantados
         const abierta = expandida === v.id;
         const grupos = agruparPorPiso(areas);
         const totalPared = areas.reduce((s, a) => s + (Number(a.gross_area_m2) || 0), 0);
         const totalTecho = areas.reduce((s, a) => s + (Number(a.secondary_area_m2) || 0), 0);
         const nVerif = areas.filter(a => a.data?.por_verificar).length;
+        const pend = pendientesVisita(v.general_data); // v8.91.0: jardines/techo que quedaron para otra visita
         const fecha = v.checkin_at || v.created_at;
         // v8.25.32: agregados para el resumen "Para cotizar".
         const sumC = (id) => areas.reduce((s, a) => s + (Number(a.data?.[id]) || 0), 0);
@@ -1109,6 +1118,7 @@ function LevantamientosRealizados({ site, proyecto }) {
                   {fecha ? new Date(fecha).toLocaleDateString('es-DO', { dateStyle: 'medium' }) : 'Sin fecha'}
                   {v.is_completed ? ' · cerrado' : ' · abierto'}
                   {nVerif > 0 ? ` · ${nVerif} por verificar` : ''}
+                  {pend.length > 0 ? ` · pendiente: ${pend.map(x => x.parte.toLowerCase()).join(' y ')}` : ''}
                 </div>
               </div>
               <ChevronDown className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform ${abierta ? 'rotate-180' : ''}`} />
@@ -1121,6 +1131,13 @@ function LevantamientosRealizados({ site, proyecto }) {
                   <KpiTile label={areas.length === 1 ? 'Área' : 'Áreas'} value={areas.length} />
                   <KpiTile label="Fotos" value={nFotos} />
                 </div>
+
+                {pend.length > 0 && (
+                  <div className="rounded-card border border-amber-700/60 bg-amber-900/15 px-2.5 py-2 text-xs text-amber-200">
+                    <span className="font-bold uppercase tracking-wider text-[10px] text-amber-300">Pendiente para otra visita · </span>
+                    {pend.map(x => `${x.parte} (${x.motivo})`).join(' · ')}
+                  </div>
+                )}
 
                 {/* v8.25.32: bloque "Para cotizar" — lo que el cotizador necesita de un vistazo */}
                 {(sistemasProp.length > 0 || cotizar.length > 0) && (
@@ -1155,7 +1172,9 @@ function LevantamientosRealizados({ site, proyecto }) {
                                 </div>
                               </div>
                               <div className="text-right flex-shrink-0">
-                                <div className="text-lg font-black leading-none">{a.gross_area_m2 != null ? fmtM2(a.gross_area_m2) : '—'}<span className="text-xs font-bold text-zinc-400"> m²</span></div>
+                                {areaNoPinta(a)
+                                  ? <div className="text-[11px] font-bold text-zinc-400 max-w-[12rem]">{textoNoPinta(a.data)}</div>
+                                  : <div className="text-lg font-black leading-none">{a.gross_area_m2 != null ? fmtM2(a.gross_area_m2) : '—'}<span className="text-xs font-bold text-zinc-400"> m²</span></div>}
                                 {Number(a.secondary_area_m2) > 0 && <div className="text-[9px] text-zinc-500">+{fmtM2(a.secondary_area_m2)} techo</div>}
                               </div>
                             </div>

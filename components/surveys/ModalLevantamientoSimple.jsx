@@ -526,6 +526,27 @@ export default function ModalLevantamientoSimple({ usuario, clientes = [], conta
                     );
                   })}
                 </div>
+                {/* Dos formularios para el mismo tipo de servicio (ej. Pintura y Pintura de Sucursal): se elige cuál. */}
+                {(() => {
+                  const repetidos = templatesFamilia.filter(t => templatesFamilia.filter(x => x.service_line === t.service_line).length > 1);
+                  if (repetidos.length < 2) return null;
+                  return (
+                    <div className="mt-2">
+                      <div className="text-[10px] uppercase tracking-wide text-zinc-500 font-bold mb-1">Formulario de captura</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {repetidos.map(t => {
+                          const activo = templateId === t.id;
+                          return (
+                            <button key={t.id} type="button" onClick={() => setTemplateId(t.id)}
+                              className={`px-2.5 py-1.5 rounded-card border text-[11px] font-bold ${activo ? 'border-red-600 bg-red-900/20 text-white' : 'border-zinc-800 bg-zinc-900 text-zinc-300 hover:border-zinc-700'}`}>
+                              {String(t.name || '').replace(/^Levantamiento\s+/i, '') || t.id}{activo && <Check className="w-3 h-3 text-red-400 inline ml-1 -mt-0.5" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
                 {/* El tipo específico (techo/piso) se elige POR ÁREA dentro del levantamiento. */}
                 {familiaKey === 'generico' ? (
                   <div className="mt-1.5 text-[11px] text-zinc-500">Captura manual: tú describes cada superficie. Útil para algo no convencional o sin template.</div>

@@ -2,7 +2,7 @@
 // Ejecutar desde la raíz:  node tests/programa-sites.test.mjs
 
 import assert from 'node:assert/strict';
-import { etapaDeLocacion, resumenPrograma, pendientesDelCliente, agruparPorZona, distanciaKm, ETAPAS, amarrarLocaciones, normalizarRefOdoo, textoCoordinacion, fechasPorEtapa, enEtapaDesde } from '../lib/helpers/programaSites.js';
+import { etapaDeLocacion, resumenPrograma, pendientesDelCliente, agruparPorZona, distanciaKm, ETAPAS, amarrarLocaciones, normalizarRefOdoo, textoCoordinacion, fechasPorEtapa, enEtapaDesde, amarrarCotizacionesOdoo, sincronizarLocaciones, LUZ_VERDE_POR_ODOO } from '../lib/helpers/programaSites.js';
 
 let ok = 0; const fallos = [];
 const caso = (n, fn) => { try { fn(); ok++; } catch (e) { fallos.push(`${n}: ${e.message}`); } };
@@ -247,6 +247,89 @@ caso('un levantamiento amarrado pero sin visita todavía no mueve la locación',
   const sinVisita = { id: 'p185', siteNombre: 'ESPERANZA II', lat: 19.4, lng: -70.6 };
   assert.equal(amarrarLocaciones([yaAmarrada], [sinVisita], []).length, 0);
   assert.equal(etapaDeLocacion(yaAmarrada, {}), 'por_levantar');
+});
+
+// --- v8.88.0: cotización de Odoo por código de antena (cotizada sin levantamiento en el ERP)
+const bavaro = { id: 'pl_41', codigoUt: 'DO-02-LA-00436-09', nombre: 'BAVARO III', lat: 18.68, lng: -68.45 };
+const higuey = { id: 'pl_08', codigoUt: 'DO-02-LA-00470-11', nombre: 'HIGUEY XIII', lat: 18.61, lng: -68.71 };
+const cots = [
+  { nombre: 'ST-C5909', estado: 'sent', fecha: '2026-10-06', texto: 'Antena BÁVARO III - DO-02-LA-00436-09', montoSinItbis: 459224.45 },
+  { nombre: 'ST-C5911', estado: 'sent', fecha: '2026-10-06', texto: 'Antena HIGÜEY XIII - DO-02-LA-00470-11', montoSinItbis: 183928 },
+  { nombre: 'ST-C6062', estado: 'sent', fecha: '2026-11-19', texto: 'Techo  HIGÜEY XIII - DO-02-LA-00470-11 - Resane y Pintura', montoSinItbis: 26161 },
+  { nombre: 'ST-C5910', estado: 'sale', fecha: '2026-10-31', texto: 'Antena PARQUE DE LOS VAGOS Higuey -  DO-02-LA-00510-12', montoSinItbis: 166061.5 },
+];
+caso('Odoo: la cotización enviada con el código de la antena la pasa a Esperando aprobación', () => {
+  const [c] = amarrarCotizacionesOdoo([bavaro], cots);
+  assert.equal(c.campos.cotizacionRef, 'ST-C5909');
+  assert.equal(c.campos.cotizacionMonto, 459224.45);
+  assert.equal(c.campos.cotizadoAt, '2026-10-06');
+  assert.equal(c.campos.luzVerdePor, LUZ_VERDE_POR_ODOO);
+  assert.equal(etapaDeLocacion({ ...bavaro, ...c.campos }, {}), 'cotizado');
+});
+caso('Odoo: manda la de la antena, no la del techo, aunque la del techo sea más nueva', () => {
+  const [c] = amarrarCotizacionesOdoo([higuey], cots);
+  assert.equal(c.campos.cotizacionRef, 'ST-C5911');
+});
+caso('Odoo: con dos versiones de la antena, la más reciente', () => {
+  const v2 = { ...cots[0], nombre: 'ST-C6100', fecha: '2026-11-25', montoSinItbis: 400000 };
+  assert.equal(amarrarCotizacionesOdoo([bavaro], [cots[0], v2])[0].campos.cotizacionRef, 'ST-C6100');
+});
+caso('Odoo: borradores y canceladas no cuentan', () => {
+  assert.equal(amarrarCotizacionesOdoo([bavaro], [{ ...cots[0], estado: 'draft' }, { ...cots[0], nombre: 'ST-C5000', estado: 'cancel' }]).length, 0);
+});
+caso('Odoo: otra antena de la misma ciudad no se cruza (código distinto)', () => {
+  assert.equal(amarrarCotizacionesOdoo([higuey], [cots[3]]).length, 0);
+});
+caso('Odoo: no pisa una locación que ya tiene cotización, obra o aprobación', () => {
+  assert.equal(amarrarCotizacionesOdoo([{ ...bavaro, cotizacionRef: 'ST-C5000' }], cots).length, 0);
+  assert.equal(amarrarCotizacionesOdoo([{ ...bavaro, proyectoId: 'p1' }], cots).length, 0);
+  assert.equal(amarrarCotizacionesOdoo([{ ...bavaro, cotizacionAprobada: true }], cots).length, 0);
+});
+caso('Odoo: una cotización que ya es de otra locación no se repite', () => {
+  assert.equal(amarrarCotizacionesOdoo([{ id: 'x', codigoUt: 'OTRA', cotizacionRef: 'ST-C5909' }, bavaro], cots).length, 0);
+});
+caso('Odoo: con luz verde ya dada no la cambia', () => {
+  const [c] = amarrarCotizacionesOdoo([{ ...bavaro, luzVerde: true }], cots);
+  assert.equal(c.campos.luzVerde, undefined);
+  assert.equal(c.campos.luzVerdePor, undefined);
+});
+caso('sincronizar: la obra se amarra en la misma vuelta por la cotización que vino de Odoo', () => {
+  const obras = [{ id: 'obra1', nombre: 'Antena Bávaro', referenciaOdoo: 'ST-C5909', valorCotizacion: 459224.45 }];
+  const [c] = sincronizarLocaciones([bavaro], [], obras, cots);
+  assert.equal(c.campos.cotizacionRef, 'ST-C5909');
+  assert.equal(c.campos.proyectoId, 'obra1');
+  assert.equal(c.campos.cotizacionAprobada, true);
+});
+caso('Odoo: si solo hay la de Techo, no se amarra (espera la de la antena)', () => {
+  assert.equal(amarrarCotizacionesOdoo([higuey], [cots[2]]).length, 0);
+});
+caso('Odoo: sale una versión nueva → la locación pasa a la nueva', () => {
+  const v2 = { ...cots[0], nombre: 'ST-C6100', fecha: '2026-11-25T14:00:00Z', montoSinItbis: 400000 };
+  const loc = { ...bavaro, cotizacionRef: 'ST-C5909', luzVerde: true };
+  const [c] = amarrarCotizacionesOdoo([loc], [{ ...cots[0], estado: 'cancel' }, v2]);
+  assert.equal(c.campos.cotizacionRef, 'ST-C6100');
+  assert.equal(c.campos.cotizacionMonto, 400000);
+});
+caso('Odoo: ya al día no genera cambios', () => {
+  assert.equal(amarrarCotizacionesOdoo([{ ...bavaro, cotizacionRef: 'ST-C5909', luzVerde: true }], cots).length, 0);
+});
+caso('Odoo: la cancelaron y no hay otra → se deja como está', () => {
+  assert.equal(amarrarCotizacionesOdoo([{ ...bavaro, cotizacionRef: 'ST-C5909' }], [{ ...cots[0], estado: 'cancel' }]).length, 0);
+});
+caso('Odoo: con levantamiento del ERP no se toca (el levantamiento manda)', () => {
+  assert.equal(amarrarCotizacionesOdoo([{ ...bavaro, levantamientoId: 'lev1' }], cots).length, 0);
+});
+caso('Odoo: un código de relleno no amarra nada', () => {
+  assert.equal(amarrarCotizacionesOdoo([{ ...bavaro, codigoUt: '-' }, { ...bavaro, id: 'b', codigoUt: 'N/A' }], cots).length, 0);
+});
+caso('sincronizar: el levantamiento del ERP manda sobre Odoo', () => {
+  const lev = [{ id: 'lev1', siteNombre: 'Antena Bavaro DO-02-LA-00436-09', lat: 18.68, lng: -68.45, referenciaOdoo: 'ST-C5800', realizadoAt: '2026-10-01', cotizadoAt: '2026-10-02' }];
+  const [c] = sincronizarLocaciones([bavaro], lev, [], cots);
+  assert.equal(c.campos.levantamientoId, 'lev1');
+  assert.equal(c.campos.cotizacionRef, 'ST-C5800');
+});
+caso('sincronizar: sin cotizaciones de Odoo se comporta como antes', () => {
+  assert.deepEqual(sincronizarLocaciones([bavaro], [], [], []), amarrarLocaciones([bavaro], [], []));
 });
 
 console.log(`\n${ok} pasadas, ${fallos.length} fallidas`);

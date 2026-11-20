@@ -38,7 +38,7 @@ export default function BarraAsignar({ seleccionadas = [], todas = [], tecnicos 
 
   const correr = async (fn) => {
     setGuardando(true);
-    try { await fn(); setModal(false); await onHecho?.(); }
+    try { await fn(); setModal(false); onLimpiar?.(); await onHecho?.(); }
     catch (e) { alert('No se pudo guardar: ' + (e?.message || e)); }
     setGuardando(false);
   };

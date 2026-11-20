@@ -60,8 +60,9 @@ export default function PantallaCoordinacion({ usuario, data, onVolver }) {
   const hoy = hoyRD();
 
   useEffect(() => { setFiltros({ ...FILTROS_VACIOS, ...leerLS(LS_FILTROS, {}) }); setOcultos(leerLS(LS_OCULTOS, [])); }, []);
-  const cambiarFiltro = (k, v) => setFiltros((f) => { const n = { ...f, [k]: v }; guardarLS(LS_FILTROS, n); return n; });
-  const limpiarFiltros = () => { setFiltros(FILTROS_VACIOS); guardarLS(LS_FILTROS, FILTROS_VACIOS); };
+  // v8.95.0: al cambiar un filtro se limpia la selección (no se programan oficinas que ya no se ven).
+  const cambiarFiltro = (k, v) => { setSeleccion(new Set()); setFiltros((f) => { const n = { ...f, [k]: v }; guardarLS(LS_FILTROS, n); return n; }); };
+  const limpiarFiltros = () => { setSeleccion(new Set()); setFiltros(FILTROS_VACIOS); guardarLS(LS_FILTROS, FILTROS_VACIOS); };
 
   // ── Carga ──
   const cargarSites = useCallback(async (id) => {

@@ -2,7 +2,7 @@
 
 // v8.95.0: «Mis oficinas de hoy» — tarjeta del técnico para las campañas de levantamiento (ej. pintura de las
 // oficinas de Banreservas). Se carga sola con sus oficinas asignadas y NO pinta nada si no tiene ninguna.
-// Secciones: Hoy (por franja), Para corregir (devueltas por Edwin, con su nota) y Atrasadas.
+// Secciones: Hoy (por franja), Para completar o corregir (devueltas por Edwin con su nota, o con jardín/techo pendiente) y Atrasadas.
 // Cada oficina: Waze, Llamar, el botón grande (Iniciar / Seguir / Corregir / Ver) y «No pude levantar».
 // Al abrir, el padre monta el formulario a pantalla completa (onAbrirOficina(proyecto, site)).
 
@@ -64,7 +64,7 @@ export default function TarjetaMisOficinasHoy({ usuario, onAbrirOficina }) {
       </div>
 
       {grupos.corregir.length > 0 && (
-        <Seccion titulo={`Para corregir (${grupos.corregir.length})`} color="text-pink-400">
+        <Seccion titulo={`Para completar o corregir (${grupos.corregir.length})`} color="text-pink-400">
           {grupos.corregir.map(s => <Oficina key={s.id} site={s} abriendo={abriendo} onAbrir={abrir} onNoPude={setHoja} />)}
         </Seccion>
       )}

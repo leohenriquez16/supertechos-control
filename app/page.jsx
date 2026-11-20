@@ -516,7 +516,7 @@ const vistaAterrizaje = (u) => {
     && !tieneRol(u, 'supervisor') && !tieneRol(u, 'maestro') && !tieneRol(u, 'ayudante');
   const esLogistica = !tieneRol(u, 'admin') && (tieneRol(u, 'chofer') || tieneRol(u, 'almacen'))
     && !tieneRol(u, 'supervisor') && !tieneRol(u, 'maestro');
-  return soloFacturas ? 'facturasOdoo' : tieneRol(u, 'admin') ? 'dashboard' : (tieneRol(u, 'supervisor') || esLogistica) ? 'inicio' : 'misProyectos';
+  return soloFacturas ? 'facturasOdoo' : tieneRol(u, 'admin') ? 'dashboard' : (tieneRol(u, 'supervisor') || esLogistica || u?.levantamientoHabilitado) ? 'inicio' : 'misProyectos';
 };
 
 // v8.9.1: Fuzzy match de sistema por nombre
@@ -934,7 +934,8 @@ export default function App() {
     { seccion: 'MIS PROYECTOS', items: [
       // v8.25.23: el supervisor inicia en el Home (resumen del día); los demás en Proyectos.
       // v8.29.1: chofer y almacén también tienen Inicio (su ruta / su cola).
-      ...((tieneRol(usuario, 'supervisor') || tieneRol(usuario, 'chofer') || tieneRol(usuario, 'almacen')) ? [{ id: 'inicio', label: 'Inicio', icon: LayoutDashboard, vista: 'inicio' }] : []),
+      // v8.95.0: quien levanta oficinas de campaña (levantamiento habilitado) también tiene Inicio: ahí está «Mis oficinas de hoy».
+      ...((tieneRol(usuario, 'supervisor') || tieneRol(usuario, 'chofer') || tieneRol(usuario, 'almacen') || usuario?.levantamientoHabilitado) ? [{ id: 'inicio', label: 'Inicio', icon: LayoutDashboard, vista: 'inicio' }] : []),
       { id: 'misProyectos', label: 'Proyectos', icon: Briefcase, vista: 'misProyectos' },
       { id: 'clima', label: 'Clima', icon: CloudRain, vista: 'clima' },
       // v8.19.72: vista unificada del maestro (proyectos + levantamientos + reclamaciones + mapa)

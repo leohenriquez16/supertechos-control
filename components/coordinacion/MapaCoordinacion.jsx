@@ -143,10 +143,13 @@ export default function MapaCoordinacion({
     });
   }, [sites, seleccion, visibles, colorPor, tecnicos]);
 
-  // Encuadre: solo cuando cambian los filtros (o la lista de oficinas).
+  // Encuadre: en la primera carga con pines y cuando cambian los filtros; NO tras cada acción (Edwin no pierde su zoom).
+  const encuadreRef = useRef(null);
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
+    if (!map || !pinesRef.current.size) return;
+    if (encuadreRef.current === fitKey) return;
+    encuadreRef.current = fitKey;
     const puntos = [];
     pinesRef.current.forEach((m, id) => { if (!visibles || visibles.has(id)) puntos.push(m.getLatLng()); });
     if (puntos.length) map.fitBounds(L.latLngBounds(puntos).pad(0.1), { maxZoom: 14 });

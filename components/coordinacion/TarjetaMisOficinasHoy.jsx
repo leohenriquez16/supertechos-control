@@ -148,7 +148,7 @@ function Oficina({ site, abriendo, onAbrir, onNoPude, atrasada = false }) {
           {cargando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />} {accion.label}
         </button>
       </div>
-      {SIN_EMPEZAR.includes(est) && (
+      {(SIN_EMPEZAR.includes(est) || est === 'en_sitio') && (
         <button onClick={() => onNoPude(site)} className="w-full mt-2 py-2.5 rounded-card bg-zinc-900 border border-zinc-700 hover:border-orange-500 text-orange-300 text-xs font-bold uppercase flex items-center justify-center gap-1.5">
           <Ban className="w-3.5 h-3.5" /> No pude levantar
         </button>

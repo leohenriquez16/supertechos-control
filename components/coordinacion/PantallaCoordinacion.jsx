@@ -263,7 +263,7 @@ export default function PantallaCoordinacion({ usuario, data, onVolver }) {
                 {hayFiltro && <button onClick={limpiarFiltros} className="text-xs text-zinc-400 hover:text-white underline">Quitar filtros</button>}
               </div>
 
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                 {/* Lista */}
                 <div className="bg-zinc-950 border border-zinc-800 rounded-card overflow-hidden flex flex-col">
                   <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-800">

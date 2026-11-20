@@ -32,14 +32,21 @@ export async function GET(request) {
   const iniMes = `${hoy.slice(0, 7)}-01T04:00:00.000Z`;
   const iniAnio = `${hoy.slice(0, 4)}-01-01T04:00:00.000Z`;
 
-  const [{ data: proys }, { data: sols }, { data: movs }, { data: edwinRows }, mesRes, anioRes] = await Promise.all([
+  const [{ data: proysTodos }, { data: sols }, { data: movsTodos }, { data: edwinRows }, mesRes, anioRes, campRes] = await Promise.all([
     supabase.schema('surveys').from('projects').select('id, client_name, odoo_stage, status, created_at, stage_changed_at, realizado_at, cotizado_at, fecha_visita_programada, visita_por_cliente, requiere_consulta_tecnica, consulta_tecnica_at, asignado_a_nombre'),
     supabase.from('solicitudes_levantamiento').select('levantamiento_id, created_at, ticket, cliente_nombre, tipo_servicio, tipo_inmueble, area_aprox, urgencia, locacion_nombre, direccion, punto_referencia, contacto_telefono, estado'),
     supabase.schema('surveys').from('stage_history').select('project_id, etapa_anterior, etapa_nueva, created_at').gte('created_at', iniAyer).lt('created_at', finAyer),
     supabase.from('personal').select('email').ilike('nombre', '%edwin%parra%').limit(1),
     supabase.from('solicitudes_levantamiento').select('id', { count: 'exact', head: true }).gte('created_at', iniMes),
     supabase.from('solicitudes_levantamiento').select('id', { count: 'exact', head: true }).gte('created_at', iniAnio),
+    // v8.95.0: ids de los proyectos-campaña (es_campana). Consulta aparte: si la migración 152 no está, da error → nada se filtra.
+    supabase.schema('surveys').from('projects').select('id').eq('es_campana', true),
   ]);
+  // v8.95.0: la campaña de Coordinación (es_campana) no entra en el correo de la Torre (ni sus movimientos de etapa).
+  const campIds = new Set(campRes?.error ? [] : (campRes?.data || []).map((p) => p.id));
+  const proys = (proysTodos || []).filter((p) => !campIds.has(p.id));
+  const idsOk = new Set(proys.map((p) => p.id));
+  const movs = (movsTodos || []).filter((m) => idsOk.has(m.project_id));
 
   const solPorLev = {};
   (sols || []).forEach((s) => { if (s.levantamiento_id) solPorLev[s.levantamiento_id] = s; });

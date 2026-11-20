@@ -112,9 +112,13 @@ export async function sincronizarLevantamientosOdoo() {
   const { estadoCotizacionesOdoo } = await import('../../../../lib/odoo');
   const res = { revisados: 0, cerrados: 0, tareas: 0, errores: [] };
   try {
-    const { data: pendientes } = await supabase.schema('surveys').from('projects')
+    const { data: pendientesTodos } = await supabase.schema('surveys').from('projects')
       .select('id, client_name, status').eq('status', 'survey_completed');
-    if (!pendientes?.length) return res;
+    // v8.95.0: fuera los proyectos-campaña (es_campana). Consulta aparte; si la columna no existe → error → no se filtra nada.
+    const { data: campRows, error: campErr } = await supabase.schema('surveys').from('projects').select('id').eq('es_campana', true);
+    const campIds = new Set(campErr ? [] : (campRows || []).map(p => p.id));
+    const pendientes = (pendientesTodos || []).filter(p => !campIds.has(p.id));
+    if (!pendientes.length) return res;
     const ids = pendientes.map(p => p.id);
     const { data: sites } = await supabase.schema('surveys').from('sites')
       .select('project_id, referencia_odoo').in('project_id', ids).not('referencia_odoo', 'is', null);

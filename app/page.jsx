@@ -99,6 +99,7 @@ const VistaContabilidad = cargarVista(() => import('../components/contabilidad/V
 // v8.10.13: VistaNomina extraída
 import VistaNomina from '../components/nomina/VistaNomina';
 const VistaProduccion = cargarVista(() => import('../components/dashboard/VistaProduccion'), CargandoVista); // v8.27.73
+const FichaEmpleado = cargarVista(() => import('../components/personal/FichaEmpleado'), CargandoVista); // v8.87.0
 const VistaRentabilidad = cargarVista(() => import('../components/dashboard/VistaRentabilidad'), CargandoVista); // v8.46.0
 const VistaBonos = cargarVista(() => import('../components/bonos/VistaBonos'), CargandoVista); // v8.28.2
 import MisPendientes from '../components/pendientes/MisPendientes'; // v8.28.3
@@ -443,7 +444,7 @@ const vistaPermitida = (v, u, data) => {
     case 'dashboard': case 'proyectos': case 'bonos': case 'planObras': case 'nomina': case 'galeria':
     case 'equipoGlobal': case 'cajaChica': case 'proveedoresCajaChica': case 'categoriasCajaChica':
     case 'estadisticasPersonal': case 'categorias': case 'auditLog': case 'propiedadesEmpresa':
-    case 'personal': case 'perfilPersona': case 'sistemas': case 'clientes': case 'ubicaciones':
+    case 'personal': case 'perfilPersona': case 'empleado360': case 'sistemas': case 'clientes': case 'ubicaciones':
     case 'notificaciones': case 'garantias':
       return admin;
     case 'produccion': case 'carga': case 'contabilidad': return r('owner');
@@ -478,7 +479,7 @@ const resolverNav = (nav, u, data) => {
     if (!proyecto) return null;
     if (nav.tab && tabPermitida(nav.tab, u, proyecto)) tab = nav.tab;
   }
-  if (vista === 'perfilPersona') {
+  if (vista === 'perfilPersona' || vista === 'empleado360') {
     persona = (data.personal || []).find(p => p.id === nav.personaId) || null;
     if (!persona) return null;
   }
@@ -615,7 +616,7 @@ export default function App() {
       vista,
       proyectoId: conObra ? (proyectoActivo?.id || null) : null,
       tab: vista === 'proyecto' ? tab : null,
-      personaId: vista === 'perfilPersona' ? (perfilViendo?.id || null) : null,
+      personaId: (vista === 'perfilPersona' || vista === 'empleado360') ? (perfilViendo?.id || null) : null,
     };
     const guardar = { ...st }; // Next.js le agrega sus campos internos al objeto que se pasa a history
     const q = new URLSearchParams(window.location.search);
@@ -1115,7 +1116,8 @@ export default function App() {
         {vista === 'contabilidad' && tieneRol(usuario, 'owner') && <VistaContabilidad usuario={usuario} onVolver={() => setVista('dashboard')} />}
         {vista === 'miPerfil' && <MiPerfil usuario={usuario} persona={usuario} soloLectura={false} onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }} onGuardar={(campos) => withSync(() => db.guardarPerfil(usuario.id, campos))} />}
         {vista === 'programas' && <PantallaProgramas usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onAbrirProyecto={async (pid) => { const proy = data.proyectos.find(x => x.id === pid); if (proy) { setProyectoActivo(proy); setVista('proyecto'); setTab('avance'); } }} />}
-        {esAdmin && vista === 'personal' && <GestionPersonal usuario={usuario} personal={data.personal} data={data} onVolver={() => setVista('dashboard')} onActualizar={(p) => withSync(() => db.reemplazarPersonal(p))} onRecargar={recargar} onAbrirPerfil={(p) => { setPerfilViendo(p); setVista('perfilPersona'); }} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
+        {esAdmin && vista === 'personal' && <GestionPersonal usuario={usuario} personal={data.personal} data={data} onVolver={() => setVista('dashboard')} onActualizar={(p) => withSync(() => db.reemplazarPersonal(p))} onRecargar={recargar} onAbrirPerfil={(p) => { setPerfilViendo(p); setVista('perfilPersona'); }} onAbrir360={(p) => { setPerfilViendo(p); setVista('empleado360'); }} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
+        {esAdmin && vista === 'empleado360' && perfilViendo && <FichaEmpleado persona={(data.personal || []).find(x => x.id === perfilViendo.id) || perfilViendo} usuario={usuario} data={data} onVolver={() => setVista('personal')} onEditar={() => setVista('perfilPersona')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'perfilPersona' && perfilViendo && <MiPerfil usuario={usuario} persona={perfilViendo} soloLectura={false} onVolver={() => setVista('personal')} onGuardar={(campos) => withSync(async () => { await db.guardarPerfil(perfilViendo.id, campos); const d = await db.loadAllData(); const actualizada = d.personal.find(p => p.id === perfilViendo.id); if (actualizada) setPerfilViendo(actualizada); })} />}
         {esAdmin && vista === 'sistemas' && <GestionSistemas sistemas={data.sistemas} config={data.config} dataGlobal={data} onVolver={() => setVista('dashboard')} onActualizarSistemas={(s) => withSync(() => db.guardarSistemas(s))} onActualizarConfig={(c) => withSync(() => db.guardarConfig(c))} />}
         {esAdmin && vista === 'clientes' && <GestionClientes clientes={data.clientes || []} contactos={data.contactos || []} proyectos={data.proyectos || []} usuario={usuario} onVolver={() => setVista('dashboard')} onRecargar={recargar} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
@@ -3443,7 +3445,7 @@ function EditorSistema({ sistema, setSistema, onGuardar, onCancelar, categorias 
 // ============================================================
 // GESTIÓN PERSONAL (con admin como rol seleccionable)
 // ============================================================
-function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar, onAbrirPerfil, data, onVerProyecto }) {
+function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar, onAbrirPerfil, onAbrir360, data, onVerProyecto }) {
   const [editando, setEditando] = useState(null);
   const [form, setForm] = useState(null);
   const [experienciaDe, setExperienciaDe] = useState(null); // v8.9.19
@@ -3782,6 +3784,7 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
         const cerrar = () => setDetalleDe(null);
         const acciones = [
           { label: 'Editar datos básicos', desc: 'Nombre, roles, PIN, toggles', icon: Edit2, onClick: () => { cerrar(); setEditando(p.id); setForm({ ...p, roles: [...(p.roles || [])] }); } },
+          ...(onAbrir360 ? [{ label: 'Empleado 360', desc: 'Obras, pagos, asistencia y Odoo', icon: LayoutDashboard, onClick: () => { cerrar(); onAbrir360(p); } }] : []), // v8.87.0
           { label: 'Ver perfil completo', desc: 'Foto, documentos, datos', icon: UserIcon, onClick: () => { cerrar(); onAbrirPerfil(p); } },
           ...(data ? [
             { label: 'Experiencia', desc: 'Proyectos y producción', icon: TrendingUp, onClick: () => { cerrar(); setExperienciaDe(p); } },

@@ -13,7 +13,7 @@ import { EXTRAER_OC_PROMPT, parsearRespuestaIA, validarOC } from '../../lib/help
 import { buscarRecuadroProveedor, estamparFirmaYSello, blancoATransparente } from '../../lib/helpers/estamparOC';
 import * as db from '../../lib/db';
 import { formatRD } from '../../lib/helpers/formato';
-import { ETAPAS, ETAPA, COLOR_ETAPA, TIPOS_DOCUMENTO, turnoDe, textoCoordinacion, ETAPA_PINTURA } from '../../lib/helpers/programaSites';
+import { ETAPAS, ETAPA, COLOR_ETAPA, TIPOS_DOCUMENTO, turnoDe, textoCoordinacion, ETAPA_PINTURA, RECEPCION } from '../../lib/helpers/programaSites';
 
 const fmtF = (f) => { if (!f) return ''; try { return new Date(String(f).length === 10 ? f + 'T12:00:00' : f).toLocaleDateString('es-DO', { day: 'numeric', month: 'short', year: 'numeric' }); } catch { return ''; } };
 const etiquetaTipo = Object.fromEntries(TIPOS_DOCUMENTO.map(t => [t.id, t.label]));
@@ -200,6 +200,28 @@ export default function FichaLocacion({ locacion: l, usuario, onCerrar, onCambio
                   </button>
                 )}
               </div>
+              {/* v8.91.0: recepción (Sites recibe techo y pintura juntos), reservas y reincidencias */}
+              {l.recepcion && <div><span className="text-zinc-500">Recepción:</span> <b style={{ color: RECEPCION[l.recepcion].color }}>{RECEPCION[l.recepcion].label}</b> <span className="text-zinc-500">· {RECEPCION[l.recepcion].detalle}</span></div>}
+              <div>
+                <span className="text-zinc-500">Reservas:</span>{' '}
+                {l.reservasAbiertas
+                  ? <span className="text-orange-400 font-bold">Con reservas{l.reservasNota ? ` — ${l.reservasNota}` : ''}{l.reservasDesde ? <span className="text-zinc-500 font-normal"> · desde el {fmtF(l.reservasDesde)}</span> : null}</span>
+                  : <span className="text-zinc-500">ninguna</span>}
+                <button onClick={async () => {
+                  if (l.reservasAbiertas) {
+                    if (!confirm(`¿Se corrigieron las reservas de ${l.nombre}?`)) return;
+                    try { await db.actualizarLocacionPrograma(l.id, { reservasAbiertas: false, etapaDesde: l.etapaDesde || undefined }); await onCambio?.(); } catch (e) { alert('Error: ' + (e.message || e)); }
+                    return;
+                  }
+                  const nota = prompt(`¿Qué correcciones pidió Sites en la recepción de ${l.nombre}?`, '');
+                  if (nota === null) return;
+                  try { await db.actualizarLocacionPrograma(l.id, { reservasAbiertas: true, reservasNota: nota.trim() || null, reservasDesde: new Date().toISOString(), etapaDesde: l.etapaDesde || undefined }); await onCambio?.(); }
+                  catch (e) { alert('Error: ' + (e.message || e)); }
+                }} className="ml-2 text-[10px] underline text-zinc-400 hover:text-white">{l.reservasAbiertas ? 'marcar corregidas' : 'registrar reservas'}</button>
+              </div>
+              {(l.reincidencias || []).length > 0 && (
+                <div><span className="text-zinc-500">Reincidencia:</span> <span className="text-red-400 font-bold">{l.reincidencias.map(r => `${r.codigo || 'reclamación'} (${r.estado}${r.fechaApertura ? `, desde ${fmtF(r.fechaApertura)}` : ''})`).join(' · ')}</span></div>
+              )}
               <div><span className="text-zinc-500">Tipo de trabajo:</span> {l.tipoTrabajo === 'pintura' ? 'Pintura' : l.tipoTrabajo === 'ambos' ? 'Techo y pintura' : 'Impermeabilización'}</div>
               <div className="flex gap-3 flex-wrap pt-1">
                 {l.lat && l.lng && <a href={`https://www.google.com/maps?q=${l.lat},${l.lng}`} target="_blank" rel="noreferrer" className="underline text-zinc-400 hover:text-white inline-flex items-center gap-1"><ExternalLink className="w-3 h-3" /> Mapa</a>}

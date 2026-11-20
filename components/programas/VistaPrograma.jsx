@@ -14,7 +14,7 @@ import dynamic from 'next/dynamic';
 import { ArrowLeft, Check, Clock, MapPin, Loader2, RefreshCw, Route, LayoutGrid, Search, Lock, Ruler, FileText, CalendarDays, Wrench, ClipboardCheck, CheckCircle2, ShieldCheck, PaintRoller } from 'lucide-react';
 import * as db from '../../lib/db';
 import { formatRD } from '../../lib/helpers/formato';
-import { ETAPAS, ETAPA, FASES, COLOR_ETAPA, turnoDe, resumenPrograma, pendientesDelCliente, agruparPorZona, textoCoordinacion, ETAPAS_PINTURA, ETAPA_PINTURA, RECEPCION, sumaMontos, programacionObra } from '../../lib/helpers/programaSites';
+import { ETAPAS, ETAPA, FASES, COLOR_ETAPA, turnoDe, resumenPrograma, pendientesDelCliente, agruparPorZona, textoCoordinacion, ETAPAS_PINTURA, ETAPA_PINTURA, RECEPCION, sumaMontos, programacionObra, ETAPAS_TABLERO, FASES_TABLERO, ETAPA_TABLERO, turnoTablero } from '../../lib/helpers/programaSites';
 import FichaLocacion from './FichaLocacion';
 import ModalProgramar from './ModalProgramar';
 
@@ -84,15 +84,24 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
   const seleccionadas = sel.ids.map(id => locaciones.find(l => l.id === id)).filter(l => l && programable(l));
   const cambiarTab = (t) => { setTab(t); setSel({ tipo: t === 'pintura' ? 'pintura' : 'techo', ids: [] }); };
 
+  // v8.92.0: lo que salió del programa no cuenta en el tablero, los totales ni el portal
+  const activas = useMemo(() => locaciones.filter(l => !l.fueraPrograma), [locaciones]);
+  const fuera = useMemo(() => locaciones.filter(l => l.fueraPrograma), [locaciones]);
+  const [verFuera, setVerFuera] = useState(false);
   const filtradas = useMemo(() => {
     const q = buscar.trim().toLowerCase();
-    if (!q) return locaciones;
-    return locaciones.filter(l => `${l.nombre} ${l.codigoUt || ''} ${l.direccion || ''} ${l.cotizacionRef || ''} ${l.cotizacionPinturaRef || ''}`.toLowerCase().includes(q));
-  }, [locaciones, buscar]);
+    if (!q) return activas;
+    return activas.filter(l => `${l.nombre} ${l.codigoUt || ''} ${l.direccion || ''} ${l.cotizacionRef || ''} ${l.cotizacionPinturaRef || ''}`.toLowerCase().includes(q));
+  }, [activas, buscar]);
 
-  const resumen = useMemo(() => resumenPrograma(locaciones, { fechaMeta: programa?.fechaMeta }), [locaciones, programa]);
-  const pendCliente = useMemo(() => pendientesDelCliente(locaciones), [locaciones]);
-  const zonas = useMemo(() => agruparPorZona(filtradas.filter(l => ['por_levantar', 'por_programar'].includes(l.etapa)), 8), [filtradas]);
+  const resumen = useMemo(() => resumenPrograma(activas, { fechaMeta: programa?.fechaMeta }), [activas, programa]);
+  const pendCliente = useMemo(() => pendientesDelCliente(activas), [activas]);
+  const zonas = useMemo(() => agruparPorZona(filtradas.filter(l => ['sin_obra', 'por_programar', 'programado'].includes(l.etapaTablero)), 8), [filtradas]);
+  const devolverAlPrograma = async (l) => {
+    if (!confirm(`¿Devolver ${l.nombre} al programa?`)) return;
+    try { await db.actualizarLocacionPrograma(l.id, { fueraPrograma: false, fueraMotivo: null, fueraAt: null, etapaDesde: l.etapaDesde || undefined }); await onRecargar?.(); }
+    catch (e) { alert('Error: ' + (e.message || e)); }
+  };
 
   const marcarLuzVerde = async (loc, valor) => {
     // v8.59.0: confirmar en los dos sentidos — un clic suelto movía la locación de etapa.
@@ -124,9 +133,10 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
     setGuardando(null);
   };
 
+  // v8.92.0: columnas de la cotización al cobro (etapaTablero)
   const porEtapa = useMemo(() => {
-    const g = Object.fromEntries(ETAPAS.map(e => [e.id, []]));
-    filtradas.forEach(l => { (g[l.etapa] = g[l.etapa] || []).push(l); });
+    const g = Object.fromEntries(ETAPAS_TABLERO.map(e => [e.id, []]));
+    filtradas.forEach(l => { (g[l.etapaTablero] = g[l.etapaTablero] || []).push(l); });
     return g;
   }, [filtradas]);
 
@@ -136,12 +146,12 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
     filtradas.forEach(l => { if (l.etapaPintura) (g[l.etapaPintura] = g[l.etapaPintura] || []).push(l); });
     return g;
   }, [filtradas]);
-  const conPintura = useMemo(() => locaciones.filter(l => l.etapaPintura).length, [locaciones]);
+  const conPintura = useMemo(() => activas.filter(l => l.etapaPintura).length, [activas]);
   // v8.91.0: valor del programa (sin ITBIS, de Odoo)
   const valor = useMemo(() => ({
-    techo: sumaMontos(locaciones, 'montoSinItbis'),
-    pintura: sumaMontos(locaciones.filter(l => l.etapaPintura), 'pinturaMontoSinItbis'),
-  }), [locaciones]);
+    techo: sumaMontos(activas, 'montoSinItbis'),
+    pintura: sumaMontos(activas.filter(l => l.etapaPintura), 'pinturaMontoSinItbis'),
+  }), [activas]);
 
   return (
     <div className="space-y-4">
@@ -215,8 +225,9 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
       {/* Lo que el cliente tiene trancado */}
       {(pendCliente.sinLuzVerde.length > 0 || pendCliente.cotizacionesPorAprobar.length > 0) && (
         <div className="bg-amber-950/20 border border-amber-800 rounded-card p-3 text-[11px] text-amber-200">
-          <b>Trancado del lado del cliente:</b> {pendCliente.sinLuzVerde.length} sin luz verde del propietario
-          {pendCliente.cotizacionesPorAprobar.length > 0 && <> · {pendCliente.cotizacionesPorAprobar.length} cotización(es) por aprobar</>}
+          <b>Trancado del lado de Sites:</b>{' '}
+          {[pendCliente.sinLuzVerde.length > 0 && `${pendCliente.sinLuzVerde.length} sin luz verde del propietario`,
+            pendCliente.cotizacionesPorAprobar.length > 0 && `${pendCliente.cotizacionesPorAprobar.length} cotización(es) por aprobar`].filter(Boolean).join(' · ')}
           {pendCliente.sinSupervisor.length > 0 && <> · {pendCliente.sinSupervisor.length} sin supervisor asignado</>}
         </div>
       )}
@@ -246,13 +257,14 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
 
       {tab === 'tablero' && (
         <div className="grid gap-3 lg:grid-cols-3 xl:grid-cols-5">
-          {FASES.map((fase, nf) => (
+          {FASES_TABLERO.map((fase, nf) => (
             <div key={fase.id} className="space-y-2">
               <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold px-1">{nf + 1} · {fase.label}</div>
-              {ETAPAS.filter(e => e.fase === fase.id).map(e => {
+              {ETAPAS_TABLERO.filter(e => e.fase === fase.id).map(e => {
                 const lista = porEtapa[e.id] || [];
+                if (e.soloSiHay && !lista.length) return null;
                 const Icono = ICONO[e.icono] || Clock;
-                const color = COLOR_ETAPA[e.id];
+                const color = e.color;
                 return (
                   <div key={e.id} className="bg-zinc-900 rounded-card p-2.5 space-y-2" style={{ border: `1px solid ${color}55`, borderTop: `3px solid ${color}` }}>
                     <div className="flex items-start gap-2">
@@ -263,7 +275,7 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
                       </div>
                       <span className="text-sm font-black text-zinc-200">{lista.length}</span>
                     </div>
-                    <div className={`text-[9px] font-bold uppercase tracking-wide ${e.deQuien === 'cliente' ? 'text-amber-400' : e.deQuien === 'nosotros' ? 'text-sky-400' : 'text-zinc-500'}`}>{turnoDe(e.id)}</div>
+                    <div className={`text-[9px] font-bold uppercase tracking-wide ${e.deQuien === 'cliente' ? 'text-amber-400' : e.deQuien === 'nosotros' ? 'text-sky-400' : 'text-zinc-500'}`}>{turnoTablero(e.id)}</div>
                     <MontoColumna lista={lista} campo="montoSinItbis" />
                     {e.id === 'terminado' && lista.length > 0 && (
                       <div className="text-[10px] flex gap-3 flex-wrap">
@@ -274,7 +286,7 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
                     <div className="space-y-1.5 max-h-[360px] overflow-y-auto">
                       {(e.id === 'terminado' ? [...lista].sort((a, b) => (a.recepcion === 'listo' ? 0 : 1) - (b.recepcion === 'listo' ? 0 : 1)) : lista).map(l => (
                         <div key={l.id} className="bg-zinc-950 border border-zinc-800 hover:border-zinc-600 rounded-card p-2">
-                          {e.id === 'por_programar' && l.proyectoId && ['aprobado', 'planificado'].includes(l.obra?.estado) && (
+                          {['por_programar', 'programado'].includes(e.id) && l.proyectoId && ['aprobado', 'planificado'].includes(l.obra?.estado) && (
                             <label className="float-right ml-1 cursor-pointer" title="Elegir para programar">
                               <input type="checkbox" className="accent-red-600" checked={sel.tipo === 'techo' && sel.ids.includes(l.id)} onChange={() => toggleSel('techo', l.id)} />
                             </label>
@@ -283,9 +295,10 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
                             <div className="text-[11px] font-bold text-zinc-100 truncate hover:underline">{l.nombre}</div>
                             <div className="text-[10px] text-zinc-500 truncate">{l.codigoUt}{l.sector ? ` · ${l.sector}` : ''}</div>
                             {l.etapaDesde && <div className="text-[10px] text-zinc-400">desde {new Date(l.etapaDesde).toLocaleDateString('es-DO', { day: 'numeric', month: 'short' })}{l.diasEnEtapa != null ? ` · ${l.diasEnEtapa} d` : ''}</div>}
-                            {['por_programar', 'en_ejecucion'].includes(e.id) && !l.personalAprobadoAt && <div className="text-[10px] text-red-400 font-bold">Falta aprobación del personal</div>}
-                            {e.id === 'por_levantar' && l.fechaVisita && <div className="text-[10px] text-amber-400">Visita: {textoCoordinacion(l.fechaVisita, l.horaVisita)}</div>}
-                            {e.id === 'por_programar' && (l.proyectoId ? <LineaProgramacion obra={l.obra} personal={data.personal} /> : <div className="text-[10px] text-red-400 font-bold">Sin obra en el ERP</div>)}
+                            {['por_programar', 'programado', 'en_ejecucion'].includes(e.id) && !l.personalAprobadoAt && <div className="text-[10px] text-red-400 font-bold">Falta aprobación del personal</div>}
+                            {['por_programar', 'programado'].includes(e.id) && <LineaProgramacion obra={l.obra} personal={data.personal} />}
+                            {e.id === 'sin_obra' && <div className="text-[10px] text-red-400 font-bold">Sin obra en el ERP</div>}
+                            {e.id === 'en_ejecucion' && l.obra?.estado === 'parado' && <div className="text-[10px] text-red-400 font-bold">Obra parada</div>}
                             {e.id === 'terminado' && l.recepcion && <div className="text-[10px] font-bold" style={{ color: RECEPCION[l.recepcion].color }}>{RECEPCION[l.recepcion].label}</div>}
                             <ChipsCierre l={l} />
                             {l.etapaPintura && (
@@ -300,25 +313,6 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
                             </div>
                           )}
                           <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                            {e.id === 'sin_luz_verde' && (
-                              <button onClick={() => setFicha(l)}
-                                className="text-[10px] font-bold uppercase px-2 py-1 bg-amber-700 hover:bg-amber-600 text-white rounded-card flex items-center gap-1">
-                                <Check className="w-3 h-3" /> Coordinar
-                              </button>
-                            )}
-                            {e.id === 'por_levantar' && !l.levantamientoId && (
-                              <button onClick={() => agendarLevantamiento(l)} disabled={guardando === l.id}
-                                className="text-[10px] font-bold uppercase px-2 py-1 bg-sky-700 hover:bg-sky-600 text-white rounded-card flex items-center gap-1">
-                                {guardando === l.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <MapPin className="w-3 h-3" />} Agendar levantamiento
-                              </button>
-                            )}
-                            {e.id === 'por_levantar' && !l.levantamientoId && (
-                              <button onClick={() => marcarLuzVerde(l, false)} disabled={guardando === l.id}
-                                className="text-[10px] underline text-zinc-500 hover:text-white">deshacer luz verde</button>
-                            )}
-                            {e.id === 'por_levantar' && l.levantamientoId && (
-                              <span className="text-[10px] text-sky-400">Levantamiento creado · falta la visita</span>
-                            )}
                             {/* v8.71.0: la carta de garantía se saca desde la columna donde
                                 falta entregar, que es donde toca la acción. */}
                             {e.id === 'terminado' && l.proyectoId && (
@@ -327,7 +321,7 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
                                 <ShieldCheck className="w-3 h-3" /> Carta de garantía
                               </button>
                             )}
-                            {e.id === 'entregado' && l.proyectoId && (
+                            {['recibido', 'facturado', 'cobrado'].includes(e.id) && l.proyectoId && (
                               <button onClick={() => setGarantiaDe(l)} className="text-[10px] underline text-zinc-400 hover:text-white">carta de garantía</button>
                             )}
                             {l.proyectoId && onAbrirProyecto && (
@@ -344,6 +338,28 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
               })}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* v8.92.0: lo que salió del programa, aparte y recuperable */}
+      {tab === 'tablero' && fuera.length > 0 && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-card p-3 text-[11px]">
+          <button onClick={() => setVerFuera(v => !v)} className="font-bold uppercase tracking-widest text-zinc-400 hover:text-white">
+            Fuera del programa ({fuera.length}) {verFuera ? '▴' : '▾'}
+          </button>
+          {verFuera && (
+            <div className="mt-2 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-4">
+              {fuera.map(l => (
+                <div key={l.id} className="bg-zinc-950 border border-zinc-800 rounded-card p-2">
+                  <button onClick={() => setFicha(l)} className="text-left w-full">
+                    <div className="font-bold text-zinc-300 truncate hover:underline">{l.nombre}</div>
+                    <div className="text-[10px] text-zinc-500 truncate">{l.codigoUt}{l.fueraMotivo ? ` · ${l.fueraMotivo}` : ''}</div>
+                  </button>
+                  <button onClick={() => devolverAlPrograma(l)} className="text-[10px] underline text-zinc-500 hover:text-white mt-1">volver al programa</button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -403,7 +419,7 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
         <div className="space-y-2">
           <MapaPrograma locaciones={filtradas} onSeleccionar={(l) => setFicha(l)} />
           <div className="flex gap-3 flex-wrap">
-            {ETAPAS.map(e => <Chip key={e.id} color={COLOR_ETAPA[e.id]}>{e.label} ({(porEtapa[e.id] || []).length})</Chip>)}
+            {ETAPAS_TABLERO.filter(e => (porEtapa[e.id] || []).length).map(e => <Chip key={e.id} color={e.color}>{e.label} ({(porEtapa[e.id] || []).length})</Chip>)}
           </div>
         </div>
       )}
@@ -444,7 +460,7 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
       {tab === 'zonas' && (
         <div className="space-y-3">
           <div className="text-[11px] text-zinc-500">
-            Locaciones listas para visitar o para ejecutar, agrupadas por cercanía (8 km). La idea es mandar la brigada a todas las de un grupo el mismo viaje.
+            Locaciones aprobadas por arrancar, agrupadas por cercanía (8 km). La idea es mandar la brigada a todas las de un grupo el mismo viaje.
           </div>
           {zonas.map((z, i) => (
             <div key={i} className="bg-zinc-900 border border-zinc-800 rounded-card p-3">
@@ -457,7 +473,7 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
                   <div key={l.id} className="bg-zinc-950 border border-zinc-800 rounded-card p-2">
                     <div className="text-[11px] font-bold truncate">{l.nombre}</div>
                     <div className="text-[10px] text-zinc-500 truncate">{l.direccion}</div>
-                    <div className="mt-1"><Chip color={COLOR_ETAPA[l.etapa]}>{ETAPA[l.etapa]?.label}</Chip></div>
+                    <div className="mt-1"><Chip color={ETAPA_TABLERO[l.etapaTablero]?.color}>{ETAPA_TABLERO[l.etapaTablero]?.label}</Chip></div>
                   </div>
                 ))}
               </div>
@@ -466,7 +482,7 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
           {zonas.length === 0 && (
             <div className="bg-zinc-900 border border-zinc-800 rounded-card p-6 text-center text-xs text-zinc-500">
               <Clock className="w-5 h-5 mx-auto mb-2 text-zinc-700" />
-              Nada listo para salir: todo está esperando luz verde, cotización o aprobación.
+              Nada por arrancar: todo está en ejecución, cotizado o cerrado.
             </div>
           )}
         </div>

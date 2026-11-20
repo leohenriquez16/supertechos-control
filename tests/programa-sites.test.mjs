@@ -2,7 +2,7 @@
 // Ejecutar desde la raíz:  node tests/programa-sites.test.mjs
 
 import assert from 'node:assert/strict';
-import { etapaDeLocacion, resumenPrograma, pendientesDelCliente, agruparPorZona, distanciaKm, ETAPAS, amarrarLocaciones, normalizarRefOdoo, textoCoordinacion, fechasPorEtapa, enEtapaDesde, amarrarCotizacionesOdoo, sincronizarLocaciones, LUZ_VERDE_POR_ODOO, amarrarPinturaOdoo, etapaPintura, esObraDePintura, soloCamposPintura, estadoRecepcion, montoSinItbisDe, sumaMontos, programacionObra } from '../lib/helpers/programaSites.js';
+import { etapaDeLocacion, resumenPrograma, pendientesDelCliente, agruparPorZona, distanciaKm, ETAPAS, amarrarLocaciones, normalizarRefOdoo, textoCoordinacion, fechasPorEtapa, enEtapaDesde, amarrarCotizacionesOdoo, sincronizarLocaciones, LUZ_VERDE_POR_ODOO, amarrarPinturaOdoo, etapaPintura, esObraDePintura, soloCamposPintura, estadoRecepcion, montoSinItbisDe, sumaMontos, programacionObra, etapaTablero } from '../lib/helpers/programaSites.js';
 
 let ok = 0; const fallos = [];
 const caso = (n, fn) => { try { fn(); ok++; } catch (e) { fallos.push(`${n}: ${e.message}`); } };
@@ -408,6 +408,21 @@ caso('programación: sin programar, programada, debió arrancar', () => {
   assert.equal(a.estado, 'atrasada'); assert.equal(a.diasAtraso, 3);
   assert.equal(programacionObra({ estado: 'en_ejecucion', inicioProgramado: '2026-11-17' }, hoy).estado, 'programada');
   assert.equal(programacionObra(null), null);
+});
+
+// --- v8.92.0: tablero de la cotización al cobro --------------------------------------------
+caso('tablero: abre aprobado y entregado según la obra', () => {
+  const hoy = new Date('2026-11-20T15:00:00');
+  assert.equal(etapaTablero({ etapa: 'levantado' }, hoy), 'por_cotizar');
+  assert.equal(etapaTablero({ etapa: 'cotizado' }, hoy), 'cotizado');
+  assert.equal(etapaTablero({ etapa: 'por_programar' }, hoy), 'sin_obra');
+  assert.equal(etapaTablero({ etapa: 'por_programar', proyectoId: 'o', obra: { estado: 'aprobado' } }, hoy), 'por_programar');
+  assert.equal(etapaTablero({ etapa: 'por_programar', proyectoId: 'o', obra: { estado: 'aprobado', inicioProgramado: '2026-11-25' } }, hoy), 'programado');
+  assert.equal(etapaTablero({ etapa: 'por_programar', proyectoId: 'o', obra: { estado: 'parado' } }, hoy), 'en_ejecucion');
+  assert.equal(etapaTablero({ etapa: 'terminado' }, hoy), 'terminado');
+  assert.equal(etapaTablero({ etapa: 'entregado', obra: { estado: 'finalizado_recibido_conforme' } }, hoy), 'recibido');
+  assert.equal(etapaTablero({ etapa: 'entregado', obra: { estado: 'facturado' } }, hoy), 'facturado');
+  assert.equal(etapaTablero({ etapa: 'entregado', obra: { estado: 'cobrado' } }, hoy), 'cobrado');
 });
 
 console.log(`\n${ok} pasadas, ${fallos.length} fallidas`);

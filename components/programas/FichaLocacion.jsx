@@ -227,6 +227,18 @@ export default function FichaLocacion({ locacion: l, usuario, onCerrar, onCambio
                 {l.lat && l.lng && <a href={`https://www.google.com/maps?q=${l.lat},${l.lng}`} target="_blank" rel="noreferrer" className="underline text-zinc-400 hover:text-white inline-flex items-center gap-1"><ExternalLink className="w-3 h-3" /> Mapa</a>}
                 {l.proyectoId && onAbrirProyecto && <button onClick={() => onAbrirProyecto(l.proyectoId)} className="underline text-zinc-400 hover:text-white">Ver la obra</button>}
                 {l.proyectoPinturaId && onAbrirProyecto && <button onClick={() => onAbrirProyecto(l.proyectoPinturaId)} className="underline text-zinc-400 hover:text-white">Ver la obra de pintura</button>}
+                {/* v8.92.0: sacar del programa (sale del tablero, de los totales y del portal) o devolverlo */}
+                <button onClick={async () => {
+                  if (l.fueraPrograma) {
+                    if (!confirm(`¿Devolver ${l.nombre} al programa?`)) return;
+                    try { await db.actualizarLocacionPrograma(l.id, { fueraPrograma: false, fueraMotivo: null, fueraAt: null, etapaDesde: l.etapaDesde || undefined }); await onCambio?.(); } catch (e) { alert('Error: ' + (e.message || e)); }
+                    return;
+                  }
+                  const motivo = prompt(`¿Por qué sale ${l.nombre} del programa?`, 'Sites no la dio / no se levantó');
+                  if (motivo === null) return;
+                  try { await db.actualizarLocacionPrograma(l.id, { fueraPrograma: true, fueraMotivo: motivo.trim() || null, fueraAt: new Date().toISOString(), etapaDesde: l.etapaDesde || undefined }); await onCambio?.(); onCerrar?.(); }
+                  catch (e) { alert('Error: ' + (e.message || e)); }
+                }} className="underline text-zinc-500 hover:text-red-400">{l.fueraPrograma ? 'Volver al programa' : 'Sacar del programa'}</button>
               </div>
             </div>
 

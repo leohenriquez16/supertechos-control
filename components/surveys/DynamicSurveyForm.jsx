@@ -59,6 +59,13 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
   // v8.91.0: cambios de este equipo que el servidor aún no confirmó (se suben antes de cerrar).
   const cambiosRef = useRef(null);
   if (!cambiosRef.current) cambiosRef.current = crearCambiosPendientes();
+  // Las claves sin confirmar también se guardan en el equipo (survey_pend_<visita>): al reabrir, del respaldo solo
+  // se recupera eso, y un respaldo viejo ya confirmado no pisa lo que otro equipo editó después.
+  const recordarPendientes = (vid) => { try { if (vid) localStorage.setItem('survey_pend_' + vid, JSON.stringify(cambiosRef.current.lista().map(x => x.clave))); } catch (e) {} };
+  const marcarCambio = (vid, clave) => { const s = cambiosRef.current.marcar(clave); recordarPendientes(vid); return s; };
+  const confirmarCambio = (vid, clave, s) => { cambiosRef.current.confirmar(clave, s); recordarPendientes(vid); };
+  // Las subidas de pendientes (al abrir, al volver la señal y al cerrar) van en fila: el cierre espera a la anterior.
+  const colaSubidaRef = useRef(Promise.resolve());
   const [intento, setIntento] = useState(0); // «Reintentar» en la pantalla de error vuelve a cargar
   const [errorMsg, setErrorMsg] = useState(null);
   const [guardando, setGuardando] = useState(false);
@@ -130,9 +137,10 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
         setSeguida(decision.accion === 'seguir' ? { pendientes: pendientesVisita(v.general_data), cerradaEl: v.checkout_at || null } : null);
         // v8.25.30: recuperar respaldo local si existe (lo que no alcanzó a guardarse por
         // batería/cierre/sin señal). El draft local es siempre >= servidor, así que prevalece.
-        let respaldo = null;
+        let respaldo = null, pendLocal = null;
         try { const raw = localStorage.getItem('survey_draft_' + v.id); if (raw) respaldo = JSON.parse(raw); } catch (e) {}
-        const rec = aplicarRespaldo({ generalServidor: v.general_data, areasServidor: areasExistentes, respaldo });
+        try { const rawP = localStorage.getItem('survey_pend_' + v.id); if (rawP) { const arr = JSON.parse(rawP); if (Array.isArray(arr)) pendLocal = arr; } } catch (e) {}
+        const rec = aplicarRespaldo({ generalServidor: v.general_data, areasServidor: areasExistentes, respaldo, pendientes: pendLocal });
         const gdInicial = rec.general;
         const areasIniciales = rec.areas;
         generalRef.current = gdInicial;
@@ -145,6 +153,7 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
         const cambios = cambiosRef.current;
         if (rec.generalDistinto) cambios.marcar('general');
         for (const d of rec.areasDistintas) { if (d.datos) cambios.marcar(claveArea(d.id, 'datos')); if (d.nombre) cambios.marcar(claveArea(d.id, 'nombre')); }
+        recordarPendientes(v.id);
         if (cambios.hay()) {
           (async () => {
             try { await subirPendientes(v.id); } catch (e) { if (!cancelado) setEstadoGuardado('local'); }
@@ -224,20 +233,20 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
       }));
     } catch (e) {}
   };
-  const borrarDraft = () => { if (visit) { try { localStorage.removeItem('survey_draft_' + visit.id); } catch (e) {} } };
+  const borrarDraft = () => { if (visit) { try { localStorage.removeItem('survey_draft_' + visit.id); localStorage.removeItem('survey_pend_' + visit.id); } catch (e) {} } };
 
   // Guardado de general_data (al cambiar)
   const guardarGeneralData = useCallback(async (nuevo) => {
     if (!visit) return;
     generalRef.current = nuevo;
     setGeneralData(nuevo);
+    const sello = marcarCambio(visit.id, 'general');
     escribirDraft(nuevo, areasRef.current);       // respaldo local primero (nunca falla)
-    const sello = cambiosRef.current.marcar('general');
     setGuardando(true);
     setEstadoGuardado('guardando');
     try {
       await actualizarVisita(visit.id, { general_data: nuevo });
-      cambiosRef.current.confirmar('general', sello);
+      confirmarCambio(visit.id, 'general', sello);
       setEstadoGuardado('guardado');
     } catch (e) {
       setEstadoGuardado('local');      // quedó a salvo en el equipo; se re-sincroniza al volver la señal
@@ -305,12 +314,12 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
     const nuevasAreas = base.map(a => (a.id === areaId ? { ...a, data, gross_area_m2: gross } : a));
     areasRef.current = nuevasAreas;
     setAreas(nuevasAreas);
+    const sello = marcarCambio(visit?.id, claveArea(areaId, 'datos'));
     escribirDraft(generalRef.current, nuevasAreas);   // respaldo local primero (nunca falla)
-    const sello = cambiosRef.current.marcar(claveArea(areaId, 'datos'));
     setEstadoGuardado('guardando');
     try {
       await actualizarArea(areaId, gross != null ? { data, gross_area_m2: gross } : { data });
-      cambiosRef.current.confirmar(claveArea(areaId, 'datos'), sello);
+      confirmarCambio(visit?.id, claveArea(areaId, 'datos'), sello);
       setEstadoGuardado('guardado');
     } catch (e) {
       console.warn('No se pudo guardar campo de area:', e?.message);
@@ -328,11 +337,11 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
     const nuevas = areasRef.current.map(a => a.id === areaId ? { ...a, name: nuevoNombre } : a);
     areasRef.current = nuevas;
     setAreas(nuevas);
+    const sello = marcarCambio(visit?.id, claveArea(areaId, 'nombre'));
     escribirDraft(generalRef.current, nuevas);
-    const sello = cambiosRef.current.marcar(claveArea(areaId, 'nombre'));
     try {
       await actualizarArea(areaId, { name: nuevoNombre });
-      cambiosRef.current.confirmar(claveArea(areaId, 'nombre'), sello);
+      confirmarCambio(visit?.id, claveArea(areaId, 'nombre'), sello);
     } catch (e) {
       console.warn('No se pudo renombrar:', e?.message);
       setEstadoGuardado('local');
@@ -344,6 +353,7 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
     try {
       await eliminarArea(areaId);
       cambiosRef.current.olvidar('area:' + areaId);
+      recordarPendientes(visit?.id);
       setAreas(prev => prev.filter(a => a.id !== areaId));
     } catch (e) {
       setErrorMsg(e?.message || String(e));
@@ -356,7 +366,15 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
 
   // v8.91.0: sube lo que este equipo cambió y el servidor no ha confirmado (datos generales y, por área, sus
   // datos y/o su nombre). Lanza el primer error, con el nombre del área si fue un área.
-  const subirPendientes = async (visitId) => {
+  const subirPendientes = (visitId) => {
+    const turno = colaSubidaRef.current.catch(() => {}).then(() => subirPendientesAhora(visitId));
+    colaSubidaRef.current = turno;
+    return turno;
+  };
+  const subirPendientesAhora = async (visitId) => {
+    try { await subirLoPendiente(visitId); } finally { recordarPendientes(visitId); }
+  };
+  const subirLoPendiente = async (visitId) => {
     const c = cambiosRef.current;
     const p = agruparPendientes(c.lista());
     if (p.general) {

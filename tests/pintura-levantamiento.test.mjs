@@ -246,6 +246,13 @@ t('dato rechazado: el servidor trae código', !esErrorDeRed({ message: 'numeric 
   const dist = aplicarRespaldo({ generalServidor: { x: 1 }, areasServidor: srv, respaldo: { general_data: { x: 2 }, areas: [{ id: 'a1', name: 'Fachada lateral', data: { k: 1 } }, { id: 'a2', name: 'Cocina', data: { z: [1, 2] } }, { id: 'a9', name: 'Ya no existe', data: {} }] } });
   t('respaldo distinto: prevalece y queda pendiente por parte', dist.general.x === 2 && dist.generalDistinto && dist.areas[0].name === 'Fachada lateral' && JSON.stringify(dist.areasDistintas) === JSON.stringify([{ id: 'a1', nombre: true, datos: false }, { id: 'a2', nombre: false, datos: true }]));
   t('respaldo dañado no rompe la carga', aplicarRespaldo({ generalServidor: null, areasServidor: null, respaldo: 'x' }).areas.length === 0);
+  const resp = { general_data: { x: 2 }, areas: [{ id: 'a1', name: 'Fachada lateral', data: { k: 9 } }, { id: 'a2', name: 'Cocina vieja', data: { z: [0] } }] };
+  const nada = aplicarRespaldo({ generalServidor: { x: 1 }, areasServidor: srv, respaldo: resp, pendientes: [] });
+  t('respaldo viejo ya confirmado: manda el servidor (no pisa lo que otro equipo editó)', nada.general.x === 1 && !nada.generalDistinto && nada.areasDistintas.length === 0 && nada.areas[0].name === 'Fachada' && nada.areas[1].data.z.length === 1);
+  const parte = aplicarRespaldo({ generalServidor: { x: 1 }, areasServidor: srv, respaldo: resp, pendientes: ['area:a1:nombre'] });
+  t('solo se recupera lo que quedó sin confirmar (por área y parte)', parte.general.x === 1 && parte.areas[0].name === 'Fachada lateral' && parte.areas[0].data.k === 1 && parte.areas[1].name === 'Cocina' && JSON.stringify(parte.areasDistintas) === JSON.stringify([{ id: 'a1', nombre: true, datos: false }]));
+  const gen = aplicarRespaldo({ generalServidor: { x: 1, y: 3 }, areasServidor: srv, respaldo: resp, pendientes: ['general'] });
+  t('datos generales pendientes: se recuperan sobre lo del servidor', gen.general.x === 2 && gen.general.y === 3 && gen.generalDistinto && gen.areasDistintas.length === 0);
 }
 
 // --- medida de cada área en la ficha y el PDF

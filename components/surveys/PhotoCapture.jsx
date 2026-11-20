@@ -14,7 +14,7 @@ import { Camera, Loader2, Trash2, AlertCircle, Image as ImageIcon } from 'lucide
 import { supabase } from '../../lib/supabase';
 import { subirFotoSurvey, getSignedUrlFotoSurvey } from '../../lib/surveys';
 
-// v8.92.0: fotos subiendo en este momento (en todo el formulario). El formulario no deja pausar ni cerrar
+// v8.94.0: fotos subiendo en este momento (en todo el formulario). El formulario no deja pausar ni cerrar
 // mientras haya alguna: al salir, la subida se cortaría y la foto se perdería sin aviso.
 let subidasEnCurso = 0;
 export const fotosSubiendo = () => subidasEnCurso;
@@ -26,7 +26,7 @@ export default function PhotoCapture({ visitId, areaId = null, field, value, onC
   const [errorMsg, setErrorMsg] = useState(null);
   const [arrastrando, setArrastrando] = useState(false); // v8.25.25: drag&drop desde la computadora
   const inputRef = useRef(null);
-  // v8.92.0: si la tarjeta se cerró mientras subía y la subida falla, el error no tiene dónde mostrarse: se avisa.
+  // v8.94.0: si la tarjeta se cerró mientras subía y la subida falla, el error no tiene dónde mostrarse: se avisa.
   const montadoRef = useRef(true);
   useEffect(() => () => { montadoRef.current = false; }, []);
 

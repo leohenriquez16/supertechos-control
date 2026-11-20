@@ -90,7 +90,7 @@ const conExtra = { sections: [{ id: 'g', fields: [{ id: 'ver', label: 'Ver', typ
 t('sección extra oculta no exige', calcularCompletitud(conExtra, { ver: false }, []).faltantes.length === 0);
 t('sección extra visible sí exige', calcularCompletitud(conExtra, { ver: true }, []).faltantes.length === 1);
 {
-  const sqlM = readFileSync(new URL('../migrations/149_surveys_paint_v2.sql', import.meta.url), 'utf8');
+  const sqlM = readFileSync(new URL('../migrations/151_surveys_paint_v2.sql', import.meta.url), 'utf8');
   const ejecutable = sqlM.split('\n').filter(l => !l.trim().startsWith('--')).join('\n');
   t('la migración inserta la plantilla inactiva', /::jsonb,\s*\n\s*FALSE\s*\n\)/.test(ejecutable));
   t('la migración no cambia is_active al actualizar', !/DO UPDATE[\s\S]*is_active/.test(ejecutable));
@@ -150,10 +150,10 @@ t('sección extra visible sí exige', calcularCompletitud(conExtra, { ver: true 
   t('show_if: !=, includes, comillas y expresión inválida', showIfOk('a != b', { a: 'c' }) && !showIfOk('a != b', { a: 'b' }) && showIfOk('r includes x', { r: ['x'] }) && !showIfOk('r includes x', { r: [] }) && showIfOk('a == "x y"', { a: 'x y' }) && showIfOk('no es una expresión', {}) === true);
   const conMin = { sections: [{ id: 'g', fields: [{ id: 'f', label: 'F', type: 'photos', min: 3 }] }, { id: 'b', type: 'repeating_block', title: 'B', fields: [{ id: 'x', label: 'X', type: 'text', required: true, show_if: 'ver == true' }] }] };
   t('plantilla vieja: mínimo de fotos y show_if por área', calcularCompletitud(conMin, { f: [1, 2] }, [{ block_id: 'b', data: {} }]).faltantes.length === 1 && calcularCompletitud(conMin, { f: [1, 2, 3] }, [{ block_id: 'b', data: { ver: true } }]).faltantes.length === 1);
-  // la plantilla que usa el formulario es la copia que la migración 149 inserta en la base, no esta función
-  const sql = readFileSync(new URL('../migrations/149_surveys_paint_v2.sql', import.meta.url), 'utf8');
+  // la plantilla que usa el formulario es la copia que la migración 151 inserta en la base, no esta función
+  const sql = readFileSync(new URL('../migrations/151_surveys_paint_v2.sql', import.meta.url), 'utf8');
   const enSql = /^\s*'(.*)'::jsonb,\s*$/m.exec(sql);
-  t('la migración 149 trae exactamente plantillaPinturaV2()', !!enSql && enSql[1].replace(/''/g, "'") === JSON.stringify(tpl));
+  t('la migración 151 trae exactamente plantillaPinturaV2()', !!enSql && enSql[1].replace(/''/g, "'") === JSON.stringify(tpl));
 }
 
 // --- casos propuestos en la segunda revisión (cada uno mata una rotura real que la suite no veía)

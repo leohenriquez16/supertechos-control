@@ -133,7 +133,7 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
   };
   // Proyecto con el tipo actualizado para la captura (DynamicSurveyForm lee template_id).
   const proyectoConTipo = { ...proyecto, service_line: tipoServiceLine, template_id: tipoTemplateId };
-  // v8.92.0: plantillas «por sitio» (una oficina = un levantamiento): si la oficina ya tiene una visita, el botón
+  // v8.94.0: plantillas «por sitio» (una oficina = un levantamiento): si la oficina ya tiene una visita, el botón
   // dice «Seguir» y el formulario abre ESA (completar lo pendiente o corregir) en vez de crear otra.
   const [recargaVisitas, setRecargaVisitas] = useState(0); // al cerrar el formulario se recargan las visitas
   const [tplActual, setTplActual] = useState(null);
@@ -739,7 +739,7 @@ export default function SurveySiteDetail({ site: siteProp, proyecto, usuario, da
           onCompletado={(res, info) => {
             setFormAbierto(false);
             setRecargaVisitas(n => n + 1);
-            // v8.92.0: «finalizado» = el PROYECTO pasó a Realizado. Con plantillas por sitio, cerrar una oficina
+            // v8.94.0: «finalizado» = el PROYECTO pasó a Realizado. Con plantillas por sitio, cerrar una oficina
             // devuelve «oficina_cerrada»: el proyecto sigue en su etapa y solo cambia el estado de la oficina.
             if (res === 'finalizado') {
               setStatusProy('survey_completed');
@@ -1031,7 +1031,7 @@ function chipsArea(a) {
 }
 
 // Agrupa áreas por piso (block_id) preservando el orden de aparición.
-// v8.92.0: medida de un grupo de áreas con superficies (m² · ml · und) o de jardines (m²); null = la de siempre.
+// v8.94.0: medida de un grupo de áreas con superficies (m² · ml · und) o de jardines (m²); null = la de siempre.
 function medidaGrupo(items) {
   if (items.some(a => Array.isArray(a.data?.superficies))) return textoTotales(resumenVisitaPintura(items).totales) || null;
   if (items.length && items.every(a => a.block_id === 'jardines')) { const t = items.reduce((s, a) => s + (Number(a.data?.area_m2) || 0), 0); return t > 0 ? `${t.toFixed(2)} m²` : null; }
@@ -1135,7 +1135,7 @@ function LevantamientosRealizados({ site, proyecto }) {
         const totalPared = areas.reduce((s, a) => s + (Number(a.gross_area_m2) || 0), 0);
         const totalTecho = areas.reduce((s, a) => s + (Number(a.secondary_area_m2) || 0), 0);
         const nVerif = areas.filter(a => a.data?.por_verificar).length;
-        const pend = pendientesVisita(v.general_data); // v8.92.0: jardines/techo que quedaron para otra visita
+        const pend = pendientesVisita(v.general_data); // v8.94.0: jardines/techo que quedaron para otra visita
         const fecha = v.checkin_at || v.created_at;
         // v8.25.32: agregados para el resumen "Para cotizar".
         const sumC = (id) => areas.reduce((s, a) => s + (Number(a.data?.[id]) || 0), 0);
@@ -1179,7 +1179,7 @@ function LevantamientosRealizados({ site, proyecto }) {
                   </div>
                 )}
 
-                {/* v8.92.0: lo mismo que el técnico confirmó al cerrar: m² / ml / und por tipo de pintura */}
+                {/* v8.94.0: lo mismo que el técnico confirmó al cerrar: m² / ml / und por tipo de pintura */}
                 {template?.schema?.resumen_pintura && (() => {
                   const r = resumenVisitaPintura(areas);
                   const filasP = Object.entries(r.totales.porPintura);

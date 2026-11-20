@@ -129,7 +129,7 @@ function fmtValor(field, valor) {
     case 'map_polygon': return valor?.areaM2 != null ? `${esc(valor.areaM2)} m² (polígono)` : '';
     case 'photos': case 'fotos_previas': return ''; // imágenes aparte
     case 'single_select': {
-      // v8.92.0: opciones con valor y etiqueta (ej. estado de jardines/techo): se imprime la etiqueta.
+      // v8.94.0: opciones con valor y etiqueta (ej. estado de jardines/techo): se imprime la etiqueta.
       const o = (field.options || []).find(x => x && typeof x === 'object' && x.value === valor);
       return esc(o ? (o.label || o.value) : valor);
     }
@@ -186,7 +186,7 @@ export async function imprimirLevantamiento({ proyecto, site, visit, areas = [],
     return { areaId: f.area_id || null, url, caption: f.caption || '', photoType: f.photo_type || '' };
   }));
   const gd = visit.general_data || {};
-  // v8.92.0: las fotos de un campo de una sección `extra` (ej. techo) van en su sección y solo si el campo aplica;
+  // v8.94.0: las fotos de un campo de una sección `extra` (ej. techo) van en su sección y solo si el campo aplica;
   // ya no se mezclan con las panorámicas.
   const camposFotoExtra = new Set(generalSections.filter(s => s.extra).flatMap(s => (s.fields || []).filter(f => f.type === 'photos').map(f => f.id)));
   const fotosPorArea = {};
@@ -200,8 +200,8 @@ export async function imprimirLevantamiento({ proyecto, site, visit, areas = [],
   }
   const fotosDeSeccion = (sec) => (sec.fields || []).filter(f => f.type === 'photos' && showIfOk(f.show_if, gd)).flatMap(f => fotosPorCampoExtra[f.id] || []);
 
-  // v8.92.0: lo que cuenta (igual que en la ficha): los jardines cargados solo si la visita los marcó levantados.
-  // v8.92.0: y solo las de bloques de esta plantilla (las de otro formulario no se imprimen, así que tampoco cuentan).
+  // v8.94.0: lo que cuenta (igual que en la ficha): los jardines cargados solo si la visita los marcó levantados.
+  // v8.94.0: y solo las de bloques de esta plantilla (las de otro formulario no se imprimen, así que tampoco cuentan).
   const idsBloques = new Set(blocks.map(b => b.id));
   const vigentes = areasVigentes(areas, gd).filter(a => idsBloques.has(a.block_id));
   const serviceLabel = SERVICE_LINES[proyecto?.service_line]?.label || proyecto?.service_line || '';
@@ -248,7 +248,7 @@ export async function imprimirLevantamiento({ proyecto, site, visit, areas = [],
     return `<section class="bloque"><h2>${esc(sec.title)}</h2>${campos || ''}${gridFotos(fotosSec)}</section>`;
   }).filter(Boolean).join('');
 
-  // v8.92.0: plantillas de pintura: el mismo resumen por tipo de pintura que el técnico confirmó al cerrar.
+  // v8.94.0: plantillas de pintura: el mismo resumen por tipo de pintura que el técnico confirmó al cerrar.
   let htmlResumenPintura = '';
   if (schema.resumen_pintura) {
     const r = resumenVisitaPintura(vigentes);
@@ -276,7 +276,7 @@ export async function imprimirLevantamiento({ proyecto, site, visit, areas = [],
       return `<section class="bloque"><h2>${esc(block.title)}</h2><div style="color:#999;font-size:11px">Ninguno registrado</div></section>`;
     }
     const items = filas.map((a, i) => {
-      // v8.92.0: área "No se pinta": solo nombre y motivo, sin medidas ni m².
+      // v8.94.0: área "No se pinta": solo nombre y motivo, sin medidas ni m².
       if (block.permite_no_pinta && areaNoPinta(a)) {
         return `
       <div class="area">
@@ -286,7 +286,7 @@ export async function imprimirLevantamiento({ proyecto, site, visit, areas = [],
       </div>`;
       }
       const campos = renderCampos(block.fields, a.data || {});
-      // v8.92.0: superficies (m² · ml · und) o área del jardín; las demás plantillas, sus m² como siempre.
+      // v8.94.0: superficies (m² · ml · und) o área del jardín; las demás plantillas, sus m² como siempre.
       const medida = textoMedidaArea(a);
       const m2 = medida ? ` · ${esc(medida)}` : (a.gross_area_m2 != null ? ` · ${Number(a.gross_area_m2).toFixed(2)} m²` : '');
       return `

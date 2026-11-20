@@ -318,7 +318,7 @@ export default function SurveyFieldRenderer({ field, value, onChange, allValues 
     case 'ductos_table':
       return <DuctosTableField field={field} value={value} onChange={onChange} />;
 
-    // v8.92.0: superficies a pintar (una fila por superficie, con su pintura).
+    // v8.94.0: superficies a pintar (una fila por superficie, con su pintura).
     case 'surfaces_table':
       return <SurfacesTableField field={field} value={value} onChange={onChange} />;
 
@@ -605,7 +605,7 @@ function DuctosTableField({ field, value, onChange }) {
 }
 
 // ============================================================
-// SurfacesTable (v8.92.0) — levantamiento de PINTURA. Una fila por superficie del área
+// SurfacesTable (v8.94.0) — levantamiento de PINTURA. Una fila por superficie del área
 // (paredes, techo, columnas, hierros…). Cada superficie trae su unidad y su pintura
 // por defecto; el total se calcula solo. Controles grandes para iPad.
 // Fila: { id, superficie, ud, largo_m, alto_m, cantidad, vanos_m2, pintura, total, area_m2 }
@@ -628,7 +628,7 @@ function SurfacesTableField({ field, value, onChange }) {
   const t = totalesSuperficies(filas);
   const esTecho = (id) => id === 'techo' || id === 'techo_ext';
   const sel = 'w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-3 py-3 text-base font-bold text-white rounded-card';
-  // v8.92.0: teclado numérico, acepta coma decimal y "Siguiente" salta a la próxima casilla
+  // v8.94.0: teclado numérico, acepta coma decimal y "Siguiente" salta a la próxima casilla
   // (también a la siguiente superficie), para medir sin tocar la pantalla entre medida y medida.
   const saltar = (e) => {
     if (e.key !== 'Enter') return;

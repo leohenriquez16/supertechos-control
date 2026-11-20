@@ -46,7 +46,7 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
   const [template, setTemplate] = useState(null);
   const [visit, setVisit] = useState(null);
   const [areas, setAreas] = useState([]); // localmente: areas con sus drafts
-  // v8.92.0: última versión de `areas` sin esperar al render (varios campos pueden reportar a la vez).
+  // v8.94.0: última versión de `areas` sin esperar al render (varios campos pueden reportar a la vez).
   const areasRef = useRef(areas);
   areasRef.current = areas;
   const [generalData, setGeneralData] = useState({});
@@ -54,9 +54,9 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
   // una foto que termina de subir ya no pisa lo que el técnico llenó mientras tanto.
   const generalRef = useRef(generalData);
   generalRef.current = generalData;
-  // v8.92.0: visita ya cerrada que se sigue (plantillas por sitio): { pendientes, cerradaEl } o null.
+  // v8.94.0: visita ya cerrada que se sigue (plantillas por sitio): { pendientes, cerradaEl } o null.
   const [seguida, setSeguida] = useState(null);
-  // v8.92.0: cambios de este equipo que el servidor aún no confirmó (se suben antes de cerrar).
+  // v8.94.0: cambios de este equipo que el servidor aún no confirmó (se suben antes de cerrar).
   const cambiosRef = useRef(null);
   if (!cambiosRef.current) cambiosRef.current = crearCambiosPendientes();
   // Las claves sin confirmar también se guardan en el equipo (survey_pend_<visita>): al reabrir, del respaldo solo
@@ -92,7 +92,7 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
   }, []);
 
   // v8.25.30: al volver la conexión, re-sincroniza al servidor lo que quedó guardado en el equipo.
-  // v8.92.0: sube solo lo que quedó pendiente (antes re-subía todo, pisando lo que otro equipo hubiera editado).
+  // v8.94.0: sube solo lo que quedó pendiente (antes re-subía todo, pisando lo que otro equipo hubiera editado).
   useEffect(() => {
     const onOnline = async () => {
       if (!visit || !cambiosRef.current.hay()) return;
@@ -118,7 +118,7 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
 
         // v8.24.7: reusar la visita ABIERTA del sitio si existe (evita acumular visitas
         // vacías al reabrir el formulario). Si no hay, se crea una nueva.
-        // v8.92.0: plantillas «por sitio» (una oficina = un levantamiento): si la oficina ya tiene una visita
+        // v8.94.0: plantillas «por sitio» (una oficina = un levantamiento): si la oficina ya tiene una visita
         // cerrada, se sigue ESA (completar lo pendiente o corregir) en vez de crear otra en blanco.
         // Las lecturas que fallan ya no se toman como «no hay nada»: van a la pantalla de error con «Reintentar»
         // y no se crea ni se escribe nada.
@@ -131,7 +131,7 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
         let accion = decision.accion;
         let areasExistentes = [];
         if (v) areasExistentes = await listarAreasDeVisita(v.id, { estricto: true });
-        // v8.92.0: una visita hecha con OTRO formulario (tiene áreas de bloques que esta plantilla no tiene) no se
+        // v8.94.0: una visita hecha con OTRO formulario (tiene áreas de bloques que esta plantilla no tiene) no se
         // sigue: se empieza una nueva y la anterior queda intacta.
         if (accion === 'seguir' && !visitaDeEstaPlantilla(areasExistentes, t.schema)) { v = null; accion = 'crear'; areasExistentes = []; }
         if (!v) v = await crearVisita({ siteId: site.id, surveyorAuthUserId: authUserId || null });
@@ -143,7 +143,7 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
         let respaldo = null, pendLocal = null;
         try { const raw = localStorage.getItem('survey_draft_' + v.id); if (raw) respaldo = JSON.parse(raw); } catch (e) {}
         try { const rawP = localStorage.getItem('survey_pend_' + v.id); if (rawP) { const arr = JSON.parse(rawP); if (Array.isArray(arr)) pendLocal = arr; } } catch (e) {}
-        // v8.92.0: lo pendiente guardado en el equipo + lo que este formulario aún tiene sin confirmar (tras «Reintentar»).
+        // v8.94.0: lo pendiente guardado en el equipo + lo que este formulario aún tiene sin confirmar (tras «Reintentar»).
         const enMemoria = cambiosRef.current.lista().map(x => x.clave);
         const pendUnion = pendLocal ? [...new Set([...pendLocal, ...enMemoria])] : null;
         const rec = aplicarRespaldo({ generalServidor: v.general_data, areasServidor: areasExistentes, respaldo, pendientes: pendUnion });
@@ -154,7 +154,7 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
         setGeneralData(gdInicial);
         setAreas(areasIniciales);
         setErrorMsg(null);
-        // v8.92.0: lo del respaldo que difiere del servidor queda pendiente y se sube ya (best-effort);
+        // v8.94.0: lo del respaldo que difiere del servidor queda pendiente y se sube ya (best-effort);
         // si no sube, se reintenta al volver la señal y, sí o sí, antes de cerrar.
         const cambios = cambiosRef.current;
         if (rec.generalDistinto) cambios.marcar('general');
@@ -174,7 +174,7 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
           const u = await obtenerUbicacion();
           if (cancelado) return;
           if (!u || u.lat == null) { setGps({ estado: 'error' }); return; }
-          // v8.92.0: una visita ya cerrada que se sigue conserva su check-in (el GPS de quien la abre ahora puede ser la oficina).
+          // v8.94.0: una visita ya cerrada que se sigue conserva su check-in (el GPS de quien la abre ahora puede ser la oficina).
           if (accion !== 'seguir') { try { await actualizarVisita(v.id, { checkin_latitude: u.lat, checkin_longitude: u.lng }); } catch {} }
           const slat = site?.latitude != null ? Number(site.latitude) : null;
           const slng = site?.longitude != null ? Number(site.longitude) : null;
@@ -197,10 +197,10 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
   // v8.19.53: la foto de fachada se pide en el check-in (no dentro de la sección general).
   const fotoFachadaField = (secGeneral?.fields || []).find(f => f.id === 'foto_frontal');
   const fachadaLista = Array.isArray(generalData.foto_frontal) && generalData.foto_frontal.length > 0;
-  // v8.92.0: fachada obligatoria sin opción de diferir ni de cerrar sin ella (plantillas que lo pidan).
+  // v8.94.0: fachada obligatoria sin opción de diferir ni de cerrar sin ella (plantillas que lo pidan).
   const fachadaDura = !!fotoFachadaField?.obligatoria_dura;
   const bloquesRepetibles = secciones.filter(s => s.type === 'repeating_block');
-  // v8.92.0: el cuerpo del formulario son los bloques repetibles y, solo si la plantilla las marca `extra`,
+  // v8.94.0: el cuerpo del formulario son los bloques repetibles y, solo si la plantilla las marca `extra`,
   // secciones fijas adicionales (ej. Jardines, Techo) que guardan en los datos generales. Se pintan en el
   // orden de la plantilla; una sección o bloque con `show_if` se oculta si la condición no se cumple.
   // Plantillas sin `extra` ni `show_if` se ven exactamente igual que antes.
@@ -222,7 +222,7 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
   // v8.20.5: tipo de techo/piso POR ÁREA. La familia sale del service_line del
   // levantamiento; los tipos son los service_line de esa familia.
   const familiaKey = familiaDeServiceLine(template?.service_line || proyecto?.service_line);
-  // v8.92.0: plantillas con `sin_tipo_area` (pintura) no piden tipo por área: la pintura va por superficie.
+  // v8.94.0: plantillas con `sin_tipo_area` (pintura) no piden tipo por área: la pintura va por superficie.
   const tiposArea = (familiaKey && !template?.schema?.sin_tipo_area) ? tiposDeFamilia(familiaKey) : [];
   const tipoLabel = familiaPorKey(familiaKey)?.tipoLabel || 'Tipo';
 
@@ -278,7 +278,7 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
       dataInicial._tipo = prev.data._tipo;
       if (prev.data._tipo === 'other' && prev.data._tipo_otro) dataInicial._tipo_otro = prev.data._tipo_otro;
     }
-    // v8.92.0: campos marcados `heredar` (ej. el nivel en pintura) se copian del área anterior.
+    // v8.94.0: campos marcados `heredar` (ej. el nivel en pintura) se copian del área anterior.
     for (const f of (bloque.fields || [])) {
       if (f.heredar && prev?.data?.[f.id] != null && prev.data[f.id] !== '') dataInicial[f.id] = prev.data[f.id];
     }
@@ -292,7 +292,7 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
       });
       setAreas(prev => [...prev, a]);
     } catch (e) {
-      // v8.92.0: fallo no fatal (antes tumbaba todo el formulario).
+      // v8.94.0: fallo no fatal (antes tumbaba todo el formulario).
       alert('No se pudo agregar el área' + (typeof navigator !== 'undefined' && navigator.onLine === false ? ' porque no hay conexión' : '') + '. Lo ya capturado está guardado; intenta de nuevo.');
     }
   };
@@ -310,7 +310,7 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
       }
       return;
     }
-    // v8.92.0: partir de areasRef (no del cierre) para que dos cambios seguidos no se pisen.
+    // v8.94.0: partir de areasRef (no del cierre) para que dos cambios seguidos no se pisen.
     const base = areasRef.current;
     const area = base.find(a => a.id === areaId);
     const data = { ...((area && area.data) || {}), [campo]: valor };
@@ -334,11 +334,11 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
   };
 
   // Suma el área (m²) de todas las tablas de medidas del bloque del área.
-  // v8.92.0: la regla vive en lib/helpers/cicloLevantamiento.js (grossDeArea) para poder probarla.
+  // v8.94.0: la regla vive en lib/helpers/cicloLevantamiento.js (grossDeArea) para poder probarla.
   const calcularGrossArea = (area, data) => grossDeArea((template?.schema?.sections || []).find(s => s.id === area?.block_id), area, data);
 
   const renombrarArea = async (areaId, nuevoNombre) => {
-    // v8.92.0: el nombre también va al respaldo local y queda pendiente hasta que el servidor lo confirme
+    // v8.94.0: el nombre también va al respaldo local y queda pendiente hasta que el servidor lo confirme
     // (antes, al reabrir, el respaldo devolvía el nombre viejo y el cierre lo subía encima del corregido).
     const nuevas = areasRef.current.map(a => a.id === areaId ? { ...a, name: nuevoNombre } : a);
     areasRef.current = nuevas;
@@ -366,11 +366,11 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
     }
   };
 
-  // v8.92.0: resumen por tipo de pintura que el técnico confirma antes de cerrar (plantillas con resumen_pintura).
+  // v8.94.0: resumen por tipo de pintura que el técnico confirma antes de cerrar (plantillas con resumen_pintura).
   const [verResumen, setVerResumen] = useState(false);
   const resumenPintura = useMemo(() => template?.schema?.resumen_pintura ? resumenVisitaPintura(areas) : null, [template, areas]);
 
-  // v8.92.0: sube lo que este equipo cambió y el servidor no ha confirmado (datos generales y, por área, sus
+  // v8.94.0: sube lo que este equipo cambió y el servidor no ha confirmado (datos generales y, por área, sus
   // datos y/o su nombre). Lanza el primer error, con el nombre del área si fue un área.
   const subirPendientes = (visitId) => {
     const turno = colaSubidaRef.current.catch(() => {}).then(() => subirPendientesAhora(visitId));
@@ -404,9 +404,9 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
 
   const cerrarVisitaCompleta = async (forzar = false, confirmado = false) => {
     if (!visit) return;
-    // v8.92.0: con una foto a medio subir no se cierra (se perdería sin aviso).
+    // v8.94.0: con una foto a medio subir no se cierra (se perdería sin aviso).
     if (fotosSubiendo() > 0) { alert('Espera: hay una foto subiendo. Cierra cuando termine para no perderla.'); return; }
-    // v8.92.0: requisitos duros — ni siquiera "Cerrar sin completar" los salta.
+    // v8.94.0: requisitos duros — ni siquiera "Cerrar sin completar" los salta.
     const duros = completitud.faltantes.filter(f => f.duro);
     if (duros.length > 0) {
       alert(`No se puede cerrar la visita sin:\n\n${duros.map(f => `• ${f.label}`).join('\n')}\n\nPuedes usar "Pausar" para guardar y volver luego.`);
@@ -424,7 +424,7 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
     setVerResumen(false);
     setCerrando(true);
     try {
-      // v8.92.0: antes de cerrar se sube lo que haya quedado pendiente y se espera el resultado. Si algo no sube,
+      // v8.94.0: antes de cerrar se sube lo que haya quedado pendiente y se espera el resultado. Si algo no sube,
       // la visita no se cierra y el respaldo local no se borra: un guardado que falló en silencio no se pierde.
       try {
         await subirPendientes(visit.id);
@@ -441,7 +441,7 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
       let resultado = forzar ? 'cerrado' : 'finalizado';
       let estadoSitio = null;
       if (template?.schema?.cierre_por_sitio) {
-        // v8.92.0: plantillas «por sitio» (pintura de sucursales): se marca ESTA oficina (completada, o en proceso
+        // v8.94.0: plantillas «por sitio» (pintura de sucursales): se marca ESTA oficina (completada, o en proceso
         // si se cerró sin completar o quedó algo pendiente) y el proyecto pasa a Realizado solo cuando TODAS sus
         // oficinas están completas. Si alguna lectura falla, no se finaliza nada (se decide en el próximo cierre).
         const nuevoEstado = estadoSitioAlCerrar({ forzar, pendientes });
@@ -473,9 +473,9 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
   // v8.25.8: no cerrar mientras hay un guardado en vuelo (evita perder cambios).
   const cerrarSeguro = () => {
     if (guardando || cerrando) { alert('Espera un segundo: guardando tus cambios…'); return; }
-    // v8.92.0: una foto a medio subir se perdería sin aviso al salir.
+    // v8.94.0: una foto a medio subir se perdería sin aviso al salir.
     if (fotosSubiendo() > 0) { alert('Espera: hay una foto subiendo. Sal cuando termine para no perderla.'); return; }
-    // v8.92.0: si se siguió una oficina ya cerrada y al salir quedó incompleta, deja de contar como completada
+    // v8.94.0: si se siguió una oficina ya cerrada y al salir quedó incompleta, deja de contar como completada
     // (si no, el cierre de otra oficina podría pasar el proyecto a Realizado con esta a medias).
     if (seguida && template?.schema?.cierre_por_sitio && completitud.faltantes.length > 0) {
       marcarEstadoSitioSurvey(site.id, 'in_progress').catch(() => {});
@@ -504,7 +504,7 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
           <div className="text-sm text-zinc-300 mb-1">{errorMsg}</div>
           <div className="text-[12px] text-zinc-500 mb-4">Revisa la señal y vuelve a intentarlo. Lo ya capturado sigue guardado.</div>
           <div className="flex gap-2">
-            {/* v8.92.0: reintentar la carga sin salir */}
+            {/* v8.94.0: reintentar la carga sin salir */}
             <button onClick={() => { setLoading(true); setErrorMsg(null); setIntento(n => n + 1); }} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 text-sm font-bold">
               Reintentar
             </button>
@@ -517,7 +517,7 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
     );
   }
 
-  // v8.92.0: nunca pintar el formulario sin plantilla o sin visita (ej. justo al tocar «Reintentar»).
+  // v8.94.0: nunca pintar el formulario sin plantilla o sin visita (ej. justo al tocar «Reintentar»).
   if (!template || !visit) {
     return (
       <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4">
@@ -905,7 +905,7 @@ function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, suppor
          'floor': 'Ej: Piso planta baja, Almacén nave A…',
        }[bloque.id] || `Ej: ${bloque.block_label || 'Nombre'} 1, ${bloque.block_label || 'Nombre'} 2…`);
 
-  // v8.92.0: al elegir un área del catálogo se precargan sus superficies (si aún no hay ninguna).
+  // v8.94.0: al elegir un área del catálogo se precargan sus superficies (si aún no hay ninguna).
   const elegirPreset = (p) => {
     const fSup = (bloque.fields || []).find(f => f.type === 'surfaces_table');
     const yaTiene = fSup && Array.isArray(area.data?.[fSup.id]) && area.data[fSup.id].length > 0;
@@ -987,7 +987,7 @@ function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, suppor
 
       {!colapsado && (
         <div className="px-4 py-3 space-y-3">
-          {/* v8.92.0: "No se pinta" — el área se registra (para que conste que se vio) pero no suma.
+          {/* v8.94.0: "No se pinta" — el área se registra (para que conste que se vio) pero no suma.
               Pide motivo; no exige superficies ni fotos. */}
           {bloque.permite_no_pinta && (
             <div className={`border-2 rounded-card p-3 ${noPinta ? 'border-zinc-500 bg-zinc-800/60' : 'border-zinc-800 bg-zinc-900/50'}`}>

@@ -63,7 +63,7 @@ const Chip = ({ color, children }) => (
   </span>
 );
 
-export default function VistaPrograma({ programa, locaciones = [], usuario, data = {}, onVolver, onRecargar, onAbrirProyecto }) {
+export default function VistaPrograma({ programa, locaciones = [], usuario, data = {}, onVolver, onRecargar, onRecargarDatos, onAbrirProyecto }) {
   const [tab, setTab] = useState('tablero');
   const [buscar, setBuscar] = useState('');
   const [guardando, setGuardando] = useState(null);
@@ -77,7 +77,12 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
     const base = s.tipo === tipo ? s.ids : [];
     return { tipo, ids: base.includes(id) ? base.filter(x => x !== id) : [...base, id] };
   });
-  const seleccionadas = sel.ids.map(id => locaciones.find(l => l.id === id)).filter(Boolean);
+  // solo cuentan las que siguen siendo programables (tras refrescar pudieron arrancar)
+  const programable = (l) => sel.tipo === 'pintura'
+    ? ['espera_techo', 'lista'].includes(l.etapaPintura) && l.proyectoPinturaId && ['aprobado', 'planificado'].includes(l.obraPintura?.estado)
+    : l.etapa === 'por_programar' && l.proyectoId && ['aprobado', 'planificado'].includes(l.obra?.estado);
+  const seleccionadas = sel.ids.map(id => locaciones.find(l => l.id === id)).filter(l => l && programable(l));
+  const cambiarTab = (t) => { setTab(t); setSel({ tipo: t === 'pintura' ? 'pintura' : 'techo', ids: [] }); };
 
   const filtradas = useMemo(() => {
     const q = buscar.trim().toLowerCase();
@@ -188,7 +193,7 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
         <span className="text-zinc-400 font-bold uppercase tracking-widest">Valor del programa · sin ITBIS</span>
         <span>Techos <b className="text-white text-sm tabular-nums">{formatRD(valor.techo.total)}</b>{valor.techo.sinMonto ? <span className="text-zinc-500"> ({valor.techo.sinMonto} sin monto)</span> : null}</span>
         <span>Pintura · Recubre <b className="text-white text-sm tabular-nums">{formatRD(valor.pintura.total)}</b>{valor.pintura.sinMonto ? <span className="text-zinc-500"> ({valor.pintura.sinMonto} sin monto)</span> : null}</span>
-        <span>Total <b className="text-white text-sm tabular-nums">{formatRD(valor.techo.total + valor.pintura.total)}</b></span>
+        <span>Total <b className="text-white text-sm tabular-nums">{formatRD(valor.techo.total + valor.pintura.total)}</b>{valor.techo.sinMonto + valor.pintura.sinMonto ? <span className="text-zinc-500"> ({valor.techo.sinMonto + valor.pintura.sinMonto} sin monto)</span> : null}</span>
       </div>
 
       {/* v8.59.0: enlace del portal del cliente */}
@@ -218,7 +223,7 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
 
       <div className="flex gap-2 flex-wrap items-center">
         {[['tablero', 'Tablero', LayoutGrid], ['pintura', `Pintura · Recubre (${conPintura})`, PaintRoller], ['mapa', 'Mapa', MapPin], ['zonas', 'Por zona', Route]].map(([id, label, Icon]) => (
-          <button key={id} onClick={() => setTab(id)}
+          <button key={id} onClick={() => cambiarTab(id)}
             className={`px-3 py-1.5 text-[11px] font-bold uppercase rounded-card flex items-center gap-1.5 ${tab === id ? 'bg-red-600 text-white' : 'bg-zinc-900 border border-zinc-800 text-zinc-400'}`}>
             <Icon className="w-3.5 h-3.5" /> {label}
           </button>
@@ -228,11 +233,11 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
           <input value={buscar} onChange={e => setBuscar(e.target.value)} placeholder="Buscar locación, código o cotización…"
             className="w-full bg-zinc-950 border border-zinc-800 focus:border-red-600 outline-none rounded-card pl-7 pr-3 py-1.5 text-xs text-white placeholder-zinc-600" />
         </div>
-        {sel.ids.length > 0 && (
+        {seleccionadas.length > 0 && (tab === 'pintura') === (sel.tipo === 'pintura') && (
           <div className="flex items-center gap-2">
             <button onClick={() => setProgramando(true)}
               className="px-3 py-1.5 text-[11px] font-bold uppercase rounded-card bg-red-600 hover:bg-red-500 text-white flex items-center gap-1.5">
-              <CalendarDays className="w-3.5 h-3.5" /> Programar {sel.ids.length}{sel.tipo === 'pintura' ? ' (pintura)' : ''}
+              <CalendarDays className="w-3.5 h-3.5" /> Programar {seleccionadas.length}{sel.tipo === 'pintura' ? ' (pintura)' : ''}
             </button>
             <button onClick={() => setSel({ tipo: sel.tipo, ids: [] })} className="text-[10px] underline text-zinc-500 hover:text-white">quitar selección</button>
           </div>
@@ -269,7 +274,7 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
                     <div className="space-y-1.5 max-h-[360px] overflow-y-auto">
                       {(e.id === 'terminado' ? [...lista].sort((a, b) => (a.recepcion === 'listo' ? 0 : 1) - (b.recepcion === 'listo' ? 0 : 1)) : lista).map(l => (
                         <div key={l.id} className="bg-zinc-950 border border-zinc-800 hover:border-zinc-600 rounded-card p-2">
-                          {e.id === 'por_programar' && l.proyectoId && (
+                          {e.id === 'por_programar' && l.proyectoId && ['aprobado', 'planificado'].includes(l.obra?.estado) && (
                             <label className="float-right ml-1 cursor-pointer" title="Elegir para programar">
                               <input type="checkbox" className="accent-red-600" checked={sel.tipo === 'techo' && sel.ids.includes(l.id)} onChange={() => toggleSel('techo', l.id)} />
                             </label>
@@ -291,7 +296,7 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
                           </button>
                           {l.cotizacionRef && (
                             <div className="text-[10px] text-zinc-400 mt-0.5">
-                              {l.cotizacionRef}{l.montoSinItbis ? ` · ${formatRD(l.montoSinItbis)}` : l.cotizacionMonto ? ` · ${formatRD(l.cotizacionMonto)}` : ''}
+                              {l.cotizacionRef}{l.montoSinItbis ? ` · ${formatRD(l.montoSinItbis)}` : ''}
                             </div>
                           )}
                           <div className="flex items-center gap-2 mt-1.5 flex-wrap">
@@ -364,7 +369,7 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
                   <div className="space-y-1.5 max-h-[420px] overflow-y-auto">
                     {lista.map(l => (
                       <div key={l.id} className="bg-zinc-950 border border-zinc-800 hover:border-zinc-600 rounded-card p-2">
-                        {['espera_techo', 'lista'].includes(e.id) && l.proyectoPinturaId && (
+                        {['espera_techo', 'lista'].includes(e.id) && l.proyectoPinturaId && ['aprobado', 'planificado'].includes(l.obraPintura?.estado) && (
                           <label className="float-right ml-1 cursor-pointer" title="Elegir para programar la pintura">
                             <input type="checkbox" className="accent-red-600" checked={sel.tipo === 'pintura' && sel.ids.includes(l.id)} onChange={() => toggleSel('pintura', l.id)} />
                           </label>
@@ -378,7 +383,7 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
                           <ChipsCierre l={l} />
                         </button>
                         {l.cotizacionPinturaRef && (
-                          <div className="text-[10px] text-zinc-400 mt-0.5">{l.cotizacionPinturaRef}{l.pinturaMontoSinItbis ? ` · ${formatRD(l.pinturaMontoSinItbis)}` : l.cotizacionPinturaMonto ? ` · ${formatRD(l.cotizacionPinturaMonto)}` : ''}</div>
+                          <div className="text-[10px] text-zinc-400 mt-0.5">{l.cotizacionPinturaRef}{l.pinturaMontoSinItbis ? ` · ${formatRD(l.pinturaMontoSinItbis)}` : ''}</div>
                         )}
                         {l.proyectoPinturaId && onAbrirProyecto && (
                           <button onClick={() => onAbrirProyecto(l.proyectoPinturaId)} className="text-[10px] underline text-zinc-400 hover:text-white mt-1">ver obra de pintura</button>
@@ -423,7 +428,7 @@ export default function VistaPrograma({ programa, locaciones = [], usuario, data
       {programando && (
         <ModalProgramar seleccion={seleccionadas} tipo={sel.tipo} personal={data.personal || []} usuario={usuario}
           onCerrar={() => setProgramando(false)}
-          onListo={async (n) => { setProgramando(false); setSel({ tipo: sel.tipo, ids: [] }); await onRecargar?.(); alert(`${n} obra(s) programada(s).`); }} />
+          onListo={async (n) => { setProgramando(false); setSel({ tipo: sel.tipo, ids: [] }); await Promise.all([onRecargar?.(), onRecargarDatos?.()]); alert(`${n} obra(s) programada(s).`); }} />
       )}
 
       {ficha && (

@@ -30,7 +30,9 @@ export default function ModalProgramar({ seleccion = [], tipo = 'techo', persona
     if (inicio && fin && fin < inicio) { alert('La fecha de fin es anterior a la de inicio.'); return; }
     setGuardando(true);
     try {
-      const n = await db.programarObrasPrograma(conObra.map(obraDe), { supervisorId, maestroId, inicio, fin }, usuario);
+      const supervisorNombre = supervisores.find(p => p.id === supervisorId)?.nombre;
+      const maestroNombre = maestros.find(p => p.id === maestroId)?.nombre;
+      const n = await db.programarObrasPrograma(conObra.map(obraDe), { supervisorId, maestroId, inicio, fin, supervisorNombre, maestroNombre }, usuario);
       await onListo?.(n);
     } catch (e) { alert('No se pudo programar: ' + (e.message || e)); }
     setGuardando(false);
@@ -43,7 +45,7 @@ export default function ModalProgramar({ seleccion = [], tipo = 'techo', persona
           <CalendarDays className="w-5 h-5 text-red-500 mt-0.5" />
           <div className="flex-1 min-w-0">
             <div className="text-sm font-black uppercase tracking-wide">Programar {tipo === 'pintura' ? 'pintura (Recubre)' : 'techo'}</div>
-            <div className="text-[11px] text-zinc-500">{conObra.length} obra(s). Se les pone supervisor y fechas; el estado de la obra no cambia.</div>
+            <div className="text-[11px] text-zinc-500">{conObra.length} obra(s) que no han arrancado. Se les pone supervisor y fechas; el estado de la obra no cambia.</div>
           </div>
           <button onClick={onCerrar} className="text-zinc-500 hover:text-white"><X className="w-5 h-5" /></button>
         </div>

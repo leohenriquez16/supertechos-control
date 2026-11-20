@@ -1119,7 +1119,7 @@ export default function App() {
         {vista === 'contabilidad' && tieneRol(usuario, 'owner') && <VistaContabilidad usuario={usuario} onVolver={() => setVista('dashboard')} />}
         {vista === 'miPerfil' && !miPerfilEditando && <FichaEmpleado propio persona={(data.personal || []).find(x => x.id === usuario.id) || usuario} usuario={usuario} data={data} onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }} onEditar={() => setMiPerfilEditando(true)} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
         {vista === 'miPerfil' && miPerfilEditando && <MiPerfil usuario={usuario} persona={usuario} soloLectura={false} onVolver={() => setMiPerfilEditando(false)} onGuardar={(campos) => withSync(() => db.guardarPerfil(usuario.id, campos))} />}
-        {vista === 'programas' && <PantallaProgramas usuario={usuario} data={data} onVolver={() => setVista('dashboard')} onAbrirProyecto={async (pid) => { const proy = data.proyectos.find(x => x.id === pid); if (proy) { setProyectoActivo(proy); setVista('proyecto'); setTab('avance'); } }} />}
+        {vista === 'programas' && <PantallaProgramas usuario={usuario} data={data} onRecargarDatos={recargar} onVolver={() => setVista('dashboard')} onAbrirProyecto={async (pid) => { const proy = data.proyectos.find(x => x.id === pid); if (proy) { setProyectoActivo(proy); setVista('proyecto'); setTab('avance'); } }} />}
         {esAdmin && vista === 'personal' && <GestionPersonal usuario={usuario} personal={data.personal} data={data} onVolver={() => setVista('dashboard')} onActualizar={(p) => withSync(() => db.reemplazarPersonal(p))} onRecargar={recargar} onAbrirPerfil={(p) => { setPerfilViendo(p); setVista('perfilPersona'); }} onAbrir360={(p) => { setPerfilViendo(p); setVista('empleado360'); }} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} accionInicial={accionPersonal} onAccionConsumida={() => setAccionPersonal(null)} />}
         {esAdmin && vista === 'empleado360' && perfilViendo && <FichaEmpleado persona={(data.personal || []).find(x => x.id === perfilViendo.id) || perfilViendo} usuario={usuario} data={data} onVolver={() => setVista('personal')} onEditar={() => setVista('perfilPersona')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }}
           acciones={[['editar', 'Editar datos básicos', Edit2], ['experiencia', 'Experiencia', TrendingUp], ['capacidades', 'Capacidades', Wrench], ['menu', 'Más acciones', MoreHorizontal]].map(([tipo, label, icon]) => ({ label, icon, onClick: () => { setAccionPersonal({ tipo, id: perfilViendo.id }); setVista('personal'); } }))} />}
@@ -11935,7 +11935,7 @@ function ModalCambiarEstado({ proyecto, usuario, personal, sistema, onCerrar, on
 // ============================================================
 // v8.58.0: contenedor de Programas — carga la campaña y sus locaciones con la etapa
 // ya derivada del levantamiento y la obra.
-function PantallaProgramas({ usuario, data, onVolver, onAbrirProyecto }) {
+function PantallaProgramas({ usuario, data, onVolver, onAbrirProyecto, onRecargarDatos }) {
   const [programas, setProgramas] = useState([]);
   const [sel, setSel] = useState(null);
   const [locaciones, setLocaciones] = useState([]);
@@ -11972,8 +11972,8 @@ function PantallaProgramas({ usuario, data, onVolver, onAbrirProyecto }) {
           ))}
         </div>
       )}
-      <VistaPrograma programa={sel} locaciones={locaciones} usuario={usuario} data={data} onVolver={onVolver}
-        onRecargar={() => cargar(sel)} onAbrirProyecto={onAbrirProyecto} />
+      <VistaPrograma key={sel.id} programa={sel} locaciones={locaciones} usuario={usuario} data={data} onVolver={onVolver}
+        onRecargar={() => cargar(sel)} onRecargarDatos={onRecargarDatos} onAbrirProyecto={onAbrirProyecto} />
     </div>
   );
 }

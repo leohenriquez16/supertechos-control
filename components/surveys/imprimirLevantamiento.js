@@ -267,6 +267,12 @@ export async function imprimirLevantamiento({ proyecto, site, visit, areas = [],
     }
   }
 
+  // v8.97.0: comentario libre del área (data._comentario)
+  const comentarioArea = (a) => {
+    const t = String(a?.data?._comentario || '').trim();
+    return t ? `<div style="margin:4px 0 6px;padding:6px 8px;border-left:3px solid #0284c7;background:#f0f9ff;font-size:11px;white-space:pre-wrap"><b>Comentario:</b> ${esc(t)}</div>` : '';
+  };
+
   // --- Bloques repetibles (áreas) ---
   const htmlBloques = blocks.map(block => {
     const filas = vigentes.filter(a => a.block_id === block.id);
@@ -282,6 +288,7 @@ export async function imprimirLevantamiento({ proyecto, site, visit, areas = [],
       <div class="area">
         <h3>${esc(a.name || (block.block_label || 'Item') + ' ' + (i + 1))}</h3>
         <div class="muted">${esc(textoNoPinta(a.data))}</div>
+        ${comentarioArea(a)}
         ${gridFotos(fotosPorArea[a.id])}
       </div>`;
       }
@@ -293,6 +300,7 @@ export async function imprimirLevantamiento({ proyecto, site, visit, areas = [],
       <div class="area">
         <h3>${esc(a.name || (block.block_label || 'Item') + ' ' + (i + 1))}${a.data?.section_surface_type ? ' <span class="chip">' + esc(a.data.section_surface_type) + '</span>' : ''}<span class="m2">${m2}</span></h3>
         ${campos || '<div class="muted">Sin datos adicionales.</div>'}
+        ${comentarioArea(a)}
         ${gridFotos(fotosPorArea[a.id])}
       </div>`;
     }).join('');

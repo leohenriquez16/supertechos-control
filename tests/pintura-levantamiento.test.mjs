@@ -1,4 +1,4 @@
-import { plantillaPinturaV2, calcFilaSuperficie, totalesSuperficies, filasPorDefecto, avisosFila, filaIncompleta, leerNumero, resumenVisitaPintura, resumenSuperficies, labelPintura, textoNoPinta, textoTotales, textoMedidaArea, pendientesVisita, areasVigentes, CATALOGO_AREAS, SUPERFICIES, PINTURAS, ESTADOS_JARDINES, ESTADOS_TECHO, MOTIVOS_PENDIENTE } from '../lib/pinturaCatalogo.js';
+import { plantillaPinturaV2, calcFilaSuperficie, totalesSuperficies, filasPorDefecto, avisosFila, filaIncompleta, leerNumero, resumenVisitaPintura, resumenSuperficies, labelPintura, textoNoPinta, textoTotales, textoMedidaArea, pendientesVisita, areasVigentes, CATALOGO_AREAS, SUPERFICIES, PINTURAS, ESTADOS_JARDINES, ESTADOS_TECHO, MOTIVOS_PENDIENTE, mlLineasParqueo, filasParqueoSimple, textoParqueo } from '../lib/pinturaCatalogo.js';
 import { visitaAlAbrir, visitaDeEstaPlantilla, estadoSitioAlCerrar, proyectoCompleto, esErrorDeRed, crearCambiosPendientes, claveArea, agruparPendientes, aplicarRespaldo, igualJson, grossDeArea } from '../lib/helpers/cicloLevantamiento.js';
 import { calcularCompletitud, showIfOk } from '../lib/helpers/completitudSurvey.js';
 import { readFileSync } from 'fs';
@@ -38,7 +38,7 @@ t('bloque de jardines condicionado', sec('jardines').type === 'repeating_block' 
 t('estados sin botón Otro', ['jardines_estado', 'techo_estado'].every(id => tpl.sections.flatMap(s => s.fields || []).find(f => f.id === id).allow_other === false));
 t('ids de campos generales únicos', (() => { const ids = tpl.sections.filter(s => s.type !== 'repeating_block').flatMap(s => s.fields.map(f => f.id)); return new Set(ids).size === ids.length; })());
 t('valores de estado', ESTADOS_JARDINES.map(x => x.value).join() === 'levantado,no_tiene,pendiente' && ESTADOS_TECHO.map(x => x.value).join() === 'levantado,pendiente,no_aplica');
-t('todo show_if apunta a un campo y valor que existen', tpl.sections.flatMap(s => [s, ...(s.fields || [])]).filter(x => x.show_if).every(x => { const m = /^(\w+) == (\w+)$/.exec(x.show_if); const f = m && tpl.sections.flatMap(s => s.fields || []).find(y => y.id === m[1]); return !!f && f.options.some(o => o.value === m[2]); }));
+t('todo show_if apunta a un campo y valor que existen', tpl.sections.flatMap(s => [s, ...(s.fields || [])]).filter(x => x.show_if).every(x => { const todos = tpl.sections.flatMap(s => s.fields || []); const n = /^(\w+) > (\d+)$/.exec(x.show_if); if (n) return todos.some(y => y.id === n[1] && y.type === 'number'); const m = /^(\w+) == (\w+)$/.exec(x.show_if); const f = m && todos.find(y => y.id === m[1]); return !!f && f.options.some(o => o.value === m[2]); }));
 t('el schema es JSON serializable', JSON.parse(JSON.stringify(tpl)).sections.length === tpl.sections.length);
 
 // --- show_if
@@ -48,7 +48,7 @@ t('show_if sin expresión', showIfOk(undefined, {}) === true);
 // --- completitud: lo que se puede cerrar y lo que no
 const foto = [{ path: 'x' }];
 const areaOk = (block, extra = {}) => ({ block_id: block, name: 'A', data: { superficies: [calcFilaSuperficie({ superficie: 'paredes', pintura: 'semigloss', largo_m: 4, alto_m: 3 })], fotos: foto, ...extra } });
-const base = { foto_frontal: foto, tipo_oficina: 'Oficina' };
+const base = { foto_frontal: foto, tipo_oficina: 'Oficina', parqueo_tiene: 'no' };
 const areasBase = [areaOk('exteriores'), areaOk('interiores', { nivel: 'Primer nivel' })];
 const falt = (gd, ar) => calcularCompletitud(tpl, gd, ar).faltantes.map(f => f.label);
 t('sin decidir jardines ni techo no cierra', falt(base, areasBase).length === 2);
@@ -103,7 +103,7 @@ t('sección extra visible sí exige', calcularCompletitud(conExtra, { ver: true 
   const fila = (o) => calcFilaSuperficie({ superficie: 'paredes', pintura: 'semigloss', ...o });
   const filaOk = fila({ largo_m: 4, alto_m: 3 });
   const area = (block, data) => ({ block_id: block, name: 'A', data });
-  const base = { foto_frontal: foto, tipo_oficina: 'Oficina', jardines_estado: 'no_tiene', techo_estado: 'no_aplica' };
+  const base = { foto_frontal: foto, tipo_oficina: 'Oficina', jardines_estado: 'no_tiene', techo_estado: 'no_aplica', parqueo_tiene: 'no' };
   const ext = (rows, extra = {}) => area('exteriores', { superficies: rows, fotos: foto, ...extra });
   const int = area('interiores', { nivel: 'Primer nivel', superficies: [filaOk], fotos: foto });
   const C = (gd, ar) => calcularCompletitud(tpl, gd, ar);
@@ -118,7 +118,15 @@ t('sección extra visible sí exige', calcularCompletitud(conExtra, { ver: true 
   t('sin tipo de oficina no cierra', falt({ ...base, tipo_oficina: null }, [ext([filaOk]), int]).some(l => l.includes('Tipo de oficina')));
   t('tipo de oficina faltante NO es duro', C({ ...base, tipo_oficina: null }, [ext([filaOk]), int]).faltantes.every(f => !f.duro));
   t('pct baja cuando falta algo', C({ ...base, tipo_oficina: null }, [ext([filaOk]), int]).pct < 100);
-  t('parqueo opcional pero con un área vacía exige', falt(base, [ext([filaOk]), int, area('parqueo', {})]).length === 2);
+  const pSi = { ...base, parqueo_tiene: 'si', parqueo_cantidad: 10, parqueo_flechas_cantidad: 0, parqueo_discap: 'no', parqueo_bordillos: 'no', parqueo_fotos: foto };
+  t('parqueo completo (sin flechas, sin discap., sin bordillos) cierra', C(pSi, [ext([filaOk]), int]).pct === 100);
+  t('parqueo opcional pero con un área vacía exige', falt(pSi, [ext([filaOk]), int, area('parqueo', {})]).length === 2);
+  t('sin decir si tiene parqueo no cierra', falt({ ...base, parqueo_tiene: null }, [ext([filaOk]), int]).some(l => l.includes('¿Tiene parqueo?')));
+  t('tiene parqueo: pide cantidad, flechas, discap., bordillos y fotos', falt({ ...base, parqueo_tiene: 'si' }, [ext([filaOk]), int]).length === 5);
+  t('flechas > 0 pide el tipo', falt({ ...pSi, parqueo_flechas_cantidad: 3 }, [ext([filaOk]), int]).some(l => l.includes('Tipo de flechas')));
+  t('discap. sí pide cantidad', falt({ ...pSi, parqueo_discap: 'si' }, [ext([filaOk]), int]).some(l => l.includes('discapacitados')));
+  t('bordillos sí pide metros', falt({ ...pSi, parqueo_bordillos: 'si' }, [ext([filaOk]), int]).some(l => l.includes('Bordillos')));
+  t('sin parqueo: el bloque de áreas de parqueo no exige nada', C(base, [ext([filaOk]), int, area('parqueo', {})]).pct === 100);
   t('jardín sin área no cierra', falt({ ...base, jardines_estado: 'levantado' }, [ext([filaOk]), int, area('jardines', { fotos: foto })]).some(l => l.includes('Área (m²)')));
   // no se pinta
   const np = (d) => area('interiores', { _no_pinta: true, ...d });
@@ -279,6 +287,21 @@ t('dato rechazado: el servidor trae código', !esErrorDeRed({ message: 'numeric 
   t('respuesta de red sin código (ej. 502 en HTML) cuenta como sin señal', esErrorDeRed({ message: '<html>502 Bad Gateway</html>' }) === true && esErrorDeRed({ message: 'x', code: '23502' }) === false && esErrorDeRed({ message: 'TypeError: Failed to fetch', code: 'X' }) === true);
   const c = crearCambiosPendientes(); c.marcar('general'); c.confirmar('general', undefined);
   t('confirmar sin sello no borra el pendiente', c.hay());
+}
+
+// --- v8.99.0: parqueo simplificado
+{
+  const g = { parqueo_tiene: 'si', parqueo_cantidad: 12, parqueo_flechas_cantidad: 4, parqueo_flechas_tipo: ['Recta'], parqueo_discap: 'si', parqueo_discap_cantidad: 2, parqueo_bordillos: 'si', parqueo_bordillos_ml: 30 };
+  t('líneas estimadas: (12 + 1) × 5 = 65 ml', mlLineasParqueo(g).ml === 65 && mlLineasParqueo(g).estimado === true);
+  t('líneas medidas reemplazan el estimado', mlLineasParqueo({ ...g, parqueo_lineas_ml: 80 }).ml === 80 && mlLineasParqueo({ ...g, parqueo_lineas_ml: 80 }).estimado === false);
+  t('sin parqueo: sin líneas ni filas', mlLineasParqueo({ parqueo_tiene: 'no', parqueo_cantidad: 9 }) === null && filasParqueoSimple({ parqueo_tiene: 'no', parqueo_cantidad: 9 }).length === 0);
+  const r = resumenVisitaPintura([], 'superficies', g).totales;
+  t('resumen suma parqueo: tráfico 95 ml + 4 und, pavimont 2 und', r.porPintura.trafico.ml === 95 && r.porPintura.trafico.und === 4 && r.porPintura.pavimont.und === 2);
+  t('sin datos generales el resumen no cambia', resumenVisitaPintura([]).totales.ml === 0);
+  t('texto del parqueo', textoParqueo(g) === '12 parqueos · líneas 65.00 ml (estimado) · 4 flechas (Recta) · 2 de discapacitados · bordillos 30.00 ml');
+  t('texto sin parqueo', textoParqueo({ parqueo_tiene: 'no' }) === 'No tiene parqueo' && textoParqueo({}) === null);
+  t('discap. «no» no suma aunque quede cantidad vieja', !filasParqueoSimple({ ...g, parqueo_discap: 'no' }).some(f => f.superficie === 'discap'));
+  t('catálogo de parqueo sin líneas/flechas/discap./bordillos', !CATALOGO_AREAS.parqueo.some(a => /Líneas|Flechas|discapacitado|Bordillos/.test(a.nombre)));
 }
 
 console.log(`pintura-levantamiento: ${ok} ok, ${ko} fallas`);

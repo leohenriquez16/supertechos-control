@@ -9,7 +9,7 @@
 // Carga internamente las fotos de la visita y sus signed URLs.
 
 import { jsPDF } from 'jspdf';
-import { resumenSuperficies, totalesSuperficies, areaNoPinta, textoNoPinta, areasVigentes, textoMedidaArea, resumenVisitaPintura, labelPintura, pendientesVisita } from '../../lib/pinturaCatalogo';
+import { resumenSuperficies, totalesSuperficies, areaNoPinta, textoNoPinta, areasVigentes, textoMedidaArea, resumenVisitaPintura, labelPintura, pendientesVisita, textoParqueo } from '../../lib/pinturaCatalogo';
 import { listarFotosVisita, getSignedUrlFotoSurvey, SERVICE_LINES, showIfOk } from '../../lib/surveys';
 import { membreteHTML, MEMBRETE_CSS } from '../../lib/membrete';
 
@@ -240,10 +240,14 @@ export async function imprimirLevantamiento({ proyecto, site, visit, areas = [],
 
   // --- Secciones generales (visit.general_data) — se omiten si no tienen datos ---
   const htmlGenerales = generalSections.map(sec => {
+    // v8.99.0: sección `extra` oculta por su condición (ej. datos del parqueo cuando no tiene parqueo): no se imprime.
+    if (sec.extra && sec.show_if && !showIfOk(sec.show_if, gd)) return '';
     // Secciones `extra` (jardines, techo): no se imprimen los campos que el formulario oculta (ej. el motivo de
     // «pendiente» cuando ya se levantó). Las demás secciones se imprimen igual que siempre.
     const campos = renderCampos(sec.extra ? (sec.fields || []).filter(f => showIfOk(f.show_if, gd)) : sec.fields, gd);
     const fotosSec = sec.extra ? fotosDeSeccion(sec) : [];
+    // v8.99.0: resumen del parqueo (incluye los metros lineales estimados, que no se guardan como campo).
+    if (sec.id === 'parqueo_info' && textoParqueo(gd)) return `<section class="bloque"><h2>${esc(sec.title)}</h2><div>${esc(textoParqueo(gd))}</div></section>`;
     if (!campos && !fotosSec.length) return '';
     return `<section class="bloque"><h2>${esc(sec.title)}</h2>${campos || ''}${gridFotos(fotosSec)}</section>`;
   }).filter(Boolean).join('');
@@ -251,7 +255,7 @@ export async function imprimirLevantamiento({ proyecto, site, visit, areas = [],
   // v8.94.0: plantillas de pintura: el mismo resumen por tipo de pintura que el técnico confirmó al cerrar.
   let htmlResumenPintura = '';
   if (schema.resumen_pintura) {
-    const r = resumenVisitaPintura(vigentes);
+    const r = resumenVisitaPintura(vigentes, 'superficies', gd);
     const filasR = Object.entries(r.totales.porPintura);
     const pend = pendientesVisita(gd);
     const n2 = (v) => (v ? Number(v).toFixed(2) : '—');

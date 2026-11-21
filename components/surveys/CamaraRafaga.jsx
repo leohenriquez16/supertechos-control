@@ -7,6 +7,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { X, Check, Trash2, Camera, Loader2 } from 'lucide-react';
+import { lentesDisponibles } from '../../lib/helpers/camaraLentes';
 
 export const camaraEnVivoDisponible = () =>
   typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia && typeof window !== 'undefined' && window.isSecureContext !== false;
@@ -21,19 +22,51 @@ export default function CamaraRafaga({ titulo, maximo = null, onListo, onCerrar,
   const fotosRef = useRef(fotos);
   fotosRef.current = fotos;
 
+  // v8.98.0: lo que manda es que entre la mayor parte del área: formato 4:3 (sin el recorte del 16:9) y, si el
+  // equipo tiene gran angular, abre directo en 0.5x. Calidad: la máxima que dé el teléfono en ese formato.
+  const [lentes, setLentes] = useState([]); // [{ key, label, zoom? | deviceId? }]
+  const [lente, setLente] = useState(null);
+  const VIDEO_BASE = { width: { ideal: 4032 }, height: { ideal: 3024 }, aspectRatio: { ideal: 4 / 3 } };
+
+  const conectar = async (video) => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { ...VIDEO_BASE, ...video } });
+    streamRef.current = stream;
+    const v = videoRef.current;
+    if (v) { v.srcObject = stream; await v.play().catch(() => {}); }
+    return stream;
+  };
+
+  const aplicarLente = async (l, { cancelado } = {}) => {
+    if (!l) return;
+    if (l.zoom != null) {
+      const track = streamRef.current?.getVideoTracks?.()[0];
+      await track?.applyConstraints({ advanced: [{ zoom: l.zoom }] });
+    } else if (l.deviceId) {
+      const st = await conectar({ deviceId: { exact: l.deviceId } });
+      if (cancelado?.()) { st.getTracks().forEach((t) => t.stop()); return; }
+    }
+    setLente(l.key);
+  };
+
   useEffect(() => {
     let cancelado = false;
     (async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: false,
-          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
-        });
+        const stream = await conectar({ facingMode: { ideal: 'environment' } });
         if (cancelado) { stream.getTracks().forEach((t) => t.stop()); return; }
-        streamRef.current = stream;
-        const v = videoRef.current;
-        if (v) { v.srcObject = stream; await v.play().catch(() => {}); }
         setEstado('lista');
+        // Lentes: después del permiso ya hay nombres de cámaras. Si falla algo, queda la cámara normal.
+        try {
+          const track = stream.getVideoTracks()[0];
+          const caps = track?.getCapabilities ? track.getCapabilities() : null;
+          const settings = track?.getSettings ? track.getSettings() : null;
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const ls = lentesDisponibles({ caps, settings, devices });
+          if (cancelado) return;
+          setLentes(ls);
+          if (ls.length) { setLente('1'); await aplicarLente(ls[0], { cancelado: () => cancelado }); }
+        } catch (e) { console.warn('CamaraRafaga lentes:', e?.message); }
       } catch (e) {
         console.warn('CamaraRafaga:', e?.name, e?.message);
         if (!cancelado) setEstado('error');
@@ -44,7 +77,16 @@ export default function CamaraRafaga({ titulo, maximo = null, onListo, onCerrar,
       streamRef.current?.getTracks().forEach((t) => t.stop());
       fotosRef.current.forEach((f) => URL.revokeObjectURL(f.url));
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const [cambiando, setCambiando] = useState(false);
+  const elegirLente = async (l) => {
+    if (cambiando || l.key === lente) return;
+    setCambiando(true);
+    try { await aplicarLente(l); } catch (e) { console.warn('cambiar lente:', e?.message); alert('No se pudo cambiar el lente.'); }
+    setCambiando(false);
+  };
 
   const lleno = maximo != null && fotos.length + pendientes >= maximo;
 
@@ -52,8 +94,10 @@ export default function CamaraRafaga({ titulo, maximo = null, onListo, onCerrar,
   const disparar = () => {
     const v = videoRef.current;
     if (!v || !v.videoWidth || lleno) return;
+    // Al subir toda foto se reduce a 1600 px; aquí se guarda a 2400 px como máximo (menos memoria con muchas fotos).
+    const k = Math.min(1, 2400 / Math.max(v.videoWidth, v.videoHeight));
     const c = document.createElement('canvas');
-    c.width = v.videoWidth; c.height = v.videoHeight;
+    c.width = Math.round(v.videoWidth * k); c.height = Math.round(v.videoHeight * k);
     c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
     setFlash(true); setTimeout(() => setFlash(false), 120);
     try { navigator.vibrate?.(30); } catch {}
@@ -127,6 +171,17 @@ export default function CamaraRafaga({ titulo, maximo = null, onListo, onCerrar,
                 <div className="w-full h-full" style={{ backgroundImage: `url(${f.url})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
                 <button onClick={() => borrar(f.id)} className="absolute top-0.5 right-0.5 p-1 rounded-full bg-black/70" aria-label="Borrar foto"><Trash2 className="w-3 h-3" /></button>
               </div>
+            ))}
+          </div>
+        )}
+        {lentes.length > 1 && (
+          <div className="flex items-center justify-center gap-2 pb-2">
+            {lentes.map((l) => (
+              <button key={l.key} onClick={() => elegirLente(l)} disabled={cambiando || estado !== 'lista'}
+                style={lente === l.key ? { background: '#fbbf24', color: '#000' } : { background: '#27272a', color: '#fff' }}
+                className="min-w-[3.25rem] px-3 py-2 rounded-full text-sm font-black disabled:opacity-60">
+                {l.label}
+              </button>
             ))}
           </div>
         )}

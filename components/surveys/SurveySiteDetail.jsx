@@ -1336,6 +1336,9 @@ function LevantamientosRealizados({ site, proyecto }) {
                                 {nf > 0 && <span className="text-[10px] bg-zinc-900 border border-zinc-800 rounded-card px-1.5 py-0.5 text-blue-300">📷 {nf}</span>}
                               </div>
                             )}
+                            {String(a.data?._comentario || '').trim() && (
+                              <div className="mt-2 text-[12px] text-sky-200 bg-sky-950/40 border border-sky-900/60 rounded-card px-2 py-1.5 whitespace-pre-wrap">💬 {a.data._comentario.trim()}</div>
+                            )}
                             <div className="text-[10px] text-zinc-600 mt-1.5 flex items-center gap-1">{abiertaA ? 'Ocultar detalle' : 'Ver detalle'} <ChevronDown className={`w-3 h-3 transition-transform ${abiertaA ? 'rotate-180' : ''}`} /></div>
                           </button>
                           {abiertaA && <DetalleArea area={a} fields={camposBloque(a.block_id)} />}

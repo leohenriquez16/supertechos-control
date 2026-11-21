@@ -17,7 +17,7 @@
 //   - Sync offline (PWA / IndexedDB)
 
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import { Loader2, X, Save, Check, Plus, Copy, Trash2, ChevronDown, ChevronUp, Zap, Sun, Moon } from 'lucide-react';
+import { Loader2, X, Save, Check, Plus, Copy, Trash2, ChevronDown, ChevronUp, Zap, Sun, Moon, MessageSquare } from 'lucide-react';
 import { obtenerTemplateSurvey, crearVisita, obtenerVisitaAbiertaDeSite, listarVisitasDeSite, listarSitesProyectoSurvey, marcarEstadoSitioSurvey, cerrarOficinaCampana, actualizarVisita, cerrarVisita, listarAreasDeVisita, crearArea, actualizarArea, eliminarArea, calcularCompletitud, setCompletitudProyecto, finalizarLevantamientoSurvey, showIfOk, familiaDeServiceLine, tiposDeFamilia, familiaPorKey } from '../../lib/surveys';
 import { filasPorDefecto, MOTIVOS_NO_PINTA, textoNoPinta, resumenVisitaPintura, labelPintura, pendientesVisita } from '../../lib/pinturaCatalogo';
 import { visitaAlAbrir, visitaDeEstaPlantilla, estadoSitioAlCerrar, proyectoCompleto, esErrorDeRed, crearCambiosPendientes, claveArea, agruparPendientes, aplicarRespaldo, grossDeArea } from '../../lib/helpers/cicloLevantamiento';
@@ -968,6 +968,9 @@ function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, suppor
             {tipoActualLabel}
           </span>
         )}
+        {colapsado && String(area.data?._comentario || '').trim() && (
+          <MessageSquare className="w-3.5 h-3.5 text-sky-400 flex-shrink-0" aria-label="Tiene comentario" />
+        )}
         {area.data?._no_pinta && (
           <span className="text-[9px] uppercase tracking-wider font-bold text-zinc-300 bg-zinc-800 px-1.5 py-0.5 border border-zinc-600 flex-shrink-0">
             No se pinta
@@ -1163,6 +1166,9 @@ function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, suppor
           })()}
           </>}
 
+          {/* v8.97.0: comentario libre del área (data._comentario; se guarda como los demás campos) */}
+          <ComentarioArea valor={area.data?._comentario || ''} onCambiar={(v) => onCambioCampo('_comentario', v)} />
+
           {/* v8.23.1/8.23.5: guardar y colapsar el área; o guardar y agregar otra (datos ya autoguardados) */}
           {/* v8.25.27: separado de "Más detalles" para no presionarlo por error */}
           <div className="mt-5 pt-4 border-t border-zinc-800 flex gap-2">
@@ -1177,6 +1183,31 @@ function AreaCard({ area, bloque, onCambioCampo, onRenombrar, onEliminar, suppor
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// v8.97.0: «+ Agregar comentario» por área. Cerrado no ocupa espacio; con texto queda siempre abierto.
+function ComentarioArea({ valor, onCambiar }) {
+  const [abierto, setAbierto] = useState(false);
+  const hay = String(valor || '').length > 0;
+  if (!hay && !abierto) {
+    return (
+      <button type="button" onClick={() => setAbierto(true)}
+        className="flex items-center gap-1.5 px-4 py-2.5 rounded-card text-sm font-bold border-2 border-dashed border-zinc-700 text-zinc-300 hover:border-sky-500 hover:text-white">
+        <Plus className="w-4 h-4" /> Agregar comentario
+      </button>
+    );
+  }
+  return (
+    <div className="border-2 border-zinc-800 bg-zinc-900/50 rounded-card p-3">
+      <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-zinc-300 mb-1.5">
+        <MessageSquare className="w-3.5 h-3.5 text-sky-400" /> Comentario
+        {!hay && <button type="button" onClick={() => setAbierto(false)} className="ml-auto text-zinc-500 hover:text-white normal-case font-normal tracking-normal">Cancelar</button>}
+      </div>
+      <textarea autoFocus={!hay} value={valor} onChange={(e) => onCambiar(e.target.value)} rows={3}
+        placeholder="Ej: la pared tiene humedad abajo, hay que raspar antes de pintar…"
+        className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-sky-500 outline-none px-3 py-2.5 text-sm text-white resize-y" />
     </div>
   );
 }

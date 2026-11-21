@@ -1222,7 +1222,7 @@ function ComentarioArea({ valor, onCambiar }) {
         {!hay && <button type="button" onClick={() => setAbierto(false)} className="ml-auto text-zinc-500 hover:text-white normal-case font-normal tracking-normal">Cancelar</button>}
       </div>
       <textarea autoFocus={!hay} value={valor} onChange={(e) => onCambiar(e.target.value)} rows={3}
-        placeholder="Ej: la pared tiene humedad abajo, hay que raspar antes de pintar…"
+        placeholder="Ej: las columnas son de otro color, el techo necesita andamio…"
         className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-sky-500 outline-none px-3 py-2.5 text-sm text-white resize-y" />
     </div>
   );

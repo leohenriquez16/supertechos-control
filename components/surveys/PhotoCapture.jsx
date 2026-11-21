@@ -13,6 +13,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Camera, Loader2, Trash2, AlertCircle, Image as ImageIcon } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { subirFotoSurvey, getSignedUrlFotoSurvey } from '../../lib/surveys';
+import CamaraRafaga, { camaraEnVivoDisponible } from './CamaraRafaga'; // v8.97.0: varias fotos seguidas
 
 // v8.94.0: fotos subiendo en este momento (en todo el formulario). El formulario no deja pausar ni cerrar
 // mientras haya alguna: al salir, la subida se cortaría y la foto se perdería sin aviso.
@@ -26,6 +27,11 @@ export default function PhotoCapture({ visitId, areaId = null, field, value, onC
   const [errorMsg, setErrorMsg] = useState(null);
   const [arrastrando, setArrastrando] = useState(false); // v8.25.25: drag&drop desde la computadora
   const inputRef = useRef(null);
+  const camaraRef = useRef(null);
+  const [rafaga, setRafaga] = useState(false); // v8.97.0
+  const [progreso, setProgreso] = useState(null); // { hecho, total }
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
   // v8.94.0: si la tarjeta se cerró mientras subía y la subida falla, el error no tiene dónde mostrarse: se avisa.
   const montadoRef = useRef(true);
   useEffect(() => () => { montadoRef.current = false; }, []);
@@ -75,30 +81,47 @@ export default function PhotoCapture({ visitId, areaId = null, field, value, onC
     setSubiendo(true);
     setErrorMsg(null);
     subidasEnCurso++;
+    const nuevos = [];
+    let fallidas = 0;
     try {
-      const nuevos = [];
-      for (const file of Array.from(files)) {
+      const lista = Array.from(files).filter((f) => f.type?.startsWith('image/'));
+      let hecho = 0;
+      setProgreso({ hecho: 0, total: lista.length });
+      for (const file of lista) {
         if (!file.type?.startsWith('image/')) continue;
-        const row = await subirFotoSurvey({
-          visitId,
-          areaId,
-          file,
-          photoType: field.id,
-        });
-        const signedUrl = await getSignedUrlFotoSurvey(row.storage_path, 3600);
-        nuevos.push({ ...row, signedUrl });
+        // v8.97.0: si una falla, las demás siguen subiendo y las que sí subieron no se pierden.
+        try {
+          const row = await subirFotoSurvey({
+            visitId,
+            areaId,
+            file,
+            photoType: field.id,
+          });
+          const signedUrl = await getSignedUrlFotoSurvey(row.storage_path, 3600);
+          nuevos.push({ ...row, signedUrl });
+          setProgreso({ hecho: ++hecho, total: lista.length });
+        } catch (e) {
+          fallidas++;
+          console.warn('PhotoCapture subida:', e?.message || e);
+        }
       }
-      const merged = [...items, ...nuevos];
-      setItems(merged);
-      onChange?.(merged);
-    } catch (e) {
-      const msg = e?.message || String(e);
-      if (montadoRef.current) setErrorMsg(`No se pudo subir la foto (${msg}). Vuelve a tomarla.`);
-      else alert(`No se pudo subir una foto de «${field.label || 'Fotos'}» (${msg}). Abre esa área y vuelve a tomarla.`);
+      if (fallidas) {
+        const msg = `No se ${fallidas === 1 ? 'pudo subir 1 foto' : `pudieron subir ${fallidas} fotos`}. Vuelve a tomarla${fallidas === 1 ? '' : 's'}.`;
+        if (montadoRef.current) setErrorMsg(msg);
+        else alert(`«${field.label || 'Fotos'}»: ${msg}`);
+      }
     } finally {
+      if (nuevos.length) {
+        const merged = [...itemsRef.current, ...nuevos];
+        itemsRef.current = merged;
+        setItems(merged);
+        onChange?.(merged);
+      }
       subidasEnCurso = Math.max(0, subidasEnCurso - 1);
       setSubiendo(false);
+      setProgreso(null);
       if (inputRef.current) inputRef.current.value = '';
+      if (camaraRef.current) camaraRef.current.value = '';
     }
   };
 
@@ -174,22 +197,36 @@ export default function PhotoCapture({ visitId, areaId = null, field, value, onC
           className={`w-full bg-zinc-900 border-2 border-dashed px-4 py-3 text-center transition-colors ${arrastrando ? 'border-red-500 bg-red-600/10' : 'border-zinc-700'} ${subiendo ? 'opacity-60' : ''}`}
         >
           <div className="grid grid-cols-2 gap-2 text-sm">
-            <label className={`flex flex-col items-center justify-center gap-1.5 font-bold text-zinc-200 bg-zinc-950 border-2 border-zinc-700 hover:border-red-600 rounded-card py-5 ${subiendo ? 'cursor-wait' : 'cursor-pointer'}`}>
-              <input type="file" accept="image/*" capture="environment" multiple disabled={subiendo} onChange={(e) => handleArchivos(e.target.files)} className="hidden" />
+            {/* v8.97.0: «Cámara» abre la cámara en ráfaga (varias fotos y se suben juntas); sin soporte, la del teléfono */}
+            <input ref={camaraRef} type="file" accept="image/*" capture="environment" multiple disabled={subiendo} onChange={(e) => handleArchivos(e.target.files)} className="hidden" />
+            <button type="button" disabled={subiendo}
+              onClick={() => { if (camaraEnVivoDisponible()) setRafaga(true); else camaraRef.current?.click(); }}
+              className={`flex flex-col items-center justify-center gap-1.5 font-bold text-zinc-200 bg-zinc-950 border-2 border-zinc-700 hover:border-red-600 rounded-card py-5 ${subiendo ? 'cursor-wait' : 'cursor-pointer'}`}>
               <Camera className="w-7 h-7 text-red-500" /> Cámara
-            </label>
+              <span className="text-[10px] font-normal text-zinc-500 -mt-1">varias seguidas</span>
+            </button>
             <label className={`flex flex-col items-center justify-center gap-1.5 font-bold text-zinc-200 bg-zinc-950 border-2 border-zinc-700 hover:border-blue-500 rounded-card py-5 ${subiendo ? 'cursor-wait' : 'cursor-pointer'}`}>
               <input ref={inputRef} type="file" accept="image/*" multiple disabled={subiendo} onChange={(e) => handleArchivos(e.target.files)} className="hidden" />
               <ImageIcon className="w-7 h-7 text-blue-400" /> Galería / archivo
             </label>
           </div>
           <div className="text-[10px] text-zinc-500 mt-1.5 flex items-center justify-center gap-1">
-            {subiendo ? <><Loader2 className="w-3 h-3 animate-spin text-red-500" /> Subiendo…</> : 'o arrastra imágenes aquí (desde la computadora)'}
+            {subiendo ? <><Loader2 className="w-3 h-3 animate-spin text-red-500" /> {progreso && progreso.total > 1 ? `Subiendo ${Math.min(progreso.hecho + 1, progreso.total)} de ${progreso.total}…` : 'Subiendo…'}</> : 'o arrastra imágenes aquí (desde la computadora)'}
           </div>
           {field.required_labels && (
             <div className="text-[10px] text-zinc-500 mt-1">Sugeridas: {field.required_labels.join(', ')}</div>
           )}
         </div>
+      )}
+
+      {rafaga && (
+        <CamaraRafaga
+          titulo={field.label}
+          maximo={field.max != null ? Math.max(0, field.max - items.length) : null}
+          onCerrar={() => setRafaga(false)}
+          onUsarNativa={() => { setRafaga(false); camaraRef.current?.click(); }}
+          onListo={(files) => { setRafaga(false); handleArchivos(files); }}
+        />
       )}
 
       {errorMsg && (

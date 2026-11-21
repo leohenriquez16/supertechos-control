@@ -8,7 +8,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { ArrowLeft, RefreshCw, Navigation, ChevronLeft, ChevronRight, Users, Search, Loader2, Eye, Check, Undo2, CalendarClock } from 'lucide-react';
-import { obtenerCampanas, listarSitesCampana, validarOficina, devolverOficina } from '../../lib/surveys';
+import { obtenerCampanas, listarSitesCampana, validarOficina, devolverOficina, guardarEquipoCampana } from '../../lib/surveys';
+import TarjetaMisOficinasHoy from './TarjetaMisOficinasHoy'; // v8.96.0: las oficinas asignadas a Edwin/Leo
+import DynamicSurveyForm from '../surveys/DynamicSurveyForm';
 import {
   ESTADO_OFICINA, estadoOficina, levantada, FRANJAS, hoyRD, sumarDias, lunesDe, diaCorto,
   avancePorZona, agendaSemana, bandejaAtencion, totalAtencion, coincideBusqueda, labelNoPudo, colorTecnico,
@@ -88,11 +90,30 @@ export default function PantallaCoordinacion({ usuario, data, onVolver }) {
   const recargar = useCallback(() => cargarSites(campanaId), [campanaId, cargarSites]);
   const proyecto = useMemo(() => (campanas || []).find((c) => c.id === campanaId) || null, [campanas, campanaId]);
 
-  // ── Equipo de técnicos (personal habilitado para levantar, menos los que Edwin quitó) ──
-  const habilitados = useMemo(() => (data?.personal || []).filter((p) => p.levantamientoHabilitado && !p.archivado)
-    .map((p) => ({ id: p.id, nombre: p.nombre })).sort((a, b) => String(a.nombre).localeCompare(String(b.nombre))), [data?.personal]);
-  const tecnicos = useMemo(() => habilitados.filter((t) => !ocultos.includes(t.id)), [habilitados, ocultos]);
-  const toggleOculto = (id) => setOcultos((o) => { const n = o.includes(id) ? o.filter((x) => x !== id) : [...o, id]; guardarLS(LS_OCULTOS, n); return n; });
+  // ── Equipo de técnicos ──
+  // v8.96.0: el equipo vive en la campaña (metadata.equipo_ids), igual para Edwin y Leo. Candidatos: personal activo
+  // habilitado para levantar, con rol «Solo campañas» o ya en el equipo. Sin equipo guardado: lo de antes (habilitados
+  // menos los ocultos en este navegador).
+  const equipoGuardado = Array.isArray(proyecto?.metadata?.equipo_ids) ? proyecto.metadata.equipo_ids : null;
+  const habilitados = useMemo(() => (data?.personal || [])
+    .filter((p) => p.activo !== false && !p.archivado && (p.levantamientoHabilitado || (p.roles || []).includes('campana') || (equipoGuardado || []).includes(p.id)))
+    .map((p) => ({ id: p.id, nombre: p.nombre })).sort((a, b) => String(a.nombre).localeCompare(String(b.nombre))), [data?.personal, equipoGuardado]);
+  const tecnicos = useMemo(() => (equipoGuardado
+    ? habilitados.filter((t) => equipoGuardado.includes(t.id))
+    : habilitados.filter((t) => !ocultos.includes(t.id))), [habilitados, ocultos, equipoGuardado]);
+  const toggleOculto = async (id) => {
+    if (!proyecto) return;
+    const actual = tecnicos.map((t) => t.id);
+    const ids = actual.includes(id) ? actual.filter((x) => x !== id) : [...actual, id];
+    try {
+      const metadata = await guardarEquipoCampana(proyecto.id, ids);
+      setCampanas((cs) => (cs || []).map((c) => (c.id === proyecto.id ? { ...c, metadata } : c)));
+    } catch (e) { alert('No se pudo guardar el equipo: ' + (e?.message || e)); }
+  };
+  // Oficinas asignadas a quien está mirando (Edwin y Leo también levantan): formulario a pantalla completa.
+  const [formPropio, setFormPropio] = useState(null);
+  const [recargaPropias, setRecargaPropias] = useState(0);
+  const cerrarFormPropio = () => { setFormPropio(null); setRecargaPropias((n) => n + 1); recargar(); };
 
   // ── Filtros ──
   const zonas = useMemo(() => [...new Set(sites.map((s) => s.zona || 'Sin zona'))].sort(), [sites]);
@@ -213,6 +234,12 @@ export default function PantallaCoordinacion({ usuario, data, onVolver }) {
         <Kpi n={`${resumen.pct}%`} label="Validado" color="text-red-400" />
       </div>
 
+      {/* v8.96.0: «Mis oficinas de hoy» de quien coordina (solo sale si tiene oficinas asignadas) */}
+      <TarjetaMisOficinasHoy key={recargaPropias} usuario={usuario} onAbrirOficina={(p, site) => setFormPropio({ proyecto: p, site })} />
+      {formPropio && (
+        <DynamicSurveyForm site={formPropio.site} proyecto={formPropio.proyecto} usuario={usuario} onCerrar={cerrarFormPropio} onCompletado={cerrarFormPropio} />
+      )}
+
       {/* Pestañas + equipo */}
       <div className="flex flex-wrap items-end gap-2 border-b border-zinc-800">
         <div className="flex gap-1 overflow-x-auto">
@@ -231,7 +258,7 @@ export default function PantallaCoordinacion({ usuario, data, onVolver }) {
               {habilitados.length === 0 && <div className="text-xs text-zinc-500 px-1 py-2">No hay personal habilitado para levantar.</div>}
               {habilitados.map((t) => (
                 <label key={t.id} className="flex items-center gap-2 px-1 py-1.5 text-sm cursor-pointer hover:bg-zinc-900 rounded">
-                  <input type="checkbox" checked={!ocultos.includes(t.id)} onChange={() => toggleOculto(t.id)} className="w-4 h-4 accent-red-600" />
+                  <input type="checkbox" checked={tecnicos.some((x) => x.id === t.id)} onChange={() => toggleOculto(t.id)} className="w-4 h-4 accent-red-600" />
                   <span className="w-2.5 h-2.5 rounded-full" style={{ background: colorTecnico(t.id, tecnicos) }} />
                   {t.nombre}
                 </label>
@@ -241,6 +268,10 @@ export default function PantallaCoordinacion({ usuario, data, onVolver }) {
           )}
         </div>
       </div>
+
+      {/* v8.96.0: acciones de la selección arriba (antes flotaban y tapaban la lista) */}
+      <BarraAsignar seleccionadas={seleccionadas} todas={sites} tecnicos={tecnicos} usuario={usuario} preset={preset}
+        onHecho={recargar} onLimpiar={() => setSeleccion(new Set())} />
 
       {cargando && !sites.length ? (
         <div className="py-16 grid place-items-center text-zinc-500"><Loader2 className="w-6 h-6 animate-spin" /></div>
@@ -448,8 +479,6 @@ export default function PantallaCoordinacion({ usuario, data, onVolver }) {
         </>
       )}
 
-      <BarraAsignar seleccionadas={seleccionadas} todas={sites} tecnicos={tecnicos} usuario={usuario} preset={preset}
-        onHecho={recargar} onLimpiar={() => setSeleccion(new Set())} />
 
       {revisando && (
         <ModalRevision site={revisando} proyecto={proyecto} usuario={usuario} data={data}

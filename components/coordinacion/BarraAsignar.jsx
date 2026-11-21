@@ -63,8 +63,9 @@ export default function BarraAsignar({ seleccionadas = [], todas = [], tecnicos 
   return (
     <>
       {n > 0 && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-1.5rem)] max-w-3xl">
-          <div className="bg-zinc-900 border border-zinc-700 shadow-2xl rounded-card px-3 py-2.5 flex flex-wrap items-center gap-2">
+        // v8.96.0: en el flujo de la página (pegada arriba al bajar), no flotando encima de la lista y el mapa.
+        <div className="sticky top-2 z-30">
+          <div className="bg-zinc-900 border border-red-700/60 shadow-xl rounded-card px-3 py-2 flex flex-wrap items-center gap-2">
             <div className="text-sm font-black text-white mr-auto">{n} seleccionada{n !== 1 ? 's' : ''}</div>
             <button onClick={() => { setPersonaId(seleccionadas.length === 1 ? (seleccionadas[0].asignado_a_id || '') : ''); setModal(true); }}
               className="flex items-center gap-1.5 px-3 py-2.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-bold">

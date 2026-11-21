@@ -133,6 +133,7 @@ const ModuloReclamaciones = cargarVista(() => import('../components/reclamacione
 const ModuloGotera = cargarVista(() => import('../components/soporte/ModuloGotera'), CargandoVista);
 const VistaMisAsignaciones = cargarVista(() => import('../components/maestro/VistaMisAsignaciones'), CargandoVista);
 import InicioSupervisor from '../components/maestro/InicioSupervisor';
+import InicioCampana from '../components/coordinacion/InicioCampana'; // v8.96.0
 import ClimaWidget from '../components/maestro/ClimaWidget';
 const VistaCitas = cargarVista(() => import('../components/surveys/VistaCitas'), CargandoVista);
 const VistaUbicaciones = cargarVista(() => import('../components/ubicaciones/VistaUbicaciones'), CargandoVista);
@@ -191,6 +192,8 @@ import { registrarBiometria, loginConBiometria } from '../lib/biometria';
 // HELPERS DE ROLES Y PERSONAS (no extraídos aún — quedan en page.jsx)
 // ============================================================
 const tieneRol = (p, r) => p?.roles?.includes(r);
+// v8.96.0: rol exclusivo «campana» (técnicos externos de una campaña, ej. Banreservas): entra y ve SOLO sus oficinas.
+const esSoloCampana = (u) => tieneRol(u, 'campana') && !tieneRol(u, 'admin');
 const getPersona = (personal, id) => personal.find(p => p.id === id);
 const getSupervisores = (personal) => personal.filter(p => tieneRol(p, 'supervisor'));
 const getMaestros = (personal) => personal.filter(p => tieneRol(p, 'maestro'));
@@ -440,6 +443,7 @@ const tabPermitida = (t, u, proy) => {
   }
 };
 const vistaPermitida = (v, u, data) => {
+  if (esSoloCampana(u)) return v === 'inicio' || v === 'miPerfil';
   const admin = tieneRol(u, 'admin');
   const r = (rol) => tieneRol(u, rol);
   switch (v) {
@@ -512,6 +516,7 @@ const leerNavGuardada = (u, data) => {
 };
 // Inicio de cada usuario (misma regla que el login).
 const vistaAterrizaje = (u) => {
+  if (esSoloCampana(u)) return 'inicio';
   const soloFacturas = !tieneRol(u, 'admin') && (tieneRol(u, 'facturas') || u.facturasHabilitada)
     && !tieneRol(u, 'supervisor') && !tieneRol(u, 'maestro') && !tieneRol(u, 'ayudante');
   const esLogistica = !tieneRol(u, 'admin') && (tieneRol(u, 'chofer') || tieneRol(u, 'almacen'))
@@ -833,7 +838,7 @@ export default function App() {
     await recargar();
     const soloFact = !tieneRol(uActualizado, 'admin') && (tieneRol(uActualizado, 'facturas') || uActualizado.facturasHabilitada)
       && !tieneRol(uActualizado, 'supervisor') && !tieneRol(uActualizado, 'maestro') && !tieneRol(uActualizado, 'ayudante');
-    setVista(soloFact ? 'facturasOdoo' : tieneRol(uActualizado, 'admin') ? 'dashboard' : tieneRol(uActualizado, 'supervisor') ? 'inicio' : 'misProyectos');
+    setVista(esSoloCampana(uActualizado) ? 'inicio' : soloFact ? 'facturasOdoo' : tieneRol(uActualizado, 'admin') ? 'dashboard' : tieneRol(uActualizado, 'supervisor') ? 'inicio' : 'misProyectos');
   }} />;
 
   const esAdmin = tieneRol(usuario, 'admin');
@@ -842,7 +847,10 @@ export default function App() {
   const esFacturasOnly = !esAdmin && (tieneRol(usuario, 'facturas') || usuario.facturasHabilitada)
     && !tieneRol(usuario, 'supervisor') && !tieneRol(usuario, 'maestro') && !tieneRol(usuario, 'ayudante');
 
-  const itemsMenu = esFacturasOnly ? [
+  const itemsMenu = esSoloCampana(usuario) ? [
+    // v8.96.0: técnico de campaña — solo sus oficinas asignadas (nada de Super Techos)
+    { seccion: 'MIS OFICINAS', items: [{ id: 'inicio', label: 'Mis oficinas', icon: ClipboardList, vista: 'inicio' }] },
+  ] : esFacturasOnly ? [
     { seccion: 'FACTURAS', items: [
       { id: 'facturasOdoo', label: 'Facturas', icon: Receipt, vista: 'facturasOdoo' },
       // v8.39.0: Lily maneja el flujo de COMPRAS de las requisiciones (cotizado, esperando aprobación, OC)
@@ -1410,7 +1418,8 @@ export default function App() {
         {/* v8.29.0: el CHOFER (sin otros roles operativos) ve su ruta del día; el de ALMACÉN ve su cola */}
         {!esAdmin && vista === 'inicio' && tieneRol(usuario, 'chofer') && !tieneRol(usuario, 'supervisor') && !tieneRol(usuario, 'maestro') && <div className="p-4 md:p-6 max-w-2xl mx-auto"><InicioChofer usuario={usuario} data={data} /></div>}
         {!esAdmin && vista === 'inicio' && tieneRol(usuario, 'almacen') && !tieneRol(usuario, 'chofer') && !tieneRol(usuario, 'supervisor') && !tieneRol(usuario, 'maestro') && <><TarjetaRutaHoy usuario={usuario} data={data} envoltura="px-4 pt-4 md:px-6 md:pt-6 max-w-2xl mx-auto" /><VistaAlmacen usuario={usuario} data={data} /></>}
-        {!esAdmin && vista === 'inicio' && !((tieneRol(usuario, 'chofer') || tieneRol(usuario, 'almacen')) && !tieneRol(usuario, 'supervisor') && !tieneRol(usuario, 'maestro')) && <InicioSupervisor usuario={usuario} data={data} onRecargar={recargar} onVerProyecto={(p, tabDestino) => { setProyectoActivo(p); setVista('proyecto'); setTab(tabDestino || 'avance'); }} onIrAReportar={(p) => { setProyectoActivo(p); setVista('reportar'); }} onIrAAsignaciones={() => setVista('misAsignaciones')} onIrAProyectos={() => setVista('misProyectos')} onIrAVista={(v) => setVista(v)} />}
+        {vista === 'inicio' && esSoloCampana(usuario) && <InicioCampana usuario={usuario} data={data} />}
+        {!esAdmin && vista === 'inicio' && !esSoloCampana(usuario) && !((tieneRol(usuario, 'chofer') || tieneRol(usuario, 'almacen')) && !tieneRol(usuario, 'supervisor') && !tieneRol(usuario, 'maestro')) && <InicioSupervisor usuario={usuario} data={data} onRecargar={recargar} onVerProyecto={(p, tabDestino) => { setProyectoActivo(p); setVista('proyecto'); setTab(tabDestino || 'avance'); }} onIrAReportar={(p) => { setProyectoActivo(p); setVista('reportar'); }} onIrAAsignaciones={() => setVista('misAsignaciones')} onIrAProyectos={() => setVista('misProyectos')} onIrAVista={(v) => setVista(v)} />}
         {!esAdmin && vista === 'clima' && <div className="max-w-md mx-auto space-y-4"><button onClick={() => setVista(tieneRol(usuario, 'supervisor') ? 'inicio' : 'misProyectos')} className="flex items-center gap-2 text-zinc-400 hover:text-white text-sm"><ArrowLeft className="w-4 h-4" /> Volver</button><h1 className="text-2xl font-black tracking-tight">Clima</h1><ClimaWidget /></div>}
         {vista === 'citas' && <VistaCitas usuario={usuario} onVolver={() => setVista(esAdmin ? 'dashboard' : tieneRol(usuario, 'supervisor') ? 'inicio' : 'misProyectos')} onRecargar={recargar} />}
         {!esAdmin && vista === 'misAsignaciones' && <VistaMisAsignaciones usuario={usuario} data={data} onRecargar={recargar} onVolver={() => setVista('inicio')} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('avance'); }} />}
@@ -1622,7 +1631,8 @@ export default function App() {
         {/* v8.9.20: Asistente IA para admin.
             v8.27.70: abierto a TODOS como asistente de ayuda del ERP — los no-admin
             reciben SOLO el manual de uso (sin datos del negocio). */}
-        <AsistenteIA usuario={usuario} data={data} esAdmin={esAdmin} />
+        {/* v8.96.0: el técnico de campaña no ve el asistente del ERP */}
+        {!esSoloCampana(usuario) && <AsistenteIA usuario={usuario} data={data} esAdmin={esAdmin} />}
         {celebracion && <CelebracionReporte usuario={usuario} data={data} m2={celebracion.m2} onCerrar={() => setCelebracion(null)} />}
       </div></main>
     </div>
@@ -3506,7 +3516,9 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
     // v8.27.37: 'facturas' es un rol dedicado (Lily) — al activarlo queda exclusivo;
     // al activar cualquier otro rol se quita 'facturas'.
     if (rol === 'facturas') { setForm({ ...form, roles: form.roles.includes('facturas') ? [] : ['facturas'] }); return; }
-    let roles = form.roles.includes(rol) ? form.roles.filter(r => r !== rol) : [...form.roles.filter(r => r !== 'facturas'), rol];
+    // v8.96.0: 'campana' también es exclusivo (técnico externo que solo ve sus oficinas de campaña)
+    if (rol === 'campana') { setForm({ ...form, roles: form.roles.includes('campana') ? [] : ['campana'] }); return; }
+    let roles = form.roles.includes(rol) ? form.roles.filter(r => r !== rol) : [...form.roles.filter(r => r !== 'facturas' && r !== 'campana'), rol];
     if ((rol === 'supervisor' || rol === 'maestro' || rol === 'admin') && roles.includes(rol)) roles = roles.filter(r => r !== 'ayudante');
     setForm({ ...form, roles });
   };
@@ -3578,13 +3590,15 @@ function GestionPersonal({ usuario, personal, onVolver, onActualizar, onRecargar
               <RolToggle active={form.roles.includes('nomina')} onClick={() => toggleRol('nomina')}>Nómina</RolToggle>
               {/* v8.77.0: crea (desde Rentabilidad) y aplica órdenes de cambio — además del owner */}
               <RolToggle active={form.roles.includes('ordenes_cambio')} onClick={() => toggleRol('ordenes_cambio')}>Órdenes de cambio</RolToggle>
+              {/* v8.96.0: técnico de campaña (ej. Banreservas) — entra y ve SOLO las oficinas que le asignan */}
+              <RolToggle active={form.roles.includes('campana')} onClick={() => toggleRol('campana')}>Solo campañas</RolToggle>
             </div>
           </Campo>
           {/* v8.17.89: el PIN guardado es hash bcrypt server-side y nunca se
               expone al cliente. Si admin deja el campo vacío, el PIN existente
               no se toca. Si admin teclea un PIN nuevo, se hashea en el endpoint
               /api/auth/cambiar-pin. */}
-          {(form.roles.includes('supervisor') || form.roles.includes('maestro') || form.roles.includes('admin') || form.roles.includes('facturas')) && <Campo label={editando === 'new' ? 'PIN' : 'PIN (dejar vacío = mantener actual)'}><Input value={form.pin || ''} onChange={v => setForm({ ...form, pin: v })} placeholder={editando === 'new' ? '4-6 dígitos' : ''} /></Campo>}
+          {(form.roles.includes('supervisor') || form.roles.includes('maestro') || form.roles.includes('admin') || form.roles.includes('facturas') || form.roles.includes('campana')) && <Campo label={editando === 'new' ? 'PIN' : 'PIN (dejar vacío = mantener actual)'}><Input value={form.pin || ''} onChange={v => setForm({ ...form, pin: v })} placeholder={editando === 'new' ? '4-6 dígitos' : ''} /></Campo>}
           {form.roles.length === 1 && form.roles[0] === 'ayudante' && (
             <Campo label="Maestro"><select value={form.maestroId || ''} onChange={e => setForm({ ...form, maestroId: e.target.value })} className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-red-600 outline-none px-4 py-3 text-white"><option value="">Seleccionar...</option>{maestros.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select></Campo>
           )}

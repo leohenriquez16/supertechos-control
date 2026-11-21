@@ -18,7 +18,8 @@ import { urlWaze } from '../../lib/helpers/navegacion';
 // v8.95.0: estados en los que el técnico todavía no ha empezado (al abrir pasan a «En proceso»).
 const SIN_EMPEZAR = ['programada', 'confirmada', 'no_pudo'];
 
-export default function TarjetaMisOficinasHoy({ usuario, onAbrirOficina }) {
+// v8.96.0: mostrarVacio = el técnico de campaña (esta es toda su pantalla): sale aunque no tenga nada hoy, con sus próximas.
+export default function TarjetaMisOficinasHoy({ usuario, onAbrirOficina, mostrarVacio = false }) {
   const [sites, setSites] = useState(null); // null = cargando
   const [abriendo, setAbriendo] = useState(null);
   const [hoja, setHoja] = useState(null); // oficina a la que se le marca «No pude levantar»
@@ -33,7 +34,8 @@ export default function TarjetaMisOficinasHoy({ usuario, onAbrirOficina }) {
   const hoy = hoyRD();
   const grupos = useMemo(() => oficinasDeHoy(sites || [], usuario?.id, hoy), [sites, usuario?.id, hoy]);
   const total = grupos.hoy.length + grupos.corregir.length + grupos.atrasadas.length;
-  if (!sites || total === 0) return null;
+  if (!sites) return mostrarVacio ? <div className="py-10 grid place-items-center text-zinc-500"><Loader2 className="w-5 h-5 animate-spin" /></div> : null;
+  if (total === 0 && !mostrarVacio) return null;
 
   const abrir = async (site) => {
     if (!puedeAbrirOficina(site, usuario)) { alert('Esta oficina no está asignada a ti.'); return; }
@@ -81,6 +83,23 @@ export default function TarjetaMisOficinasHoy({ usuario, onAbrirOficina }) {
         <Seccion titulo={`Atrasadas (${grupos.atrasadas.length})`} color="text-amber-400">
           {grupos.atrasadas.map(s => <Oficina key={s.id} site={s} abriendo={abriendo} onAbrir={abrir} onNoPude={setHoja} atrasada />)}
         </Seccion>
+      )}
+
+      {mostrarVacio && grupos.proximas.length > 0 && (
+        <Seccion titulo={`Próximas (${grupos.proximas.length})`} color="text-blue-400">
+          {grupos.proximas.map(s => (
+            <div key={s.id} className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 rounded-card px-3 py-2">
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-bold truncate">{s.name}</div>
+                <div className="text-[11px] text-zinc-500 truncate">{diaCorto(s.visita_fecha)}{FRANJAS[s.visita_franja] ? ` · ${FRANJAS[s.visita_franja]}` : ''}{s.city || s.province ? ` · ${s.city || s.province}` : ''}</div>
+              </div>
+              {urlWaze(s.latitude, s.longitude) && <a href={urlWaze(s.latitude, s.longitude)} target="_blank" rel="noopener noreferrer" className="p-2 rounded-lg bg-zinc-800 text-zinc-300" aria-label="Waze"><Navigation className="w-4 h-4" /></a>}
+            </div>
+          ))}
+        </Seccion>
+      )}
+      {mostrarVacio && total === 0 && grupos.proximas.length === 0 && (
+        <div className="text-xs text-zinc-500">Todavía no tienes oficinas asignadas. Cuando te programen una, aparece aquí.</div>
       )}
 
       {hoja && <HojaNoPude site={hoja} onCerrar={() => setHoja(null)} onGuardado={() => { setHoja(null); cargar(); }} />}

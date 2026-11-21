@@ -71,6 +71,9 @@ t('quién abre: su técnico, admin y owner sí; otro técnico no', puedeAbrirOfi
   t('hoy: solo las mías, mañana antes que tarde y por nombre, sin las ya levantadas', m.hoy.map(s => s.id).join() === '3,2,1');
   t('atrasadas: días anteriores sin levantar', m.atrasadas.map(s => s.id).join() === '5');
   t('para completar o corregir: devueltas y con algo pendiente (falta info), sin importar el día', m.corregir.map(s => s.id).sort().join() === '7,9');
+  const fut = oficinasDeHoy([S({ id: 'b', asignado_a_id: 'yo', visita_fecha: sumarDias(hoy, 3) }), S({ id: 'a', asignado_a_id: 'yo', visita_fecha: sumarDias(hoy, 1) }),
+    S({ id: 'c', asignado_a_id: 'otro', visita_fecha: sumarDias(hoy, 1) }), S({ id: 'd', asignado_a_id: 'yo', visita_fecha: sumarDias(hoy, 2), survey_status: 'completed' })], 'yo', hoy);
+  t('próximas: solo mías, después de hoy, sin levantar, por fecha', fut.proximas.map(s => s.id).join() === 'a,b');
 }
 
 // --- avance por zona

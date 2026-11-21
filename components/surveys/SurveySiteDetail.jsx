@@ -10,7 +10,7 @@
 //  - Botón "Iniciar levantamiento" (placeholder — se conecta en PR 3B.4)
 
 import React, { useState, useEffect } from 'react';
-import { totalesSuperficies, filaCompleta, areaNoPinta, textoNoPinta, pendientesVisita, areasVigentes, textoMedidaArea, textoTotales, resumenVisitaPintura, labelPintura } from '../../lib/pinturaCatalogo';
+import { totalesSuperficies, filaCompleta, areaNoPinta, textoNoPinta, pendientesVisita, areasVigentes, textoMedidaArea, textoTotales, resumenVisitaPintura, labelPintura, textoParqueo } from '../../lib/pinturaCatalogo';
 import { ArrowLeft, Building, MapPin, Calendar, Clock, FileText, AlertTriangle, Play, ClipboardList, Layers, ChevronDown, Loader2, Trash2, Check, Image as ImageIcon, X } from 'lucide-react';
 import QuickActions from './QuickActions';
 import DynamicSurveyForm from './DynamicSurveyForm';
@@ -1262,9 +1262,16 @@ function LevantamientosRealizados({ site, proyecto }) {
                   </div>
                 )}
 
+                {/* v8.99.0: parqueo simplificado (cantidades) */}
+                {textoParqueo(v.general_data) && (
+                  <div className="rounded-card border border-zinc-800 bg-zinc-950 px-2.5 py-2 text-xs text-zinc-200">
+                    <span className="font-bold uppercase tracking-wider text-[10px] text-zinc-400">Parqueo · </span>{textoParqueo(v.general_data)}
+                  </div>
+                )}
+
                 {/* v8.94.0: lo mismo que el técnico confirmó al cerrar: m² / ml / und por tipo de pintura */}
                 {template?.schema?.resumen_pintura && (() => {
-                  const r = resumenVisitaPintura(areas);
+                  const r = resumenVisitaPintura(areas, 'superficies', v.general_data);
                   const filasP = Object.entries(r.totales.porPintura);
                   if (!filasP.length && !r.noPinta.length) return null;
                   return (
@@ -1350,7 +1357,7 @@ function LevantamientosRealizados({ site, proyecto }) {
 
                 <div className="border-t border-zinc-700 pt-2 flex items-center justify-between text-sm font-black">
                   <span className="uppercase tracking-wider text-zinc-400">Total</span>
-                  <span>{(template?.schema?.resumen_pintura && textoTotales(resumenVisitaPintura(areas).totales)) || `${fmtM2(totalPared)} m²${totalTecho > 0 ? ` · ${fmtM2(totalTecho)} m² techo` : ''}`}</span>
+                  <span>{(template?.schema?.resumen_pintura && textoTotales(resumenVisitaPintura(areas, 'superficies', v.general_data).totales)) || `${fmtM2(totalPared)} m²${totalTecho > 0 ? ` · ${fmtM2(totalTecho)} m² techo` : ''}`}</span>
                 </div>
                 {v.general_notes && (
                   <div className="text-[10px] text-zinc-500 border-t border-zinc-800 pt-2">{v.general_notes}</div>

@@ -177,7 +177,8 @@ function Oficina({ site, abriendo, onAbrir, onNoPude, atrasada = false }) {
 }
 
 // v8.95.0: hoja «No pude levantar»: un motivo obligatorio; la nota es obligatoria si el motivo es «Otro».
-function HojaNoPude({ site, onCerrar, onGuardado }) {
+// v8.99.0: exportada — el formulario de la oficina también la usa («No se pudo levantar»).
+export function HojaNoPude({ site, onCerrar, onGuardado }) {
   const [motivo, setMotivo] = useState(null);
   const [nota, setNota] = useState('');
   const [guardando, setGuardando] = useState(false);
@@ -191,7 +192,7 @@ function HojaNoPude({ site, onCerrar, onGuardado }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 z-[60] flex items-end sm:items-center justify-center" onClick={() => !guardando && onCerrar()}>
+    <div className="fixed inset-0 bg-black/80 z-[90] flex items-end sm:items-center justify-center" onClick={() => !guardando && onCerrar()}>
       <div className="w-full sm:max-w-md bg-zinc-900 border border-zinc-800 rounded-t-card sm:rounded-card p-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-2 mb-3">
           <div className="min-w-0">

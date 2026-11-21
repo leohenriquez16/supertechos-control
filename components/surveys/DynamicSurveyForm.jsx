@@ -24,6 +24,7 @@ import { visitaAlAbrir, visitaDeEstaPlantilla, estadoSitioAlCerrar, proyectoComp
 import { obtenerUbicacion, distanciaMetros } from '../../lib/geo';
 import SurveyFieldRenderer from './SurveyFieldRenderer';
 import { fotosSubiendo } from './PhotoCapture';
+import { HojaNoPude } from '../coordinacion/TarjetaMisOficinasHoy'; // v8.99.0: «No se pudo levantar» desde el formulario
 
 // v8.19.6: detecta si un campo es "de medida" (visible cuando un área es
 // marcada como 'similar a otra'). Reglas:
@@ -368,7 +369,7 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
 
   // v8.94.0: resumen por tipo de pintura que el técnico confirma antes de cerrar (plantillas con resumen_pintura).
   const [verResumen, setVerResumen] = useState(false);
-  const resumenPintura = useMemo(() => template?.schema?.resumen_pintura ? resumenVisitaPintura(areas) : null, [template, areas]);
+  const resumenPintura = useMemo(() => template?.schema?.resumen_pintura ? resumenVisitaPintura(areas, 'superficies', generalData) : null, [template, areas, generalData]);
 
   // v8.94.0: sube lo que este equipo cambió y el servidor no ha confirmado (datos generales y, por área, sus
   // datos y/o su nombre). Lanza el primer error, con el nombre del área si fue un área.
@@ -479,6 +480,15 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
     }
   };
 
+  // v8.99.0: oficina de campaña que no se pudo levantar (o terminar): motivo + nota; queda pendiente para
+  // que Edwin la reprograme. Lo ya capturado se conserva en la visita abierta.
+  const [hojaNoPude, setHojaNoPude] = useState(false);
+  const abrirNoPude = () => {
+    if (guardando || cerrando) { alert('Espera un segundo: guardando tus cambios…'); return; }
+    if (fotosSubiendo() > 0) { alert('Espera: hay una foto subiendo.'); return; }
+    setHojaNoPude(true);
+  };
+
   // v8.25.8: no cerrar mientras hay un guardado en vuelo (evita perder cambios).
   const cerrarSeguro = () => {
     if (guardando || cerrando) { alert('Espera un segundo: guardando tus cambios…'); return; }
@@ -553,6 +563,9 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
         .modo-campo input::placeholder, .modo-campo textarea::placeholder { color:#71717a !important; }
         .modo-campo .border-2 { border-color:#a1a1aa !important; }
       `}</style>
+      {hojaNoPude && site && (
+        <HojaNoPude site={site} onCerrar={() => setHojaNoPude(false)} onGuardado={() => { setHojaNoPude(false); onCerrar?.(); }} />
+      )}
       {verResumen && resumenPintura && (
         <div className="fixed inset-0 bg-black/85 z-[70] flex items-center justify-center p-3" onClick={() => setVerResumen(false)}>
           <div className="bg-zinc-900 border-2 border-red-700 rounded-card w-full max-w-xl max-h-[90vh] overflow-y-auto p-5" onClick={e => e.stopPropagation()}>
@@ -783,7 +796,10 @@ export default function DynamicSurveyForm({ site, proyecto, usuario, onCerrar, o
               <div className="text-[11px] text-zinc-500">
                 {areas.length} área{areas.length === 1 ? '' : 's'} · {completitud.pct}% completo · check-in {visit?.checkin_at ? new Date(visit.checkin_at).toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' }) : '—'}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {proyecto?.es_campana && (
+                  <button onClick={abrirNoPude} className="bg-zinc-900 border border-orange-700 text-orange-300 hover:bg-orange-900/30 px-3 py-2 text-[11px] font-bold uppercase rounded-card">No se pudo levantar</button>
+                )}
                 <button onClick={cerrarSeguro} disabled={guardando} className="bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-white px-4 py-2 text-xs font-bold uppercase flex items-center gap-1">
                   {guardando && <Loader2 className="w-3 h-3 animate-spin" />} {guardando ? 'Guardando…' : 'Pausar (guardar y salir)'}
                 </button>
@@ -1206,7 +1222,7 @@ function ComentarioArea({ valor, onCambiar }) {
         {!hay && <button type="button" onClick={() => setAbierto(false)} className="ml-auto text-zinc-500 hover:text-white normal-case font-normal tracking-normal">Cancelar</button>}
       </div>
       <textarea autoFocus={!hay} value={valor} onChange={(e) => onCambiar(e.target.value)} rows={3}
-        placeholder="Ej: la pared tiene humedad abajo, hay que raspar antes de pintar…"
+        placeholder="Ej: las columnas son de otro color, el techo necesita andamio…"
         className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-sky-500 outline-none px-3 py-2.5 text-sm text-white resize-y" />
     </div>
   );

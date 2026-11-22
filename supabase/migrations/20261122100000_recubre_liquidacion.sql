@@ -14,3 +14,6 @@ notify pgrst, 'reload schema';
 -- Reporte de Recubre (Vladimir): metros, MDO y logística/material gastable por techo.
 alter table recubre_liquidacion add column if not exists m2_recubre numeric, add column if not exists logistica_rd numeric;
 notify pgrst, 'reload schema';
+-- Opcional (más control): días pagados y visitas al sitio; Recubre cobra por día.
+alter table recubre_liquidacion add column if not exists dias_pagados numeric, add column if not exists visitas integer, add column if not exists visitas_motivo text;
+notify pgrst, 'reload schema';

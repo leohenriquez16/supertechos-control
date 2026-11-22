@@ -59,6 +59,9 @@ export async function POST(request) {
   if (b.mdo_rd !== undefined) { fila.mdo_rd = num(b.mdo_rd); fila.mdo_reportado_at = fila.mdo_rd != null ? new Date().toISOString() : null; }
   if (b.m2_recubre !== undefined) fila.m2_recubre = num(b.m2_recubre);
   if (b.logistica_rd !== undefined) fila.logistica_rd = num(b.logistica_rd) || 0;
+  if (b.dias_pagados !== undefined) fila.dias_pagados = num(b.dias_pagados);
+  if (b.visitas !== undefined) fila.visitas = num(b.visitas) != null ? Math.round(num(b.visitas)) : null;
+  if (b.visitas_motivo !== undefined) fila.visitas_motivo = String(b.visitas_motivo || '').slice(0, 300) || null;
   if (b.mdo_nota !== undefined) fila.mdo_nota = String(b.mdo_nota || '').slice(0, 500) || null;
   if (b.materiales_extra_rd !== undefined) fila.materiales_extra_rd = num(b.materiales_extra_rd) || 0;
   if (b.materiales_extra_nota !== undefined) fila.materiales_extra_nota = String(b.materiales_extra_nota || '').slice(0, 500) || null;

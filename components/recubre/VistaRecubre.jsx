@@ -56,8 +56,8 @@ export default function VistaRecubre({ onVolver }) {
   const meses = (() => { const out = []; const h = new Date(); for (let i = -2; i <= 2; i++) { const x = new Date(h.getFullYear(), h.getMonth() + i, 1); out.push(x.toISOString().slice(0, 7)); } return out; })();
 
   const exportar = () => {
-    const cab = ['Sitio', 'Cotización', 'Estado obra', 'Venta s/ITBIS', 'Materiales Odoo', 'Materiales extra', 'M² Recubre', 'MDO Recubre', 'MDO por m²', 'Logística Recubre', 'Beneficio bruto', '50% Recubre', 'Recubre factura (MDO + logística + 50%)', '50% Super Techos', 'Margen %', 'Corte', 'Factura Recubre'];
-    const rows = vis.map(f => [f.nombre, f.ref, ESTADOS[f.proyecto?.estado] || '', f.c.venta, f.materialesOdooRd, f.liq?.materiales_extra_rd || 0, f.c.m2, f.c.mdo, f.c.mdoM2, f.c.logistica, f.c.beneficio, f.c.mitad, f.c.factura, f.c.nuestro, f.c.pct != null ? Math.round(f.c.pct * 1000) / 10 : '', f.liq?.corte || '', f.liq?.factura_recubre || ''].map(v => typeof v === 'number' ? Math.round(v * 100) / 100 : v ?? ''));
+    const cab = ['Sitio', 'Cotización', 'Estado obra', 'Venta s/ITBIS', 'Materiales Odoo', 'Materiales extra', 'M² Recubre', 'MDO Recubre', 'MDO por m²', 'Logística Recubre', 'Beneficio bruto', '50% Recubre', 'Recubre factura (MDO + logística + 50%)', '50% Super Techos', 'Margen %', 'Corte', 'Factura Recubre', 'Días pagados', 'Visitas', 'Motivo visitas'];
+    const rows = vis.map(f => [f.nombre, f.ref, ESTADOS[f.proyecto?.estado] || '', f.c.venta, f.materialesOdooRd, f.liq?.materiales_extra_rd || 0, f.c.m2, f.c.mdo, f.c.mdoM2, f.c.logistica, f.c.beneficio, f.c.mitad, f.c.factura, f.c.nuestro, f.c.pct != null ? Math.round(f.c.pct * 1000) / 10 : '', f.liq?.corte || '', f.liq?.factura_recubre || '', f.liq?.dias_pagados ?? '', f.liq?.visitas ?? '', f.liq?.visitas_motivo || ''].map(v => typeof v === 'number' ? Math.round(v * 100) / 100 : v ?? ''));
     const csv = '﻿' + [cab, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = `liquidacion-recubre-${corte}.csv`; a.click();
   };
@@ -95,7 +95,7 @@ export default function VistaRecubre({ onVolver }) {
                 <React.Fragment key={f.ref}>
                   <tr onClick={() => setAbierta(ab ? null : f.ref)} className="border-t border-zinc-800 hover:bg-zinc-800/40 cursor-pointer">
                     <td className="pl-2 text-zinc-500">{ab ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}</td>
-                    <td className="px-2 py-2"><div className="font-bold text-white">{f.nombre}</div><div className="text-[11px] text-zinc-500">{f.ref}{!f.proyecto && ' · sin obra en el ERP'}</div></td>
+                    <td className="px-2 py-2"><div className="font-bold text-white">{f.nombre}</div><div className="text-[11px] text-zinc-500">{f.ref}{!f.proyecto && ' · sin obra en el ERP'}{Number(f.liq?.visitas) > 1 && <span className="text-amber-300"> · {f.liq.visitas} visitas{f.liq.visitas_motivo ? ` (${f.liq.visitas_motivo})` : ''}</span>}</div></td>
                     <td className="px-2 py-2 text-zinc-400 whitespace-nowrap">{ESTADOS[f.proyecto?.estado] || '—'}</td>
                     <td className="px-2 py-2 text-right tabular-nums">{rd(c.venta)}</td>
                     <td className="px-2 py-2 text-right tabular-nums">{rd(f.materialesOdooRd)}</td>
@@ -120,6 +120,16 @@ export default function VistaRecubre({ onVolver }) {
                             : <div className="text-zinc-500">Sin salidas de almacén con {f.ref} en el origen.</div>}
                         </div>
                         <div className="space-y-2">
+                          <div className="text-[10px] uppercase tracking-widest font-bold text-zinc-500">Más control (opcional) — Recubre cobra por día</div>
+                          <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-400">
+                            <span>Días pagados <CeldaEditable valor={f.liq?.dias_pagados ?? ''} placeholder="—" ancho="w-16" onGuardar={v => guardar(f, { dias_pagados: v })} /></span>
+                            <span>Visitas al sitio <CeldaEditable valor={f.liq?.visitas ?? ''} placeholder="—" ancho="w-16" onGuardar={v => guardar(f, { visitas: v })} /></span>
+                            {f.liq?.dias_pagados && f.c.mdo != null ? <span>= {rd(f.c.mdo / Number(f.liq.dias_pagados))} por día</span> : null}
+                          </div>
+                          {Number(f.liq?.visitas) > 1 && (
+                            <select value={f.liq?.visitas_motivo || ''} onChange={e => guardar(f, { visitas_motivo: e.target.value })} className="bg-zinc-950 border border-amber-700 rounded-card px-2 py-1 text-xs text-amber-200">
+                              <option value="">¿Por qué volvieron?</option>{['Techo sin terminar', 'Faltó material', 'Sin acceso / llave', 'Lluvia', 'Corrección / retoque', 'Otro'].map(m => <option key={m}>{m}</option>)}
+                            </select>)}
                           <label className="block"><span className="text-[10px] uppercase tracking-widest font-bold text-zinc-500">Detalle del reporte de MDO de Recubre</span>
                             <textarea defaultValue={f.liq?.mdo_nota || ''} onBlur={e => e.target.value !== (f.liq?.mdo_nota || '') && guardar(f, { mdo_nota: e.target.value })} rows={2} className="w-full mt-1 bg-zinc-950 border border-zinc-800 rounded-card p-2 text-sm text-white" /></label>
                           <label className="block"><span className="text-[10px] uppercase tracking-widest font-bold text-zinc-500">Materiales extra (compras fuera de Odoo): qué son</span>

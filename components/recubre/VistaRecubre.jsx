@@ -15,10 +15,13 @@ export function calcularLiquidacion(f) {
   const venta = f.venta?.ventaSinItbis ?? null;
   const materiales = (f.materialesOdooRd || 0) + Number(f.liq?.materiales_extra_rd || 0);
   const mdo = f.liq?.mdo_rd != null ? Number(f.liq.mdo_rd) : null;
-  if (venta == null || mdo == null) return { venta, materiales, mdo, beneficio: null, mitad: null, factura: null, nuestro: null, pct: null };
-  const beneficio = venta - materiales - mdo;
+  const logistica = Number(f.liq?.logistica_rd || 0); // logística / material gastable que Recubre nos cobra
+  const m2 = f.liq?.m2_recubre != null ? Number(f.liq.m2_recubre) : null;
+  const mdoM2 = mdo != null && m2 ? mdo / m2 : null;
+  if (venta == null || mdo == null) return { venta, materiales, mdo, logistica, m2, mdoM2, beneficio: null, mitad: null, factura: null, nuestro: null, pct: null };
+  const beneficio = venta - materiales - mdo - logistica;
   const mitad = beneficio / 2;
-  return { venta, materiales, mdo, beneficio, mitad, factura: mdo + mitad, nuestro: mitad, pct: venta ? beneficio / venta : null };
+  return { venta, materiales, mdo, logistica, m2, mdoM2, beneficio, mitad, factura: mdo + logistica + mitad, nuestro: mitad, pct: venta ? beneficio / venta : null };
 }
 
 function CeldaEditable({ valor, tipo = 'number', placeholder, onGuardar, ancho = 'w-28' }) {
@@ -49,12 +52,12 @@ export default function VistaRecubre({ onVolver }) {
     .sort((a, b) => (a.liq?.corte || '9999').localeCompare(b.liq?.corte || '9999') || String(a.nombre).localeCompare(String(b.nombre))), [d]);
   const cortes = [...new Set(filas.map(f => f.liq?.corte).filter(Boolean))].sort().reverse();
   const vis = filas.filter(f => corte === 'todos' ? true : corte === 'sin' ? !f.liq?.corte : f.liq?.corte === corte);
-  const tot = vis.reduce((s, f) => { const c = f.c; s.venta += c.venta || 0; s.mat += c.materiales || 0; if (c.beneficio != null) { s.mdo += c.mdo; s.ben += c.beneficio; s.fac += c.factura; s.n++; } else s.pend++; return s; }, { venta: 0, mat: 0, mdo: 0, ben: 0, fac: 0, n: 0, pend: 0 });
+  const tot = vis.reduce((s, f) => { const c = f.c; s.venta += c.venta || 0; s.mat += c.materiales || 0; if (c.beneficio != null) { s.mdo += c.mdo + c.logistica; s.ben += c.beneficio; s.fac += c.factura; s.n++; } else s.pend++; return s; }, { venta: 0, mat: 0, mdo: 0, ben: 0, fac: 0, n: 0, pend: 0 });
   const meses = (() => { const out = []; const h = new Date(); for (let i = -2; i <= 2; i++) { const x = new Date(h.getFullYear(), h.getMonth() + i, 1); out.push(x.toISOString().slice(0, 7)); } return out; })();
 
   const exportar = () => {
-    const cab = ['Sitio', 'Cotización', 'Estado obra', 'Venta s/ITBIS', 'Materiales Odoo', 'Materiales extra', 'MDO Recubre', 'Beneficio bruto', '50% Recubre', 'Recubre factura (MDO + 50%)', '50% Super Techos', 'Margen %', 'Corte', 'Factura Recubre'];
-    const rows = vis.map(f => [f.nombre, f.ref, ESTADOS[f.proyecto?.estado] || '', f.c.venta, f.materialesOdooRd, f.liq?.materiales_extra_rd || 0, f.c.mdo, f.c.beneficio, f.c.mitad, f.c.factura, f.c.nuestro, f.c.pct != null ? Math.round(f.c.pct * 1000) / 10 : '', f.liq?.corte || '', f.liq?.factura_recubre || ''].map(v => typeof v === 'number' ? Math.round(v * 100) / 100 : v ?? ''));
+    const cab = ['Sitio', 'Cotización', 'Estado obra', 'Venta s/ITBIS', 'Materiales Odoo', 'Materiales extra', 'M² Recubre', 'MDO Recubre', 'MDO por m²', 'Logística Recubre', 'Beneficio bruto', '50% Recubre', 'Recubre factura (MDO + logística + 50%)', '50% Super Techos', 'Margen %', 'Corte', 'Factura Recubre'];
+    const rows = vis.map(f => [f.nombre, f.ref, ESTADOS[f.proyecto?.estado] || '', f.c.venta, f.materialesOdooRd, f.liq?.materiales_extra_rd || 0, f.c.m2, f.c.mdo, f.c.mdoM2, f.c.logistica, f.c.beneficio, f.c.mitad, f.c.factura, f.c.nuestro, f.c.pct != null ? Math.round(f.c.pct * 1000) / 10 : '', f.liq?.corte || '', f.liq?.factura_recubre || ''].map(v => typeof v === 'number' ? Math.round(v * 100) / 100 : v ?? ''));
     const csv = '﻿' + [cab, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = `liquidacion-recubre-${corte}.csv`; a.click();
   };
@@ -64,14 +67,14 @@ export default function VistaRecubre({ onVolver }) {
       <button onClick={onVolver} className="flex items-center gap-2 text-sm text-zinc-400 hover:text-white"><ArrowLeft className="w-4 h-4" /> Volver</button>
       <div>
         <h1 className="text-3xl font-black tracking-tight">Liquidación Recubre</h1>
-        <p className="text-sm text-zinc-400 mt-1 max-w-3xl">Nosotros compramos los materiales y Recubre pone la mano de obra. Beneficio bruto = venta sin ITBIS − materiales − MDO, a partes iguales (también si hay pérdida). Recubre nos factura su MDO más su 50%.</p>
+        <p className="text-sm text-zinc-400 mt-1 max-w-3xl">Nosotros compramos los materiales y Recubre pone la mano de obra. Beneficio bruto = venta sin ITBIS − materiales − MDO, a partes iguales (también si hay pérdida). Recubre nos factura su MDO, su logística / material gastable y su 50%.</p>
       </div>
       {err && <div className="text-red-400 text-sm">{err}</div>}
       {d?.errorOdoo && <div className="text-amber-300 text-sm">Odoo no respondió: {d.errorOdoo}. Venta y materiales pueden salir vacíos.</div>}
       {!d && !err && <div className="flex items-center gap-2 text-zinc-500"><Loader2 className="w-4 h-4 animate-spin" /> Leyendo cotizaciones y despachos de Odoo…</div>}
       {d && <>
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2">
-          {[['Venta s/ITBIS', rd(tot.venta)], ['Materiales', rd(tot.mat)], ['MDO Recubre', rd(tot.mdo), tot.pend ? `${tot.pend} obras sin MDO reportada` : ''], ['Beneficio bruto', rd(tot.ben), tot.n ? `${tot.n} obras liquidables` : ''], ['Recubre nos factura', rd(tot.fac), 'MDO + 50%'], ['Nos queda (50%)', rd(tot.ben / 2)]].map(([t, v, s]) => (
+          {[['Venta s/ITBIS', rd(tot.venta)], ['Materiales', rd(tot.mat)], ['MDO + logística Recubre', rd(tot.mdo), tot.pend ? `${tot.pend} obras sin MDO reportada` : ''], ['Beneficio bruto', rd(tot.ben), tot.n ? `${tot.n} obras liquidables` : ''], ['Recubre nos factura', rd(tot.fac), 'MDO + logística + 50%'], ['Nos queda (50%)', rd(tot.ben / 2)]].map(([t, v, s]) => (
             <div key={t} className="bg-zinc-900 border border-zinc-800 rounded-card p-3 min-w-0"><div className="text-[10px] uppercase tracking-widest font-bold text-zinc-500">{t}</div><div className="text-lg font-black tabular-nums text-white">{v}</div>{s && <div className="text-[11px] text-zinc-500">{s}</div>}</div>
           ))}
         </div>
@@ -83,9 +86,9 @@ export default function VistaRecubre({ onVolver }) {
           <button onClick={exportar} className="ml-auto flex items-center gap-1 bg-zinc-800 hover:bg-zinc-700 text-xs font-bold px-3 py-2 rounded-card"><Download className="w-3.5 h-3.5" /> Excel</button>
         </div>
         <div className="bg-zinc-900 border border-zinc-800 rounded-card overflow-x-auto">
-          <table className="w-full text-sm min-w-[1250px]">
+          <table className="w-full text-sm min-w-[1450px]">
             <thead><tr className="text-[10px] uppercase tracking-wider text-zinc-500 border-b border-zinc-800">
-              {['', 'Sitio', 'Estado', 'Venta s/ITBIS', 'Materiales', 'Mat. extra', 'MDO Recubre', 'Beneficio', 'Recubre factura', 'Nos queda', 'Margen', 'Corte', 'Factura Recubre'].map((h, i) => <th key={i} className={`px-2 py-2 ${i >= 3 && i <= 10 ? 'text-right' : 'text-left'}`}>{h}</th>)}
+              {['', 'Sitio', 'Estado', 'Venta s/ITBIS', 'Materiales', 'Mat. extra', 'M² Recubre', 'MDO Recubre', 'Logística', 'Beneficio', 'Recubre factura', 'Nos queda', 'Margen', 'Corte', 'Factura Recubre'].map((h, i) => <th key={i} className={`px-2 py-2 ${i >= 3 && i <= 12 ? 'text-right' : 'text-left'}`}>{h}</th>)}
             </tr></thead>
             <tbody>
               {vis.map(f => { const c = f.c; const ab = abierta === f.ref; return (
@@ -97,7 +100,9 @@ export default function VistaRecubre({ onVolver }) {
                     <td className="px-2 py-2 text-right tabular-nums">{rd(c.venta)}</td>
                     <td className="px-2 py-2 text-right tabular-nums">{rd(f.materialesOdooRd)}</td>
                     <td className="px-2 py-2 text-right"><CeldaEditable valor={f.liq?.materiales_extra_rd || ''} placeholder="0" ancho="w-24" onGuardar={v => guardar(f, { materiales_extra_rd: v })} /></td>
-                    <td className="px-2 py-2 text-right"><CeldaEditable valor={f.liq?.mdo_rd ?? ''} placeholder="Reporte" onGuardar={v => guardar(f, { mdo_rd: v })} /></td>
+                    <td className="px-2 py-2 text-right"><CeldaEditable valor={f.liq?.m2_recubre ?? ''} placeholder="m²" ancho="w-20" onGuardar={v => guardar(f, { m2_recubre: v })} /></td>
+                    <td className="px-2 py-2 text-right"><CeldaEditable valor={f.liq?.mdo_rd ?? ''} placeholder="Reporte" onGuardar={v => guardar(f, { mdo_rd: v })} />{c.mdoM2 != null && <div className="text-[10px] text-zinc-500 tabular-nums">{rd(c.mdoM2)}/m²</div>}</td>
+                    <td className="px-2 py-2 text-right"><CeldaEditable valor={f.liq?.logistica_rd ?? ''} placeholder="0" ancho="w-24" onGuardar={v => guardar(f, { logistica_rd: v })} /></td>
                     <td className={`px-2 py-2 text-right tabular-nums font-bold ${c.beneficio == null ? 'text-zinc-600' : c.beneficio < 0 ? 'text-red-400' : 'text-green-400'}`}>{rd(c.beneficio)}</td>
                     <td className="px-2 py-2 text-right tabular-nums text-amber-300">{rd(c.factura)}</td>
                     <td className="px-2 py-2 text-right tabular-nums">{rd(c.nuestro)}</td>
@@ -107,7 +112,7 @@ export default function VistaRecubre({ onVolver }) {
                     <td className="px-2 py-2"><CeldaEditable tipo="text" valor={f.liq?.factura_recubre || ''} placeholder="NCF / #" ancho="w-28" onGuardar={v => guardar(f, { factura_recubre: v })} /></td>
                   </tr>
                   {ab && (
-                    <tr className="bg-zinc-950/60"><td colSpan={13} className="px-6 py-3">
+                    <tr className="bg-zinc-950/60"><td colSpan={15} className="px-6 py-3">
                       <div className="grid md:grid-cols-2 gap-4 text-sm">
                         <div>
                           <div className="text-[10px] uppercase tracking-widest font-bold text-zinc-500 mb-1">Materiales despachados (Odoo, a costo)</div>
@@ -125,7 +130,7 @@ export default function VistaRecubre({ onVolver }) {
                     </td></tr>
                   )}
                 </React.Fragment>); })}
-              {!vis.length && <tr><td colSpan={13} className="text-center py-8 text-zinc-500">Nada en este corte.</td></tr>}
+              {!vis.length && <tr><td colSpan={15} className="text-center py-8 text-zinc-500">Nada en este corte.</td></tr>}
             </tbody>
           </table>
         </div>

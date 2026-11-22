@@ -11,3 +11,6 @@ create table if not exists recubre_liquidacion (
 );
 alter table recubre_liquidacion enable row level security;
 notify pgrst, 'reload schema';
+-- Reporte de Recubre (Vladimir): metros, MDO y logística/material gastable por techo.
+alter table recubre_liquidacion add column if not exists m2_recubre numeric, add column if not exists logistica_rd numeric;
+notify pgrst, 'reload schema';

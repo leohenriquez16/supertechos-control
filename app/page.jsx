@@ -11,7 +11,7 @@ import PreciosAjustadosObra from '../components/proyecto/PreciosAjustadosObra';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic'; // v8.55.0: carga perezosa de vistas
 import { createPortal } from 'react-dom';
-import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed, Building2, Star, MessageCircle, Send, Search, Filter, CloudRain, Calculator, Receipt, Car, Award, Gauge, Route, ShoppingCart, ShieldCheck, Ship, Wrench, MoreHorizontal } from 'lucide-react';
+import { CheckCircle2, ArrowLeft, Calendar, Loader2, LogOut, UserCircle, Zap, Package, AlertTriangle, TrendingUp, Truck, Plus, FileUp, FileText, Sparkles, X, Users, Edit2, Save, Trash2, Settings, DollarSign, Utensils, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Download, Upload, Camera, Phone, MapPin, CreditCard, Mail, User as UserIcon, Eye, EyeOff, Clock, Play, Square, Navigation, ExternalLink, Briefcase, ClipboardList, Wallet, LayoutDashboard, CircleCheck, CircleDashed, Building2, Star, MessageCircle, Send, Search, Filter, CloudRain, Calculator, Receipt, Car, Award, Gauge, Route, ShoppingCart, ShieldCheck, Ship, Wrench, MoreHorizontal, PaintRoller } from 'lucide-react';
 import * as db from '../lib/db';
 import { completitudPersona } from '../lib/helpers/personas';
 import TablaPersonal from '../components/personal/TablaPersonal';
@@ -102,6 +102,7 @@ import VistaNomina from '../components/nomina/VistaNomina';
 const VistaProduccion = cargarVista(() => import('../components/dashboard/VistaProduccion'), CargandoVista); // v8.27.73
 const FichaEmpleado = cargarVista(() => import('../components/personal/FichaEmpleado'), CargandoVista); // v8.87.0
 const VistaRentabilidad = cargarVista(() => import('../components/dashboard/VistaRentabilidad'), CargandoVista); // v8.46.0
+const VistaRecubre = cargarVista(() => import('../components/recubre/VistaRecubre'), CargandoVista); // v8.100.0
 const VistaBonos = cargarVista(() => import('../components/bonos/VistaBonos'), CargandoVista); // v8.28.2
 import MisPendientes from '../components/pendientes/MisPendientes'; // v8.28.3
 const RequisicionesProyecto = cargarVista(() => import('../components/logistica/RequisicionesProyecto'), CargandoVista); // v8.29.0
@@ -456,6 +457,7 @@ const vistaPermitida = (v, u, data) => {
     case 'produccion': case 'carga': case 'contabilidad': return r('owner');
     case 'coordinacion': return admin || r('owner'); // v8.95.0: Coordinación de levantamientos por campaña
     case 'rentabilidad': return r('owner') || r('rentabilidad');
+    case 'recubre': return r('owner') || r('rentabilidad');
     case 'almacen': case 'compras': case 'importaciones': return admin || r('almacen') || r('facturas');
     case 'rutas': return admin || r('almacen');
     case 'tareas': case 'miVehiculo': case 'pendientes': case 'gotera': case 'miPerfil':
@@ -921,6 +923,7 @@ export default function App() {
       // v8.46.0: rentabilidad de todas las obras — v8.46.1: SOLO owner o rol 'rentabilidad'
       // (Leo, Felvison, Miguel Martínez — se asigna el rol en Personal)
       ...((tieneRol(usuario, 'owner') || tieneRol(usuario, 'rentabilidad')) ? [{ id: 'rentabilidad', label: 'Rentabilidad', icon: TrendingUp, vista: 'rentabilidad' }] : []),
+      ...((tieneRol(usuario, 'owner') || tieneRol(usuario, 'rentabilidad')) ? [{ id: 'recubre', label: 'Liquidación Recubre', icon: PaintRoller, vista: 'recubre' }] : []), // v8.100.0
       { id: 'cajaChica', label: 'Caja Chica', icon: CreditCard, vista: 'cajaChica' },
       // v8.27.36: Facturas — captura de facturas de gasto para exportar a Odoo.
       { id: 'facturasOdoo', label: 'Facturas', icon: Receipt, vista: 'facturasOdoo' },
@@ -1085,6 +1088,7 @@ export default function App() {
         {vista === 'tareas' && <VistaTareas usuario={usuario} data={data} onVolver={() => { if (esAdmin) setVista('dashboard'); else setVista('misProyectos'); }} onCompletarTarea={async (id) => withSync(async () => { await db.completarTarea(id, usuario.id); })} onCrearTarea={async (t) => withSync(async () => { await db.crearTarea(t); })} onEliminarTarea={async (id) => withSync(async () => { await db.eliminarTarea(id); })} />}
         {tieneRol(usuario, 'owner') && vista === 'produccion' && <VistaProduccion usuario={usuario} data={data} onVolver={volverAtras} />}
         {/* v8.46.0: portafolio de rentabilidad por obra — v8.46.1: owner o rol 'rentabilidad' */}
+        {(tieneRol(usuario, 'owner') || tieneRol(usuario, 'rentabilidad')) && vista === 'recubre' && <VistaRecubre onVolver={volverAtras} />}
         {(tieneRol(usuario, 'owner') || tieneRol(usuario, 'rentabilidad')) && vista === 'rentabilidad' && <VistaRentabilidad usuario={usuario} data={data} onVolver={volverAtras} onVerProyecto={(p) => { setProyectoActivo(p); setVista('proyecto'); setTab('costo'); }} />}
         {esAdmin && vista === 'bonos' && <VistaBonos usuario={usuario} data={data} onVolver={volverAtras} />}
         {/* v8.39.0: compras (rol facturas = Lily) también entra al Almacén — flujo de compras por renglón */}

@@ -3,6 +3,7 @@
 // v8.77.0: Control de importaciones — una fila por carga (OC de Odoo).
 // Datos de Odoo (OC, pagos, factura, recepción) y tracking de la naviera los llena
 // ~/erp-agente/importaciones/sync_importaciones.py cada 15 min desde la Mac.
+// v8.101.0: «Lista para zarpar» = el suplidor ya despachó (factura comercial o aviso con salida estimada) y el buque no ha salido.
 // Aquí solo se capturan a mano BL / contenedor / naviera / factura comercial / notas.
 // Los documentos del correo los archiva archivar_correo.py en la carpeta Dropbox de la carga.
 
@@ -16,12 +17,13 @@ import ForecastInventario from './ForecastInventario';
 
 const ESTADOS = {
   produccion: { label: 'En producción', cls: 'bg-zinc-700 text-zinc-200' },
+  por_zarpar: { label: 'Lista para zarpar', cls: 'bg-cyan-900/60 text-cyan-200' },
   transito: { label: 'En tránsito', cls: 'bg-blue-900/60 text-blue-200' },
   puerto: { label: 'En puerto', cls: 'bg-amber-900/60 text-amber-200' },
   despachado: { label: 'Despachado', cls: 'bg-purple-900/60 text-purple-200' },
   almacen: { label: 'En almacén', cls: 'bg-green-900/60 text-green-200' },
 };
-const ORDEN_ESTADO = ['produccion', 'transito', 'puerto', 'despachado', 'almacen'];
+const ORDEN_ESTADO = ['produccion', 'por_zarpar', 'transito', 'puerto', 'despachado', 'almacen'];
 
 const usd = (n) => (n || n === 0) ? `US$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
 const fecha = (f) => {
@@ -46,7 +48,7 @@ function alertas(i) {
   }
   if (i.estado === 'puerto' && i.recepcionEstado !== 'done') a.push({ nivel: 'ambar', txt: 'En puerto: falta despacho y recepción en Odoo' });
   if (dEta !== null && dEta < 0 && i.estado !== 'almacen') a.push({ nivel: 'rojo', txt: `ETA vencida hace ${-dEta} días sin recepción` });
-  if (i.estado !== 'produccion' && !i.facturaOdoo) a.push({ nivel: 'ambar', txt: 'Embarcada sin factura en Odoo' });
+  if (!['produccion', 'por_zarpar'].includes(i.estado) && !i.facturaOdoo) a.push({ nivel: 'ambar', txt: 'Embarcada sin factura en Odoo' });
   return a;
 }
 
@@ -103,7 +105,7 @@ function Ficha({ imp, usuario, onCerrar, onGuardado, onCambio }) {
             <div className="flex justify-between"><span className="text-zinc-400">Origen</span><span>{imp.puertoOrigen || '—'}</span></div>
             <div className="flex justify-between"><span className="text-zinc-400">Transbordo</span><span>{imp.puertoTransbordo || '—'}</span></div>
             <div className="flex justify-between"><span className="text-zinc-400">Destino</span><span>{imp.puertoDestino || '—'}</span></div>
-            <div className="flex justify-between"><span className="text-zinc-400">Salida (ETD)</span><span>{fecha(imp.etd)}</span></div>
+            <div className="flex justify-between"><span className="text-zinc-400">Salida (ETD){diasHasta(imp.etd) > 0 ? ' · estimada' : ''}</span><span>{fecha(imp.etd)}</span></div>
             <div className="flex justify-between font-semibold"><span>Llegada (ETA)</span><span>{fecha(imp.eta)}</span></div>
             {imp.etaOriginal && imp.etaOriginal !== imp.eta && <div className="flex justify-between text-xs"><span className="text-zinc-500">ETA original</span><span className="text-zinc-500">{fecha(imp.etaOriginal)}</span></div>}
             <div className="text-[11px] text-zinc-500 pt-1">Tracking: {imp.trackingActualizado ? new Date(imp.trackingActualizado).toLocaleString('es-DO') : 'sin consultar'}</div>

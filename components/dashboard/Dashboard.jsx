@@ -364,7 +364,7 @@ export default function Dashboard({ usuario, data, onVerProyecto, onNuevoProyect
       {modalDetalle === 'enEjecucion' && <ModalDetalleEnEjecucion proyectos={proyectosEjecutando} data={data} jornadasHoy={jornadasLocal} onCerrar={() => setModalDetalle(null)} onVerProyecto={(p) => { setModalDetalle(null); onVerProyecto(p); }} />}
       {modalDetalle === 'personalAhora' && <ModalDetallePersonalAhora personalPorProyecto={personalPorProyecto} totalPersonas={personalEnObraAhora.size} onCerrar={() => setModalDetalle(null)} onVerProyecto={(p) => { setModalDetalle(null); onVerProyecto(p); }} />}
       {modalDetalle === 'produccion' && <ModalDetalleProduccion data={data} rango={rango} prodPeriodo={prodPeriodo} onCerrar={() => setModalDetalle(null)} onVerProyecto={(p) => { setModalDetalle(null); onVerProyecto(p); }} />}
-      {modalDetalle === 'aprobados' && <ModalDetalleAprobados aprobadosPeriodo={aprobadosPeriodo} montoTotal={montoAprobadosPeriodo} onCerrar={() => setModalDetalle(null)} onVerProyecto={(p) => { setModalDetalle(null); onVerProyecto(p); }} />}
+      {modalDetalle === 'aprobados' && <ModalDetalleAprobados proyectos={aprobadosPeriodo} data={data} montoTotal={montoAprobadosPeriodo} onCerrar={() => setModalDetalle(null)} onVerProyecto={(p) => { setModalDetalle(null); onVerProyecto(p); }} />}
     </div>
   );
 }
